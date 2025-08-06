@@ -28,7 +28,7 @@
     },
     "regexManagers": [
         {
-            "fileMatch": ["/(^|/)kustomization\\.ya?ml$/"],
+            "managerFilePatterns": ["/(^|/)kustomization\\.ya?ml$/"],
             "matchStrings": ["https://raw\\.githubusercontent\\.com/(?<depName>[^/]*/[^/]*)/(?<currentValue>.*?)/"],
             "datasourceTemplate": "github-tags"
         }
