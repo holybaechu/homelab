@@ -7,3 +7,4 @@ resources:
   - https://raw.githubusercontent.com/rook/rook/refs/tags/v1.17.7/deploy/examples/operator.yaml
   - cluster.yaml
   - storageclass.yaml
+  - pod-security.yaml
