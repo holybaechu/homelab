@@ -1,26 +1,25 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: proxmox
-  namespace: proxmox
+  name: adguard-home-dns
+  namespace: adguard-home
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-    nginx.ingress.kubernetes.io/allow-ip-block: "192.168.0.0/24"
 spec:
   tls:
     - hosts:
-        - "pve.home.holyb.xyz"
-      secretName: pve-home-holyb-xyz-tls
+        - "dns.holyb.xyz"
+      secretName: dns-holyb-xyz-tls
   ingressClassName: nginx
   rules:
-    - host: "pve.home.holyb.xyz"
+    - host: "dns.holyb.xyz"
       http:
         paths:
-          - path: /
+          - path: /dns-query
             pathType: Prefix
             backend:
               service:
-                name: proxmox
+                name: adguard-home-dns
                 port:
-                  number: 8006
+                  number: 443
