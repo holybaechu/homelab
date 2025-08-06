@@ -4,12 +4,16 @@
         "config:recommended",
         ":dependencyDashboard"
     ],
-    "schedule": ["* 19-20 * * *"],
+    "schedule": [
+        "* 19-20 * * *"
+    ],
     "timezone": "Asia/Seoul",
     "packageRules": [
         {
-            "matchPackageNames": ["lscr.io/linuxserver/qbittorrent"],
-            "allowedVersions": ["<14.0.0"]
+            "matchPackageNames": [
+                "lscr.io/linuxserver/qbittorrent"
+            ],
+            "allowedVersions": "<14.0.0"
         }
     ],
     "argocd": {
