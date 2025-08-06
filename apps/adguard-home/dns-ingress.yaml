@@ -20,6 +20,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: adguard-home-dns
+                name: adguard-home
                 port:
                   number: 443
