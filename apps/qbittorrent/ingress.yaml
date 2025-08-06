@@ -4,12 +4,14 @@ metadata:
   name: qbittorrent
   namespace: qbittorrent
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - "qbt.home.holyb.xyz"
+      secretName: qbt-home-holyb-xyz-tls
   rules:
   - host: qbt.home.holyb.xyz
     http:
