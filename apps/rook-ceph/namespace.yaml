@@ -1,6 +1,6 @@
-- op: add
-  path: /metadata/labels
-  value:
-    pod-security.kubernetes.io/enforce: privileged
-  kind: Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
   name: rook-ceph
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
