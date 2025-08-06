@@ -3,6 +3,5 @@ kind: Kustomization
 namespace: rook-ceph
 resources:
   - https://github.com/rook/rook//deploy/examples?ref=v1.17.7
-  - operator.yaml
   - cluster.yaml
   - storageclass.yaml
