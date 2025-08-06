@@ -25,5 +25,12 @@
         "managerFilePatterns": [
             "/\\.yaml$/"
         ]
-    }
+    },
+    "regexManagers": [
+        {
+            "fileMatch": ["/(^|/)kustomization\\.ya?ml$/"],
+            "matchStrings": ["https://raw\\.githubusercontent\\.com/(?<depName>[^/]*/[^/]*)/(?<currentValue>.*?)/"],
+            "datasourceTemplate": "github-tags"
+        }
+    ]
 }
