@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: proxmox
+  namespace: proxmox
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  tls:
+    - hosts:
+        - "pve.home.holyb.xyz"
+      secretName: pve-home-holyb-xyz-tls
+  ingressClassName: nginx
+  rules:
+    - host: "pve.home.holyb.xyz"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: proxmox
+                port:
+                  number: 8006

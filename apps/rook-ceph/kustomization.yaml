@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: rook-ceph
+resources:
+  - github.com/rook/rook/deploy/examples?ref=v1.17.7
+  - github.com/rook/rook/deploy/examples/operator.yaml?ref=v1.17.7
+  - cluster.yaml
+  - storageclass.yaml

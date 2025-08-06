@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: adguard-home
+  namespace: adguard-home
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  tls:
+    - hosts:
+        - "adguard.home.holyb.xyz"
+      secretName: adguard-home-holyb-xyz-tls
+    - hosts:
+        - "dns.holyb.xyz"
+      secretName: dns-holyb-xyz-tls
+  ingressClassName: nginx
+  rules:
+    - host: "adguard.home.holyb.xyz"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: adguard-home
+                port:
+                  number: 443
+    - host: "dns.holyb.xyz"
+      http:
+        paths:
+          - path: /dns-query
+            pathType: Prefix
+            backend:
+              service:
+                name: adguard-home
+                port:
+                  number: 443

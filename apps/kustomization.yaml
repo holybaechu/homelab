@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - rook-ceph/app.yaml
+  - metallb/app.yaml
+  - ingress-nginx/app.yaml
+  - cert-manager/app.yaml
+  - qbittorrent/app.yaml
+  - adguard-home/app.yaml
+  - proxmox/app.yaml
+  - router/app.yaml
+  - argocd-server-ingress/ingress.yaml
