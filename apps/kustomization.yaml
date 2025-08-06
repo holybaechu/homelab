@@ -5,6 +5,7 @@ resources:
   - metallb/app.yaml
   - ingress-nginx/app.yaml
   - cert-manager/app.yaml
+  - cert-manager-resources/app.yaml
   - qbittorrent/app.yaml
   - adguard-home/app.yaml
   - proxmox/app.yaml
