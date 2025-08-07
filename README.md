@@ -72,7 +72,7 @@ After the bootstrap deployment completes:
 
 1. **Get ArgoCD admin password**:
    ```bash
-   kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+   argocd admin initial-password -n argocd
    ```
 
 2. **Port forward to ArgoCD UI**:
