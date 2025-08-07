@@ -7,6 +7,7 @@ helmCharts:
     version: v1.18.2
     namespace: cert-manager
     valuesFile: values.yaml
+    includeCRDs: true
 resources:
   - cluster-issuer.yaml
   - cloudflare-secret.yaml

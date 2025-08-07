@@ -7,3 +7,6 @@ helmCharts:
     version: 4.13.0
     namespace: ingress-nginx
     valuesFile: values.yaml
+    includeCRDs: true
+resources:
+  - namespace.yaml
