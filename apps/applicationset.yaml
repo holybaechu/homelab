@@ -14,12 +14,14 @@ spec:
     metadata:
       name: '{{path.basename}}'
       namespace: argocd
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
     spec:
       project: default
       source:
         repoURL: https://github.com/holybaechu/homelab
         targetRevision: HEAD
-        path: '{{path}}'
+        path: 'apps/{{path}}'
       destination:
         server: https://kubernetes.default.svc
       syncPolicy:
@@ -28,3 +30,5 @@ spec:
           selfHeal: true
         syncOptions:
         - CreateNamespace=true
+        # - ServerSideApply=true
+        # - RespectIgnoreDifferences=true
