@@ -9,5 +9,6 @@ helmCharts:
     valuesFile: values.yaml
     includeCRDs: true
 resources:
+  - namespace.yaml
   - cluster-issuer.yaml
   - cloudflare-secret.yaml
