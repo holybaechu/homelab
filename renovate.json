@@ -5,7 +5,7 @@
         ":dependencyDashboard"
     ],
     "schedule": [
-        "* 19-20 * * *"
+        "* 0-24 * * *"
     ],
     "timezone": "Asia/Seoul",
     "packageRules": [
