@@ -21,7 +21,7 @@ spec:
       source:
         repoURL: https://github.com/holybaechu/homelab
         targetRevision: HEAD
-        path: 'apps/{{path}}'
+        path: '{{path}}'
       destination:
         server: https://kubernetes.default.svc
       syncPolicy:
