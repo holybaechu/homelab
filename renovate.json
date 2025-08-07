@@ -6,7 +6,7 @@
         ":automergeMinor"
     ],
     "schedule": [
-        "* 0-24 * * *"
+        "* 0-23 * * *"
     ],
     "timezone": "Asia/Seoul",
     "packageRules": [
