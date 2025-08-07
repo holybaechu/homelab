@@ -3,6 +3,13 @@ kind: Kustomization
 resources:
   - argo-namespace.yaml
   - argo-root-application.yaml
-  - argo-enable-helm.yaml
   - https://raw.githubusercontent.com/argoproj/argo-cd/v3.0.12/manifests/install.yaml
+patches:
+  - target:
+      kind: ConfigMap
+      name: argocd-cm
+    patch: |-
+      - op: add
+        path: /data/kustomize.buildOptions
+        value: --enable-helm
 namespace: argocd
