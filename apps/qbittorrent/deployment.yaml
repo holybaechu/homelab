@@ -33,9 +33,11 @@ spec:
         - name: PGID
           value: "1000"
         - name: TZ
-          value: "Etc/UTC"
+          value: "Asia/Seoul"
         - name: WEBUI_PORT
           value: "8080"
+        - name: DOCKER_MODS
+          value: "ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.28.1"
         volumeMounts:
         - name: config
           mountPath: /config
