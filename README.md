@@ -87,3 +87,13 @@ After the bootstrap deployment completes:
 ### 5. Monitor Deployments
 
 Once ArgoCD is running, it will automatically deploy all applications defined in the `apps/` directory. Monitor the deployment status in the ArgoCD UI.
+
+## Upgrading Talos Linux / Kubernetes
+To upgrade Talos Linux to the latest version, run the following command:
+```bash
+talosctl upgrade --nodes $YOUR_NODE_IPS --talosconfig=./talosconfig --image ghcr.io/siderolabs/installer:latest
+```
+To upgrade Kubernetes to the latest version, run the following command:
+```bash
+talosctl upgrade-k8s --nodes $YOUR_NODE_IPS --talosconfig=./talosconfig
+```
