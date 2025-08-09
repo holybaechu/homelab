@@ -4,7 +4,8 @@ metadata:
   name: qbittorrent
   namespace: qbittorrent
   annotations:
-      metallb.universe.tf/allow-shared-ip: "qbittorrent"
+      metallb.io/loadBalancerIPs: "192.168.0.201"
+      metallb.io/allow-shared-ip: "qbittorrent"
 spec:
   selector:
     app: qbittorrent-webui
@@ -14,7 +15,6 @@ spec:
     targetPort: 8080
     protocol: TCP
   type: LoadBalancer
-  loadBalancerIP: 192.168.0.201
 ---
 apiVersion: v1
 kind: Service
@@ -22,17 +22,17 @@ metadata:
   name: qbittorrent-tcp
   namespace: qbittorrent
   annotations:
-      metallb.universe.tf/allow-shared-ip: "qbittorrent"
+      metallb.io/loadBalancerIPs: "192.168.0.201"
+      metallb.io/allow-shared-ip: "qbittorrent"
 spec:
   selector:
     app: qbittorrent
   ports:
   - name: bittorrent-tcp
-    port: 65084
-    targetPort: 65084
+    port: 6881
+    targetPort: 6881
     protocol: TCP
   type: LoadBalancer
-  loadBalancerIP: 192.168.0.201
 ---
 apiVersion: v1
 kind: Service
@@ -40,14 +40,14 @@ metadata:
   name: qbittorrent-udp
   namespace: qbittorrent
   annotations:
-      metallb.universe.tf/allow-shared-ip: "qbittorrent"
+      metallb.io/loadBalancerIPs: "192.168.0.201"
+      metallb.io/allow-shared-ip: "qbittorrent"
 spec:
   selector:
     app: qbittorrent
   ports:
   - name: bittorrent-udp
-    port: 65084
-    targetPort: 65084
-    protocol: TCP
+    port: 6881
+    targetPort: 6881
+    protocol: UDP
   type: LoadBalancer
-  loadBalancerIP: 192.168.0.201
