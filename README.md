@@ -14,8 +14,7 @@ The homelab consists of the following components:
 - **Ingress-Nginx**: Kubernetes ingress controller (Assigned IP is 192.168.0.200)
 
 ### Applications
-- **qBittorrent**: BitTorrent client (Assigned IP is 192.168.0.201) (Assigned port for BitTorrent is 65084)
-
+- **qBittorrent**: BitTorrent client (Assigned IP is 192.168.0.201)
 ### Ingresses to outside services
 - **Router**: Network routing service (Routed IP is 192.168.0.1)
 - **Proxmox**: Virtualization management interface (Routed IP is 192.168.0.2)
