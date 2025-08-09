@@ -5,7 +5,7 @@ metadata:
   namespace: adguard-home
 spec:
   type: ExternalName
-  externalName: 192.168.0.6.nip.io
+  externalName: 192.168.0.4.nip.io
   ports:
   - name: dns-tcp
     protocol: TCP
