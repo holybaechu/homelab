@@ -14,12 +14,12 @@ spec:
     targetPort: 8080
     protocol: TCP
   - name: bittorrent-tcp
-    port: 6881
-    targetPort: 6881
+    port: 65084
+    targetPort: 65084
     protocol: TCP
   - name: bittorrent-udp
-    port: 6881
-    targetPort: 6881
+    port: 65084
+    targetPort: 65084
     protocol: UDP
   type: LoadBalancer
   loadBalancerIP: 192.168.0.201
