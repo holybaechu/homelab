@@ -21,10 +21,10 @@ spec:
         ports:
         - containerPort: 8080
           name: webui
-        - containerPort: 6881
+        - containerPort: 53535
           name: bittorrent-tcp
           protocol: TCP
-        - containerPort: 6881
+        - containerPort: 53535
           name: bittorrent-udp
           protocol: UDP
         env:
@@ -36,6 +36,8 @@ spec:
           value: "Asia/Seoul"
         - name: WEBUI_PORT
           value: "8080"
+        - name: TORRENTING_PORT
+          value: "53535"
         - name: DOCKER_MODS
           value: "ghcr.io/vuetorrent/vuetorrent-lsio-mod:latest"
         volumeMounts:
