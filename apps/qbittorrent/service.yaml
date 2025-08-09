@@ -15,6 +15,7 @@ spec:
     targetPort: 8080
     protocol: TCP
   type: LoadBalancer
+  externalTrafficPolicy: Local
 ---
 apiVersion: v1
 kind: Service
