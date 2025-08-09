@@ -33,6 +33,7 @@ spec:
     targetPort: 43434
     protocol: TCP
   type: LoadBalancer
+  externalTrafficPolicy: Local
 ---
 apiVersion: v1
 kind: Service
@@ -51,3 +52,4 @@ spec:
     targetPort: 43434
     protocol: UDP
   type: LoadBalancer
+  externalTrafficPolicy: Local
