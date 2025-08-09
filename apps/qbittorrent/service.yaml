@@ -29,8 +29,8 @@ spec:
     app: qbittorrent
   ports:
   - name: bittorrent-tcp
-    port: 53535
-    targetPort: 53535
+    port: 43434
+    targetPort: 43434
     protocol: TCP
   type: LoadBalancer
 ---
@@ -47,7 +47,7 @@ spec:
     app: qbittorrent
   ports:
   - name: bittorrent-udp
-    port: 53535
-    targetPort: 53535
+    port: 43434
+    targetPort: 43434
     protocol: UDP
   type: LoadBalancer
