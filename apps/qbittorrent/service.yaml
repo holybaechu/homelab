@@ -29,8 +29,8 @@ spec:
     app: qbittorrent
   ports:
   - name: bittorrent-tcp
-    port: 6881
-    targetPort: 6881
+    port: 696969
+    targetPort: 696969
     protocol: TCP
   type: LoadBalancer
 ---
@@ -47,7 +47,7 @@ spec:
     app: qbittorrent
   ports:
   - name: bittorrent-udp
-    port: 6881
-    targetPort: 6881
+    port: 696969
+    targetPort: 696969
     protocol: UDP
   type: LoadBalancer
