@@ -1,5 +1,8 @@
 cluster:
   allowSchedulingOnControlPlanes: true
+  apiServer:
+    extraArgs:
+      feature-gates: MixedProtocolLBService=true
 machine:
     nodeLabels:
         node.kubernetes.io/exclude-from-external-load-balancers: ""
