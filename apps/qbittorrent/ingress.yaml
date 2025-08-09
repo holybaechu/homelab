@@ -22,6 +22,6 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: qbittorrent
+            name: qbittorrent-web-ui
             port:
               number: 8080
