@@ -23,8 +23,8 @@ spec:
           name: webui
         volumeMounts:
         - name: repo
-          mountPath: /app
-          subPath: apps/glance
+          mountPath: /app/config
+          subPath: apps/glance/config
           readOnly: true
       - name: git-sync
         image: registry.k8s.io/git-sync/git-sync:v4.4.2
@@ -32,8 +32,10 @@ spec:
         - --repo=https://github.com/holybaechu/homelab.git
         - --root=/repo
         securityContext:
-          runAsUser: 1000
-          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ "ALL" ]
         volumeMounts:
         - name: repo
           mountPath: /repo
