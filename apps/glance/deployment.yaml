@@ -21,10 +21,3 @@ spec:
         ports:
         - containerPort: 8080
           name: webui
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "1"

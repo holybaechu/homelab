@@ -45,13 +45,6 @@ spec:
           mountPath: /config
         - name: downloads
           mountPath: /downloads
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "1"
       volumes:
       - name: config
         persistentVolumeClaim:
