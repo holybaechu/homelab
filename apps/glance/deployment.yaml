@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: glance
+  namespace: glance
+  labels:
+    app: glance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: glance
+  template:
+    metadata:
+      labels:
+        app: glance
+    spec:
+      containers:
+      - name: glance
+        image: glanceapp/glance:v0.8.4
+        ports:
+        - containerPort: 8080
+          name: webui
+        volumeMounts:
+        - name: repo
+          mountPath: /app/config
+          subPath: repo/apps/glance/config
+        - name: repo
+          mountPath: /app/assets
+          subPath: repo/apps/glance/assets
+      - name: git-sync
+        image: k8s.gcr.io/git-sync:v4.4.2
+        args:
+        - --repo=https://github.com/holybaechu/homelab.git
+        - --root=/repo
+        volumeMounts:
+        - name: repo
+          mountPath: /repo
+      volumes:
+      - name: repo
+        emptyDir: {}
