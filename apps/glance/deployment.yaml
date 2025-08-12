@@ -36,6 +36,12 @@ spec:
         volumeMounts:
         - name: repo
           mountPath: /repo
+      - name: tail
+        image: busybox:latest
+        command: ["tail", "-f", "/dev/null"]
+        volumeMounts:
+        - name: repo
+          mountPath: /
       volumes:
       - name: repo
         emptyDir: {}
