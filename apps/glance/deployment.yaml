@@ -15,6 +15,16 @@ spec:
       labels:
         app: glance
     spec:
+      initContainers:
+      - name: git-sync-init
+        image: registry.k8s.io/git-sync/git-sync:v4.4.2
+        args:
+        - --repo=https://github.com/holybaechu/homelab.git
+        - --root=/repo
+        - --one-time
+        volumeMounts:
+        - name: repo
+          mountPath: /repo
       containers:
       - name: glance
         image: glanceapp/glance:v0.8.4
