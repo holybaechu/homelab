@@ -12,4 +12,3 @@ resources:
   - namespace.yaml
   - cluster-issuer.yaml
   - cloudflare-secret.yaml
-  - wildcard-certificate.yaml

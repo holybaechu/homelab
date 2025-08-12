@@ -4,6 +4,7 @@ metadata:
   name: qbittorrent
   namespace: qbittorrent
   annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/allow-ip-block: "192.168.0.0/24"
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
@@ -12,7 +13,7 @@ spec:
   tls:
     - hosts:
         - "qbt.home.holyb.xyz"
-      secretName: wildcard-holyb-xyz-tls
+      secretName: qbt-home-holyb-xyz-tls
   rules:
   - host: qbt.home.holyb.xyz
     http:

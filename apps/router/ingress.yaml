@@ -4,12 +4,13 @@ metadata:
   name: router
   namespace: router
   annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 spec:
   tls:
     - hosts:
         - "router.home.holyb.xyz"
-      secretName: wildcard-holyb-xyz-tls
+      secretName: router-home-holyb-xyz-tls
   ingressClassName: nginx
   rules:
     - host: "router.home.holyb.xyz"
