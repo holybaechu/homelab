@@ -11,6 +11,7 @@
       widgets:
         - type: search
           search-engine: duckduckgo
+          autofocus: true
 
     - size: small
       widgets:
