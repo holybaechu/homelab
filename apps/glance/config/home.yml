@@ -19,4 +19,4 @@
           location: Changwon
           units: metric
           hour-format: 12h
-        - $include: widgets/speedtest.yml
+        - $include: widgets/speedtest-tracker.yml
