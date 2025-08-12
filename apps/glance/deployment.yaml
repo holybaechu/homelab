@@ -21,6 +21,7 @@ spec:
           args:
           - --repo=https://github.com/holybaechu/homelab.git
           - --root=/repo
+          - --dest=homelab
           - --one-time
           volumeMounts:
           - name: repo
@@ -34,13 +35,14 @@ spec:
         volumeMounts:
         - name: repo
           mountPath: /app/config
-          subPath: apps/glance/config
+          subPath: homelab/apps/glance/config
           readOnly: true
       - name: git-sync
         image: registry.k8s.io/git-sync/git-sync:v4.4.2
         args:
         - --repo=https://github.com/holybaechu/homelab.git
         - --root=/repo
+        - --dest=homelab
         securityContext:
           runAsUser: 65533
         volumeMounts:
