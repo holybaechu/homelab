@@ -10,3 +10,4 @@ spec:
     kind: ClusterIssuer
   dnsNames:
   - "*.home.holyb.xyz"
+  - "home.holyb.xyz"

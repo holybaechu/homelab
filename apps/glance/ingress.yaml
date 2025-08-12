@@ -12,10 +12,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - "glance.home.holyb.xyz"
+        - "home.holyb.xyz"
       secretName: home-holyb-xyz-tls
   rules:
-  - host: glance.home.holyb.xyz
+  - host: home.holyb.xyz
     http:
       paths:
       - path: /
