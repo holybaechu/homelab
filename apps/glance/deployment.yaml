@@ -40,6 +40,16 @@ spec:
             secretKeyRef:
               name: glance-secrets
               key: SPEEDTEST_TRACKER_API_TOKEN
+        - name: ADGUARD_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: adguard-home-login
+              key: username
+        - name: ADGUARD_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: adguard-home-login
+              key: password
         volumeMounts:
         - name: repo
           mountPath: /app/config

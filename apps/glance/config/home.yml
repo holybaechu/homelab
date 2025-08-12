@@ -6,6 +6,10 @@
       widgets:
         - type: calendar
           first-day-of-week: sunday
+        - type: weather
+          location: Changwon
+          units: metric
+          hour-format: 12h
 
     - size: full
       widgets:
@@ -15,8 +19,9 @@
 
     - size: small
       widgets:
-        - type: weather
-          location: Changwon
-          units: metric
-          hour-format: 12h
+        - type: dns-stats
+          service: adguard
+          url: https://adguard.home.holyb.xyz/
+          username: ${ADGUARD_USERNAME}
+          password: ${ADGUARD_PASSWORD}
         - $include: widgets/speedtest-tracker.yml
