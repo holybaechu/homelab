@@ -15,17 +15,6 @@ spec:
       labels:
         app: glance
     spec:
-      initContainers:
-      - name: git-clone
-        image: alpine/git:latest
-        command:
-        - sh
-        - -c
-        - |
-          git clone https://github.com/holybaechu/homelab.git /repo
-        volumeMounts:
-        - name: repo
-          mountPath: /repo
       containers:
       - name: glance
         image: glanceapp/glance:v0.8.4
@@ -36,6 +25,14 @@ spec:
         - name: repo
           mountPath: /app/config
           subPath: apps/glance/config
+      - name: git-sync
+        image: registry.k8s.io/git-sync/git-sync:v4.4.2
+        args:
+        - --repo=https://github.com/holybaechu/homelab.git
+        - --root=/repo
+        volumeMounts:
+        - name: repo
+          mountPath: /repo
       volumes:
       - name: repo
         emptyDir: {}
