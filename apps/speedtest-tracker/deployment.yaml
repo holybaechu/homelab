@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: speedtest-tracker
-        image: lscr.io/linuxserver/speedtest-tracker:v0.19.0
+        image: lscr.io/linuxserver/speedtest-tracker:0.26.0
         ports:
         - containerPort: 443
           name: https
