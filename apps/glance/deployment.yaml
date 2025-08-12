@@ -23,8 +23,8 @@ spec:
           name: webui
         volumeMounts:
         - name: repo
-          mountPath: /app/config
-          subPath: apps/glance/config
+          mountPath: /app
+          subPath: apps/glance
       - name: git-sync
         image: registry.k8s.io/git-sync/git-sync:v4.4.2
         args:
