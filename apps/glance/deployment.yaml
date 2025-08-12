@@ -62,6 +62,10 @@ spec:
           mountPath: /app/config
           subPath: homelab/apps/glance/config
           readOnly: true
+        - name: repo
+          mountPath: /app/assets
+          subPath: homelab/apps/glance/assets
+          readOnly: true
       - name: git-sync
         image: registry.k8s.io/git-sync/git-sync:v4.4.2
         args:

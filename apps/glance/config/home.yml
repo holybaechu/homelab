@@ -24,23 +24,20 @@
               url: https://router.home.holyb.xyz
               icon: /assets/router-logo.png
             - title: Proxmox VE
-              url: https://pve.home.holyb.xyz
-              icon: /assets/proxmox-logo.png
-            - title: Router
-              url: https://router.home.holyb.xyz
-              icon: /assets/router-logo.png
+              url: ${PROXMOXVE_URL}
+              icon: sh:proxmox
             - title: ArgoCD
               url: https://argo.home.holyb.xyz
-              icon: /assets/argocd-logo.png
+              icon: sh:argo
             - title: AdGuard Home
               url: https://adguard.home.holyb.xyz
-              icon: /assets/adguard-logo.png
+              icon: sh:adguard
             - title: Speedtest Tracker
-              url: https://speedtest.home.holyb.xyz
-              icon: /assets/speedtest-tracker-logo.png
+              url: ${SPEEDTEST_URL}
+              icon: sh:speedtest
             - title: qBittorrent
               url: https://qbt.home.holyb.xyz
-              icon: /assets/qbittorrent-logo.png
+              icon: sh:qbittorrent
 
     - size: small
       widgets:

@@ -1,7 +1,7 @@
 - type: custom-api
   title: Proxmox-VE Stats
   cache: 1m
-  url: https://${PROXMOXVE_URL}/api2/json/cluster/resources
+  url: ${PROXMOXVE_URL}/api2/json/cluster/resources
   allow-insecure: true
   headers:
     Accept: application/json
