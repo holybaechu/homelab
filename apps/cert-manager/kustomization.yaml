@@ -12,3 +12,4 @@ resources:
   - namespace.yaml
   - cluster-issuer.yaml
   - cloudflare-secret.yaml
+  - home-certificate.yaml
