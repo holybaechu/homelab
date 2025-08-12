@@ -25,19 +25,19 @@
               icon: /assets/router-logo.png
             - title: Proxmox VE
               url: ${PROXMOXVE_URL}
-              icon: sh:proxmox
+              icon: si:proxmox
             - title: ArgoCD
               url: https://argo.home.holyb.xyz
-              icon: sh:argo
+              icon: si:argo
             - title: AdGuard Home
               url: https://adguard.home.holyb.xyz
-              icon: sh:adguard
+              icon: si:adguard
             - title: Speedtest Tracker
               url: ${SPEEDTEST_URL}
-              icon: sh:speedtest
+              icon: si:speedtest
             - title: qBittorrent
               url: https://qbt.home.holyb.xyz
-              icon: sh:qbittorrent
+              icon: si:qbittorrent
 
     - size: small
       widgets:
