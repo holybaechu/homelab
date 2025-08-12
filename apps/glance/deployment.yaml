@@ -34,10 +34,10 @@ spec:
         volumeMounts:
         - name: repo
           mountPath: /app/config
-          subPath: repo/apps/glance/config
+          subPath: apps/glance/config
         - name: repo
           mountPath: /app/assets
-          subPath: repo/apps/glance/assets
+          subPath: apps/glance/assets
       - name: git-sync
         image: registry.k8s.io/git-sync/git-sync:v4.4.2
         args:
