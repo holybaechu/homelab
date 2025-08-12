@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: speedtest-tracker
+  namespace: speedtest-tracker
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/allow-ip-block: "192.168.0.0/24"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "speedtest.home.holyb.xyz"
+      secretName: home-holyb-xyz-tls
+  rules:
+  - host: speedtest.home.holyb.xyz
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: speedtest-tracker
+            port:
+              number: 443

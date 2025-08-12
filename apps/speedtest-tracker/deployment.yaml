@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: speedtest-tracker
+  namespace: speedtest-tracker
+  labels:
+    app: speedtest-tracker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: speedtest-tracker
+  template:
+    metadata:
+      labels:
+        app: speedtest-tracker
+    spec:
+      containers:
+      - name: speedtest-tracker
+        image: lscr.io/linuxserver/speedtest-tracker:v0.19.0
+        ports:
+        - containerPort: 443
+          name: https
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: DB_CONNECTION
+          value: "sqlite"
+        - name: APP_KEY
+          valueFrom:
+            secretKeyRef:
+              name: speedtest-tracker-secrets
+              key: app-key
+        volumeMounts:
+        - name: config
+          mountPath: /config
+      volumes:
+      - name: config
+        emptyDir: {}

@@ -5,7 +5,8 @@ metadata:
   namespace: router
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/allow-ip-block: "192.168.0.0/24"
 spec:
   tls:
     - hosts:
