@@ -1,5 +1,6 @@
 - type: custom-api
   title: Proxmox VE Stats
+  title-url: ${PROXMOXVE_URL}
   cache: 1m
   url: ${PROXMOXVE_URL}/api2/json/cluster/resources
   headers:

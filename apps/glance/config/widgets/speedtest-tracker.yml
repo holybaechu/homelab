@@ -1,7 +1,7 @@
 - type: custom-api
-  cache: 1h
   title: Internet Speed
   title-url: ${SPEEDTEST_URL}
+  cache: 1m
   url: ${SPEEDTEST_URL}/api/v1/results/latest
   headers:
     Authorization: Bearer ${SPEEDTEST_TRACKER_API_TOKEN}
