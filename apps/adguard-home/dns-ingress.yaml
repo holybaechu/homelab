@@ -4,13 +4,12 @@ metadata:
   name: adguard-home-dns
   namespace: adguard-home
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
 spec:
   tls:
     - hosts:
         - "dns.holyb.xyz"
-      secretName: dns-holyb-xyz-tls
+      secretName: wildcard-holyb-xyz-tls
   ingressClassName: nginx
   rules:
     - host: "dns.holyb.xyz"
