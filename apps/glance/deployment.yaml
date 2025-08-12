@@ -25,11 +25,15 @@ spec:
         - name: repo
           mountPath: /app
           subPath: apps/glance
+          readOnly: true
       - name: git-sync
         image: registry.k8s.io/git-sync/git-sync:v4.4.2
         args:
         - --repo=https://github.com/holybaechu/homelab.git
         - --root=/repo
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
         volumeMounts:
         - name: repo
           mountPath: /repo
