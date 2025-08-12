@@ -32,10 +32,7 @@ spec:
         - --repo=https://github.com/holybaechu/homelab.git
         - --root=/repo
         securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: [ "ALL" ]
+          runAsUser: 65533
         volumeMounts:
         - name: repo
           mountPath: /repo
