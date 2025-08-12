@@ -32,6 +32,14 @@ spec:
         ports:
         - containerPort: 8080
           name: webui
+        env:
+        - name: SPEEDTEST_URL
+          value: https://speedtest.home.holyb.xyz
+        - name: SPEEDTEST_TRACKER_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: glance-secrets
+              key: SPEEDTEST_TRACKER_API_TOKEN
         volumeMounts:
         - name: repo
           mountPath: /app/config
