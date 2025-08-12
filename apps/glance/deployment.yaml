@@ -15,17 +15,6 @@ spec:
       labels:
         app: glance
     spec:
-      initContainers:
-        - name: git-sync-init
-          image: registry.k8s.io/git-sync/git-sync:v4.4.2
-          args:
-          - --repo=https://github.com/holybaechu/homelab.git
-          - --root=/repo
-          - --dest=homelab
-          - --one-time
-          volumeMounts:
-          - name: repo
-            mountPath: /repo
       containers:
       - name: glance
         image: glanceapp/glance:v0.8.4
@@ -35,22 +24,16 @@ spec:
         volumeMounts:
         - name: repo
           mountPath: /app/config
-          subPath: homelab/apps/glance/config
+          subPath: apps/glance/config
           readOnly: true
       - name: git-sync
         image: registry.k8s.io/git-sync/git-sync:v4.4.2
         args:
         - --repo=https://github.com/holybaechu/homelab.git
         - --root=/repo
-        - --dest=homelab
+        - --dest=.
         securityContext:
           runAsUser: 65533
-        volumeMounts:
-        - name: repo
-          mountPath: /repo
-      - name: tree
-        image: busybox:latest
-        command: ["tree", "/repo"]
         volumeMounts:
         - name: repo
           mountPath: /repo
