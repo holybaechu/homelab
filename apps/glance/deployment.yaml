@@ -22,8 +22,7 @@ spec:
         - sh
         - -c
         - |
-          git clone https://github.com/holybaechu/homelab.git /repo/homelab
-          ls -la /repo/homelab/apps/glance/config/
+          git clone https://github.com/holybaechu/homelab.git /repo
         volumeMounts:
         - name: repo
           mountPath: /repo
@@ -36,10 +35,7 @@ spec:
         volumeMounts:
         - name: repo
           mountPath: /app/config
-          subPath: homelab/apps/glance/config
-        - name: repo
-          mountPath: /app/assets
-          subPath: homelab/apps/glance/assets
+          subPath: apps/glance/config
       volumes:
       - name: repo
         emptyDir: {}
