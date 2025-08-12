@@ -1,4 +1,4 @@
-- name: Glance
+- name: Home
   columns:
     - size: small
       widgets:
