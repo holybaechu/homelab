@@ -16,7 +16,7 @@ spec:
         app: glance
     spec:
       initContainers:
-        - name: git-sync-init
+        - name: git-sync
           image: registry.k8s.io/git-sync/git-sync:v4.4.2
           args:
           - --repo=https://github.com/holybaechu/homelab.git
@@ -66,15 +66,6 @@ spec:
           mountPath: /app/assets
           subPath: homelab/apps/glance/assets
           readOnly: true
-      - name: git-sync
-        image: registry.k8s.io/git-sync/git-sync:v4.4.2
-        args:
-        - --repo=https://github.com/holybaechu/homelab.git
-        - --root=/repo
-        - --dest=homelab
-        volumeMounts:
-        - name: repo
-          mountPath: /repo
       volumes:
       - name: repo
         emptyDir: {}
