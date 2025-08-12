@@ -1,0 +1,53 @@
+- name: Glance
+  columns:
+    - size: small
+      widgets:
+        - type: weather
+          location: Changwon
+          units: metric
+          hour-format: 12h
+        - type: calendar
+          first-day-of-week: sunday
+        - type: clock
+          hour-format: 12h
+
+    - size: full
+      widgets:
+        - type: search
+          search-engine: duckduckgo
+          autofocus: true
+        - type: monitor
+          cache: 1m
+          title: Home
+          sites:
+            - title: Router
+              url: https://router.home.holyb.xyz
+              icon: /assets/router-logo.png
+            - title: Proxmox VE
+              url: https://pve.home.holyb.xyz
+              icon: /assets/proxmox-logo.png
+            - title: Router
+              url: https://router.home.holyb.xyz
+              icon: /assets/router-logo.png
+            - title: ArgoCD
+              url: https://argo.home.holyb.xyz
+              icon: /assets/argocd-logo.png
+            - title: AdGuard Home
+              url: https://adguard.home.holyb.xyz
+              icon: /assets/adguard-logo.png
+            - title: Speedtest Tracker
+              url: https://speedtest.home.holyb.xyz
+              icon: /assets/speedtest-tracker-logo.png
+            - title: qBittorrent
+              url: https://qbt.home.holyb.xyz
+              icon: /assets/qbittorrent-logo.png
+
+    - size: small
+      widgets:
+        - $include: widgets/proxmox-ve-stats.yml
+        - type: dns-stats
+          service: adguard
+          url: https://adguard.home.holyb.xyz/
+          username: ${ADGUARD_USERNAME}
+          password: ${ADGUARD_PASSWORD}
+        - $include: widgets/speedtest-tracker.yml

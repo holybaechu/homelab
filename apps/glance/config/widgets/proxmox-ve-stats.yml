@@ -1,0 +1,37 @@
+- type: custom-api
+  title: Proxmox-VE Stats
+  cache: 1m
+  url: https://${PROXMOXVE_URL}/api2/json/cluster/resources
+  allow-insecure: true
+  headers:
+    Accept: application/json
+    Authorization: PVEAPIToken=${PROXMOXVE_KEY}
+  template: |
+    <div class="flex flex-column gap-5">
+      <div class="flex justify-between text-center">
+        <div>
+          {{ $nodes_online := len (.JSON.Array "data.#(type==\"node\")#|#(status==\"online\")#") }}
+          {{ $nodes_total := len (.JSON.Array "data.#(type==\"node\")#") }}
+          <div class="color-highlight size-h3">{{ $nodes_online }}/{{ $nodes_total }}</div>
+          <div class="size-h5 uppercase">Node</div>
+        </div>
+        <div>
+          {{ $lxc_running := len (.JSON.Array "data.#(type==\"lxc\")#|#(status==\"running\")#|#(template==0)#") }}
+          {{ $lxc_total := len (.JSON.Array "data.#(type==\"lxc\")#|#(template==0)#") }}
+          <div class="color-highlight size-h3">{{ $lxc_running }}/{{ $lxc_total }}</div>
+          <div class="size-h5 uppercase">LXC</div>
+        </div>
+        <div>
+          {{ $qemu_running := len (.JSON.Array "data.#(type==\"qemu\")#|#(status==\"running\")#|#(template==0)#") }}
+          {{ $qemu_total := len (.JSON.Array "data.#(type==\"qemu\")#|#(template==0)#") }}
+          <div class="color-highlight size-h3">{{ $qemu_running }}/{{ $qemu_total }}</div>
+          <div class="size-h5 uppercase">VM</div>
+        </div>
+        <div>
+            {{ $storage_available := len (.JSON.Array "data.#(type==\"storage\")#|#(status==\"available\")#") }}
+            {{ $storage_total := len (.JSON.Array "data.#(type==\"storage\")#") }}
+            <div class="color-highlight size-h3">{{ $storage_available }}/{{ $storage_total }}</div>
+            <div class="size-h5 uppercase">Storage</div>
+        </div>
+      </div>
+    </div>

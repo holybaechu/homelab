@@ -50,6 +50,13 @@ spec:
             secretKeyRef:
               name: adguard-home-login
               key: password
+        - name: PROXMOXVE_URL
+          value: https://pve.home.holyb.xyz
+        - name: PROXMOXVE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: glance-secrets
+              key: PROXMOXVE_KEY
         volumeMounts:
         - name: repo
           mountPath: /app/config

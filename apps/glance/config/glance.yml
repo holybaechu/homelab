@@ -1,2 +1,2 @@
 pages:
-  - $include: home.yml
+  - $include: glance.yml
