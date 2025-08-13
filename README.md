@@ -19,6 +19,8 @@ The homelab consists of the following components:
 - **Router**: Network routing service (Routed IP is 192.168.0.1)
 - **Proxmox**: Virtualization management interface (Routed IP is 192.168.0.2)
 - **AdGuard Home**: DNS ad-blocker and network-wide content filtering (Routed IP is 192.168.0.4)
+- **Speedtest Tracker**: Runs Ookla Speedtest periodically
+- **Glance**: Website for viewing all of the applications running in my homelab
 
 ## Prerequisites
 
