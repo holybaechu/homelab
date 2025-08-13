@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: speedtest-tracker
   namespace: speedtest-tracker
+  annotations:
+    metallb.io/loadBalancerIPs: "192.168.0.202"
 spec:
   selector:
     app: speedtest-tracker

@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: glance-webui
   namespace: glance
+  annotations:
+    metallb.io/loadBalancerIPs: "192.168.0.203"
 spec:
   selector:
     app: glance
