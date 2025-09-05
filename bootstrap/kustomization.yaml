@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - argo-namespace.yaml
   - argo-root-application.yaml
-  - https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.0/manifests/install.yaml
+  - https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.4/manifests/install.yaml
 patches:
   - target:
       kind: ConfigMap
