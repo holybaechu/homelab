@@ -13,7 +13,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./config/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./config/dynamic:/etc/traefik/dynamic:ro
-      - ./acme.json:/acme.json
+      - acme:/acme
     networks:
       - proxy
     labels:
@@ -38,3 +38,6 @@ services:
 networks:
   proxy:
     name: proxy
+
+volumes:
+  acme:
