@@ -1,0 +1,28 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./config/dynamic:/etc/traefik/dynamic:ro
+      - ./acme.json:/acme.json
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.home.holyb.xyz`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.services.traefik-dashboard.loadbalancer.server.port=8080"
+
+networks:
+  proxy:
+    name: proxy
+    external: true

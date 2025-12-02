@@ -1,0 +1,13 @@
+http:
+  middlewares:
+    secure-headers:
+      headers:
+        sslRedirect: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
+        customFrameOptionsValue: SAMEORIGIN
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "same-origin"
