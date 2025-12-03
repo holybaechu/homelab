@@ -16,6 +16,8 @@ services:
       - acme:/acme
     networks:
       - proxy
+    environment:
+      - CLOUDFLARE_DNS_API_TOKEN
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.traefik.entrypoints=websecure"
