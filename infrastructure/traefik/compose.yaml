@@ -24,6 +24,8 @@ services:
       - "traefik.http.routers.traefik.rule=Host(`traefik.home.holyb.xyz`)"
       - "traefik.http.routers.traefik.service=api@internal"
       - "traefik.http.routers.traefik.tls.certresolver=cloudflare"
+      - "traefik.http.routers.traefik.tls.domains[0].main=home.holyb.xyz"
+      - "traefik.http.routers.traefik.tls.domains[0].sans=*.home.holyb.xyz,dns.holyb.xyz"
 
   whoami:
     image: traefik/whoami

@@ -29,7 +29,6 @@ providers:
 certificatesResolvers:
   cloudflare:
     acme:
-      email: holybaechu@proton.me
       storage: /acme/acme.json
       dnsChallenge:
         provider: cloudflare
