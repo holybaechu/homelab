@@ -1,0 +1,5 @@
+name: homelab
+
+include:
+  - path:
+      - infrastructure/compose.yaml

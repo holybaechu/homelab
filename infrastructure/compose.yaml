@@ -1,0 +1,5 @@
+name: infrastructure
+
+include:
+  - path:
+      - traefik/compose.yaml
