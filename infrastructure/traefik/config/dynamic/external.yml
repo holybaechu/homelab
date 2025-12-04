@@ -11,8 +11,6 @@ http:
     dns-query:
       rule: "Host(`dns.holyb.xyz`) && Path(`/dns-query`)"
       service: dns-query-service
-      middlewares:
-        - rewrite-dns-query
       entryPoints:
         - websecure
       tls:
@@ -28,8 +26,3 @@ http:
       loadBalancer:
         servers:
           - url: "http://192.168.0.3"
-
-  middlewares:
-    rewrite-dns-query:
-      replacePath:
-        path: "/query-dns"
