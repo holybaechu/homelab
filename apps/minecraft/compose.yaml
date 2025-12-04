@@ -1,6 +1,7 @@
 services:
   minecraft:
     image: itzg/minecraft-server:latest
+    restart: unless-stopped
     pull_policy: daily
     tty: true
     stdin_open: true
@@ -20,4 +21,4 @@ services:
         holybaechu
         kdvcre0403
     volumes:
-        - ./apps/minecraft/data:/data
+        - ./data:/data
