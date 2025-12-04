@@ -20,4 +20,4 @@ services:
         holybaechu
         kdvcre0403
     volumes:
-      - ./data:/data
+        - ./apps/minecraft/data:/data
