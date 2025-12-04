@@ -3,3 +3,4 @@ name: homelab
 include:
   - path:
       - infrastructure/traefik/compose.yaml
+      - apps/minecraft/compose.yaml
