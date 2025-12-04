@@ -1,0 +1,35 @@
+http:
+  routers:
+    adguard:
+      rule: "Host(`adguard.home.holyb.xyz`)"
+      service: adguard-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+
+    dns-query:
+      rule: "Host(`dns.holyb.xyz`) && Path(`/dns-query`)"
+      service: dns-query-service
+      middlewares:
+        - rewrite-dns-query
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+
+  services:
+    adguard-service:
+      loadBalancer:
+        servers:
+          - url: "https://192.168.0.3"
+
+    dns-query-service:
+      loadBalancer:
+        servers:
+          - url: "https://192.168.0.3"
+
+  middlewares:
+    rewrite-dns-query:
+      replacePath:
+        path: "/query-dns"
