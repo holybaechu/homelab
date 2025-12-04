@@ -22,12 +22,12 @@ http:
     adguard-service:
       loadBalancer:
         servers:
-          - url: "https://192.168.0.3"
+          - url: "http://192.168.0.3"
 
     dns-query-service:
       loadBalancer:
         servers:
-          - url: "https://192.168.0.3"
+          - url: "http://192.168.0.3"
 
   middlewares:
     rewrite-dns-query:
