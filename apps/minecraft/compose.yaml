@@ -9,16 +9,18 @@ services:
       - "25565:25565"
     environment:
       EULA: "TRUE"
-      
+
       TYPE: "PAPER"
       VERSION: "1.21.10"
 
       WHITELIST: |
         holybaechu
         kdvcre0403
+        minecraftkdvcre
 
       OPS: |
         holybaechu
         kdvcre0403
+        minecraftkdvcre
     volumes:
-        - ./data:/data
+      - ./data:/data
