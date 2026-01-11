@@ -5,14 +5,13 @@ services:
     volumes:
       - ./:/cfg:z
       - /root:/w:z
-
+    networks:
+      - proxy
     environment:
       LD_PRELOAD: /usr/lib/libmimalloc-secure.so.2
       # enable mimalloc by replacing "NOPE" with "2" for a nice speed-boost (will use twice as much ram)
-
       PYTHONUNBUFFERED: 1
       # ensures log-messages are not delayed (but can reduce speed a tiny bit)
-
     stop_grace_period: 15s # thumbnailer is allowed to continue finishing up for 10s after the shutdown signal
     healthcheck:
       # hide it from logs with "/._" so it matches the default --lf-url filter
@@ -29,6 +28,7 @@ services:
       - "traefik.http.routers.copyparty.middlewares=local-network-only@file"
       - "traefik.http.routers.copyparty.service=copyparty-service"
       - "traefik.http.services.copyparty-service.loadbalancer.server.port=3923"
+
 networks:
   proxy:
     name: proxy
