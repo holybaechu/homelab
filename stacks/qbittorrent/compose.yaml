@@ -13,7 +13,7 @@ services:
       - VPN_SERVICE_PROVIDER=protonvpn
       - VPN_TYPE=wireguard
       - PORT_FORWARD_ONLY=on
-      - SERVER_COUNTRIES=${SERVER_COUNTRIES:-Japan}
+      - SERVER_COUNTRIES=${SERVER_COUNTRIES:-Korea}
       - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
       - DNS_SERVER=off
       - VPN_PORT_FORWARDING=on
