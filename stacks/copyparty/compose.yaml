@@ -6,6 +6,7 @@ services:
       - -a
       - ${COPYPARTY_USER_NAME:-admin}:${COPYPARTY_USER_PASSWORD:-changeme}
     volumes:
+      - ./:/cfg:z
       - /root:/w:z
     networks:
       - proxy
