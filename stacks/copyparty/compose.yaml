@@ -10,6 +10,7 @@ services:
       - ${COPYPARTY_USER_NAME:-admin}:${COPYPARTY_USER_PASSWORD:-changeme}
       - -v
       - /w::rwmda,${COPYPARTY_USER_NAME:-admin}
+      - --rproxy=-1
       - --xff-src=lan
     volumes:
       - /root:/w:z
