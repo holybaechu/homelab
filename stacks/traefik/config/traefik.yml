@@ -30,7 +30,7 @@ certificatesResolvers:
   cloudflare:
     acme:
       storage: /acme/acme.json
-      email: ${CLOUDFLARE_EMAIL}
+      email: "holybaechu@proton.me"
       dnsChallenge:
         provider: cloudflare
         resolvers:
