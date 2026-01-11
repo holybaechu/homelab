@@ -2,8 +2,16 @@ services:
   copyparty:
     image: copyparty/ac:1.20.1
     container_name: copyparty
+    command:
+      - -e2dsa
+      - -e2ts
+      - --ansi
+      - -a
+      - ${COPYPARTY_USER_NAME:-admin}:${COPYPARTY_USER_PASSWORD:-changeme}
+      - -v
+      - /w::rwmda,${COPYPARTY_USER_NAME:-admin}
+      - --xff-src=lan
     volumes:
-      - ./:/cfg:z
       - /root:/w:z
     networks:
       - proxy
