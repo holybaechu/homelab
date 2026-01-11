@@ -35,8 +35,10 @@ services:
       traefik.http.routers.komodo-dashboard.tls.certresolver: cloudflare
       traefik.http.routers.komodo-dashboard.middlewares: local-network-only@file
       # Webhook (only /listener/github/* at komodo.holyb.xyz)
-      traefik.http.routers.komodo-webhook.rule: Host(`komodo.holyb.xyz`) && PathPrefix(`/listener/github/procedure`)
+      traefik.http.routers.komodo-webhook.rule: Host(`komodo.holyb.xyz`) && PathPrefix(`/listener/github`)
       traefik.http.routers.komodo-webhook.entrypoints: websecure
+      traefik.http.routers.komodo-webhook.tls.certresolver: cloudflare
+      traefik.http.routers.komodo-webhook.service: komodo-webhook
     restart: unless-stopped
     depends_on:
       - mongo
