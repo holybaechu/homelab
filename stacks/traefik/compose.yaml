@@ -1,0 +1,48 @@
+services:
+  traefik:
+    image: traefik:v3.6.6
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./config/dynamic:/etc/traefik/dynamic:ro
+      - acme:/acme
+    networks:
+      - proxy
+    environment:
+      - CLOUDFLARE_DNS_API_TOKEN
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.home.holyb.xyz`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.tls.certresolver=cloudflare"
+      - "traefik.http.routers.traefik.tls.domains[0].main=home.holyb.xyz"
+      - "traefik.http.routers.traefik.tls.domains[0].sans=*.home.holyb.xyz,dns.holyb.xyz,komodo.holyb.xyz"
+      - "traefik.http.routers.traefik.middlewares=local-network-only@file"
+
+  whoami:
+    image: traefik/whoami
+    container_name: whoami
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami.rule=Host(`home.holyb.xyz`)"
+      - "traefik.http.routers.whoami.entrypoints=websecure"
+      - "traefik.http.routers.whoami.tls.certresolver=cloudflare"
+      - "traefik.http.routers.whoami.middlewares=local-network-only@file"
+
+networks:
+  proxy:
+    name: proxy
+
+volumes:
+  acme:

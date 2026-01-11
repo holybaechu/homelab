@@ -1,0 +1,60 @@
+http:
+  routers:
+    adguard:
+      rule: "Host(`adguard.home.holyb.xyz`)"
+      service: adguard-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+      middlewares:
+        - local-network-only
+
+    dns-query:
+      rule: "Host(`dns.holyb.xyz`) && Path(`/dns-query`)"
+      service: adguard-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+
+    proxmox:
+      rule: "Host(`pve.home.holyb.xyz`)"
+      service: proxmox-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+      middlewares:
+        - local-network-only
+
+    router:
+      rule: "Host(`router.home.holyb.xyz`)"
+      service: router-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+      middlewares:
+        - local-network-only
+
+  services:
+    adguard-service:
+      loadBalancer:
+        servers:
+          - url: "http://192.168.0.3"
+
+    proxmox-service:
+      loadBalancer:
+        serversTransport: insecure-transport
+        servers:
+          - url: "https://192.168.0.2:8006"
+
+    router-service:
+      loadBalancer:
+        servers:
+          - url: "http://192.168.0.1"
+
+  serversTransports:
+    insecure-transport:
+      insecureSkipVerify: true

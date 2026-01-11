@@ -1,0 +1,27 @@
+services:
+  gonic:
+    image: sentriz/gonic:latest
+    container_name: gonic
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Seoul
+    networks:
+      - proxy
+    volumes:
+      - "./data:/data"
+      - /root/music:/music:ro # your music
+      - /root/podcasts:/podcasts # your podcasts
+      - /root/playlists:/playlists # your playlists
+      - /root/cache:/cache # transcode / covers / etc cache dir
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gonic.rule=Host(`gonic.home.holyb.xyz`)"
+      - "traefik.http.routers.gonic.entrypoints=websecure"
+      - "traefik.http.routers.gonic.tls.certresolver=cloudflare"
+      - "traefik.http.routers.gonic.middlewares=local-network-only@file"
+      - "traefik.http.routers.gonic.service=gonic-service"
+      - "traefik.http.services.gonic-service.loadbalancer.server.port=80"
+
+networks:
+  proxy:
+    name: proxy
