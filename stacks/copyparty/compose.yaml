@@ -8,7 +8,7 @@ services:
       - ${COPYPARTY_USER_NAME:-admin}:${COPYPARTY_USER_PASSWORD:-changeme}
     volumes:
       - ./:/cfg:z
-      - /root:/w:z
+      - /home/docker:/w:z
     networks:
       - proxy
     environment:
