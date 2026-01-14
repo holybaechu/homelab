@@ -41,6 +41,7 @@ services:
       - DOCKER_MODS=ghcr.io/vuetorrent/vuetorrent-lsio-mod:latest
     volumes:
       - /home/docker/downloads:/downloads
+      - /home/docker/public:/public
 
 networks:
   proxy:
