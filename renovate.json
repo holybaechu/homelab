@@ -9,6 +9,11 @@
       "matchCurrentVersion": "!/^0/",
       "automerge": true,
       "platformAutomerge": true
+    },
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["linuxserver/qbittorrent"],
+      "allowedVersions": "<14.3.9"
     }
   ]
 }
