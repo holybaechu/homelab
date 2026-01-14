@@ -27,10 +27,9 @@ services:
       start_period: 15s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.copyparty.rule=Host(`copyparty.home.holyb.xyz`)"
+      - "traefik.http.routers.copyparty.rule=Host(`copyparty.holyb.xyz`)"
       - "traefik.http.routers.copyparty.entrypoints=websecure"
       - "traefik.http.routers.copyparty.tls.certresolver=cloudflare"
-      - "traefik.http.routers.copyparty.middlewares=local-network-only@file"
       - "traefik.http.routers.copyparty.service=copyparty-service"
       - "traefik.http.services.copyparty-service.loadbalancer.server.port=3923"
 
