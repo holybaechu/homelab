@@ -8,7 +8,8 @@ services:
       - ${COPYPARTY_USER_NAME:-admin}:${COPYPARTY_USER_PASSWORD:-changeme}
     volumes:
       - ./:/cfg:z
-      - /home/docker:/w:z
+      - /home/docker/downloads:/downloads:z
+      - /home/docker/public:/public:z
     networks:
       - proxy
     environment:
