@@ -12,6 +12,7 @@ services:
     environment:
       - ND_SCANSCHEDULE=@every 1h
       - ND_LOGLEVEL=info
+      - ND_ENABLESHARING=true
       - ND_LASTFM_APIKEY
       - ND_LASTFM_SECRET
     labels:
