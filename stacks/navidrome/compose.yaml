@@ -1,0 +1,27 @@
+services:
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    restart: unless-stopped
+    user: 1000:1000
+    networks:
+      - proxy
+    volumes:
+      - "./data:/data"
+      - /home/docker/music:/music:ro
+    environment:
+      - ND_SCANSCHEDULE=@every 1h
+      - ND_LOGLEVEL=info
+      - ND_BASEURL=https://navidrome.home.holyb.xyz
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.navidrome.rule=Host(`navidrome.home.holyb.xyz`)"
+      - "traefik.http.routers.navidrome.entrypoints=websecure"
+      - "traefik.http.routers.navidrome.tls.certresolver=cloudflare"
+      - "traefik.http.routers.navidrome.middlewares=local-network-only@file"
+      - "traefik.http.routers.navidrome.service=navidrome-service"
+      - "traefik.http.services.navidrome-service.loadbalancer.server.port=4533"
+
+networks:
+  proxy:
+    name: proxy
