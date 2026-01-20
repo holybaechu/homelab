@@ -11,6 +11,7 @@ services:
       - ./:/cfg:z
       - /home/docker/downloads:/downloads:z
       - /home/docker/public:/public:z
+      - /home/docker/music:/music:z
     networks:
       - proxy
     environment:
