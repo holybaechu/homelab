@@ -7,7 +7,7 @@ services:
     networks:
       - proxy
     volumes:
-      - "/home/docker/data/navidrome:/data"
+      - /home/docker/data/navidrome:/data
       - /home/docker/music:/music:ro
     environment:
       - ND_SCANSCHEDULE=@every 1h
