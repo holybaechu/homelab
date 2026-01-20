@@ -12,7 +12,8 @@ services:
     environment:
       - ND_SCANSCHEDULE=@every 1h
       - ND_LOGLEVEL=info
-      - ND_BASEURL=https://navidrome.holyb.xyz
+      - ND_LASTFM_APIKEY
+      - ND_LASTFM_SECRET
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.navidrome.rule=Host(`navidrome.holyb.xyz`)"
