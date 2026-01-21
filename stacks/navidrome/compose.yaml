@@ -15,7 +15,7 @@ services:
       - ND_ENABLESHARING=true
       - ND_LASTFM_APIKEY
       - ND_LASTFM_SECRET
-      - ND_SHAREURL
+      - ND_SHAREURL=https://navidrome.holyb.xyz
     labels:
       - "traefik.enable=true"
       ## Internal (full access)
