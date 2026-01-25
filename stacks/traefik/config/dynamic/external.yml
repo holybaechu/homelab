@@ -23,7 +23,7 @@ http:
   services:
     proxmox-service:
       loadBalancer:
-        serversTransport: insecure-transport
+        serversTransport: insecure
         servers:
           - url: "https://192.168.0.2:8006"
 
@@ -33,5 +33,5 @@ http:
           - url: "http://192.168.0.1"
 
   serversTransports:
-    insecure-transport:
+    insecure:
       insecureSkipVerify: true
