@@ -37,17 +37,17 @@ services:
     image: ldez/traefik-certs-dumper:v2.11.0
     container_name: traefik-cert-dumper
     restart: unless-stopped
-    command: file --version 3 --watch --source /data/acme.json --dest /ssl --domain-subdir
+    command: file --watch --version v3 --source /data/acme.json --dest /ssl --domain-subdir
     volumes:
       - traefik_acme:/data:ro
       - ./ssl:/ssl
 
 networks:
   proxy:
-    external: true
     name: proxy
+    external: true
 
 volumes:
   traefik_acme:
-    external: true
     name: traefik_acme
+    external: true
