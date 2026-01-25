@@ -11,10 +11,10 @@ services:
       - "853:853/tcp"
       - "853:853/udp"
       # For initial setup
-      - "3001:80/tcp"
       - "3000:3000/tcp"
     volumes:
-      - ./ssl:/opt/adguardhome/ssl
+      - adguard_ssl:/opt/adguardhome/ssl
+      - /home/docker/data/adguard/conf:/opt/adguardhome/conf
     networks:
       - proxy
     labels:
@@ -40,8 +40,7 @@ services:
     restart: unless-stopped
     command: file --watch --version v3 --source /data/acme.json --dest /ssl --domain-subdir
     volumes:
-      - traefik_acme:/data:ro
-      - ./ssl:/ssl
+      - adguard_ssl:/ssl
 
 networks:
   proxy:
@@ -49,6 +48,4 @@ networks:
     external: true
 
 volumes:
-  traefik_acme:
-    name: traefik_acme
-    external: true
+  adguard_ssl:
