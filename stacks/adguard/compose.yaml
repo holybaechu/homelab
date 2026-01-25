@@ -11,10 +11,10 @@ services:
       - "853:853/tcp"
       - "853:853/udp"
       # For initial setup
-      - "3001:80/tcp"
       - "3000:3000/tcp"
     volumes:
-      - ./ssl:/opt/adguardhome/ssl
+      - ssl:/opt/adguardhome/ssl
+      - /home/docker/data/adguard/conf:/opt/adguardhome/conf
     networks:
       - proxy
     labels:
@@ -24,6 +24,7 @@ services:
       - "traefik.http.routers.adguard.entrypoints=websecure"
       - "traefik.http.routers.adguard.tls.certresolver=cloudflare"
       - "traefik.http.routers.adguard.middlewares=local-network-only@file"
+      - "traefik.http.routers.adguard.service=adguard"
       - "traefik.http.services.adguard.loadbalancer.server.port=80"
       # DNS-over-HTTPS
       - "traefik.http.routers.dns-query.rule=Host(`dns.holyb.xyz`) && Path(`/dns-query`)"
@@ -40,14 +41,13 @@ services:
     command: file --watch --version v3 --source /data/acme.json --dest /ssl --domain-subdir
     volumes:
       - traefik_acme:/data:ro
-      - ./ssl:/ssl
+      - ssl:/ssl
 
 networks:
   proxy:
     name: proxy
-    external: true
 
 volumes:
   traefik_acme:
-    name: traefik_acme
     external: true
+  ssl:
