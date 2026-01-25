@@ -1,0 +1,52 @@
+services:
+  adguard:
+    image: adguard/adguardhome:v0.107.71
+    container_name: adguard
+    restart: unless-stopped
+    ports:
+      # DNS
+      - "53:53/tcp"
+      - "53:53/udp"
+      # DNS-over-TLS/QUIC
+      - "853:853/tcp"
+      - "853:853/udp"
+      # For initial setup
+      - "3000:3000/tcp"
+    volumes:
+      - ./work:/opt/adguardhome/work
+      - ./conf:/opt/adguardhome/conf
+      - ./ssl:/opt/adguardhome/ssl
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      # Web UI
+      - "traefik.http.routers.adguard.rule=Host(`adguard.home.holyb.xyz`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.routers.adguard.tls.certresolver=cloudflare"
+      - "traefik.http.routers.adguard.middlewares=local-network-only@file"
+      - "traefik.http.services.adguard.loadbalancer.server.port=80"
+      # DNS-over-HTTPS
+      - "traefik.http.routers.dns-query.rule=Host(`dns.holyb.xyz`) && Path(`/dns-query`)"
+      - "traefik.http.routers.dns-query.entrypoints=websecure"
+      - "traefik.http.routers.dns-query.tls.certresolver=cloudflare"
+      - "traefik.http.routers.dns-query.service=adguard"
+
+  cert-dumper:
+    image: ldez/traefik-certs-dumper:v2.11.0
+    container_name: traefik-cert-dumper
+    restart: unless-stopped
+    command: file --watch --source /data/acme.json --dest /ssl --domain-subdir
+    volumes:
+      - traefik_acme:/data:ro
+      - ./ssl:/ssl
+
+networks:
+  proxy:
+    external: true
+    name: proxy
+
+volumes:
+  traefik_acme:
+    external: true
+    name: traefik_acme

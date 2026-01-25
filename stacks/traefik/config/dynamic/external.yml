@@ -1,23 +1,5 @@
 http:
   routers:
-    adguard:
-      rule: "Host(`adguard.home.holyb.xyz`)"
-      service: adguard-service
-      entryPoints:
-        - websecure
-      tls:
-        certResolver: cloudflare
-      middlewares:
-        - local-network-only
-
-    dns-query:
-      rule: "Host(`dns.holyb.xyz`) && Path(`/dns-query`)"
-      service: adguard-service
-      entryPoints:
-        - websecure
-      tls:
-        certResolver: cloudflare
-
     proxmox:
       rule: "Host(`pve.home.holyb.xyz`)"
       service: proxmox-service
@@ -39,11 +21,6 @@ http:
         - local-network-only
 
   services:
-    adguard-service:
-      loadBalancer:
-        servers:
-          - url: "http://192.168.0.3"
-
     proxmox-service:
       loadBalancer:
         serversTransport: insecure-transport
