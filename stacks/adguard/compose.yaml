@@ -32,7 +32,6 @@ services:
       - "traefik.http.routers.dns-query.service=adguard-doh"
       - "traefik.http.services.adguard-doh.loadbalancer.server.port=443"
       - "traefik.http.services.adguard-doh.loadbalancer.server.scheme=https"
-      - "traefik.http.services.adguard-doh.loadbalancer.serverstransport=insecure-transport@file"
 
   cert-dumper:
     image: ldez/traefik-certs-dumper:v2.11.0
