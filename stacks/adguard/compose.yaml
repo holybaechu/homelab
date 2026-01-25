@@ -40,6 +40,7 @@ services:
     restart: unless-stopped
     command: file --watch --version v3 --source /data/acme.json --dest /ssl --domain-subdir
     volumes:
+      - traefik_acme:/data:ro
       - adguard_ssl:/ssl
 
 networks:
@@ -48,4 +49,5 @@ networks:
     external: true
 
 volumes:
+  traefik_acme:
   adguard_ssl:
