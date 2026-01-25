@@ -14,8 +14,6 @@ services:
       - "3001:80/tcp"
       - "3000:3000/tcp"
     volumes:
-      - ./work:/opt/adguardhome/work
-      - ./conf:/opt/adguardhome/conf
       - ./ssl:/opt/adguardhome/ssl
     networks:
       - proxy
