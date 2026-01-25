@@ -3,7 +3,7 @@ services:
     image: copyparty/ac:1.20.2
     container_name: copyparty
     restart: unless-stopped
-    user: "1000:1000"
+    user: 1000:1000
     command:
       - -a
       - ${COPYPARTY_USER_NAME:-admin}:${COPYPARTY_USER_PASSWORD:-changeme}

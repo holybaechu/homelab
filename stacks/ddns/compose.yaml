@@ -1,8 +1,9 @@
 services:
   ddns-updater:
-    image: ghcr.io/qdm12/ddns-updater
+    image: ghcr.io/qdm12/ddns-updater:v2.9.0
     container_name: ddns-updater
     restart: unless-stopped
+    user: 1000:1000
     volumes:
       - /home/docker/data/ddns:/updater/data
     networks:
