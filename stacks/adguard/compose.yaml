@@ -50,4 +50,5 @@ networks:
 
 volumes:
   traefik_acme:
+    external: true
   adguard_ssl:
