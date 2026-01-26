@@ -8,8 +8,9 @@ services:
     ports:
       - "25565:25565"
     environment:
-      EULA: "TRUE"
-      LEVEL_TYPE: "FLAT"
-      ENABLE_WHITELIST: "TRUE"
+      TYPE: PAPER
+      EULA: TRUE
+      LEVEL_TYPE: FLAT
+      ENABLE_WHITELIST: TRUE
     volumes:
       - /home/docker/data/minecraft:/data
