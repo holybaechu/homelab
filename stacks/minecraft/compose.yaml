@@ -6,7 +6,7 @@ services:
       - "25565:25565"
     environment:
       EULA: "TRUE"
-      WORLD_TYPE: "FLAT"
+      LEVEL_TYPE: "FLAT"
       ENABLE_WHITELIST: "TRUE"
     volumes:
       - /home/docker/data/minecraft:/data
