@@ -12,5 +12,7 @@ services:
       EULA: TRUE
       LEVEL_TYPE: FLAT
       ENABLE_WHITELIST: TRUE
+      MODRINTH_PROJECTS: |
+        worldedit
     volumes:
       - /home/docker/data/minecraft:/data
