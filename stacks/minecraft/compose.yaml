@@ -11,6 +11,23 @@ services:
       TYPE: PAPER
       EULA: TRUE
       LEVEL_TYPE: FLAT
+      GENERATOR_SETTINGS: >-
+        {
+            "layers": [
+                {
+                    "block": "minecraft:bedrock",
+                    "height": 1
+                },
+                {
+                    "block": "minecraft:dirt",
+                    "height": 32
+                },
+                {
+                    "block": "minecraft:grass_block",
+                    "height": 1
+                }
+            ]
+        }
       ENABLE_WHITELIST: TRUE
       MODRINTH_PROJECTS: |
         worldedit
