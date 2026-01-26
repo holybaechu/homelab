@@ -11,6 +11,7 @@ services:
       TYPE: PAPER
       EULA: TRUE
       LEVEL_TYPE: FLAT
+      OP_PERMISSION_LEVEL: 2
       GENERATOR_SETTINGS: >-
         {
             "layers": [
