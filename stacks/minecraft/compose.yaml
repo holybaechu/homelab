@@ -1,6 +1,7 @@
 services:
   minecraft:
     image: itzg/minecraft-server:latest
+    pull_policy: daily
     tty: true
     stdin_open: true
     restart: unless-stopped
