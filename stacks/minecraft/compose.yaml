@@ -14,5 +14,6 @@ services:
       ENABLE_WHITELIST: TRUE
       MODRINTH_PROJECTS: |
         worldedit
+        axiom-paper-plugin
     volumes:
       - /home/docker/data/minecraft:/data
