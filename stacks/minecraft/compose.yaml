@@ -12,6 +12,5 @@ services:
       EULA: TRUE
       LEVEL_TYPE: FLAT
       ENABLE_WHITELIST: TRUE
-      WHITELIST_FILE: whitelist.json
     volumes:
       - /home/docker/data/minecraft:/data
