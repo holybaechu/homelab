@@ -15,17 +15,17 @@ services:
       - ND_ENABLESHARING=true
       - ND_LASTFM_APIKEY
       - ND_LASTFM_SECRET
-      - ND_SHAREURL=https://navidrome.holyb.xyz
+      - ND_SHAREURL=https://navidrome.hchu.me
     labels:
       - "traefik.enable=true"
       ## Internal (full access)
-      - "traefik.http.routers.navidrome-internal.rule=Host(`navidrome.home.holyb.xyz`)"
+      - "traefik.http.routers.navidrome-internal.rule=Host(`navidrome.home.hchu.me`)"
       - "traefik.http.routers.navidrome-internal.entrypoints=websecure"
       - "traefik.http.routers.navidrome-internal.tls.certresolver=cloudflare"
       - "traefik.http.routers.navidrome-internal.service=navidrome-service"
       - "traefik.http.routers.navidrome-internal.middlewares=local-network-only@file"
       ## Public (share only)
-      - "traefik.http.routers.navidrome-public.rule=Host(`navidrome.holyb.xyz`) && PathPrefix(`/share`)"
+      - "traefik.http.routers.navidrome-public.rule=Host(`navidrome.hchu.me`) && PathPrefix(`/share`)"
       - "traefik.http.routers.navidrome-public.entrypoints=websecure"
       - "traefik.http.routers.navidrome-public.tls.certresolver=cloudflare"
       - "traefik.http.routers.navidrome-public.service=navidrome-service"

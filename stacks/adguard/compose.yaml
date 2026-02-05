@@ -20,14 +20,14 @@ services:
     labels:
       - "traefik.enable=true"
       # Web UI
-      - "traefik.http.routers.adguard.rule=Host(`adguard.home.holyb.xyz`)"
+      - "traefik.http.routers.adguard.rule=Host(`adguard.home.hchu.me`)"
       - "traefik.http.routers.adguard.entrypoints=websecure"
       - "traefik.http.routers.adguard.tls.certresolver=cloudflare"
       - "traefik.http.routers.adguard.middlewares=local-network-only@file"
       - "traefik.http.routers.adguard.service=adguard"
       - "traefik.http.services.adguard.loadbalancer.server.port=80"
       # DNS-over-HTTPS
-      - "traefik.http.routers.dns-query.rule=Host(`dns.holyb.xyz`) && Path(`/dns-query`)"
+      - "traefik.http.routers.dns-query.rule=Host(`dns.hchu.me`) && Path(`/dns-query`)"
       - "traefik.http.routers.dns-query.entrypoints=websecure"
       - "traefik.http.routers.dns-query.tls.certresolver=cloudflare"
       - "traefik.http.routers.dns-query.service=adguard-doh"

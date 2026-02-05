@@ -10,7 +10,7 @@ services:
       - proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.ddns-updater.rule=Host(`ddns.home.holyb.xyz`)"
+      - "traefik.http.routers.ddns-updater.rule=Host(`ddns.home.hchu.me`)"
       - "traefik.http.routers.ddns-updater.entrypoints=websecure"
       - "traefik.http.routers.ddns-updater.tls.certresolver=cloudflare"
       - "traefik.http.routers.ddns-updater.middlewares=local-network-only@file"

@@ -29,13 +29,13 @@ services:
     labels:
       komodo.skip: # Prevent Komodo from stopping with StopAllContainers
       traefik.enable: true
-      # Dashboard (at komodo.home.holyb.xyz)
-      traefik.http.routers.komodo-dashboard.rule: Host(`komodo.home.holyb.xyz`)
+      # Dashboard (at komodo.home.hchu.me)
+      traefik.http.routers.komodo-dashboard.rule: Host(`komodo.home.hchu.me`)
       traefik.http.routers.komodo-dashboard.entrypoints: websecure
       traefik.http.routers.komodo-dashboard.tls.certresolver: cloudflare
       traefik.http.routers.komodo-dashboard.middlewares: local-network-only@file
-      # Webhook (only /listener/github/* at komodo.holyb.xyz)
-      traefik.http.routers.komodo-webhook.rule: Host(`komodo.holyb.xyz`) && PathPrefix(`/listener/github`)
+      # Webhook (only /listener/github/* at komodo.hchu.me)
+      traefik.http.routers.komodo-webhook.rule: Host(`komodo.hchu.me`) && PathPrefix(`/listener/github`)
       traefik.http.routers.komodo-webhook.entrypoints: websecure
       traefik.http.routers.komodo-webhook.tls.certresolver: cloudflare
     restart: unless-stopped

@@ -1,7 +1,7 @@
 http:
   routers:
     proxmox:
-      rule: "Host(`pve.home.holyb.xyz`)"
+      rule: "Host(`pve.home.hchu.me`)"
       service: proxmox-service
       entryPoints:
         - websecure
@@ -11,7 +11,7 @@ http:
         - local-network-only
 
     router:
-      rule: "Host(`router.home.holyb.xyz`)"
+      rule: "Host(`router.home.hchu.me`)"
       service: router-service
       entryPoints:
         - websecure
