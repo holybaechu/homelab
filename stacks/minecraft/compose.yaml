@@ -13,10 +13,10 @@ services:
     environment:
       TYPE: VELOCITY
  
-      MINECRAFT_VERSION: 1.21.11
+      MINECRAFT_VERSION: 1.21.10
       MODRINTH_PROJECTS: |
         viaversion
-        luckperms:v5.5.17-velocity
+        luckperms
     
     volumes:
       - ./velocity.toml:/server/velocity.toml
@@ -37,7 +37,7 @@ services:
       EULA: TRUE
       
       TYPE: PAPER
-      VERSION: 1.21.11
+      VERSION: 1.21.10
 
       LEVEL_TYPE: FLAT
       GENERATOR_SETTINGS: >-
@@ -66,7 +66,7 @@ services:
       MODRINTH_PROJECTS: |
         worldedit
         axiom-paper-plugin
-        luckperms:v5.5.17-velocity
+        luckperms
 
       PATCH_DEFINITIONS: "/patches"
       REPLACE_ENV_VARIABLE_PREFIX: "CFG_"
