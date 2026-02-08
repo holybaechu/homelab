@@ -73,6 +73,7 @@ services:
 
     volumes:
       - ./patches/patch-paper-velocity-support.json:/patches/patch-paper-velocity-support.json
+      - ./patches/luckperms-patch.json:/patches/luckperms-patch.json
       - flat_data:/data
 
 volumes:

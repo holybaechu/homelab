@@ -1,0 +1,12 @@
+{
+  "file": "/data/plugins/LuckPerms/config.yml",
+  "ops": [
+    {
+      "$set": {
+        "path": "$.auto-op",
+        "value": true,
+        "value-type": "bool"
+      }
+    }
+  ]
+}
