@@ -66,7 +66,7 @@ services:
 
       PATCH_DEFINITIONS: "/patches"
       REPLACE_ENV_VARIABLE_PREFIX: "CFG_"
-      FORWARDING_SECRET: ${CFG_FORWARDING_SECRET}
+      CFG_FORWARDING_SECRET: ${CFG_FORWARDING_SECRET}
 
     volumes:
       - ./patches/patch-paper-velocity-support.json:/patches/patch-paper-velocity-support.json
