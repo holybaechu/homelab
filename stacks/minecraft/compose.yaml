@@ -20,6 +20,9 @@ services:
     volumes:
       - ./velocity.toml:/server/velocity.toml
       - proxy_data:/server
+    
+    secrets:
+      - forwarding_secret
   
   flat:
     image: itzg/minecraft-server:latest
@@ -31,7 +34,6 @@ services:
     
     environment:
       EULA: TRUE
-      ONLINE_MODE: FALSE
       
       TYPE: PAPER
       VERSION: 1.21.10
@@ -59,6 +61,8 @@ services:
       MODRINTH_PROJECTS: |
         worldedit
         axiom-paper-plugin
+      
+      VELOCITY_FORWARDING_SECRET: ${VELOCITY_FORWARDING_SECRET}
 
     volumes:
       - flat_data:/data
@@ -66,3 +70,7 @@ services:
 volumes:
   proxy_data:
   flat_data:
+
+secrets:
+  forwarding_secret:
+    environment: "FORWARDING_SECRET"
