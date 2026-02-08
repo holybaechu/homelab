@@ -16,6 +16,7 @@ services:
       MINECRAFT_VERSION: 1.21.10
       MODRINTH_PROJECTS: |
         viaversion
+        luckperms
     
     volumes:
       - ./velocity.toml:/server/velocity.toml
