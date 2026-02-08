@@ -1,0 +1,37 @@
+services:
+  navidrome:
+    image: deluan/navidrome:0.60.2
+    container_name: navidrome
+    restart: unless-stopped
+    user: 1000:1000
+    networks:
+      - proxy
+    volumes:
+      - /home/docker/data/navidrome:/data
+      - /home/docker/music:/music:ro
+    environment:
+      - ND_SCANSCHEDULE=@every 1h
+      - ND_LOGLEVEL=info
+      - ND_ENABLESHARING=true
+      - ND_LASTFM_APIKEY
+      - ND_LASTFM_SECRET
+      - ND_SHAREURL=https://navidrome.hchu.me
+    labels:
+      - "traefik.enable=true"
+      ## Internal (full access)
+      - "traefik.http.routers.navidrome-internal.rule=Host(`navidrome.home.hchu.me`)"
+      - "traefik.http.routers.navidrome-internal.entrypoints=websecure"
+      - "traefik.http.routers.navidrome-internal.tls.certresolver=cloudflare"
+      - "traefik.http.routers.navidrome-internal.service=navidrome-service"
+      - "traefik.http.routers.navidrome-internal.middlewares=local-network-only@file"
+      ## Public (share only)
+      - "traefik.http.routers.navidrome-public.rule=Host(`navidrome.hchu.me`) && PathPrefix(`/share`)"
+      - "traefik.http.routers.navidrome-public.entrypoints=websecure"
+      - "traefik.http.routers.navidrome-public.tls.certresolver=cloudflare"
+      - "traefik.http.routers.navidrome-public.service=navidrome-service"
+      ## Service
+      - "traefik.http.services.navidrome-service.loadbalancer.server.port=4533"
+
+networks:
+  proxy:
+    name: proxy

@@ -1,0 +1,37 @@
+http:
+  routers:
+    proxmox:
+      rule: "Host(`pve.home.hchu.me`)"
+      service: proxmox-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+      middlewares:
+        - local-network-only
+
+    router:
+      rule: "Host(`router.home.hchu.me`)"
+      service: router-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+      middlewares:
+        - local-network-only
+
+  services:
+    proxmox-service:
+      loadBalancer:
+        serversTransport: insecure
+        servers:
+          - url: "https://192.168.0.2:8006"
+
+    router-service:
+      loadBalancer:
+        servers:
+          - url: "http://192.168.0.1"
+
+  serversTransports:
+    insecure:
+      insecureSkipVerify: true

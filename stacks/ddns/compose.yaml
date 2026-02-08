@@ -1,0 +1,21 @@
+services:
+  ddns-updater:
+    image: ghcr.io/qdm12/ddns-updater:v2.9.0
+    container_name: ddns-updater
+    restart: unless-stopped
+    user: 1000:1000
+    volumes:
+      - /home/docker/data/ddns:/updater/data
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ddns-updater.rule=Host(`ddns.home.hchu.me`)"
+      - "traefik.http.routers.ddns-updater.entrypoints=websecure"
+      - "traefik.http.routers.ddns-updater.tls.certresolver=cloudflare"
+      - "traefik.http.routers.ddns-updater.middlewares=local-network-only@file"
+      - "traefik.http.services.ddns-updater.loadbalancer.server.port=8000"
+
+networks:
+  proxy:
+    name: proxy
