@@ -1,12 +1,16 @@
 services:
-  minecraft:
+  flat:
     image: itzg/minecraft-server:latest
-    pull_policy: daily # Let it update every restart
+    pull_policy: daily # Let it update every restart.
+    
     tty: true
     stdin_open: true
+    
     restart: unless-stopped
+    
     ports:
       - "25565:25565"
+    
     environment:
       EULA: TRUE
       
@@ -37,5 +41,9 @@ services:
         worldedit
         axiom-paper-plugin
         viaversion
+
     volumes:
-      - /home/docker/data/minecraft:/data
+      - flat_data:/data
+
+volumes:
+  flat_data:
