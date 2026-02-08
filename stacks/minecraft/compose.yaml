@@ -1,8 +1,7 @@
 services:
-  flat:
-    image: itzg/minecraft-server:latest
-    pull_policy: daily # Let it update every restart.
-    
+  proxy:
+    image: itzg/mc-proxy:latest
+
     tty: true
     stdin_open: true
     
@@ -12,7 +11,25 @@ services:
       - "25565:25565"
     
     environment:
+      TYPE: VELOCITY
+ 
+      MODRINTH_PROJECTS: |
+        viaversion
+    
+    volumes:
+      - proxy_data:/server
+  
+  flat:
+    image: itzg/minecraft-server:latest
+    
+    tty: true
+    stdin_open: true
+    
+    restart: unless-stopped
+    
+    environment:
       EULA: TRUE
+      ONLINE_MODE: FALSE
       
       TYPE: PAPER
       VERSION: 1.21.10
@@ -40,10 +57,10 @@ services:
       MODRINTH_PROJECTS: |
         worldedit
         axiom-paper-plugin
-        viaversion
 
     volumes:
       - flat_data:/data
 
 volumes:
+  proxy_data:
   flat_data:
