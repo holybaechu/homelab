@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     
     ports:
-      - "25565:25565"
+      - "25565:25577"
     
     environment:
       TYPE: VELOCITY
@@ -18,6 +18,7 @@ services:
         viaversion
     
     volumes:
+      - ./velocity.toml:/server/velocity.toml
       - proxy_data:/server
   
   flat:
