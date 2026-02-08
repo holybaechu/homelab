@@ -11,7 +11,7 @@
     {
       "$set": {
         "path": "$.proxies.velocity.secret",
-        "value": "${CFG_FORWARDING_SECRET}"
+        "value": "${FORWARDING_SECRET}"
       }
     }
   ]
