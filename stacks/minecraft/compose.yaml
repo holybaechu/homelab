@@ -58,6 +58,8 @@ services:
         }
       
       ENABLE_WHITELIST: TRUE
+      ONLINE_MODE: false
+
       MODRINTH_PROJECTS: |
         worldedit
         axiom-paper-plugin
