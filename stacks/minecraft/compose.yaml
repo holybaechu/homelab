@@ -73,7 +73,7 @@ services:
       CFG_FORWARDING_SECRET: ${CFG_FORWARDING_SECRET}
 
     volumes:
-      - ./patches/patch-paper-velocity-support.json:/patches/patch-paper-velocity-support.json
+      - ./patches/paper-global-patch.json:/patches/paper-global-patch.json
       - ./patches/luckperms-patch.json:/patches/luckperms-patch.json
       - flat_data:/data
 
