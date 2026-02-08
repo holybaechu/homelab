@@ -66,7 +66,7 @@ services:
       MODRINTH_PROJECTS: |
         worldedit
         axiom-paper-plugin
-        luckperms:v5.5.17-bukkit
+        luckperms:OrIs0S6b
 
       PATCH_DEFINITIONS: "/patches"
       REPLACE_ENV_VARIABLE_PREFIX: "CFG_"
