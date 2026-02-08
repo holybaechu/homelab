@@ -65,6 +65,7 @@ services:
       VELOCITY_FORWARDING_SECRET: ${VELOCITY_FORWARDING_SECRET}
 
     volumes:
+      - ./flat-paper-global.yml:/data/config/paper-global.yml
       - flat_data:/data
 
 volumes:
