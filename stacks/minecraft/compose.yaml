@@ -65,7 +65,8 @@ services:
         axiom-paper-plugin
 
       PATCH_DEFINITIONS: "/patches"
-      FORWARDING_SECRET: ${FORWARDING_SECRET}
+      REPLACE_ENV_VARIABLE_PREFIX: "CFG_"
+      FORWARDING_SECRET: ${CFG_FORWARDING_SECRET}
 
     volumes:
       - ./patches/patch-paper-velocity-support.json:/patches/patch-paper-velocity-support.json
@@ -77,4 +78,4 @@ volumes:
 
 secrets:
   forwarding_secret:
-    environment: "FORWARDING_SECRET"
+    environment: "CFG_FORWARDING_SECRET"
