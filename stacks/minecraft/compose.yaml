@@ -59,7 +59,8 @@ services:
         }
       
       ENABLE_WHITELIST: TRUE
-      ONLINE_MODE: false
+      ONLINE_MODE: FALSE
+      ENABLE_COMMAND_BLOCK: TRUE
 
       MODRINTH_PROJECTS: |
         worldedit
