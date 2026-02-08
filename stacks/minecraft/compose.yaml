@@ -61,11 +61,12 @@ services:
       MODRINTH_PROJECTS: |
         worldedit
         axiom-paper-plugin
-      
-      VELOCITY_FORWARDING_SECRET: ${VELOCITY_FORWARDING_SECRET}
+
+      PATCH_DEFINITIONS: "/patches"
+      FORWARDING_SECRET: ${FORWARDING_SECRET}
 
     volumes:
-      - ./flat-paper-global.yml:/data/config/paper-global.yml
+      - ./patches/patch-paper-velocity-support.json:/patches/patch-paper-velocity-support.json
       - flat_data:/data
 
 volumes:

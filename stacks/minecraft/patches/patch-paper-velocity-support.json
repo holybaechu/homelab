@@ -1,0 +1,22 @@
+{
+  "patches": [
+    {
+      "file": "/data/config/paper-global.yml",
+      "ops": [
+        {
+          "$set": {
+            "path": "$.proxies.velocity.enabled",
+            "value": true,
+            "value-type": "bool"
+          }
+        },
+        {
+          "$set": {
+            "path": "$.proxies.velocity.secret",
+            "value": "${FORWARDING_SECRET}"
+          }
+        }
+      ]
+    }
+  ]
+}
