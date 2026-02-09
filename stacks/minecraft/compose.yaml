@@ -67,6 +67,7 @@ services:
         worldedit
         axiom-paper-plugin
         luckperms:OrIs0S6b
+        coreprotect:HD2IvrxS
 
       PATCH_DEFINITIONS: "/patches"
       REPLACE_ENV_VARIABLE_PREFIX: "CFG_"
