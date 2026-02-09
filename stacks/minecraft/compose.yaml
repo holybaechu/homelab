@@ -59,9 +59,9 @@ services:
         }
       
       ONLINE_MODE: FALSE
+      ENFORCE_SECURE_PROFILE: "FALSE"
       OP_PERMISSION_LEVEL: 2
       ENABLE_WHITELIST: TRUE
-      ENABLE_COMMAND_BLOCK: TRUE
 
       MODRINTH_PROJECTS: |
         worldedit
