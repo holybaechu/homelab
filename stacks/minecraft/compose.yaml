@@ -17,7 +17,7 @@ services:
       MODRINTH_PROJECTS: |
         viaversion
         luckperms:GZjsuCmU
-        raknetify
+        raknetify:MBnae5wv
     
     volumes:
       - ./velocity.toml:/server/velocity.toml
