@@ -68,7 +68,7 @@ services:
       SIMULATION_DISTANCE: 8
 
       MODRINTH_PROJECTS: |
-        worldedit
+        fastasyncworldedit
         axiom-paper-plugin
         luckperms:OrIs0S6b
         coreprotect:HD2IvrxS
