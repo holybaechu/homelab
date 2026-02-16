@@ -3,7 +3,7 @@
   "ops": [
     {
       "$set": {
-        "path": "$.small-optimizations.reduced-internals.increase-time-statistics",
+        "path": "$.small-optimizations.reduced-intervals.increase-time-statistics",
         "value": 100
       }
     }
