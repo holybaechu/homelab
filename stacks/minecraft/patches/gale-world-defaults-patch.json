@@ -15,7 +15,7 @@
     },
     {
       "$set": {
-        "path": "$.small-optimizations.reduced-internals.check-nearby-item.hopper.minecart.temporary-immunity.check-for-minecart-near-item-while-inactive",
+        "path": "$.small-optimizations.reduced-intervals.check-nearby-item.hopper.minecart.temporary-immunity.check-for-minecart-near-item-while-inactive",
         "value": false
       }
     }
