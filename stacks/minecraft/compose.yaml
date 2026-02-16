@@ -38,6 +38,7 @@ services:
       
       TYPE: LEAF
       VERSION: 1.21.11
+      USE_MEOWICE_FLAGS: true
       USE_MEOWICE_GRAALVM_FLAGS: TRUE
 
       LEVEL_TYPE: FLAT
