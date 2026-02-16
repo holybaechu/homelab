@@ -1,6 +1,6 @@
 services:
   proxy:
-    image: itzg/mc-proxy:latest
+    image: itzg/mc-proxy:java25
 
     tty: true
     stdin_open: true
@@ -26,7 +26,7 @@ services:
       - forwarding_secret
   
   flat:
-    image: itzg/minecraft-server:latest
+    image: itzg/minecraft-server:java25-graalvm
     
     tty: true
     stdin_open: true
@@ -36,8 +36,9 @@ services:
     environment:
       EULA: TRUE
       
-      TYPE: PAPER
+      TYPE: LEAF
       VERSION: 1.21.11
+      USE_MEOWICE_GRAALVM_FLAGS: TRUE
 
       LEVEL_TYPE: FLAT
       GENERATOR_SETTINGS: >-
