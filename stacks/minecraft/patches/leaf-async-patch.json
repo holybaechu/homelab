@@ -15,7 +15,7 @@
     },
     {
       "$set": {
-        "path": "$.async.async-patfhinding.max-threads",
+        "path": "$.async.async-pathfinding.max-threads",
         "value": 2
       }
     },
