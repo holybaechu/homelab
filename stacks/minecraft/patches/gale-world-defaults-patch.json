@@ -1,0 +1,23 @@
+{
+  "file": "/data/config/gale-world-defaults.yml",
+  "ops": [
+    {
+      "$set": {
+        "path": "$.gameplay-mechanics.fixes.mc-121706",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.small-optimizations.max-projectile-chunk-loads.per-projectile.max",
+        "value": 8
+      }
+    },
+    {
+      "$set": {
+        "path": "$.small-optimizations.reduced-internals.check-nearby-item.hopper.minecart.temporary-immunity.check-for-minecart-near-item-while-inactive",
+        "value": false
+      }
+    }
+  ]
+}

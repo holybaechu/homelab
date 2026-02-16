@@ -1,0 +1,11 @@
+{
+  "file": "/data/config/gale-global.yml",
+  "ops": [
+    {
+      "$set": {
+        "path": "$.small-optimizations.reduced-internals.increase-time-statistics",
+        "value": 100
+      }
+    }
+  ]
+}

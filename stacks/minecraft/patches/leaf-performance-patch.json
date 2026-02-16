@@ -1,0 +1,131 @@
+{
+  "file": "/data/config/leaf-global.yml",
+  "ops": [
+    {
+      "$set": {
+        "path": "$.performance.check-survival-before-growth.cactus-check-survival",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.dont-save-entity.dont-save-primed-tnt",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.dont-save-entity.dont-save-falling.block",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.dab.enabled",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.dab.dont-enable-if-in-water",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.dab.start-distance",
+        "value": 8
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.dab.activation-dist-mod",
+        "value": 7
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.fast-biome-manager-seed-obfuscation.enabled",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.faster-random-generator.enabled",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.faster-random-generator.enable-for-worldgen",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.cache-biome.enabled",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.cache-biome.mob-spawning",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.cache-biome.advancements",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.optimize-mob-despawn",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.only-tick-items-in-hand",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.optimize-no-action-time.disable-light-check",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.optimize-random-tick",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.optimize-waypoint",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.optimized-powered-rails",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.reduce-packets.reduce-entity-move-packets",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.performance.throttle-hopper-when-full.enabled",
+        "value": true
+      }
+    }
+  ]
+}

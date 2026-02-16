@@ -78,6 +78,11 @@ services:
       CFG_FORWARDING_SECRET: ${CFG_FORWARDING_SECRET}
 
     volumes:
+      - ./patches/gale-global-patch.json:/patches/gale-global-patch.json
+      - ./patches/gale-world-defaults-patch.json:/patches/gale-world-defaults-patch.json
+      - ./patches/leaf-async-patch.json:/patches/leaf-async-patch.json
+      - ./patches/leaf-global-patch.json:/patches/leaf-global-patch.json
+      - ./patches/leaf-performance-patch.json:/patches/leaf-performance-patch.json
       - ./patches/paper-global-patch.json:/patches/paper-global-patch.json
       - ./patches/luckperms-patch.json:/patches/luckperms-patch.json
       - flat_data:/data

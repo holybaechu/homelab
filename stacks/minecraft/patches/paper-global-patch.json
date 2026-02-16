@@ -4,8 +4,7 @@
     {
       "$set": {
         "path": "$.proxies.velocity.enabled",
-        "value": true,
-        "value-type": "bool"
+        "value": true
       }
     },
     {

@@ -4,8 +4,7 @@
     {
       "$set": {
         "path": "$.auto-op",
-        "value": true,
-        "value-type": "bool"
+        "value": true
       }
     }
   ]
