@@ -15,7 +15,7 @@
     },
     {
       "$set": {
-        "path": "$.performance.dont-save-entity.dont-save-falling.block",
+        "path": "$.performance.dont-save-entity.dont-save-falling-block",
         "value": true
       }
     },
