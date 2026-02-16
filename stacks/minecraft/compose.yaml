@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     
     ports:
-      - "25565:25577"
+      - "25565:25577/tcp"
     
     environment:
       TYPE: VELOCITY

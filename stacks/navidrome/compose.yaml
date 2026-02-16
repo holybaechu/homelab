@@ -28,6 +28,7 @@ services:
       - "traefik.http.routers.navidrome-public.rule=Host(`navidrome.hchu.me`) && PathPrefix(`/share`)"
       - "traefik.http.routers.navidrome-public.entrypoints=websecure"
       - "traefik.http.routers.navidrome-public.tls.certresolver=cloudflare"
+      - "traefik.http.routers.navidrome-public.middlewares=rate-limit@file,security-headers@file"
       - "traefik.http.routers.navidrome-public.service=navidrome-service"
       ## Service
       - "traefik.http.services.navidrome-service.loadbalancer.server.port=4533"

@@ -7,3 +7,18 @@ http:
           - "127.0.0.1/32" # localhost
           - "10.0.0.0/8" # Private network
           - "172.16.0.0/12" # Private network
+
+    rate-limit:
+      rateLimit:
+        average: 1000
+        burst: 500
+        period: 1m
+
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        contentTypeNosniff: true
+        frameDeny: true
+        browserXssFilter: true
