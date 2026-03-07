@@ -1,22 +1,20 @@
 services:
   localstack:
     container_name: "${LOCALSTACK_DOCKER_NAME:-localstack-main}"
-    image: localstack/localstack
+    image: localstack/localstack-pro
     #ports:
       #- "127.0.0.1:4566:4566"            # LocalStack Gateway
       #- "127.0.0.1:4510-4559:4510-4559"  # external services port range
     environment:
       # LocalStack configuration: https://docs.localstack.cloud/references/configuration/
       - DEBUG=${DEBUG:-0}
-      - HOSTNAME_EXTERNAL=localstack.home.hchu.me
-      - LOCALSTACK_HOST=localstack.home.hchu.me
+      - LOCALSTACK_HOST=localstack.hchu.me
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
     labels:
-      - "traefik.http.routers.localstack.rule=Host(`localstack.home.hchu.me`)"
+      - "traefik.http.routers.localstack.rule=Host(`localstack.hchu.me`)"
       - "traefik.http.routers.localstack.entrypoints=websecure"
       - "traefik.http.routers.localstack.tls.certresolver=cloudflare"
-      - "traefik.http.routers.localstack.middlewares=local-network-only@file"
       - "traefik.http.routers.localstack.service=localstack"
       - "traefik.http.services.localstack.loadbalancer.server.port=4566"
