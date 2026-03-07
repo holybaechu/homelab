@@ -16,5 +16,6 @@ services:
       - "traefik.http.routers.localstack.rule=Host(`localstack.hchu.me`)"
       - "traefik.http.routers.localstack.entrypoints=websecure"
       - "traefik.http.routers.localstack.tls.certresolver=cloudflare"
+      - "traefik.http.routers.localstack.middlewares=rate-limit@file,security-headers@file"
       - "traefik.http.routers.localstack.service=localstack"
       - "traefik.http.services.localstack.loadbalancer.server.port=4566"
