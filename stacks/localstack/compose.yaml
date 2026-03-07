@@ -14,6 +14,7 @@ services:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
     labels:
+      - "traefik.enable=true"
       - "traefik.http.routers.localstack.rule=Host(`localstack.hchu.me`)"
       - "traefik.http.routers.localstack.entrypoints=websecure"
       - "traefik.http.routers.localstack.tls.certresolver=cloudflare"
