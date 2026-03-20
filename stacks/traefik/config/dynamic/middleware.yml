@@ -7,7 +7,6 @@ http:
           - "127.0.0.1/32" # localhost
           - "10.0.0.0/8" # Private network
           - "172.16.0.0/12" # Private network
-          - "100.64.0.0/10" # Tailscale/NetBird/CGNAT network
 
     rate-limit:
       rateLimit:
