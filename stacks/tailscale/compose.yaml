@@ -1,0 +1,30 @@
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.94.2
+    container_name: tailscale
+    restart: unless-stopped
+    hostname: ${TAILSCALE_HOSTNAME:-homelab}
+    environment:
+      - TS_AUTHKEY=${TAILSCALE_AUTH_KEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+      # Exit node + subnet router configuration
+      - TS_EXTRA_ARGS=--advertise-exit-node --advertise-routes=${TAILSCALE_ADVERTISE_ROUTES} --advertise-connector --advertise-tags=tag:connector
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    network_mode: host
+    dns:
+      - 127.0.0.1
+      - 1.1.1.1
+      - 1.0.0.1
+
+volumes:
+  tailscale-state:
