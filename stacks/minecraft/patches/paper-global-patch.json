@@ -1,0 +1,17 @@
+{
+  "file": "/data/config/paper-global.yml",
+  "ops": [
+    {
+      "$set": {
+        "path": "$.proxies.velocity.enabled",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.proxies.velocity.secret",
+        "value": "${CFG_FORWARDING_SECRET}"
+      }
+    }
+  ]
+}

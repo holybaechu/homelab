@@ -1,0 +1,29 @@
+{
+  "file": "/data/config/leaf-global.yml",
+  "ops": [
+    {
+      "$set": {
+        "path": "$.network.async-switch-state",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.misc.lag-compensation.enabled",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.misc.lag-compensation.enable-for-water",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.misc.lag-compensation.enable-for-lava",
+        "value": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+services:
+  proxy:
+    image: itzg/mc-proxy:java25
+
+    tty: true
+    stdin_open: true
+    
+    restart: unless-stopped
+    
+    ports:
+      - "25565:25577/tcp"
+    
+    environment:
+      TYPE: VELOCITY
+ 
+      MINECRAFT_VERSION: 1.21.11
+      MODRINTH_PROJECTS: |
+        viaversion
+        luckperms:GZjsuCmU
+    
+    volumes:
+      - ./velocity.toml:/server/velocity.toml
+      - proxy_data:/server
+    
+    secrets:
+      - forwarding_secret
+  
+  flat:
+    image: itzg/minecraft-server:java25-graalvm
+    
+    tty: true
+    stdin_open: true
+    
+    restart: unless-stopped
+    
+    environment:
+      EULA: TRUE
+      
+      TYPE: LEAF
+      VERSION: 1.21.11
+      USE_MEOWICE_FLAGS: true
+      USE_MEOWICE_GRAALVM_FLAGS: TRUE
+
+      LEVEL_TYPE: FLAT
+      GENERATOR_SETTINGS: >-
+        {
+            "layers": [
+                {
+                    "block": "minecraft:bedrock",
+                    "height": 1
+                },
+                {
+                    "block": "minecraft:dirt",
+                    "height": 32
+                },
+                {
+                    "block": "minecraft:grass_block",
+                    "height": 1
+                }
+            ]
+        }
+      
+      ONLINE_MODE: FALSE
+      ENFORCE_SECURE_PROFILE: "FALSE"
+      OP_PERMISSION_LEVEL: 2
+      ENABLE_WHITELIST: TRUE
+      VIEW_DISTANCE: 16
+      SIMULATION_DISTANCE: 8
+
+      MODRINTH_PROJECTS: |
+        fastasyncworldedit
+        axiom-paper-plugin
+        luckperms:OrIs0S6b
+        coreprotect:HD2IvrxS
+
+      PATCH_DEFINITIONS: "/patches"
+      REPLACE_ENV_VARIABLE_PREFIX: "CFG_"
+      CFG_FORWARDING_SECRET: ${CFG_FORWARDING_SECRET}
+
+    volumes:
+      - ./patches/gale-global-patch.json:/patches/gale-global-patch.json
+      - ./patches/gale-world-defaults-patch.json:/patches/gale-world-defaults-patch.json
+      - ./patches/leaf-async-patch.json:/patches/leaf-async-patch.json
+      - ./patches/leaf-global-patch.json:/patches/leaf-global-patch.json
+      - ./patches/leaf-performance-patch.json:/patches/leaf-performance-patch.json
+      - ./patches/paper-global-patch.json:/patches/paper-global-patch.json
+      - ./patches/luckperms-patch.json:/patches/luckperms-patch.json
+      - flat_data:/data
+
+volumes:
+  proxy_data:
+  flat_data:
+
+secrets:
+  forwarding_secret:
+    environment: "CFG_FORWARDING_SECRET"

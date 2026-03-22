@@ -1,0 +1,35 @@
+{
+  "file": "/data/config/leaf-global.yml",
+  "ops": [
+    {
+      "$set": {
+        "path": "$.async.async-chunk-send.enabled",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.async.async-pathfinding.enabled",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.async.async-pathfinding.max-threads",
+        "value": 2
+      }
+    },
+    {
+      "$set": {
+        "path": "$.async.async-entity-tracker.enabled",
+        "value": true
+      }
+    },
+    {
+      "$set": {
+        "path": "$.async.async-entity-tracker.threads",
+        "value": 3
+      }
+    }
+  ]
+}

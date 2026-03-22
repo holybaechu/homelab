@@ -1,0 +1,58 @@
+services:
+  adguard:
+    image: adguard/adguardhome:v0.107.73
+    restart: unless-stopped
+    volumes:
+      - ssl:/opt/adguardhome/ssl
+      - /home/docker/data/adguard/conf:/opt/adguardhome/conf
+      - /home/docker/data/adguard/work:/opt/adguardhome/work
+    container_name: adguard
+    networks:
+      - proxy
+    ports:
+      # DNS
+      - "53:53/tcp"
+      - "53:53/udp"
+    labels:
+      - "traefik.enable=true"
+      # Web UI
+      - "traefik.http.routers.adguard.rule=Host(`adguard.home.hchu.me`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.routers.adguard.tls.certresolver=cloudflare"
+      - "traefik.http.routers.adguard.middlewares=local-network-only@file"
+      - "traefik.http.routers.adguard.service=adguard"
+      - "traefik.http.services.adguard.loadbalancer.server.port=80"
+      # Setup UI (only active during initial setup)
+      - "traefik.http.routers.setup-adguard.rule=Host(`setup.adguard.home.hchu.me`)"
+      - "traefik.http.routers.setup-adguard.entrypoints=websecure"
+      - "traefik.http.routers.setup-adguard.tls.certresolver=cloudflare"
+      - "traefik.http.routers.setup-adguard.middlewares=local-network-only@file"
+      - "traefik.http.routers.setup-adguard.service=setup-adguard"
+      - "traefik.http.services.setup-adguard.loadbalancer.server.port=3000"
+      # DNS-over-HTTPS (public)
+      - "traefik.http.routers.dns-query.rule=Host(`dns.hchu.me`) && Path(`/dns-query`)"
+      - "traefik.http.routers.dns-query.entrypoints=websecure"
+      - "traefik.http.routers.dns-query.tls.certresolver=cloudflare"
+      - "traefik.http.routers.dns-query.middlewares=rate-limit@file,security-headers@file"
+      - "traefik.http.routers.dns-query.service=adguard-doh"
+      - "traefik.http.services.adguard-doh.loadbalancer.server.port=443"
+      - "traefik.http.services.adguard-doh.loadbalancer.server.scheme=https"
+      - "traefik.http.services.adguard-doh.loadbalancer.serverstransport=insecure@file"
+
+  cert-dumper:
+    image: ldez/traefik-certs-dumper:v2.11.0
+    container_name: traefik-cert-dumper
+    restart: unless-stopped
+    command: file --watch --version v3 --source /data/acme.json --dest /ssl --domain-subdir
+    volumes:
+      - traefik_acme:/data:ro
+      - ssl:/ssl
+
+networks:
+  proxy:
+    name: proxy
+
+volumes:
+  traefik_acme:
+    external: true
+  ssl:
