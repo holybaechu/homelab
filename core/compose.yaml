@@ -24,7 +24,7 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${KOMODO_DB_PASSWORD}
 
   core:
-    image: ghcr.io/moghtech/komodo-core:1.19.5
+    image: ghcr.io/moghtech/komodo-core:2.0.0
     container_name: komodo-core
     labels:
       komodo.skip: # Prevent Komodo from stopping with StopAllContainers
