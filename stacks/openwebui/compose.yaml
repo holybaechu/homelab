@@ -1,0 +1,14 @@
+services:
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main-slim
+    volumes:
+      - open-webui:/app/backend/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.openwebui.rule=Host(`openwebui.home.hchu.me`)"
+      - "traefik.http.routers.openwebui.entrypoints=websecure"
+      - "traefik.http.routers.openwebui.tls.certresolver=cloudflare"
+      - "traefik.http.routers.openwebui.middlewares=local-network-only@file"
+      - "traefik.http.services.openwebui.loadbalancer.server.port=8080"
+volumes:
+  open-webui:
