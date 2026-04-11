@@ -9,6 +9,7 @@ services:
       - "traefik.http.routers.openwebui.entrypoints=websecure"
       - "traefik.http.routers.openwebui.tls.certresolver=cloudflare"
       - "traefik.http.routers.openwebui.middlewares=local-network-only@file"
+      - "traefik.http.routers.openwebui.service=openwebui"
       - "traefik.http.services.openwebui.loadbalancer.server.port=8080"
 volumes:
   open-webui:
