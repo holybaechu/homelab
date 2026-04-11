@@ -1,6 +1,8 @@
 services:
   openwebui:
     image: ghcr.io/open-webui/open-webui:main-slim
+    networks:
+      - proxy
     volumes:
       - open-webui:/app/backend/data
     labels:
@@ -15,3 +17,7 @@ services:
       - CORS_ALLOW_ORIGIN=https://openwebui.home.hchu.me
 volumes:
   open-webui:
+
+networks:
+  proxy:
+    name: proxy
