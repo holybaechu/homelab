@@ -11,5 +11,7 @@ services:
       - "traefik.http.routers.openwebui.middlewares=local-network-only@file"
       - "traefik.http.routers.openwebui.service=openwebui"
       - "traefik.http.services.openwebui.loadbalancer.server.port=8080"
+    environment:
+      - CORS_ALLOW_ORIGIN=https://openwebui.home.hchu.me
 volumes:
   open-webui:
