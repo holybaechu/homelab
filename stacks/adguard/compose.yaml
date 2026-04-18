@@ -44,7 +44,7 @@ services:
       - "traefik.http.services.adguard-doh.loadbalancer.serverstransport=insecure@file"
 
   cert-dumper:
-    image: ldez/traefik-certs-dumper:v2.11.0
+    image: ldez/traefik-certs-dumper:v2.11.2
     container_name: traefik-cert-dumper
     restart: unless-stopped
     command: file --watch --version v3 --source /data/acme.json --dest /ssl --domain-subdir
