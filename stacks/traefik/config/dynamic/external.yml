@@ -39,6 +39,7 @@ http:
         certResolver: cloudflare
       middlewares:
         - dogtor-cors
+        - rate-limit
 
   middlewares:
     dogtor-cors:
