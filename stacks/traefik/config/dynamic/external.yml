@@ -30,7 +30,39 @@ http:
       middlewares:
         - local-network-only
 
+    dogtor:
+      rule: "Host(`dogtor.hchu.me`)"
+      service: dogtor-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+      middlewares:
+        - dogtor-cors
+
+  middlewares:
+    dogtor-cors:
+      headers:
+        accessControlAllowMethods:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlAllowHeaders:
+          - "DNT"
+          - "User-Agent"
+          - "X-Requested-With"
+          - "If-Modified-Since"
+          - "Cache-Control"
+          - "Content-Type"
+          - "Range"
+          - "Authorization"
+
   services:
+    dogtor-service:
+      loadBalancer:
+        servers:
+          - url: "http://3.35.140.63:8080"
+
     proxmox-service:
       loadBalancer:
         serversTransport: insecure
