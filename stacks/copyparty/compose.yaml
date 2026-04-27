@@ -1,6 +1,6 @@
 services:
   copyparty:
-    image: copyparty/ac:1.20.13
+    image: copyparty/ac:1.20.14
     container_name: copyparty
     restart: unless-stopped
     user: 1000:1000
