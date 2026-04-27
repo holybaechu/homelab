@@ -8,6 +8,7 @@ services:
       - TS_AUTHKEY=${TAILSCALE_AUTH_KEY}
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false
+      - TS_OUTBOUND_HTTP_PROXY_LISTEN=0.0.0.0:1055
       - TS_EXTRA_ARGS=--accept-routes --advertise-exit-node --advertise-routes=${TAILSCALE_ADVERTISE_ROUTES} --advertise-connector --advertise-tags=tag:connector
     cap_add:
       - NET_ADMIN
@@ -19,6 +20,12 @@ services:
       - tailscale-state:/var/lib/tailscale
     devices:
       - /dev/net/tun:/dev/net/tun
+    networks:
+      - proxy
 
 volumes:
   tailscale-state:
+
+networks:
+  proxy:
+    external: true

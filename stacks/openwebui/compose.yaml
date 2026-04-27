@@ -16,6 +16,11 @@ services:
       - "traefik.http.services.openwebui.loadbalancer.server.port=8080"
     environment:
       - CORS_ALLOW_ORIGIN=https://openwebui.home.hchu.me
+      - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HTTP_PROXY=http://tailscale:1055
+      - HTTPS_PROXY=http://tailscale:1055
+      - NO_PROXY=localhost,127.0.0.1,openwebui.home.hchu.me,tailscale
 volumes:
   open-webui:
 
