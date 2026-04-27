@@ -1,6 +1,7 @@
 services:
   openwebui:
     image: ghcr.io/open-webui/open-webui:main-slim
+    restart: unless-stopped
     networks:
       - proxy
     volumes:
