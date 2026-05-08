@@ -9,7 +9,7 @@ services:
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false
       - TS_OUTBOUND_HTTP_PROXY_LISTEN=0.0.0.0:1055
-      - TS_EXTRA_ARGS=--accept-routes --advertise-exit-node --advertise-routes=${TAILSCALE_ADVERTISE_ROUTES}
+      - TS_EXTRA_ARGS=--reset --accept-routes --advertise-exit-node --advertise-routes=${TAILSCALE_ADVERTISE_ROUTES}
     cap_add:
       - NET_ADMIN
       - NET_RAW
