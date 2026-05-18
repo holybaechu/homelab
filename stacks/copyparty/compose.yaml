@@ -9,12 +9,16 @@ services:
       - holybaechu:${COPYPARTY_HOLYBAECHU_PASSWORD}
       - -a
       - siregon72:${COPYPARTY_SIREGON72_PASSWORD}
+      - -a
+      - ezmin1104:${COPYPARTY_EZMIN1104_PASSWORD}
+      - -a
+      - sieon:${COPYPARTY_SIEON_PASSWORD}
     volumes:
       - ./:/cfg:z
       - /home/docker/downloads:/downloads:z
       - /home/docker/public:/public:z
       - /home/docker/music:/music:z
-      - /home/docker/shared:/shared:z
+      - /home/docker/shared-readonly:/shared-readonly:z
     networks:
       - proxy
     environment:
