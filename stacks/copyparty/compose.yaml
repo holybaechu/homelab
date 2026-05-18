@@ -13,6 +13,8 @@ services:
       - ezmin1104:${COPYPARTY_EZMIN1104_PASSWORD}
       - -a
       - sieon:${COPYPARTY_SIEON_PASSWORD}
+      - -a
+      - emuyoz:${COPYPARTY_EMUYOZ_PASSWORD}
     volumes:
       - ./:/cfg:z
       - /home/docker/downloads:/downloads:z
