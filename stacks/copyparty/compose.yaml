@@ -6,12 +6,15 @@ services:
     user: 1000:1000
     command:
       - -a
-      - ${COPYPARTY_USER_NAME}:${COPYPARTY_USER_PASSWORD}
+      - holybaechu:${COPYPARTY_HOLYBAECHU_PASSWORD}
+      - -a
+      - siregon72:${COPYPARTY_SIREGON72_PASSWORD}
     volumes:
       - ./:/cfg:z
       - /home/docker/downloads:/downloads:z
       - /home/docker/public:/public:z
       - /home/docker/music:/music:z
+      - /home/docker/shared:/shared:z
     networks:
       - proxy
     environment:
