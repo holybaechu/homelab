@@ -29,7 +29,7 @@ services:
       - "traefik.http.services.qbt-service.loadbalancer.server.port=8080"
 
   qbittorrent:
-    image: linuxserver/qbittorrent:5.2.0
+    image: linuxserver/qbittorrent:5.2.1
     container_name: qbittorrent
     restart: unless-stopped
     network_mode: "service:gluetun"
