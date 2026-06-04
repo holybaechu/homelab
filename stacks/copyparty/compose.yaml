@@ -17,6 +17,8 @@ services:
       - emuyoz:${COPYPARTY_EMUYOZ_PASSWORD}
       - -a
       - bjh_deepfake_contest:${COPYPARTY_BJH_DEEPFAKE_CONTEST_PASSWORD}
+      - -a
+      - ys100503:${COPYPARTY_YS100503_PASSWORD}
     volumes:
       - ./:/cfg:z
       - /home/docker/downloads:/downloads:z
