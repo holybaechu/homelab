@@ -15,12 +15,15 @@ services:
       - sieon:${COPYPARTY_SIEON_PASSWORD}
       - -a
       - emuyoz:${COPYPARTY_EMUYOZ_PASSWORD}
+      - -a
+      - bjh_deepfake_contest:${COPYPARTY_BJH_DEEPFAKE_CONTEST_PASSWORD}
     volumes:
       - ./:/cfg:z
       - /home/docker/downloads:/downloads:z
       - /home/docker/public:/public:z
       - /home/docker/music:/music:z
       - /home/docker/shared-readonly:/shared-readonly:z
+      - /home/docker/bjh_deepfake_contest:/bjh_deepfake_contest:z
     networks:
       - proxy
     environment:
