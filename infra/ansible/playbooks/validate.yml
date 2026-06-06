@@ -1,0 +1,82 @@
+---
+- name: Validate edge
+  hosts: edge
+  gather_facts: false
+  tasks:
+    - name: Validate Caddy config
+      ansible.builtin.command:
+        cmd: caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      changed_when: false
+
+    - name: Check Caddy service
+      ansible.builtin.command:
+        cmd: rc-service caddy status
+      changed_when: false
+
+- name: Validate DNS
+  hosts: dns
+  gather_facts: false
+  tasks:
+    - name: Check AdGuard service
+      ansible.builtin.command:
+        cmd: rc-service adguardhome status
+      changed_when: false
+
+    - name: Query AdGuard normal DNS
+      ansible.builtin.command:
+        cmd: drill @127.0.0.1 example.com
+      changed_when: false
+
+- name: Validate tailnet
+  hosts: tailnet
+  gather_facts: false
+  tasks:
+    - name: Check tailscaled service
+      ansible.builtin.command:
+        cmd: systemctl is-active tailscaled
+      changed_when: false
+
+    - name: Check Tailscale status
+      ansible.builtin.command:
+        cmd: tailscale status
+      changed_when: false
+
+- name: Validate downloads
+  hosts: downloads
+  gather_facts: false
+  tasks:
+    - name: Check WireGuard service
+      ansible.builtin.command:
+        cmd: systemctl is-active wg-quick@wg-proton
+      changed_when: false
+
+    - name: Check qBittorrent service
+      ansible.builtin.command:
+        cmd: systemctl is-active qbittorrent
+      changed_when: false
+
+    - name: Check qBittorrent Web UI port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 8080
+        timeout: 5
+
+    - name: Check Proton NAT-PMP timer
+      ansible.builtin.command:
+        cmd: systemctl is-active proton-natpmp-qbt.timer
+      changed_when: false
+
+- name: Validate files
+  hosts: files
+  gather_facts: false
+  tasks:
+    - name: Check Copyparty service
+      ansible.builtin.command:
+        cmd: rc-service copyparty status
+      changed_when: false
+
+    - name: Check Copyparty port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 3923
+        timeout: 5
