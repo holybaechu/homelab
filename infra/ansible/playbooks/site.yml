@@ -10,3 +10,10 @@
   gather_facts: true
   roles:
     - common_debian
+
+- name: Configure edge LXC
+  hosts: edge
+  gather_facts: true
+  roles:
+    - caddy
+    - ddns

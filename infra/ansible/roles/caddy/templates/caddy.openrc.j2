@@ -1,0 +1,22 @@
+#!/sbin/openrc-run
+
+name="caddy"
+description="Caddy web server"
+command="/usr/local/bin/caddy"
+command_args="run --config {{ caddy_config_path }} --adapter caddyfile"
+command_background="yes"
+pidfile="/run/caddy.pid"
+command_user="{{ service_user }}:{{ service_group }}"
+output_log="/var/log/caddy/caddy.log"
+error_log="/var/log/caddy/caddy.err"
+
+depend() {
+	need net
+	after firewall
+}
+
+start_pre() {
+	checkpath --directory --owner {{ service_user }}:{{ service_group }} --mode 0750 {{ caddy_data_dir }}
+	checkpath --directory --owner {{ service_user }}:{{ service_group }} --mode 0750 /var/log/caddy
+	/usr/local/bin/caddy validate --config {{ caddy_config_path }} --adapter caddyfile
+}

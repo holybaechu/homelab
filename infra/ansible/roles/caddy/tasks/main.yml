@@ -1,0 +1,76 @@
+---
+- name: Install Caddy build packages
+  community.general.apk:
+    name:
+      - go
+      - git
+      - libcap
+    update_cache: true
+    state: present
+
+- name: Install xcaddy
+  ansible.builtin.command:
+    cmd: "go install github.com/caddyserver/xcaddy/cmd/xcaddy@{{ xcaddy_version }}"
+    creates: /root/go/bin/xcaddy
+
+- name: Build Caddy with Cloudflare DNS module
+  ansible.builtin.command:
+    cmd: "/root/go/bin/xcaddy build {{ caddy_version }} --with {{ caddy_cloudflare_module }}"
+    chdir: /tmp
+    creates: /tmp/caddy
+
+- name: Install Caddy binary
+  ansible.builtin.copy:
+    src: /tmp/caddy
+    dest: /usr/local/bin/caddy
+    remote_src: true
+    mode: "0755"
+  notify: Restart caddy
+
+- name: Allow Caddy to bind privileged ports
+  ansible.builtin.command:
+    cmd: setcap cap_net_bind_service=+ep /usr/local/bin/caddy
+  changed_when: false
+
+- name: Create Caddy directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0750"
+  loop:
+    - "{{ caddy_config_dir }}"
+    - "{{ caddy_data_dir }}"
+
+- name: Install Caddyfile
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../apps/edge/Caddyfile"
+    dest: "{{ caddy_config_path }}"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0640"
+  notify: Restart caddy
+
+- name: Install Caddy environment
+  ansible.builtin.template:
+    src: caddy.env.j2
+    dest: "{{ caddy_env_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart caddy
+
+- name: Install Caddy OpenRC service
+  ansible.builtin.template:
+    src: caddy.openrc.j2
+    dest: /etc/init.d/caddy
+    mode: "0755"
+  notify: Restart caddy
+
+- name: Enable Caddy
+  ansible.builtin.service:
+    name: caddy
+    enabled: true
+    state: started

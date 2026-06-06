@@ -1,0 +1,41 @@
+---
+- name: Install DDNS script
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../apps/edge/ddns/update-cloudflare-ddns.sh"
+    dest: /usr/local/bin/update-cloudflare-ddns
+    owner: root
+    group: root
+    mode: "0700"
+  notify: Restart cloudflare-ddns
+
+- name: Install DDNS loop
+  ansible.builtin.copy:
+    dest: /usr/local/bin/cloudflare-ddns-loop
+    owner: root
+    group: root
+    mode: "0700"
+    content: |
+      #!/bin/sh
+      set -eu
+      export CLOUDFLARE_ZONE_ID="{{ cloudflare_zone_id }}"
+      export CLOUDFLARE_DDNS_TOKEN="{{ cloudflare_ddns_token }}"
+      export DDNS_RECORD_NAMES="{{ ddns_record_names | join(' ') }}"
+      while true; do
+        /usr/local/bin/update-cloudflare-ddns
+        sleep {{ ddns_interval_seconds }}
+      done
+  no_log: true
+  notify: Restart cloudflare-ddns
+
+- name: Install DDNS OpenRC service
+  ansible.builtin.template:
+    src: ddns.openrc.j2
+    dest: /etc/init.d/cloudflare-ddns
+    mode: "0755"
+  notify: Restart cloudflare-ddns
+
+- name: Enable DDNS
+  ansible.builtin.service:
+    name: cloudflare-ddns
+    enabled: true
+    state: started

@@ -1,0 +1,5 @@
+---
+- name: Restart cloudflare-ddns
+  ansible.builtin.service:
+    name: cloudflare-ddns
+    state: restarted

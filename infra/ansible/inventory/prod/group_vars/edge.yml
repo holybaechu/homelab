@@ -1,0 +1,12 @@
+caddy_version: "v2.11.3"
+xcaddy_version: "v0.4.4"
+caddy_cloudflare_module: "github.com/caddy-dns/cloudflare"
+caddy_config_path: /etc/caddy/Caddyfile
+caddy_env_path: /etc/conf.d/caddy
+caddy_data_dir: /var/lib/caddy
+caddy_config_dir: /etc/caddy
+
+ddns_record_names:
+  - copyparty.hchu.me
+  - dns.hchu.me
+ddns_interval_seconds: 300

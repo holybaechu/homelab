@@ -1,0 +1,13 @@
+#!/sbin/openrc-run
+
+name="cloudflare-ddns"
+description="Cloudflare DDNS update loop"
+command="/usr/local/bin/cloudflare-ddns-loop"
+command_background="yes"
+pidfile="/run/cloudflare-ddns.pid"
+output_log="/var/log/cloudflare-ddns.log"
+error_log="/var/log/cloudflare-ddns.err"
+
+depend() {
+	need net
+}
