@@ -2,6 +2,7 @@
 set -eu
 
 BACKUP_DIR="${BACKUP_DIR:-./migration-backups/copyparty}"
+LEGACY_COPYPARTY_DIR="${LEGACY_COPYPARTY_DIR:-legacy/docker-stacks/copyparty}"
 
 case "${BACKUP_DIR}" in
   ""|"/"|".")
@@ -12,8 +13,8 @@ esac
 
 mkdir -p "${BACKUP_DIR}"
 
-cp stacks/copyparty/copyparty.conf "${BACKUP_DIR}/copyparty.conf"
-cp stacks/copyparty/compose.yaml "${BACKUP_DIR}/compose.yaml"
+cp "${LEGACY_COPYPARTY_DIR}/copyparty.conf" "${BACKUP_DIR}/copyparty.conf"
+cp "${LEGACY_COPYPARTY_DIR}/compose.yaml" "${BACKUP_DIR}/compose.yaml"
 
 echo "Copyparty config backup written to ${BACKUP_DIR}"
 echo "Verify the old Korean path names before migrating contest shares."
