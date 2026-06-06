@@ -1,0 +1,4 @@
+copyparty_listen_port: 3923
+copyparty_config_path: /etc/copyparty/copyparty.conf
+copyparty_state_dir: /var/lib/copyparty
+copyparty_downloads_path: /srv/downloads

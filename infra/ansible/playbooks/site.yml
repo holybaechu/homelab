@@ -37,3 +37,9 @@
   roles:
     - downloads_vpn
     - qbittorrent
+
+- name: Configure files LXC
+  hosts: files
+  gather_facts: true
+  roles:
+    - copyparty

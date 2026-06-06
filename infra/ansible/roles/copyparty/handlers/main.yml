@@ -1,0 +1,5 @@
+---
+- name: Restart copyparty
+  ansible.builtin.service:
+    name: copyparty
+    state: restarted

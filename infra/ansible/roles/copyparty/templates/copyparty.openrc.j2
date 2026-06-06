@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+
+name="copyparty"
+description="Copyparty file server"
+command="/opt/copyparty/bin/copyparty"
+command_args="-c {{ copyparty_config_path }}"
+command_background="yes"
+pidfile="/run/copyparty.pid"
+command_user="{{ service_user }}:{{ service_group }}"
+output_log="/var/log/copyparty.log"
+error_log="/var/log/copyparty.err"
+
+depend() {
+	need net
+}
