@@ -1,0 +1,41 @@
+---
+- name: Install VPN packages
+  ansible.builtin.apt:
+    name:
+      - wireguard-tools
+      - nftables
+      - natpmpc
+      - python3
+    update_cache: true
+    state: present
+
+- name: Install WireGuard Proton config
+  ansible.builtin.template:
+    src: wg-proton.conf.j2
+    dest: "/etc/wireguard/{{ proton_wg_interface }}.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart wireguard
+
+- name: Install nftables config
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nftables
+
+- name: Enable nftables
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+    state: started
+
+- name: Enable WireGuard
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ proton_wg_interface }}"
+    enabled: true
+    state: started

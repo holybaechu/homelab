@@ -1,0 +1,11 @@
+downloads_mount_path: /downloads
+downloads_complete_path: /downloads/complete
+downloads_incomplete_path: /downloads/incomplete
+proton_wg_interface: wg-proton
+proton_natpmp_gateway: 10.2.0.1
+qbittorrent_webui_port: 8080
+qbittorrent_user: qbittorrent
+qbittorrent_group: qbittorrent
+qbittorrent_uid: 1100
+qbittorrent_gid: 1100
+qbittorrent_natpmp_env_path: /etc/proton-natpmp-qbt.env

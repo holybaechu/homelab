@@ -30,3 +30,10 @@
   gather_facts: true
   roles:
     - tailscale_gateway
+
+- name: Configure downloads LXC
+  hosts: downloads
+  gather_facts: true
+  roles:
+    - downloads_vpn
+    - qbittorrent

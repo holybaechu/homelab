@@ -1,0 +1,17 @@
+flush ruleset
+
+table inet filter {
+  chain output {
+    type filter hook output priority 0; policy accept;
+
+    oif "lo" accept
+    ip daddr {{ homelab_lan_cidr }} accept
+    ip daddr {{ homelab_tailscale_cidr }} accept
+    udp dport 53 accept
+    tcp dport 53 accept
+    udp dport 51820 accept
+
+    meta skuid {{ qbittorrent_uid }} oifname "{{ proton_wg_interface }}" accept
+    meta skuid {{ qbittorrent_uid }} reject
+  }
+}

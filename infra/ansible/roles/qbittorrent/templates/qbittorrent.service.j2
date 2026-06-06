@@ -1,0 +1,16 @@
+[Unit]
+Description=qBittorrent-nox service
+After=network-online.target wg-quick@{{ proton_wg_interface }}.service nftables.service
+Wants=network-online.target
+Requires=wg-quick@{{ proton_wg_interface }}.service nftables.service
+
+[Service]
+Type=simple
+User={{ qbittorrent_user }}
+Group={{ qbittorrent_group }}
+ExecStart=/usr/bin/qbittorrent-nox --webui-port={{ qbittorrent_webui_port }}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

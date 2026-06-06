@@ -1,0 +1,120 @@
+---
+- name: Install qBittorrent
+  ansible.builtin.apt:
+    name:
+      - qbittorrent-nox
+      - python3
+    update_cache: true
+    state: present
+
+- name: Create qBittorrent group
+  ansible.builtin.group:
+    name: "{{ qbittorrent_group }}"
+    gid: "{{ qbittorrent_gid }}"
+    state: present
+
+- name: Create qBittorrent user
+  ansible.builtin.user:
+    name: "{{ qbittorrent_user }}"
+    uid: "{{ qbittorrent_uid }}"
+    group: "{{ qbittorrent_group }}"
+    shell: /usr/sbin/nologin
+    create_home: true
+    home: /var/lib/qbittorrent
+    state: present
+
+- name: Create download directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ qbittorrent_user }}"
+    group: "{{ qbittorrent_group }}"
+    mode: "0775"
+  loop:
+    - "{{ downloads_mount_path }}"
+    - "{{ downloads_complete_path }}"
+    - "{{ downloads_incomplete_path }}"
+
+- name: Create qBittorrent config directory
+  ansible.builtin.file:
+    path: /var/lib/qbittorrent/.config/qBittorrent
+    state: directory
+    owner: "{{ qbittorrent_user }}"
+    group: "{{ qbittorrent_group }}"
+    mode: "0700"
+
+- name: Install qBittorrent config
+  ansible.builtin.template:
+    src: qBittorrent.conf.j2
+    dest: /var/lib/qbittorrent/.config/qBittorrent/qBittorrent.conf
+    owner: "{{ qbittorrent_user }}"
+    group: "{{ qbittorrent_group }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart qbittorrent
+
+- name: Install NAT-PMP updater
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../apps/downloads/scripts/proton_natpmp_qbt.py"
+    dest: /usr/local/bin/proton-natpmp-qbt
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install NAT-PMP environment
+  ansible.builtin.copy:
+    dest: "{{ qbittorrent_natpmp_env_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      QBITTORRENT_PASSWORD={{ qbittorrent_webui_password | quote }}
+  no_log: true
+
+- name: Install NAT-PMP systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/proton-natpmp-qbt.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Refresh Proton VPN NAT-PMP port and update qBittorrent
+      After=qbittorrent.service wg-quick@{{ proton_wg_interface }}.service
+      Requires=qbittorrent.service wg-quick@{{ proton_wg_interface }}.service
+
+      [Service]
+      Type=oneshot
+      EnvironmentFile={{ qbittorrent_natpmp_env_path }}
+      ExecStart=/usr/local/bin/proton-natpmp-qbt --gateway {{ proton_natpmp_gateway }} --qbt-url http://127.0.0.1:{{ qbittorrent_webui_port }}
+
+- name: Install NAT-PMP timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/proton-natpmp-qbt.timer
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Run Proton NAT-PMP qBittorrent updater every 45 seconds
+
+      [Timer]
+      OnBootSec=30
+      OnUnitActiveSec=45
+      AccuracySec=1
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Install qBittorrent service
+  ansible.builtin.template:
+    src: qbittorrent.service.j2
+    dest: /etc/systemd/system/qbittorrent.service
+    mode: "0644"
+  notify: Restart qbittorrent
+
+- name: Enable qBittorrent and NAT-PMP timer
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+  loop:
+    - qbittorrent.service
+    - proton-natpmp-qbt.timer
