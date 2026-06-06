@@ -1,0 +1,6 @@
+common_alpine_packages:
+  - ca-certificates
+  - curl
+  - openssh
+  - tzdata
+  - shadow

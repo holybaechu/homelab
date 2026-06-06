@@ -1,0 +1,16 @@
+homelab_domain: hchu.me
+homelab_private_domain: home.hchu.me
+homelab_lan_cidr: 192.168.0.0/24
+homelab_tailscale_cidr: 100.64.0.0/10
+homelab_timezone: Asia/Seoul
+
+edge_ip: 192.168.0.10
+dns_ip: 192.168.0.11
+tailnet_ip: 192.168.0.12
+downloads_ip: 192.168.0.13
+files_ip: 192.168.0.14
+
+service_user: homelab
+service_group: homelab
+service_uid: 1000
+service_gid: 1000

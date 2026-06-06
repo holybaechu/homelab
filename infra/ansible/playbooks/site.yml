@@ -1,0 +1,12 @@
+---
+- name: Configure Alpine base
+  hosts: alpine
+  gather_facts: true
+  roles:
+    - common_alpine
+
+- name: Configure Debian base
+  hosts: debian
+  gather_facts: true
+  roles:
+    - common_debian

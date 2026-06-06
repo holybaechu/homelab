@@ -1,0 +1,25 @@
+---
+- name: Install Debian base packages
+  ansible.builtin.apt:
+    name: "{{ common_debian_packages }}"
+    update_cache: true
+    state: present
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ homelab_timezone }}"
+
+- name: Create service group
+  ansible.builtin.group:
+    name: "{{ service_group }}"
+    gid: "{{ service_gid }}"
+    state: present
+
+- name: Create service user
+  ansible.builtin.user:
+    name: "{{ service_user }}"
+    uid: "{{ service_uid }}"
+    group: "{{ service_group }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    state: present

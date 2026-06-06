@@ -1,0 +1,12 @@
+---
+- name: Bootstrap Alpine LXCs
+  hosts: alpine
+  gather_facts: false
+  roles:
+    - common_alpine
+
+- name: Bootstrap Debian LXCs
+  hosts: debian
+  gather_facts: false
+  roles:
+    - common_debian
