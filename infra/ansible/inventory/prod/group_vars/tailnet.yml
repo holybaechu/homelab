@@ -1,0 +1,4 @@
+tailscale_advertise_routes: "192.168.0.0/24"
+tailscale_advertise_exit_node: true
+tailscale_accept_routes: true
+tailscale_hostname: homelab-tailnet

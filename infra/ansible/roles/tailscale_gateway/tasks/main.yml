@@ -1,0 +1,51 @@
+---
+- name: Install Tailscale signing key
+  ansible.builtin.get_url:
+    url: https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+
+- name: Install Tailscale repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/tailscale.list
+    mode: "0644"
+    content: |
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian bookworm main
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    update_cache: true
+    state: present
+
+- name: Enable IPv4 forwarding
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-tailscale-subnet-router.conf
+    mode: "0644"
+    content: |
+      net.ipv4.ip_forward=1
+      net.ipv6.conf.all.forwarding=1
+
+- name: Apply sysctl
+  ansible.builtin.command:
+    cmd: sysctl --system
+  changed_when: false
+
+- name: Enable tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Join Tailscale when auth key is supplied
+  ansible.builtin.command:
+    cmd: >
+      tailscale up
+      --hostname={{ tailscale_hostname }}
+      --accept-routes={{ tailscale_accept_routes | lower }}
+      --advertise-routes={{ tailscale_advertise_routes }}
+      {{ '--advertise-exit-node' if tailscale_advertise_exit_node else '' }}
+      --auth-key={{ tailscale_auth_key }}
+  no_log: true
+  when: tailscale_auth_key is defined
+  changed_when: true

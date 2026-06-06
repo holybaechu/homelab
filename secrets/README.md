@@ -12,6 +12,7 @@ Expected encrypted values:
 - `proton_wireguard_address`
 - `proton_wireguard_public_key`
 - `proton_wireguard_endpoint`
+- `tailscale_auth_key`
 - `qbittorrent_webui_password`
 - `copyparty_users`
 - `adguard_admin_password_hash`

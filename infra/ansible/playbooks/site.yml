@@ -24,3 +24,9 @@
   roles:
     - adguard_acme
     - adguard
+
+- name: Configure tailnet LXC
+  hosts: tailnet
+  gather_facts: true
+  roles:
+    - tailscale_gateway
