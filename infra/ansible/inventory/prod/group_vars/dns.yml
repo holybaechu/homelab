@@ -1,0 +1,12 @@
+adguard_version: "v0.107.76"
+adguard_arch: "linux_amd64"
+adguard_install_dir: /opt/adguardhome
+adguard_work_dir: /opt/adguardhome/work
+adguard_conf_dir: /opt/adguardhome/conf
+adguard_tls_dir: /opt/adguardhome/tls
+adguard_cert_domain: dns.hchu.me
+adguard_admin_port: 80
+adguard_https_port: 443
+adguard_dns_port: 53
+adguard_dot_port: 853
+adguard_acme_interval_seconds: 43200

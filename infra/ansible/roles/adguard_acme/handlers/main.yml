@@ -1,0 +1,5 @@
+---
+- name: Restart adguard-acme
+  ansible.builtin.service:
+    name: adguard-acme
+    state: restarted

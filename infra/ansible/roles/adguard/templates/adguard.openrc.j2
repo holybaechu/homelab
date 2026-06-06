@@ -1,0 +1,21 @@
+#!/sbin/openrc-run
+
+name="AdGuardHome"
+description="AdGuard Home DNS resolver"
+command="{{ adguard_install_dir }}/AdGuardHome"
+command_args="-s run -w {{ adguard_work_dir }} -c {{ adguard_conf_dir }}/AdGuardHome.yaml"
+command_background="yes"
+pidfile="/run/adguardhome.pid"
+command_user="{{ service_user }}:{{ service_group }}"
+output_log="/var/log/adguardhome.log"
+error_log="/var/log/adguardhome.err"
+
+depend() {
+	need net
+}
+
+start_pre() {
+	checkpath --directory --owner {{ service_user }}:{{ service_group }} --mode 0750 {{ adguard_work_dir }}
+	checkpath --directory --owner {{ service_user }}:{{ service_group }} --mode 0750 {{ adguard_conf_dir }}
+	checkpath --directory --owner root:{{ service_group }} --mode 0750 {{ adguard_tls_dir }}
+}

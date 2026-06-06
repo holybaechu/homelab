@@ -1,0 +1,39 @@
+bind_host: 0.0.0.0
+bind_port: {{ adguard_admin_port }}
+users:
+  - name: admin
+    password: "{{ adguard_admin_password_hash }}"
+auth_attempts: 5
+block_auth_min: 15
+http_proxy: ""
+language: en
+theme: auto
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: {{ adguard_dns_port }}
+  anonymize_client_ip: false
+  ratelimit: 20
+  upstream_dns:
+    - https://dns10.quad9.net/dns-query
+    - https://cloudflare-dns.com/dns-query
+  bootstrap_dns:
+    - 1.1.1.1
+    - 9.9.9.9
+  protection_enabled: true
+tls:
+  enabled: true
+  server_name: {{ adguard_cert_domain }}
+  force_https: false
+  port_https: {{ adguard_https_port }}
+  port_dns_over_tls: {{ adguard_dot_port }}
+  port_dns_over_quic: {{ adguard_dot_port }}
+  certificate_path: {{ adguard_tls_dir }}/fullchain.pem
+  private_key_path: {{ adguard_tls_dir }}/privkey.pem
+trusted_proxies:
+  - {{ edge_ip }}/32
+filters:
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt
+    name: AdGuard DNS filter
+    id: 1

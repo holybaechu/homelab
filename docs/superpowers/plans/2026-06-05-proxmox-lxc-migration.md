@@ -1417,7 +1417,7 @@ start_pre() {
 }
 ```
 
-- [ ] **Step 3: Create AdGuard role**
+- [ ] **Step 3: Create AdGuard baseline config template**
 
 Create `infra/ansible/roles/adguard/templates/AdGuardHome.yaml.j2`:
 

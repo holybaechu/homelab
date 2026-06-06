@@ -1,0 +1,91 @@
+---
+- name: Install AdGuard dependencies
+  community.general.apk:
+    name:
+      - ca-certificates
+      - curl
+      - ldns
+      - libcap
+      - tar
+    update_cache: true
+    state: present
+
+- name: Create AdGuard install directory
+  ansible.builtin.file:
+    path: "{{ adguard_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create AdGuard service directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0750"
+  loop:
+    - "{{ adguard_work_dir }}"
+    - "{{ adguard_conf_dir }}"
+
+- name: Create AdGuard TLS directory
+  ansible.builtin.file:
+    path: "{{ adguard_tls_dir }}"
+    state: directory
+    owner: root
+    group: "{{ service_group }}"
+    mode: "0750"
+
+- name: Download AdGuard Home
+  ansible.builtin.get_url:
+    url: "https://github.com/AdguardTeam/AdGuardHome/releases/download/{{ adguard_version }}/AdGuardHome_{{ adguard_arch }}.tar.gz"
+    dest: /tmp/AdGuardHome.tar.gz
+    mode: "0644"
+
+- name: Extract AdGuard Home
+  ansible.builtin.unarchive:
+    src: /tmp/AdGuardHome.tar.gz
+    dest: /tmp
+    remote_src: true
+    creates: /tmp/AdGuardHome/AdGuardHome
+
+- name: Install AdGuard binary
+  ansible.builtin.copy:
+    src: /tmp/AdGuardHome/AdGuardHome
+    dest: "{{ adguard_install_dir }}/AdGuardHome"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart adguardhome
+
+- name: Allow AdGuard to bind privileged ports
+  ansible.builtin.command:
+    cmd: "setcap cap_net_bind_service=+ep {{ adguard_install_dir }}/AdGuardHome"
+  changed_when: false
+
+- name: Install baseline AdGuard config when no migrated config exists
+  ansible.builtin.template:
+    src: AdGuardHome.yaml.j2
+    dest: "{{ adguard_conf_dir }}/AdGuardHome.yaml"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0640"
+    force: false
+  no_log: true
+  notify: Restart adguardhome
+
+- name: Install AdGuard OpenRC service
+  ansible.builtin.template:
+    src: adguard.openrc.j2
+    dest: /etc/init.d/adguardhome
+    mode: "0755"
+  notify: Restart adguardhome
+
+- name: Start AdGuard when configuration exists
+  ansible.builtin.service:
+    name: adguardhome
+    enabled: true
+    state: started
+  when: ansible_facts['distribution'] == 'Alpine'

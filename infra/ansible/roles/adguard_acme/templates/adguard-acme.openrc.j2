@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+
+name="adguard-acme"
+description="AdGuard Home DNS-01 certificate renewal loop"
+command="/usr/local/bin/adguard-acme-loop"
+command_background="yes"
+pidfile="/run/adguard-acme.pid"
+output_log="/var/log/adguard-acme.log"
+error_log="/var/log/adguard-acme.err"
+
+depend() {
+	need net
+	after adguardhome
+}

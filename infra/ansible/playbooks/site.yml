@@ -17,3 +17,10 @@
   roles:
     - caddy
     - ddns
+
+- name: Configure DNS LXC
+  hosts: dns
+  gather_facts: true
+  roles:
+    - adguard_acme
+    - adguard
