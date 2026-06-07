@@ -22,6 +22,4 @@ module "lxc" {
   memory_mb        = each.value.memory_mb
   swap_mb          = each.value.swap_mb
   startup_order    = each.value.startup_order
-  features         = each.value.features
-  mount_points     = each.value.mount_points
 }

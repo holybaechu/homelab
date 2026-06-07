@@ -1,4 +1,46 @@
 ---
+- name: Configure Proxmox homelab data storage
+  hosts: pve_hosts
+  gather_facts: false
+  roles:
+    - pve_homelab_storage
+
+- name: Configure Proxmox root-only LXC options
+  hosts: pve_hosts
+  gather_facts: false
+  roles:
+    - pve_lxc_root_options
+
+- name: Bootstrap LXC SSH and Python access from Proxmox
+  hosts: pve_hosts
+  gather_facts: false
+  roles:
+    - pve_lxc_access_bootstrap
+
+- name: Trust LXC SSH host keys
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Add LXC SSH host keys to known_hosts
+      ansible.builtin.shell: |
+        set -eu
+        mkdir -p "${HOME}/.ssh"
+        touch "${HOME}/.ssh/known_hosts"
+        chmod 700 "${HOME}/.ssh"
+        chmod 600 "${HOME}/.ssh/known_hosts"
+        ssh-keygen -R "{{ item }}" >/dev/null 2>&1 || true
+        ssh-keyscan -H -T 10 "{{ item }}" >> "${HOME}/.ssh/known_hosts"
+      args:
+        executable: /bin/sh
+      changed_when: true
+      loop:
+        - "{{ dns_ip }}"
+        - "{{ edge_ip }}"
+        - "{{ tailnet_ip }}"
+        - "{{ downloads_ip }}"
+        - "{{ files_ip }}"
+
 - name: Bootstrap Alpine LXCs
   hosts: alpine
   gather_facts: false

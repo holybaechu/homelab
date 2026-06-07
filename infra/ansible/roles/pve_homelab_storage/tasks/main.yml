@@ -1,0 +1,64 @@
+---
+- name: Configure homelab data filesystem
+  ansible.builtin.shell: |
+    set -eu
+    changed=0
+    lv_path="/dev/pve/{{ homelab_data_lv_name }}"
+    mount_path="{{ homelab_data_mount }}"
+    tmp_mount="/mnt/{{ homelab_data_lv_name }}-init"
+
+    if [ ! -e "${lv_path}" ]; then
+      lvcreate -V "{{ homelab_data_lv_size }}" -T pve/data -n "{{ homelab_data_lv_name }}"
+      mkfs.ext4 -F "${lv_path}"
+      changed=1
+    fi
+
+    if ! blkid "${lv_path}" >/dev/null 2>&1; then
+      mkfs.ext4 -F "${lv_path}"
+      changed=1
+    fi
+
+    mkdir -p "${mount_path}"
+
+    if ! mountpoint -q "${mount_path}"; then
+      mkdir -p "${tmp_mount}"
+      if ! mountpoint -q "${tmp_mount}"; then
+        mount "${lv_path}" "${tmp_mount}"
+      fi
+
+      if [ -d "${mount_path}" ]; then
+        rsync -a "${mount_path}/" "${tmp_mount}/"
+      fi
+
+      umount "${tmp_mount}"
+      uuid="$(blkid -s UUID -o value "${lv_path}")"
+      if ! grep -qE "[[:space:]]${mount_path}[[:space:]]" /etc/fstab; then
+        printf 'UUID=%s %s ext4 defaults,noatime 0 2\n' "${uuid}" "${mount_path}" >> /etc/fstab
+      fi
+      mount "${mount_path}"
+      changed=1
+    fi
+
+    mkdir -p \
+      "${mount_path}/downloads/complete" \
+      "${mount_path}/downloads/incomplete" \
+      "${mount_path}/copyparty/public" \
+      "${mount_path}/copyparty/shared-readonly" \
+      "${mount_path}/copyparty/music" \
+      "${mount_path}/copyparty/bjh_deepfake_contest" \
+      "${mount_path}/copyparty/downloads"
+
+    chown -R {{ homelab_container_uid_offset + downloads_service_uid }}:{{ homelab_container_uid_offset + downloads_service_gid }} "${mount_path}/downloads"
+    chown -R {{ homelab_container_uid_offset + service_uid }}:{{ homelab_container_uid_offset + service_gid }} "${mount_path}/copyparty"
+    chmod 0755 "${mount_path}" "${mount_path}/downloads" "${mount_path}/downloads/complete" "${mount_path}/downloads/incomplete" "${mount_path}/copyparty"
+    chmod 0755 "${mount_path}/copyparty/public" "${mount_path}/copyparty/shared-readonly" "${mount_path}/copyparty/music" "${mount_path}/copyparty/bjh_deepfake_contest" "${mount_path}/copyparty/downloads"
+
+    if [ "${changed}" -eq 1 ]; then
+      echo "changed=yes"
+    else
+      echo "changed=no"
+    fi
+  args:
+    executable: /bin/sh
+  register: pve_homelab_storage_result
+  changed_when: "'changed=yes' in pve_homelab_storage_result.stdout"

@@ -14,3 +14,68 @@ service_user: homelab
 service_group: homelab
 service_uid: 1000
 service_gid: 1000
+downloads_service_uid: 1100
+downloads_service_gid: 1100
+
+homelab_data_lv_name: homelab-data
+homelab_data_lv_size: 1200G
+homelab_data_mount: /var/lib/homelab
+homelab_container_uid_offset: 100000
+
+pve_lxc_root_options:
+  - vmid: 112
+    name: tailnet
+    settings:
+      - description: enable nesting for Debian 13 systemd
+        pattern: '^features:.*[ ,]nesting=1(,|$)'
+        pct_args: '-features nesting=1,keyctl=1'
+      - description: enable keyctl for Tailscale
+        pattern: '^features:.*[ ,]keyctl=1(,|$)'
+        pct_args: '-features nesting=1,keyctl=1'
+  - vmid: 113
+    name: downloads
+    bind_mount_sources:
+      - /var/lib/homelab/downloads
+    settings:
+      - description: enable nesting for Debian 13 systemd
+        pattern: '^features:.*[ ,]nesting=1(,|$)'
+        pct_args: '-features nesting=1,keyctl=1'
+      - description: enable keyctl for WireGuard userspace helpers
+        pattern: '^features:.*[ ,]keyctl=1(,|$)'
+        pct_args: '-features nesting=1,keyctl=1'
+      - description: mount downloads data
+        pattern: '^mp0: /var/lib/homelab/downloads,mp=/downloads(,.*)?$'
+        pct_args: '-mp0 /var/lib/homelab/downloads,mp=/downloads'
+  - vmid: 114
+    name: files
+    bind_mount_sources:
+      - /var/lib/homelab/copyparty/public
+      - /var/lib/homelab/copyparty/shared-readonly
+      - /var/lib/homelab/downloads/complete
+    settings:
+      - description: mount completed downloads read-only
+        pattern: '^mp0: /var/lib/homelab/downloads/complete,mp=/srv/downloads(,.*)?$'
+        pct_args: '-mp0 /var/lib/homelab/downloads/complete,mp=/srv/downloads,ro=1'
+      - description: mount public Copyparty share
+        pattern: '^mp1: /var/lib/homelab/copyparty/public,mp=/srv/public(,.*)?$'
+        pct_args: '-mp1 /var/lib/homelab/copyparty/public,mp=/srv/public'
+      - description: mount shared-readonly Copyparty share
+        pattern: '^mp2: /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly(,.*)?$'
+        pct_args: '-mp2 /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly'
+
+pve_lxc_access_bootstrap:
+  - vmid: 110
+    name: edge
+    os_family: alpine
+  - vmid: 111
+    name: dns
+    os_family: alpine
+  - vmid: 112
+    name: tailnet
+    os_family: debian
+  - vmid: 113
+    name: downloads
+    os_family: debian
+  - vmid: 114
+    name: files
+    os_family: alpine

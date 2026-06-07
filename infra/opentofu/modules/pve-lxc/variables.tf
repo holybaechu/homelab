@@ -70,25 +70,3 @@ variable "ssh_public_keys" {
 variable "startup_order" {
   type = number
 }
-
-variable "features" {
-  type = object({
-    nesting = bool
-    keyctl  = bool
-    fuse    = bool
-  })
-  default = {
-    nesting = false
-    keyctl  = false
-    fuse    = false
-  }
-}
-
-variable "mount_points" {
-  type = list(object({
-    volume    = string
-    path      = string
-    read_only = bool
-  }))
-  default = []
-}

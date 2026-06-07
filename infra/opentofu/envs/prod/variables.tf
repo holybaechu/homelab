@@ -49,15 +49,5 @@ variable "containers" {
     memory_mb        = number
     swap_mb          = number
     startup_order    = number
-    features = object({
-      nesting = bool
-      keyctl  = bool
-      fuse    = bool
-    })
-    mount_points = list(object({
-      volume    = string
-      path      = string
-      read_only = bool
-    }))
   }))
 }

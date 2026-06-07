@@ -15,7 +15,7 @@ Expected encrypted values:
 - `tailscale_auth_key`
 - `qbittorrent_webui_password`
 - `qbittorrent_webui_password_hash`
-- `copyparty_users`
+- `copyparty_users`, as a list of account objects with `name` and `password`
 - `adguard_admin_password_hash`
 
 Do not commit decrypted secret files.

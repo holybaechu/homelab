@@ -19,9 +19,31 @@
   loop:
     - /etc/copyparty
     - "{{ copyparty_state_dir }}"
+
+- name: Check Copyparty data mounts
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: copyparty_data_mounts
+  loop:
     - /srv/public
     - /srv/shared-readonly
     - "{{ copyparty_downloads_path }}"
+
+- name: Assert Copyparty data mounts exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.isdir
+    fail_msg: "{{ item.item }} must be mounted before configuring Copyparty"
+  loop: "{{ copyparty_data_mounts.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Assert Copyparty user secrets are supplied
+  ansible.builtin.assert:
+    that:
+      - copyparty_users is defined
+      - copyparty_users | length > 0
+    fail_msg: "Set copyparty_users before starting Copyparty; the config references named users."
 
 - name: Create Copyparty virtualenv
   ansible.builtin.command:

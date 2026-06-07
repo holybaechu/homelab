@@ -1,0 +1,37 @@
+---
+- name: Install SSH and Python through pct exec
+  ansible.builtin.shell: |
+    set -eu
+    vmid="{{ item.vmid }}"
+
+    case "{{ item.os_family }}" in
+      alpine)
+        pct exec "${vmid}" -- /bin/sh -lc '
+          set -eu
+          apk update
+          apk add --no-cache openssh python3
+          rc-update add sshd default
+          rc-service sshd restart || rc-service sshd start
+        '
+        ;;
+      debian)
+        pct exec "${vmid}" -- /bin/bash -lc '
+          set -eu
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y openssh-server python3
+          systemctl enable --now ssh
+        '
+        ;;
+      *)
+        echo "Unsupported os_family={{ item.os_family }}" >&2
+        exit 1
+        ;;
+    esac
+  args:
+    executable: /bin/sh
+  register: pve_lxc_access_bootstrap_results
+  changed_when: true
+  loop: "{{ pve_lxc_access_bootstrap }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.vmid }})"

@@ -7,6 +7,13 @@ resource "proxmox_virtual_environment_container" "this" {
   start_on_boot = true
   tags          = var.tags
 
+  lifecycle {
+    ignore_changes = [
+      features,
+      mount_point,
+    ]
+  }
+
   cpu {
     cores = var.cores
   }
@@ -14,12 +21,6 @@ resource "proxmox_virtual_environment_container" "this" {
   memory {
     dedicated = var.memory_mb
     swap      = var.swap_mb
-  }
-
-  features {
-    nesting = var.features.nesting
-    keyctl  = var.features.keyctl
-    fuse    = var.features.fuse
   }
 
   initialization {
@@ -50,16 +51,6 @@ resource "proxmox_virtual_environment_container" "this" {
   disk {
     datastore_id = var.root_datastore_id
     size         = var.root_disk_gb
-  }
-
-  dynamic "mount_point" {
-    for_each = var.mount_points
-
-    content {
-      volume    = mount_point.value.volume
-      path      = mount_point.value.path
-      read_only = mount_point.value.read_only
-    }
   }
 
   operating_system {

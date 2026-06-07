@@ -6,6 +6,6 @@ proton_natpmp_gateway: 10.2.0.1
 qbittorrent_webui_port: 8080
 qbittorrent_user: qbittorrent
 qbittorrent_group: qbittorrent
-qbittorrent_uid: 1100
-qbittorrent_gid: 1100
+qbittorrent_uid: "{{ downloads_service_uid }}"
+qbittorrent_gid: "{{ downloads_service_gid }}"
 qbittorrent_natpmp_env_path: /etc/proton-natpmp-qbt.env

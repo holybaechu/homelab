@@ -1,0 +1,52 @@
+---
+- name: Ensure bind mount source directories exist
+  ansible.builtin.file:
+    path: "{{ item.1 }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ pve_lxc_root_options | subelements('bind_mount_sources', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.1 }}"
+
+- name: Apply root-only LXC settings
+  ansible.builtin.shell: |
+    set -eu
+    vmid="{{ item.vmid }}"
+    config="$(pct config "${vmid}")"
+    needs_change=0
+
+    {% for setting in item.settings %}
+    if ! printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
+      needs_change=1
+    fi
+    {% endfor %}
+
+    if [ "${needs_change}" -eq 0 ]; then
+      echo "changed=no"
+      exit 0
+    fi
+
+    restart=0
+    if pct status "${vmid}" | grep -Eq 'status: running'; then
+      pct stop "${vmid}"
+      restart=1
+    fi
+
+    {% for setting in item.settings %}
+    if ! printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
+      pct set "${vmid}" {{ setting.pct_args }}
+    fi
+    {% endfor %}
+
+    if [ "${restart}" -eq 1 ]; then
+      pct start "${vmid}"
+    fi
+
+    echo "changed=yes"
+  args:
+    executable: /bin/sh
+  register: pve_lxc_root_option_results
+  changed_when: "'changed=yes' in pve_lxc_root_option_results.stdout"
+  loop: "{{ pve_lxc_root_options }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.vmid }})"
