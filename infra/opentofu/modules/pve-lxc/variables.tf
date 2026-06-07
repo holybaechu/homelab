@@ -30,6 +30,10 @@ variable "ip_address" {
   type = string
 }
 
+variable "mac_address" {
+  type = string
+}
+
 variable "gateway" {
   type = string
 }

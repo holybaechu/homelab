@@ -19,19 +19,19 @@
 
 copyparty.hchu.me {
 	import secure_headers
-	reverse_proxy 192.168.0.14:3923
+	reverse_proxy 192.168.0.7:3923
 }
 
 adguard.home.hchu.me {
 	import private_only
 	import secure_headers
-	reverse_proxy 192.168.0.11:80
+	reverse_proxy 192.168.0.3:80
 }
 
 qbt.home.hchu.me {
 	import private_only
 	import secure_headers
-	reverse_proxy 192.168.0.13:8080
+	reverse_proxy 192.168.0.6:8080
 }
 
 pve.home.hchu.me {
@@ -50,20 +50,10 @@ router.home.hchu.me {
 	reverse_proxy http://192.168.0.1
 }
 
-printer.home.hchu.me {
-	import private_only
-	import secure_headers
-	reverse_proxy https://192.168.0.4 {
-		transport http {
-			tls_insecure_skip_verify
-		}
-	}
-}
-
 dns.hchu.me {
 	import secure_headers
 	handle /dns-query {
-		reverse_proxy https://192.168.0.11:443 {
+		reverse_proxy https://192.168.0.3:443 {
 			transport http {
 				tls_insecure_skip_verify
 			}

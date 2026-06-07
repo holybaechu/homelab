@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-DNS_LXC="${DNS_LXC:-root@192.168.0.11}"
+DNS_LXC="${DNS_LXC:-root@192.168.0.3}"
 BACKUP_DIR="${BACKUP_DIR:-./migration-backups/adguard}"
 CONFIG_FILE="${BACKUP_DIR}/conf/AdGuardHome.yaml"
 
@@ -33,7 +33,7 @@ require_config_line() {
     echo "  tls.certificate_path: /opt/adguardhome/tls/fullchain.pem" >&2
     echo "  tls.private_key_path: /opt/adguardhome/tls/privkey.pem" >&2
     echo "  tls.server_name: dns.hchu.me" >&2
-    echo "  trusted_proxies includes: 192.168.0.10/32" >&2
+    echo "  trusted_proxies includes: 192.168.0.4/32" >&2
     exit 1
   fi
 }
@@ -41,7 +41,7 @@ require_config_line() {
 require_config_line '^[[:space:]]*certificate_path:[[:space:]]*/opt/adguardhome/tls/fullchain\.pem[[:space:]]*$' "certificate_path: /opt/adguardhome/tls/fullchain.pem"
 require_config_line '^[[:space:]]*private_key_path:[[:space:]]*/opt/adguardhome/tls/privkey\.pem[[:space:]]*$' "private_key_path: /opt/adguardhome/tls/privkey.pem"
 require_config_line '^[[:space:]]*server_name:[[:space:]]*dns\.hchu\.me[[:space:]]*$' "server_name: dns.hchu.me"
-require_config_line '^[[:space:]]*-[[:space:]]*192\.168\.0\.10/32[[:space:]]*$' "trusted proxy 192.168.0.10/32"
+require_config_line '^[[:space:]]*-[[:space:]]*192\.168\.0\.4/32[[:space:]]*$' "trusted proxy 192.168.0.4/32"
 
 rsync -a "${BACKUP_DIR}/conf/" "${DNS_LXC}:/opt/adguardhome/conf/"
 rsync -a "${BACKUP_DIR}/work/" "${DNS_LXC}:/opt/adguardhome/work/"

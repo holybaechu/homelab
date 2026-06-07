@@ -4,11 +4,11 @@ homelab_lan_cidr: 192.168.0.0/24
 homelab_tailscale_cidr: 100.64.0.0/10
 homelab_timezone: Asia/Seoul
 
-edge_ip: 192.168.0.10
-dns_ip: 192.168.0.11
-tailnet_ip: 192.168.0.12
-downloads_ip: 192.168.0.13
-files_ip: 192.168.0.14
+edge_ip: 192.168.0.4
+dns_ip: 192.168.0.3
+tailnet_ip: 192.168.0.5
+downloads_ip: 192.168.0.6
+files_ip: 192.168.0.7
 
 service_user: homelab
 service_group: homelab

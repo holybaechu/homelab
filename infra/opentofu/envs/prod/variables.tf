@@ -42,6 +42,7 @@ variable "containers" {
     template_file_id = string
     os_type          = string
     ip_address       = string
+    mac_address      = string
     gateway          = string
     root_disk_gb     = number
     cores            = number

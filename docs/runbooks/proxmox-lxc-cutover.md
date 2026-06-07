@@ -14,20 +14,20 @@
 
 ## DNS Cutover
 
-1. Set router DHCP DNS server to `192.168.0.11`.
-2. Confirm `dig @192.168.0.11 hchu.me` works from a LAN client.
-3. Confirm `adguard.home.hchu.me` resolves to `192.168.0.10`.
+1. Set router DHCP DNS server to `192.168.0.3`.
+2. Confirm `dig @192.168.0.3 hchu.me` works from a LAN client.
+3. Confirm `adguard.home.hchu.me` resolves to `192.168.0.4`.
 
 ## Edge Cutover
 
-1. Forward TCP `80` and `443` on the router to `192.168.0.10`.
+1. Forward TCP `80` and `443` on the router to `192.168.0.4`.
 2. Open `https://copyparty.hchu.me`.
 3. Open `https://qbt.home.hchu.me` from LAN or Tailscale and confirm non-private clients receive HTTP `403`.
 
 ## Encrypted DNS Cutover
 
-1. Forward TCP `853` to `192.168.0.11` only if public DoT is required.
-2. Forward UDP `853` to `192.168.0.11` only if public DoQ is required.
+1. Forward TCP `853` to `192.168.0.3` only if public DoT is required.
+2. Forward UDP `853` to `192.168.0.3` only if public DoQ is required.
 3. Confirm AdGuard has a valid `dns.hchu.me` certificate.
 
 ## Downloads Cutover
