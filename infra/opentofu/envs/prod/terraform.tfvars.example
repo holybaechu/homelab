@@ -13,7 +13,7 @@ containers = {
     hostname         = "dns"
     description      = "AdGuard Home DNS resolver managed by OpenTofu and Ansible"
     tags             = ["homelab", "managed-by-opentofu", "role-dns"]
-    template_file_id = "local:vztmpl/alpine-3.20-default_20240908_amd64.tar.xz"
+    template_file_id = "local:vztmpl/alpine-3.23-default_20260116_amd64.tar.xz"
     os_type          = "alpine"
     ip_address       = "192.168.0.11/24"
     gateway          = "192.168.0.1"
@@ -31,7 +31,7 @@ containers = {
     hostname         = "edge"
     description      = "Caddy edge reverse proxy and Cloudflare DDNS managed by OpenTofu and Ansible"
     tags             = ["homelab", "managed-by-opentofu", "role-edge"]
-    template_file_id = "local:vztmpl/alpine-3.20-default_20240908_amd64.tar.xz"
+    template_file_id = "local:vztmpl/alpine-3.23-default_20260116_amd64.tar.xz"
     os_type          = "alpine"
     ip_address       = "192.168.0.10/24"
     gateway          = "192.168.0.1"
@@ -49,7 +49,7 @@ containers = {
     hostname         = "tailnet"
     description      = "Tailscale subnet router and optional exit node managed by OpenTofu and Ansible"
     tags             = ["homelab", "managed-by-opentofu", "role-tailnet"]
-    template_file_id = "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
+    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     os_type          = "debian"
     ip_address       = "192.168.0.12/24"
     gateway          = "192.168.0.1"
@@ -67,7 +67,7 @@ containers = {
     hostname         = "downloads"
     description      = "qBittorrent over Proton WireGuard managed by OpenTofu and Ansible"
     tags             = ["homelab", "managed-by-opentofu", "role-downloads"]
-    template_file_id = "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
+    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     os_type          = "debian"
     ip_address       = "192.168.0.13/24"
     gateway          = "192.168.0.1"
@@ -78,7 +78,7 @@ containers = {
     startup_order    = 4
     features         = { nesting = false, keyctl = true, fuse = false }
     mount_points = [
-      { volume = "/tank/homelab/downloads", path = "/downloads", read_only = false }
+      { volume = "/var/lib/homelab/downloads", path = "/downloads", read_only = false }
     ]
   }
 
@@ -87,7 +87,7 @@ containers = {
     hostname         = "files"
     description      = "Copyparty file sharing managed by OpenTofu and Ansible"
     tags             = ["homelab", "managed-by-opentofu", "role-files"]
-    template_file_id = "local:vztmpl/alpine-3.20-default_20240908_amd64.tar.xz"
+    template_file_id = "local:vztmpl/alpine-3.23-default_20260116_amd64.tar.xz"
     os_type          = "alpine"
     ip_address       = "192.168.0.14/24"
     gateway          = "192.168.0.1"
@@ -98,7 +98,7 @@ containers = {
     startup_order    = 5
     features         = { nesting = false, keyctl = false, fuse = false }
     mount_points = [
-      { volume = "/tank/homelab/downloads/complete", path = "/srv/downloads", read_only = true }
+      { volume = "/var/lib/homelab/downloads/complete", path = "/srv/downloads", read_only = true }
     ]
   }
 }

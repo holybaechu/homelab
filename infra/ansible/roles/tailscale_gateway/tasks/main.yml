@@ -1,7 +1,7 @@
 ---
 - name: Install Tailscale signing key
   ansible.builtin.get_url:
-    url: https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg
+    url: https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg
     dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
     mode: "0644"
 
@@ -10,7 +10,7 @@
     dest: /etc/apt/sources.list.d/tailscale.list
     mode: "0644"
     content: |
-      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian bookworm main
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main
 
 - name: Install Tailscale
   ansible.builtin.apt:
