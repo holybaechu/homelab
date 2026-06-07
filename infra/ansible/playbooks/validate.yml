@@ -40,6 +40,7 @@
       ansible.builtin.command:
         cmd: tailscale status
       changed_when: false
+      when: tailscale_auth_key is defined
 
 - name: Validate downloads
   hosts: downloads

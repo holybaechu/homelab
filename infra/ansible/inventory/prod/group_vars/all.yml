@@ -26,6 +26,9 @@ pve_lxc_root_options:
   - vmid: 112
     name: tailnet
     settings:
+      - description: pass through tun device for Tailscale
+        pattern: '^dev0: /dev/net/tun(,.*)?$'
+        pct_args: '-dev0 /dev/net/tun,mode=0666'
       - description: enable nesting for Debian 13 systemd
         pattern: '^features:.*[ ,]nesting=1(,|$)'
         pct_args: '-features nesting=1,keyctl=1'
@@ -37,6 +40,9 @@ pve_lxc_root_options:
     bind_mount_sources:
       - /var/lib/homelab/downloads
     settings:
+      - description: pass through tun device for WireGuard
+        pattern: '^dev0: /dev/net/tun(,.*)?$'
+        pct_args: '-dev0 /dev/net/tun,mode=0666'
       - description: enable nesting for Debian 13 systemd
         pattern: '^features:.*[ ,]nesting=1(,|$)'
         pct_args: '-features nesting=1,keyctl=1'
