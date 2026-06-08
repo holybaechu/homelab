@@ -2109,7 +2109,7 @@ Create `infra/ansible/roles/qbittorrent/templates/qBittorrent.conf.j2`:
 WebUI\Address=0.0.0.0
 WebUI\Port={{ qbittorrent_webui_port }}
 WebUI\Username=admin
-WebUI\Password_PBKDF2="{{ qbittorrent_webui_password_hash }}"
+WebUI\Password_PBKDF2="{{ qbittorrent_webui_password_pbkdf2 }}"
 Downloads\SavePath={{ downloads_complete_path }}/
 Downloads\TempPath={{ downloads_incomplete_path }}/
 Downloads\TempPathEnabled=true

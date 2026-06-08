@@ -2,8 +2,19 @@ downloads_mount_path: /downloads
 downloads_complete_path: /downloads/complete
 downloads_incomplete_path: /downloads/incomplete
 proton_wg_interface: wg-proton
+proton_server_list_url: https://raw.githubusercontent.com/qdm12/gluetun-servers/refs/heads/main/pkg/servers/protonvpn.json
+proton_server_country: Japan
+proton_port_forward_only: true
+proton_wireguard_address: 10.2.0.2/32
+proton_wireguard_endpoint_port: 51820
+proton_wireguard_dns: 1.1.1.1
+proton_wireguard_allowed_ips: "0.0.0.0/0, ::/0"
 proton_natpmp_gateway: 10.2.0.1
 qbittorrent_webui_port: 8080
+qbittorrent_webui_username: holybaechu
+qbittorrent_webui_password: '7%6AfjY@L$Vc2#A%K*CJY!0NqZ#!dtSVG*c6pqdA&AbKsP6dEsu@E4kY5l7H38zzNaAByN#MAqT92^9C9Y6z#bXn*9eV*lVMoceJzt7Ro&I*n@klvjZ$VkuXrdAQJNLX'
+qbittorrent_vuetorrent_root: /opt/vuetorrent
+qbittorrent_vuetorrent_release_url: https://github.com/VueTorrent/VueTorrent/releases/latest/download/vuetorrent.zip
 qbittorrent_user: qbittorrent
 qbittorrent_group: qbittorrent
 qbittorrent_uid: "{{ downloads_service_uid }}"

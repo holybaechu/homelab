@@ -32,9 +32,6 @@ jobs:
       ADGUARD_ADMIN_PASSWORD_HASH: ${{ secrets.ADGUARD_ADMIN_PASSWORD_HASH }}
       TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
       PROTON_WIREGUARD_PRIVATE_KEY: ${{ secrets.PROTON_WIREGUARD_PRIVATE_KEY }}
-      PROTON_WIREGUARD_ADDRESS: ${{ secrets.PROTON_WIREGUARD_ADDRESS }}
-      PROTON_WIREGUARD_PUBLIC_KEY: ${{ secrets.PROTON_WIREGUARD_PUBLIC_KEY }}
-      PROTON_WIREGUARD_ENDPOINT: ${{ secrets.PROTON_WIREGUARD_ENDPOINT }}
       QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
       QBITTORRENT_WEBUI_PASSWORD_HASH: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD_HASH }}
     steps:
@@ -80,9 +77,6 @@ jobs:
               "adguard_admin_password_hash": os.environ["ADGUARD_ADMIN_PASSWORD_HASH"],
               "tailscale_auth_key": os.environ["TAILSCALE_AUTH_KEY"],
               "proton_wireguard_private_key": os.environ["PROTON_WIREGUARD_PRIVATE_KEY"],
-              "proton_wireguard_address": os.environ["PROTON_WIREGUARD_ADDRESS"],
-              "proton_wireguard_public_key": os.environ["PROTON_WIREGUARD_PUBLIC_KEY"],
-              "proton_wireguard_endpoint": os.environ["PROTON_WIREGUARD_ENDPOINT"],
               "qbittorrent_webui_password": os.environ["QBITTORRENT_WEBUI_PASSWORD"],
               "qbittorrent_webui_password_hash": os.environ["QBITTORRENT_WEBUI_PASSWORD_HASH"],
           }

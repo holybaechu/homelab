@@ -9,12 +9,8 @@ Expected encrypted values:
 - `cloudflare_adguard_acme_token`
 - `cloudflare_ddns_token`
 - `proton_wireguard_private_key`
-- `proton_wireguard_address`
-- `proton_wireguard_public_key`
-- `proton_wireguard_endpoint`
 - `tailscale_auth_key`
 - `qbittorrent_webui_password`
-- `qbittorrent_webui_password_hash`
 - `copyparty_users`, as a list of account objects with `name` and `password`
 - `adguard_admin_password_hash`
 

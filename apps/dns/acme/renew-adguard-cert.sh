@@ -11,17 +11,22 @@ ACME_EMAIL="${ACME_EMAIL:-holybaechu@proton.me}"
 
 mkdir -p "${CERT_DIR}" "${LEGO_PATH}"
 
-lego \
-  --dns cloudflare \
-  --domains "${DOMAIN}" \
-  --email "${ACME_EMAIL}" \
-  --path "${LEGO_PATH}" \
-  run || lego \
-  --dns cloudflare \
-  --domains "${DOMAIN}" \
-  --email "${ACME_EMAIL}" \
-  --path "${LEGO_PATH}" \
-  renew --days 30
+if [ -f "${LEGO_PATH}/certificates/${DOMAIN}.crt" ]; then
+  lego \
+    --dns cloudflare \
+    --domains "${DOMAIN}" \
+    --email "${ACME_EMAIL}" \
+    --path "${LEGO_PATH}" \
+    renew --days 30
+else
+  lego \
+    --accept-tos \
+    --dns cloudflare \
+    --domains "${DOMAIN}" \
+    --email "${ACME_EMAIL}" \
+    --path "${LEGO_PATH}" \
+    run
+fi
 
 cp "${LEGO_PATH}/certificates/${DOMAIN}.crt" "${CERT_DIR}/fullchain.pem"
 cp "${LEGO_PATH}/certificates/${DOMAIN}.key" "${CERT_DIR}/privkey.pem"

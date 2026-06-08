@@ -3,7 +3,9 @@
   ansible.builtin.apt:
     name:
       - qbittorrent-nox
+      - ca-certificates
       - python3
+      - unzip
     update_cache: true
     state: present
 
@@ -42,6 +44,57 @@
     owner: "{{ qbittorrent_user }}"
     group: "{{ qbittorrent_group }}"
     mode: "0700"
+
+- name: Create VueTorrent directory
+  ansible.builtin.file:
+    path: "{{ qbittorrent_vuetorrent_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download VueTorrent
+  ansible.builtin.get_url:
+    url: "{{ qbittorrent_vuetorrent_release_url }}"
+    dest: /tmp/vuetorrent.zip
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart qbittorrent
+
+- name: Install VueTorrent
+  ansible.builtin.unarchive:
+    src: /tmp/vuetorrent.zip
+    dest: "{{ qbittorrent_vuetorrent_root }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart qbittorrent
+
+- name: Generate qBittorrent Web UI password hash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import base64, hashlib, sys
+        password = sys.argv[1].encode()
+        salt = hashlib.sha256(password + b":qbittorrent-webui").digest()[:16]
+        digest = hashlib.pbkdf2_hmac("sha512", password, salt, 100000)
+        print("@ByteArray(%s:%s)" % (
+            base64.b64encode(salt).decode(),
+            base64.b64encode(digest).decode(),
+        ))
+      - "{{ qbittorrent_webui_password }}"
+  changed_when: false
+  no_log: true
+  register: qbittorrent_webui_password_pbkdf2_result
+
+- name: Set qBittorrent Web UI password hash fact
+  ansible.builtin.set_fact:
+    qbittorrent_webui_password_pbkdf2: "{{ qbittorrent_webui_password_pbkdf2_result.stdout }}"
+  no_log: true
 
 - name: Install qBittorrent config
   ansible.builtin.template:
@@ -84,7 +137,7 @@
       [Service]
       Type=oneshot
       EnvironmentFile={{ qbittorrent_natpmp_env_path }}
-      ExecStart=/usr/local/bin/proton-natpmp-qbt --gateway {{ proton_natpmp_gateway }} --qbt-url http://127.0.0.1:{{ qbittorrent_webui_port }}
+      ExecStart=/usr/local/bin/proton-natpmp-qbt --gateway {{ proton_natpmp_gateway }} --qbt-url http://127.0.0.1:{{ qbittorrent_webui_port }} --qbt-user {{ qbittorrent_webui_username }}
 
 - name: Install NAT-PMP timer
   ansible.builtin.copy:

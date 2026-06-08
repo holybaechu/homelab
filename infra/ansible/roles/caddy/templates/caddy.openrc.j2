@@ -10,6 +10,11 @@ command_user="{{ service_user }}:{{ service_group }}"
 output_log="/var/log/caddy/caddy.log"
 error_log="/var/log/caddy/caddy.err"
 
+export CLOUDFLARE_DNS_API_TOKEN
+export XDG_DATA_HOME
+export XDG_CONFIG_HOME
+export HOME
+
 depend() {
 	need net
 	after firewall

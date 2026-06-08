@@ -18,4 +18,8 @@ start_pre() {
 	checkpath --directory --owner {{ service_user }}:{{ service_group }} --mode 0750 {{ adguard_work_dir }}
 	checkpath --directory --owner {{ service_user }}:{{ service_group }} --mode 0750 {{ adguard_conf_dir }}
 	checkpath --directory --owner root:{{ service_group }} --mode 0750 {{ adguard_tls_dir }}
+	chown -R {{ service_user }}:{{ service_group }} {{ adguard_work_dir }} {{ adguard_conf_dir }}
+	checkpath --file --owner {{ service_user }}:{{ service_group }} --mode 0640 {{ adguard_conf_dir }}/AdGuardHome.yaml
+	checkpath --file --owner {{ service_user }}:{{ service_group }} --mode 0640 /var/log/adguardhome.log
+	checkpath --file --owner {{ service_user }}:{{ service_group }} --mode 0640 /var/log/adguardhome.err
 }

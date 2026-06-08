@@ -1,3 +1,8 @@
+[accounts]
+{% for user in copyparty_users %}
+  {{ user.name }}: {{ user.password }}
+{% endfor %}
+
 [global]
   e2dsa
   e2ts
@@ -9,7 +14,7 @@
   gsel
   lang: kor
   grid
-  p: 3923
+  p: {{ copyparty_listen_port }}
 
 [/public]
   /srv/public
@@ -38,3 +43,4 @@
   /srv/bjh_deepfake_contest
   accs:
     A: holybaechu
+

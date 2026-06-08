@@ -4,8 +4,13 @@
   gather_facts: false
   tasks:
     - name: Validate Caddy config
-      ansible.builtin.command:
-        cmd: caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          . /etc/conf.d/caddy
+          export CLOUDFLARE_DNS_API_TOKEN XDG_DATA_HOME XDG_CONFIG_HOME HOME
+          caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+        executable: /bin/sh
       changed_when: false
 
     - name: Check Caddy service

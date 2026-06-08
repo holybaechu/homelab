@@ -5,12 +5,8 @@
 1. Confirm OpenTofu plan is clean.
 2. Confirm Ansible site playbook completes with no failures.
 3. Confirm validation playbook completes with no failures.
-4. Back up old Docker service data:
-   - `scripts/migration/backup-adguard.sh`
-   - `scripts/migration/backup-qbittorrent.sh`
-   - `scripts/migration/backup-copyparty.sh`
+4. Confirm any required service data backups already exist outside this repo.
 5. Snapshot the five new LXCs in Proxmox.
-6. Snapshot or back up the old Docker host.
 
 ## DNS Cutover
 
@@ -39,7 +35,7 @@
 
 ## Rollback
 
-1. Restore router port forwards to the old Docker edge.
+1. Restore router port forwards to the previous edge service.
 2. Restore router DHCP DNS to the previous DNS server.
 3. Stop affected new LXCs.
 4. Restore Proxmox snapshots if service state was changed.

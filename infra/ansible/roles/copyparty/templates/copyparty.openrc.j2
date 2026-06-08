@@ -9,7 +9,18 @@ pidfile="/run/copyparty.pid"
 command_user="{{ service_user }}:{{ service_group }}"
 output_log="/var/log/copyparty.log"
 error_log="/var/log/copyparty.err"
+HOME="{{ copyparty_state_dir }}"
+XDG_CONFIG_HOME="{{ copyparty_state_dir }}/config"
+
+export HOME XDG_CONFIG_HOME
 
 depend() {
 	need net
+}
+
+start_pre() {
+	checkpath --directory --owner {{ service_user }}:{{ service_group }} --mode 0750 {{ copyparty_state_dir }}
+	checkpath --directory --owner {{ service_user }}:{{ service_group }} --mode 0750 {{ copyparty_state_dir }}/config
+	checkpath --file --owner {{ service_user }}:{{ service_group }} --mode 0640 /var/log/copyparty.log
+	checkpath --file --owner {{ service_user }}:{{ service_group }} --mode 0640 /var/log/copyparty.err
 }

@@ -39,6 +39,7 @@ pve_lxc_root_options:
     name: downloads
     bind_mount_sources:
       - /var/lib/homelab/downloads
+      - /var/lib/homelab/copyparty/public
     settings:
       - description: pass through tun device for WireGuard
         pattern: '^dev0: /dev/net/tun(,.*)?$'
@@ -52,11 +53,16 @@ pve_lxc_root_options:
       - description: mount downloads data
         pattern: '^mp0: /var/lib/homelab/downloads,mp=/downloads(,.*)?$'
         pct_args: '-mp0 /var/lib/homelab/downloads,mp=/downloads'
+      - description: mount public Copyparty share read-only for migrated qBittorrent sessions
+        pattern: '^mp1: /var/lib/homelab/copyparty/public,mp=/public(,.*)?$'
+        pct_args: '-mp1 /var/lib/homelab/copyparty/public,mp=/public,ro=1'
   - vmid: 114
     name: files
     bind_mount_sources:
       - /var/lib/homelab/copyparty/public
       - /var/lib/homelab/copyparty/shared-readonly
+      - /var/lib/homelab/copyparty/music
+      - /var/lib/homelab/copyparty/bjh_deepfake_contest
       - /var/lib/homelab/downloads/complete
     settings:
       - description: mount completed downloads read-only
@@ -68,6 +74,12 @@ pve_lxc_root_options:
       - description: mount shared-readonly Copyparty share
         pattern: '^mp2: /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly(,.*)?$'
         pct_args: '-mp2 /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly'
+      - description: mount music Copyparty share
+        pattern: '^mp3: /var/lib/homelab/copyparty/music,mp=/srv/music(,.*)?$'
+        pct_args: '-mp3 /var/lib/homelab/copyparty/music,mp=/srv/music'
+      - description: mount contest Copyparty share
+        pattern: '^mp4: /var/lib/homelab/copyparty/bjh_deepfake_contest,mp=/srv/bjh_deepfake_contest(,.*)?$'
+        pct_args: '-mp4 /var/lib/homelab/copyparty/bjh_deepfake_contest,mp=/srv/bjh_deepfake_contest'
 
 pve_lxc_access_bootstrap:
   - vmid: 110

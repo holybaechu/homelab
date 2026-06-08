@@ -66,7 +66,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gateway", default="10.2.0.1")
     parser.add_argument("--qbt-url", default="http://127.0.0.1:8080")
-    parser.add_argument("--qbt-user", default="admin")
+    parser.add_argument("--qbt-user", default="holybaechu")
     parser.add_argument("--qbt-password", default=os.environ.get("QBITTORRENT_PASSWORD"))
     args = parser.parse_args()
 

@@ -4,6 +4,7 @@
     name:
       - ca-certificates
       - curl
+      - drill
       - ldns
       - libcap
       - tar

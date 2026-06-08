@@ -1,10 +1,10 @@
 [Interface]
 PrivateKey = {{ proton_wireguard_private_key }}
 Address = {{ proton_wireguard_address }}
-DNS = 1.1.1.1
+DNS = {{ proton_wireguard_dns }}
 
 [Peer]
-PublicKey = {{ proton_wireguard_public_key }}
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = {{ proton_wireguard_endpoint }}
+PublicKey = {{ proton_wireguard_selected.public_key }}
+AllowedIPs = {{ proton_wireguard_allowed_ips }}
+Endpoint = {{ proton_wireguard_selected.endpoint }}
 PersistentKeepalive = 25
