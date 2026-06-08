@@ -33,7 +33,6 @@ jobs:
       TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
       PROTON_WIREGUARD_PRIVATE_KEY: ${{ secrets.PROTON_WIREGUARD_PRIVATE_KEY }}
       QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
-      QBITTORRENT_WEBUI_PASSWORD_HASH: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD_HASH }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -78,7 +77,6 @@ jobs:
               "tailscale_auth_key": os.environ["TAILSCALE_AUTH_KEY"],
               "proton_wireguard_private_key": os.environ["PROTON_WIREGUARD_PRIVATE_KEY"],
               "qbittorrent_webui_password": os.environ["QBITTORRENT_WEBUI_PASSWORD"],
-              "qbittorrent_webui_password_hash": os.environ["QBITTORRENT_WEBUI_PASSWORD_HASH"],
           }
 
           with open("/tmp/ansible-extra-vars.json", "w", encoding="utf-8") as handle:

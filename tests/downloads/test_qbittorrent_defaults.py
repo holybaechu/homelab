@@ -44,3 +44,13 @@ def test_downloads_inventory_contains_plaintext_default_but_no_password_hash():
     assert "qbittorrent_webui_password:" in group_vars
     assert "qbittorrent_webui_password_hash" not in group_vars
     assert "qbittorrent_webui_password_hash" not in secrets_readme
+
+
+def test_cd_workflow_uses_qbittorrent_password_without_hash_secret():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "QBITTORRENT_WEBUI_PASSWORD:" in workflow
+    assert "QBITTORRENT_WEBUI_PASSWORD_HASH" not in workflow
+    assert "qbittorrent_webui_password_hash" not in workflow
