@@ -1,0 +1,63 @@
+{
+	email holybaechu@proton.me
+	acme_dns cloudflare {$CLOUDFLARE_DNS_API_TOKEN}
+}
+
+(private_only) {
+	@not_private not remote_ip 192.168.0.0/24 100.64.0.0/10
+	respond @not_private 403
+}
+
+(secure_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer-when-downgrade"
+	}
+}
+
+copyparty.hchu.me {
+	import secure_headers
+	reverse_proxy 192.168.0.7:3923
+}
+
+adguard.home.hchu.me {
+	import private_only
+	import secure_headers
+	reverse_proxy 192.168.0.3:80
+}
+
+qbt.home.hchu.me {
+	import private_only
+	import secure_headers
+	reverse_proxy 192.168.0.6:8080
+}
+
+pve.home.hchu.me {
+	import private_only
+	import secure_headers
+	reverse_proxy https://192.168.0.2:8006 {
+		transport http {
+			tls_insecure_skip_verify
+		}
+	}
+}
+
+router.home.hchu.me {
+	import private_only
+	import secure_headers
+	reverse_proxy http://192.168.0.1
+}
+
+dns.hchu.me {
+	import secure_headers
+	handle /dns-query {
+		reverse_proxy https://192.168.0.3:443 {
+			transport http {
+				tls_insecure_skip_verify
+			}
+		}
+	}
+	respond 404
+}
