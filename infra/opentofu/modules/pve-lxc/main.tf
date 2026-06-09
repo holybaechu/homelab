@@ -10,8 +10,10 @@ resource "proxmox_virtual_environment_container" "this" {
   lifecycle {
     ignore_changes = [
       features,
-      mount_point,
       device_passthrough,
+      initialization,
+      mount_point,
+      operating_system,
     ]
   }
 

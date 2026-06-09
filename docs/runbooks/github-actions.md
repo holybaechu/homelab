@@ -44,6 +44,14 @@ Example `COPYPARTY_USERS_JSON`:
 [{"name":"holybaechu","password":"replace-me"}]
 ```
 
+`PROXMOX_API_TOKEN` must use the bpg/proxmox provider format:
+
+```text
+<user>@<realm>!<token-id>=<token-secret>
+```
+
+Do not include the Proxmox HTTP authorization prefix.
+
 ## Tailscale Setup
 
 Create a Tailscale federated identity for GitHub Actions and allow it to create ephemeral nodes tagged `tag:ci`. The workflow uses `oauth-client-id` plus `audience`, so it requires the GitHub workflow permission `id-token: write`.
