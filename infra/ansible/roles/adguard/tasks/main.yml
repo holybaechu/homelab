@@ -5,6 +5,7 @@
       - ca-certificates
       - curl
       - drill
+      - apache2-utils
       - ldns
       - libcap
       - tar
@@ -65,6 +66,34 @@
   ansible.builtin.command:
     cmd: "setcap cap_net_bind_service=+ep {{ adguard_install_dir }}/AdGuardHome"
   changed_when: false
+
+- name: Require AdGuard admin password
+  ansible.builtin.assert:
+    that:
+      - adguard_admin_password is defined
+      - adguard_admin_password | length > 0
+    fail_msg: adguard_admin_password must be provided as plaintext; the role hashes it before writing AdGuard config.
+  no_log: true
+
+- name: Hash AdGuard admin password
+  ansible.builtin.command:
+    argv:
+      - htpasswd
+      - -B
+      - -C
+      - "10"
+      - -n
+      - -b
+      - admin
+      - "{{ adguard_admin_password }}"
+  register: adguard_admin_htpasswd
+  changed_when: false
+  no_log: true
+
+- name: Set AdGuard admin password hash
+  ansible.builtin.set_fact:
+    adguard_admin_password_hash: "{{ adguard_admin_htpasswd.stdout | regex_replace('^admin:', '') }}"
+  no_log: true
 
 - name: Install baseline AdGuard config when no migrated config exists
   ansible.builtin.template:

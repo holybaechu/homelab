@@ -12,6 +12,12 @@ Expected encrypted values:
 - `tailscale_auth_key`
 - `qbittorrent_webui_password`
 - `copyparty_users`, as a list of account objects with `name` and `password`
-- `adguard_admin_password_hash`
+- `adguard_admin_password`, as plaintext; the AdGuard role hashes it before writing the service config
 
 Do not commit decrypted secret files.
+
+For GitHub Actions, store the Copyparty accounts as `COPYPARTY_USERS_JSON`, for example:
+
+```json
+[{"name":"example","password":"replace-me"}]
+```

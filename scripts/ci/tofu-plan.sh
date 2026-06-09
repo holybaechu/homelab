@@ -3,11 +3,34 @@ set -eu
 
 cd infra/opentofu/envs/prod
 
+: "${TOFU_STATE_BUCKET:?set TOFU_STATE_BUCKET}"
+: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID}"
+: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
+
+TOFU_STATE_KEY="${TOFU_STATE_KEY:-prod/opentofu.tfstate}"
+TOFU_STATE_REGION="${TOFU_STATE_REGION:-auto}"
+
 if [ ! -f terraform.tfvars ] && [ -f terraform.tfvars.example ]; then
   cp terraform.tfvars.example terraform.tfvars
 fi
 
-tofu init
+set -- \
+  -backend-config="bucket=${TOFU_STATE_BUCKET}" \
+  -backend-config="key=${TOFU_STATE_KEY}" \
+  -backend-config="region=${TOFU_STATE_REGION}" \
+  -backend-config="skip_credentials_validation=true" \
+  -backend-config="skip_region_validation=true" \
+  -backend-config="skip_metadata_api_check=true" \
+  -backend-config="skip_s3_checksum=true" \
+  -backend-config="use_lockfile=true"
+
+if [ -n "${TOFU_STATE_ENDPOINT:-}" ]; then
+  set -- "$@" \
+    -backend-config="endpoint=${TOFU_STATE_ENDPOINT}" \
+    -backend-config="force_path_style=true"
+fi
+
+tofu init "$@"
 tofu fmt -recursive -check ../..
 tofu validate
 tofu plan -out=prod.tfplan

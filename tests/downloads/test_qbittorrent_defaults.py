@@ -34,15 +34,16 @@ def test_natpmp_updater_defaults_to_configured_qbittorrent_user():
     assert "--qbt-user {{ qbittorrent_webui_username }}" in tasks
 
 
-def test_downloads_inventory_contains_plaintext_default_but_no_password_hash():
+def test_downloads_inventory_keeps_password_out_of_committed_group_vars():
     group_vars = (
         REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "downloads.yml"
     ).read_text(encoding="utf-8")
     secrets_readme = (REPO_ROOT / "secrets" / "README.md").read_text(encoding="utf-8")
 
     assert "qbittorrent_webui_username: holybaechu" in group_vars
-    assert "qbittorrent_webui_password:" in group_vars
+    assert "qbittorrent_webui_password:" not in group_vars
     assert "qbittorrent_webui_password_hash" not in group_vars
+    assert "qbittorrent_webui_password" in secrets_readme
     assert "qbittorrent_webui_password_hash" not in secrets_readme
 
 

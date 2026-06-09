@@ -176,7 +176,7 @@ Expected encrypted values:
 - `proton_wireguard_endpoint`
 - `qbittorrent_webui_password`
 - `copyparty_users`
-- `adguard_admin_password_hash`
+- `adguard_admin_password`
 
 Do not commit decrypted secret files.
 ```
