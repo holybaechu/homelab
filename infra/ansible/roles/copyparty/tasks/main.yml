@@ -52,6 +52,7 @@
 
 - name: Install Copyparty
   ansible.builtin.pip:
+    # renovate: datasource=pypi depName=copyparty versioning=pep440
     name: copyparty==1.20.16
     virtualenv: /opt/copyparty
     state: present

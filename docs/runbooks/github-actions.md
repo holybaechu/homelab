@@ -17,6 +17,7 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `TOFU_STATE_KEY`: state object key, for example `prod/opentofu.tfstate`
 - `TOFU_STATE_REGION`: use `auto` for Cloudflare R2, or the AWS region for AWS S3
 - `TOFU_STATE_ENDPOINT`: S3-compatible endpoint, for example `https://<account-id>.r2.cloudflarestorage.com` for Cloudflare R2
+- `ADGUARD_ADMIN_USERNAME`: optional AdGuard Home admin username; defaults to the inventory value
 
 ## `prod` Environment Secrets
 
@@ -32,7 +33,7 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `CLOUDFLARE_ZONE_ID`
 - `CLOUDFLARE_DDNS_TOKEN`
 - `CLOUDFLARE_ADGUARD_ACME_TOKEN`
-- `ADGUARD_ADMIN_PASSWORD`, as plaintext; Ansible hashes it before rendering AdGuard Home config
+- `ADGUARD_ADMIN_PASSWORD`, as plaintext; Ansible hashes it before rendering or updating AdGuard Home config
 - `TAILSCALE_AUTH_KEY`
 - `PROTON_WIREGUARD_PRIVATE_KEY`
 - `QBITTORRENT_WEBUI_PASSWORD`
@@ -74,4 +75,4 @@ The CI workflow validates OpenTofu with `tofu init -backend=false`; only CD need
 3. Approve the `prod` environment deployment if protection rules are enabled.
 4. Confirm the workflow completes `OpenTofu apply`, `Bootstrap Proxmox and LXC access`, `Deploy services`, and `Validate services`.
 
-The AdGuard role only writes the baseline `AdGuardHome.yaml` when no migrated config exists. Changing `ADGUARD_ADMIN_PASSWORD` later will not overwrite an existing config unless the role is changed or the target config is reset deliberately.
+The AdGuard role only writes the baseline `AdGuardHome.yaml` when no migrated config exists, but it updates the existing `users:` block from `ADGUARD_ADMIN_USERNAME` and `ADGUARD_ADMIN_PASSWORD` on each deploy.

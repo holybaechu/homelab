@@ -13,7 +13,8 @@ proton_natpmp_gateway: 10.2.0.1
 qbittorrent_webui_port: 8080
 qbittorrent_webui_username: holybaechu
 qbittorrent_vuetorrent_root: /opt/vuetorrent
-qbittorrent_vuetorrent_release_url: https://github.com/VueTorrent/VueTorrent/releases/latest/download/vuetorrent.zip
+# renovate: datasource=github-releases depName=VueTorrent/VueTorrent versioning=semver extractVersion=^v(?<version>.*)$
+qbittorrent_vuetorrent_release_url: https://github.com/VueTorrent/VueTorrent/releases/download/v2.34.0/vuetorrent.zip
 qbittorrent_user: qbittorrent
 qbittorrent_group: qbittorrent
 qbittorrent_uid: "{{ downloads_service_uid }}"

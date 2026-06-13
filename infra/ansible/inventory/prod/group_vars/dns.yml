@@ -1,3 +1,4 @@
+# renovate: datasource=github-releases depName=AdguardTeam/AdGuardHome versioning=semver extractVersion=^v(?<version>.*)$
 adguard_version: "v0.107.76"
 adguard_arch: "linux_amd64"
 adguard_install_dir: /opt/adguardhome
@@ -5,8 +6,18 @@ adguard_work_dir: /opt/adguardhome/work
 adguard_conf_dir: /opt/adguardhome/conf
 adguard_tls_dir: /opt/adguardhome/tls
 adguard_cert_domain: dns.hchu.me
+adguard_admin_username: admin
 adguard_admin_port: 80
 adguard_https_port: 443
 adguard_dns_port: 53
 adguard_dot_port: 853
 adguard_acme_interval_seconds: 43200
+adguard_trusted_proxies:
+  - 127.0.0.0/8
+  - ::1/128
+  - "{{ edge_ip }}/32"
+adguard_dns_filters:
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_48.txt
+    name: HaGeZi's Pro Blocklist
+    id: 48

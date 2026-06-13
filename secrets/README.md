@@ -14,6 +14,10 @@ Expected encrypted values:
 - `copyparty_users`, as a list of account objects with `name` and `password`
 - `adguard_admin_password`, as plaintext; the AdGuard role hashes it before writing the service config
 
+Non-secret deployment values:
+
+- `adguard_admin_username`, optional; defaults to `admin`
+
 Do not commit decrypted secret files.
 
 For GitHub Actions, store the Copyparty accounts as `COPYPARTY_USERS_JSON`, for example:

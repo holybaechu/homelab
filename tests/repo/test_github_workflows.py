@@ -10,8 +10,11 @@ def test_cd_workflow_uses_plaintext_adguard_secret_and_copyparty_json():
     )
 
     assert "ADGUARD_ADMIN_PASSWORD:" in workflow
+    assert "ADGUARD_ADMIN_USERNAME:" in workflow
     assert "ADGUARD_ADMIN_PASSWORD_HASH" not in workflow
     assert "COPYPARTY_USERS_JSON:" in workflow
+    assert 'adguard_admin_username = os.environ.get("ADGUARD_ADMIN_USERNAME")' in workflow
+    assert 'mapping["adguard_admin_username"] = adguard_admin_username' in workflow
     assert '"adguard_admin_password": os.environ["ADGUARD_ADMIN_PASSWORD"]' in workflow
     assert '"copyparty_users": json.loads(os.environ["COPYPARTY_USERS_JSON"])' in workflow
 

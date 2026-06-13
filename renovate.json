@@ -3,6 +3,21 @@
   "extends": [
     "config:recommended"
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update inline Renovate-managed runtime pins",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/(ci|cd)\\.yml$/",
+        "/^scripts\\/ci\\/install-tools\\.sh$/",
+        "/^infra\\/ansible\\/inventory\\/prod\\/group_vars\\/(dns|downloads)\\.yml$/",
+        "/^infra\\/ansible\\/roles\\/copyparty\\/tasks\\/main\\.yml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?(?: extractVersion=(?<extractVersion>\\S+))?\\s+[^\\n]*?(?<currentValue>\\d+(?:\\.\\d+)+)"
+      ]
+    }
+  ],
   "packageRules": [
     {
       "matchUpdateTypes": ["minor", "patch"],

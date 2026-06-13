@@ -17,6 +17,15 @@
 	}
 }
 
+(pve_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "no-referrer-when-downgrade"
+	}
+}
+
 copyparty.hchu.me {
 	import secure_headers
 	reverse_proxy 192.168.0.7:3923
@@ -36,7 +45,7 @@ qbt.home.hchu.me {
 
 pve.home.hchu.me {
 	import private_only
-	import secure_headers
+	import pve_headers
 	reverse_proxy https://192.168.0.2:8006 {
 		transport http {
 			tls_insecure_skip_verify

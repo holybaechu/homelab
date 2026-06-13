@@ -67,12 +67,15 @@
     cmd: "setcap cap_net_bind_service=+ep {{ adguard_install_dir }}/AdGuardHome"
   changed_when: false
 
-- name: Require AdGuard admin password
+- name: Require AdGuard admin credentials
   ansible.builtin.assert:
     that:
+      - adguard_admin_username is defined
+      - adguard_admin_username | length > 0
+      - adguard_admin_username is match('^[A-Za-z0-9_.-]+$')
       - adguard_admin_password is defined
       - adguard_admin_password | length > 0
-    fail_msg: adguard_admin_password must be provided as plaintext; the role hashes it before writing AdGuard config.
+    fail_msg: adguard_admin_username and adguard_admin_password must be provided; the role hashes the password before writing AdGuard config.
   no_log: true
 
 - name: Hash AdGuard admin password
@@ -84,7 +87,7 @@
       - "10"
       - -n
       - -b
-      - admin
+      - "{{ adguard_admin_username }}"
       - "{{ adguard_admin_password }}"
   register: adguard_admin_htpasswd
   changed_when: false
@@ -92,7 +95,7 @@
 
 - name: Set AdGuard admin password hash
   ansible.builtin.set_fact:
-    adguard_admin_password_hash: "{{ adguard_admin_htpasswd.stdout | regex_replace('^admin:', '') }}"
+    adguard_admin_password_hash: "{{ adguard_admin_htpasswd.stdout.split(':', 1)[1] }}"
   no_log: true
 
 - name: Install baseline AdGuard config when no migrated config exists
@@ -104,6 +107,159 @@
     mode: "0640"
     force: false
   no_log: true
+  notify: Restart adguardhome
+
+- name: Update AdGuard admin user in existing config
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        from pathlib import Path
+        import sys
+
+        path = Path(sys.argv[1])
+        username = sys.argv[2]
+        password_hash = sys.argv[3]
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        try:
+            start = lines.index("users:")
+        except ValueError:
+            raise SystemExit("users block not found")
+
+        end = len(lines)
+        for index in range(start + 1, len(lines)):
+            line = lines[index]
+            if line and not line.startswith((" ", "\t", "-")):
+                end = index
+                break
+
+        replacement = [
+            "users:",
+            f'  - name: "{username}"',
+            f'    password: "{password_hash}"',
+        ]
+        if lines[start:end] == replacement:
+            print("unchanged")
+        else:
+            lines = lines[:start] + replacement + lines[end:]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            print("changed")
+      - "{{ adguard_conf_dir }}/AdGuardHome.yaml"
+      - "{{ adguard_admin_username }}"
+      - "{{ adguard_admin_password_hash }}"
+  register: adguard_admin_user_config
+  changed_when: adguard_admin_user_config.stdout == "changed"
+  no_log: true
+  notify: Restart adguardhome
+
+- name: Update AdGuard trusted proxies and DNS filters in existing config
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        from pathlib import Path
+        import json
+        import sys
+
+        path = Path(sys.argv[1])
+        trusted_proxies = json.loads(sys.argv[2])
+        dns_filters = json.loads(sys.argv[3])
+
+        def yaml_quote(value):
+            return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+        def replace_top_level_block(lines, key, replacement):
+            marker = f"{key}:"
+            try:
+                start = lines.index(marker)
+            except ValueError:
+                lines.extend(replacement)
+                return lines, True
+
+            end = len(lines)
+            for index in range(start + 1, len(lines)):
+                line = lines[index]
+                if line and not line.startswith((" ", "\t", "-")):
+                    end = index
+                    break
+
+            if lines[start:end] == replacement:
+                return lines, False
+            return lines[:start] + replacement + lines[end:], True
+
+        def replace_nested_block(lines, parent, child, replacement):
+            parent_marker = f"{parent}:"
+            try:
+                parent_start = lines.index(parent_marker)
+            except ValueError:
+                raise SystemExit(f"{parent_marker} block not found")
+
+            parent_end = len(lines)
+            for index in range(parent_start + 1, len(lines)):
+                line = lines[index]
+                if line and not line.startswith((" ", "\t", "-")):
+                    parent_end = index
+                    break
+
+            child_marker = f"  {child}:"
+            child_start = None
+            for index in range(parent_start + 1, parent_end):
+                if lines[index] == child_marker:
+                    child_start = index
+                    break
+
+            if child_start is None:
+                insert_at = parent_end
+                return lines[:insert_at] + replacement + lines[insert_at:], True
+
+            child_end = parent_end
+            for index in range(child_start + 1, parent_end):
+                line = lines[index]
+                if line.startswith("  ") and not line.startswith("    "):
+                    child_end = index
+                    break
+
+            if lines[child_start:child_end] == replacement:
+                return lines, False
+            return lines[:child_start] + replacement + lines[child_end:], True
+
+        trusted_proxy_lines = ["  trusted_proxies:"]
+        trusted_proxy_lines.extend(f"    - {proxy}" for proxy in trusted_proxies)
+
+        filter_lines = ["filters:"]
+        for dns_filter in dns_filters:
+            enabled = str(dns_filter.get("enabled", True)).lower()
+            filter_lines.extend(
+                [
+                    f"  - enabled: {enabled}",
+                    f"    url: {dns_filter['url']}",
+                    f"    name: {yaml_quote(dns_filter['name'])}",
+                    f"    id: {dns_filter['id']}",
+                ]
+            )
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        changed = False
+        lines, block_changed = replace_nested_block(
+            lines, "dns", "trusted_proxies", trusted_proxy_lines
+        )
+        changed = changed or block_changed
+        lines, block_changed = replace_top_level_block(lines, "filters", filter_lines)
+        changed = changed or block_changed
+
+        if changed:
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            print("changed")
+        else:
+            print("unchanged")
+      - "{{ adguard_conf_dir }}/AdGuardHome.yaml"
+      - "{{ adguard_trusted_proxies | to_json }}"
+      - "{{ adguard_dns_filters | to_json }}"
+  register: adguard_proxy_filter_config
+  changed_when: adguard_proxy_filter_config.stdout == "changed"
   notify: Restart adguardhome
 
 - name: Install AdGuard OpenRC service
