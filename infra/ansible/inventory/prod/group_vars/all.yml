@@ -9,6 +9,7 @@ dns_ip: 192.168.0.3
 tailnet_ip: 192.168.0.5
 downloads_ip: 192.168.0.6
 files_ip: 192.168.0.7
+minecraft_ip: 192.168.0.8
 
 service_user: homelab
 service_group: homelab
@@ -89,3 +90,6 @@ pve_lxc_access_bootstrap:
   - vmid: 114
     name: files
     os_family: alpine
+  - vmid: 115
+    name: minecraft
+    os_family: debian

@@ -30,6 +30,7 @@ def assert_container_sizing(tfvars_path: Path):
         "files": {"root_disk_gb": 4, "cores": 1, "memory_mb": 512},
         "dns": {"root_disk_gb": 4, "cores": 1, "memory_mb": 512},
         "tailnet": {"root_disk_gb": 4, "cores": 1, "memory_mb": 512},
+        "minecraft": {"root_disk_gb": 32, "cores": 4, "memory_mb": 4096},
     }
 
     for name, values in expected.items():

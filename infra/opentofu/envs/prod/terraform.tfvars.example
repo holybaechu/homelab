@@ -92,4 +92,21 @@ containers = {
     swap_mb          = 0
     startup_order    = 5
   }
+
+  minecraft = {
+    vmid             = 115
+    hostname         = "minecraft"
+    description      = "Velocity and Paper Minecraft server managed by OpenTofu and Ansible"
+    tags             = ["homelab", "managed-by-opentofu", "role-minecraft"]
+    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+    os_type          = "debian"
+    ip_address       = "192.168.0.8/24"
+    mac_address      = "02:00:00:BA:EC:08"
+    gateway          = "192.168.0.1"
+    root_disk_gb     = 32
+    cores            = 4
+    memory_mb        = 4096
+    swap_mb          = 1024
+    startup_order    = 6
+  }
 }
