@@ -1,0 +1,9 @@
+username-prefix: {{ minecraft_floodgate_username_prefix | to_json }}
+replace-spaces: true
+disconnect:
+  linked-player: true
+  invalid-key: true
+disconnect-message:
+  linked-player: "This Bedrock account is linked to a Java account."
+  invalid-key: "Invalid Floodgate key."
+send-floodgate-data: false

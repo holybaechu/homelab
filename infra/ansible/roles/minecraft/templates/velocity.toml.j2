@@ -1,0 +1,19 @@
+config-version = "2.7"
+bind = {{ ("0.0.0.0:" ~ minecraft_java_port) | to_json }}
+motd = {{ minecraft_motd | to_json }}
+show-max-players = {{ minecraft_max_players }}
+online-mode = true
+force-key-authentication = true
+prevent-client-proxy-connections = false
+player-info-forwarding-mode = "modern"
+forwarding-secret-file = "forwarding.secret"
+announce-forge = false
+kick-existing-players = false
+ping-passthrough = "disabled"
+enable-player-address-logging = true
+
+[servers]
+paper = {{ (minecraft_paper_bind_address ~ ":" ~ minecraft_paper_port) | to_json }}
+try = ["paper"]
+
+[forced-hosts]

@@ -1,0 +1,21 @@
+[Unit]
+Description=Minecraft Velocity proxy
+After=network-online.target minecraft-paper.service
+Wants=network-online.target
+Requires=minecraft-paper.service
+
+[Service]
+Type=simple
+User={{ minecraft_user }}
+Group={{ minecraft_group }}
+WorkingDirectory={{ minecraft_velocity_dir }}
+ExecStart=/usr/bin/java -Xms256M -Xmx512M -jar velocity.jar
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+Restart=on-failure
+RestartSec=10
+SuccessExitStatus=0 130 143
+
+[Install]
+WantedBy=multi-user.target
