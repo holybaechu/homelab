@@ -9,7 +9,7 @@ http:
   pprof:
     enabled: false
     port: 6060
-  session_ttl: 0s
+  session_ttl: 720h
   doh:
     routes:
       - GET /dns-query
@@ -48,6 +48,11 @@ dns:
     use_custom: false
 filtering:
   protection_enabled: true
+  rewrites_enabled: true
+  rewrites:
+    - domain: '*.{{ homelab_private_domain }}'
+      answer: {{ edge_ip }}
+      enabled: true
   blocked_services:
     schedule:
       time_zone: Local

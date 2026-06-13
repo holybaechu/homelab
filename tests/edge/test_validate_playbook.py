@@ -22,3 +22,12 @@ def test_validate_playbook_checks_adguard_webui_uses_caddy_tls_route():
     assert "https://adguard.home.hchu.me/login.html" in validate
     assert "Via: 1.1 Caddy" in validate
 
+
+def test_validate_playbook_checks_private_home_dns_rewrite():
+    validate = (
+        REPO_ROOT / "infra" / "ansible" / "playbooks" / "validate.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "drill @127.0.0.1 qbt.home.hchu.me A" in validate
+    assert 'grep -F "{{ edge_ip }}"' in validate
+

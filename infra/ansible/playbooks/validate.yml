@@ -42,6 +42,14 @@
         cmd: drill @127.0.0.1 example.com
       changed_when: false
 
+    - name: Query AdGuard private home DNS rewrite
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          drill @127.0.0.1 qbt.home.hchu.me A | grep -F "{{ edge_ip }}"
+        executable: /bin/sh
+      changed_when: false
+
 - name: Validate tailnet
   hosts: tailnet
   gather_facts: false
