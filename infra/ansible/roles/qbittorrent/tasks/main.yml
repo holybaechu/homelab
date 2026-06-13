@@ -65,7 +65,7 @@
 - name: Install VueTorrent
   ansible.builtin.unarchive:
     src: /tmp/vuetorrent.zip
-    dest: "{{ qbittorrent_vuetorrent_root }}"
+    dest: "{{ qbittorrent_vuetorrent_root | dirname }}"
     remote_src: true
     owner: root
     group: root
@@ -95,6 +95,15 @@
   ansible.builtin.set_fact:
     qbittorrent_webui_password_pbkdf2: "{{ qbittorrent_webui_password_pbkdf2_result.stdout }}"
   no_log: true
+
+- name: Gather service facts before qBittorrent config update
+  ansible.builtin.service_facts:
+
+- name: Stop qBittorrent before writing config
+  ansible.builtin.systemd:
+    name: qbittorrent.service
+    state: stopped
+  when: "'qbittorrent.service' in ansible_facts.services"
 
 - name: Install qBittorrent config
   ansible.builtin.template:

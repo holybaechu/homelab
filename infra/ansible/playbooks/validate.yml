@@ -27,6 +27,16 @@
         cmd: rc-service adguardhome status
       changed_when: false
 
+    - name: Check AdGuard Web UI is served through Caddy TLS route
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          headers="$(curl -fsSI --http1.1 --resolve "adguard.home.hchu.me:443:{{ edge_ip }}" https://adguard.home.hchu.me/login.html)"
+          printf '%s\n' "$headers" | grep -F "HTTP/1.1 200"
+          printf '%s\n' "$headers" | grep -F "Via: 1.1 Caddy"
+        executable: /bin/sh
+      changed_when: false
+
     - name: Query AdGuard normal DNS
       ansible.builtin.command:
         cmd: drill @127.0.0.1 example.com

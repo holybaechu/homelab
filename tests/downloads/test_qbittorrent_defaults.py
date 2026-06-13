@@ -34,6 +34,28 @@ def test_natpmp_updater_defaults_to_configured_qbittorrent_user():
     assert "--qbt-user {{ qbittorrent_webui_username }}" in tasks
 
 
+def test_vuetorrent_archive_extracts_to_parent_of_configured_root():
+    tasks = (
+        REPO_ROOT / "infra" / "ansible" / "roles" / "qbittorrent" / "tasks" / "main.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "dest: \"{{ qbittorrent_vuetorrent_root | dirname }}\"" in tasks
+    assert "dest: \"{{ qbittorrent_vuetorrent_root }}\"" not in tasks
+
+
+def test_qbittorrent_stops_before_rewriting_file_backed_config():
+    tasks = (
+        REPO_ROOT / "infra" / "ansible" / "roles" / "qbittorrent" / "tasks" / "main.yml"
+    ).read_text(encoding="utf-8")
+
+    stop_task = tasks.index("- name: Stop qBittorrent before writing config")
+    config_task = tasks.index("- name: Install qBittorrent config")
+
+    assert stop_task < config_task
+    assert "ansible.builtin.service_facts:" in tasks
+    assert "state: stopped" in tasks
+
+
 def test_downloads_inventory_keeps_password_out_of_committed_group_vars():
     group_vars = (
         REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "downloads.yml"
