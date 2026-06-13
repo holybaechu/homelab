@@ -18,7 +18,7 @@ downloads_service_uid: 1100
 downloads_service_gid: 1100
 
 homelab_data_lv_name: homelab-data
-homelab_data_lv_size: 1200G
+homelab_data_lv_size: 896G
 homelab_data_mount: /var/lib/homelab
 homelab_container_uid_offset: 100000
 
@@ -61,8 +61,6 @@ pve_lxc_root_options:
     bind_mount_sources:
       - /var/lib/homelab/copyparty/public
       - /var/lib/homelab/copyparty/shared-readonly
-      - /var/lib/homelab/copyparty/music
-      - /var/lib/homelab/copyparty/bjh_deepfake_contest
       - /var/lib/homelab/downloads/complete
     settings:
       - description: mount completed downloads read-only
@@ -74,12 +72,6 @@ pve_lxc_root_options:
       - description: mount shared-readonly Copyparty share
         pattern: '^mp2: /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly(,.*)?$'
         pct_args: '-mp2 /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly'
-      - description: mount music Copyparty share
-        pattern: '^mp3: /var/lib/homelab/copyparty/music,mp=/srv/music(,.*)?$'
-        pct_args: '-mp3 /var/lib/homelab/copyparty/music,mp=/srv/music'
-      - description: mount contest Copyparty share
-        pattern: '^mp4: /var/lib/homelab/copyparty/bjh_deepfake_contest,mp=/srv/bjh_deepfake_contest(,.*)?$'
-        pct_args: '-mp4 /var/lib/homelab/copyparty/bjh_deepfake_contest,mp=/srv/bjh_deepfake_contest'
 
 pve_lxc_access_bootstrap:
   - vmid: 110

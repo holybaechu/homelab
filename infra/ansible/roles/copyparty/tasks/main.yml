@@ -27,8 +27,6 @@
   loop:
     - /srv/public
     - /srv/shared-readonly
-    - /srv/music
-    - /srv/bjh_deepfake_contest
     - "{{ copyparty_downloads_path }}"
 
 - name: Assert Copyparty data mounts exist

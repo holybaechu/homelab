@@ -35,3 +35,7 @@ def test_copyparty_config_renders_only_supplied_accounts():
     assert "bjh_deepfake_contest:" not in accounts_section
     assert "r: holybaechu" in rendered
     assert "A: holybaechu" in rendered
+    assert "[/music]" not in rendered
+    assert "/srv/music" not in rendered
+    assert "[/bjh_deepfake_contest]" not in rendered
+    assert "/srv/bjh_deepfake_contest" not in rendered

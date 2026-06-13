@@ -44,14 +44,12 @@
       "${mount_path}/downloads/incomplete" \
       "${mount_path}/copyparty/public" \
       "${mount_path}/copyparty/shared-readonly" \
-      "${mount_path}/copyparty/music" \
-      "${mount_path}/copyparty/bjh_deepfake_contest" \
       "${mount_path}/copyparty/downloads"
 
     chown -R {{ homelab_container_uid_offset + downloads_service_uid }}:{{ homelab_container_uid_offset + downloads_service_gid }} "${mount_path}/downloads"
     chown -R {{ homelab_container_uid_offset + service_uid }}:{{ homelab_container_uid_offset + service_gid }} "${mount_path}/copyparty"
     chmod 0755 "${mount_path}" "${mount_path}/downloads" "${mount_path}/downloads/complete" "${mount_path}/downloads/incomplete" "${mount_path}/copyparty"
-    chmod 0755 "${mount_path}/copyparty/public" "${mount_path}/copyparty/shared-readonly" "${mount_path}/copyparty/music" "${mount_path}/copyparty/bjh_deepfake_contest" "${mount_path}/copyparty/downloads"
+    chmod 0755 "${mount_path}/copyparty/public" "${mount_path}/copyparty/shared-readonly" "${mount_path}/copyparty/downloads"
     find "${mount_path}/copyparty/public" -type d -exec chmod 0755 {} +
     find "${mount_path}/copyparty/public" -type f -exec chmod 0644 {} +
 
