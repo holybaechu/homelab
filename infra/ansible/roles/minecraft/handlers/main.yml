@@ -1,0 +1,12 @@
+---
+- name: Restart minecraft-paper
+  ansible.builtin.systemd:
+    name: minecraft-paper.service
+    daemon_reload: true
+    state: restarted
+
+- name: Restart minecraft-velocity
+  ansible.builtin.systemd:
+    name: minecraft-velocity.service
+    daemon_reload: true
+    state: restarted

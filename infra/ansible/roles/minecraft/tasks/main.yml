@@ -1,0 +1,263 @@
+---
+- name: Load Minecraft allowed players
+  ansible.builtin.include_vars:
+    file: "{{ minecraft_allowed_players_file }}"
+    name: minecraft_allowed_players
+
+- name: Install Minecraft packages
+  ansible.builtin.apt:
+    name:
+      - "{{ minecraft_java_package }}"
+      - ca-certificates
+      - curl
+      - python3
+    update_cache: true
+    state: present
+
+- name: Create Minecraft group
+  ansible.builtin.group:
+    name: "{{ minecraft_group }}"
+    gid: "{{ minecraft_gid }}"
+    state: present
+
+- name: Create Minecraft user
+  ansible.builtin.user:
+    name: "{{ minecraft_user }}"
+    uid: "{{ minecraft_uid }}"
+    group: "{{ minecraft_group }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    home: "{{ minecraft_base_dir }}"
+    state: present
+
+- name: Create Minecraft directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0755"
+  loop:
+    - "{{ minecraft_base_dir }}"
+    - "{{ minecraft_paper_dir }}"
+    - "{{ minecraft_paper_dir }}/config"
+    - "{{ minecraft_paper_plugins_dir }}"
+    - "{{ minecraft_velocity_dir }}"
+    - "{{ minecraft_velocity_plugins_dir }}"
+    - "{{ minecraft_velocity_plugins_dir }}/Geyser-Velocity"
+    - "{{ minecraft_velocity_plugins_dir }}/floodgate"
+
+- name: Download Paper server
+  ansible.builtin.get_url:
+    url: "https://api.papermc.io/v2/projects/paper/versions/{{ minecraft_paper_version }}/builds/{{ minecraft_paper_build }}/downloads/paper-{{ minecraft_paper_version }}-{{ minecraft_paper_build }}.jar"
+    dest: "{{ minecraft_paper_dir }}/paper.jar"
+    checksum: "sha256:{{ minecraft_paper_sha256 }}"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-paper
+
+- name: Download Velocity proxy
+  ansible.builtin.get_url:
+    url: "https://api.papermc.io/v2/projects/velocity/versions/{{ minecraft_velocity_version }}/builds/{{ minecraft_velocity_build }}/downloads/velocity-{{ minecraft_velocity_version }}-{{ minecraft_velocity_build }}.jar"
+    dest: "{{ minecraft_velocity_dir }}/velocity.jar"
+    checksum: "sha256:{{ minecraft_velocity_sha256 }}"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-velocity
+
+- name: Download Geyser Velocity plugin
+  ansible.builtin.get_url:
+    url: "https://download.geysermc.org/v2/projects/geyser/versions/{{ minecraft_geyser_version }}/builds/{{ minecraft_geyser_build }}/downloads/velocity"
+    dest: "{{ minecraft_velocity_plugins_dir }}/Geyser-Velocity.jar"
+    checksum: "sha256:{{ minecraft_geyser_velocity_sha256 }}"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-velocity
+
+- name: Download Floodgate Velocity plugin
+  ansible.builtin.get_url:
+    url: "https://download.geysermc.org/v2/projects/floodgate/versions/{{ minecraft_floodgate_version }}/builds/{{ minecraft_floodgate_build }}/downloads/velocity"
+    dest: "{{ minecraft_velocity_plugins_dir }}/floodgate-velocity.jar"
+    checksum: "sha256:{{ minecraft_floodgate_velocity_sha256 }}"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-velocity
+
+- name: Download ViaVersion Paper plugin
+  ansible.builtin.get_url:
+    url: "{{ minecraft_viaversion_url }}"
+    dest: "{{ minecraft_paper_plugins_dir }}/ViaVersion.jar"
+    checksum: "sha512:{{ minecraft_viaversion_sha512 }}"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-paper
+
+- name: Check Velocity forwarding secret
+  ansible.builtin.stat:
+    path: "{{ minecraft_velocity_dir }}/forwarding.secret"
+  register: minecraft_velocity_forwarding_secret_stat
+
+- name: Generate Velocity forwarding secret
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "import secrets; print(secrets.token_urlsafe(32))"
+  register: minecraft_velocity_forwarding_secret_result
+  changed_when: true
+  when: not minecraft_velocity_forwarding_secret_stat.stat.exists
+  no_log: true
+
+- name: Install Velocity forwarding secret
+  ansible.builtin.copy:
+    dest: "{{ minecraft_velocity_dir }}/forwarding.secret"
+    content: "{{ minecraft_velocity_forwarding_secret_result.stdout }}\n"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0600"
+  when: not minecraft_velocity_forwarding_secret_stat.stat.exists
+  no_log: true
+  notify:
+    - Restart minecraft-paper
+    - Restart minecraft-velocity
+
+- name: Set Velocity forwarding secret permissions
+  ansible.builtin.file:
+    path: "{{ minecraft_velocity_dir }}/forwarding.secret"
+    state: file
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0600"
+  no_log: true
+
+- name: Read Velocity forwarding secret
+  ansible.builtin.slurp:
+    src: "{{ minecraft_velocity_dir }}/forwarding.secret"
+  register: minecraft_velocity_forwarding_secret_slurp
+  no_log: true
+
+- name: Set Velocity forwarding secret fact
+  ansible.builtin.set_fact:
+    minecraft_velocity_forwarding_secret: "{{ minecraft_velocity_forwarding_secret_slurp.content | b64decode | trim }}"
+  no_log: true
+
+- name: Accept Minecraft EULA
+  ansible.builtin.copy:
+    dest: "{{ minecraft_paper_dir }}/eula.txt"
+    content: "eula=true\n"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-paper
+
+- name: Install Paper server properties
+  ansible.builtin.template:
+    src: server.properties.j2
+    dest: "{{ minecraft_paper_dir }}/server.properties"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-paper
+
+- name: Install Paper global config
+  ansible.builtin.template:
+    src: paper-global.yml.j2
+    dest: "{{ minecraft_paper_dir }}/config/paper-global.yml"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart minecraft-paper
+
+- name: Install Velocity config
+  ansible.builtin.template:
+    src: velocity.toml.j2
+    dest: "{{ minecraft_velocity_dir }}/velocity.toml"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-velocity
+
+- name: Install Geyser config
+  ansible.builtin.template:
+    src: geyser-config.yml.j2
+    dest: "{{ minecraft_velocity_plugins_dir }}/Geyser-Velocity/config.yml"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-velocity
+
+- name: Install Floodgate config
+  ansible.builtin.template:
+    src: floodgate-config.yml.j2
+    dest: "{{ minecraft_velocity_plugins_dir }}/floodgate/config.yml"
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-velocity
+
+- name: Install Minecraft allowlist resolver
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../apps/minecraft/scripts/resolve_allowlist.py"
+    dest: /usr/local/bin/minecraft-resolve-allowlist
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Generate Paper whitelist
+  ansible.builtin.shell:
+    cmd: >-
+      /usr/local/bin/minecraft-resolve-allowlist
+      {% for player in minecraft_allowed_players.java | default([]) %}
+      --java {{ player.name | quote }}
+      {% endfor %}
+      {% for player in minecraft_allowed_players.bedrock | default([]) %}
+      --bedrock {{ player.gamertag | quote }}
+      {% endfor %}
+      --bedrock-prefix {{ minecraft_floodgate_username_prefix | quote }}
+      --output {{ (minecraft_paper_dir ~ '/whitelist.json') | quote }}
+  register: minecraft_allowlist_result
+  changed_when: minecraft_allowlist_result.stdout == "changed"
+  notify: Restart minecraft-paper
+
+- name: Set Paper whitelist ownership
+  ansible.builtin.file:
+    path: "{{ minecraft_paper_dir }}/whitelist.json"
+    state: file
+    owner: "{{ minecraft_user }}"
+    group: "{{ minecraft_group }}"
+    mode: "0644"
+  notify: Restart minecraft-paper
+
+- name: Install Minecraft Paper systemd unit
+  ansible.builtin.template:
+    src: minecraft-paper.service.j2
+    dest: /etc/systemd/system/minecraft-paper.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart minecraft-paper
+
+- name: Install Minecraft Velocity systemd unit
+  ansible.builtin.template:
+    src: minecraft-velocity.service.j2
+    dest: /etc/systemd/system/minecraft-velocity.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart minecraft-velocity
+
+- name: Enable Minecraft services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+  loop:
+    - minecraft-paper.service
+    - minecraft-velocity.service
