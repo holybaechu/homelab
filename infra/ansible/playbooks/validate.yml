@@ -104,3 +104,70 @@
         host: 127.0.0.1
         port: 3923
         timeout: 5
+
+- name: Validate minecraft service
+  hosts: minecraft
+  gather_facts: false
+  tasks:
+    - name: Check Paper service
+      ansible.builtin.command:
+        cmd: systemctl is-active minecraft-paper
+      changed_when: false
+
+    - name: Check Velocity service
+      ansible.builtin.command:
+        cmd: systemctl is-active minecraft-velocity
+      changed_when: false
+
+    - name: Check Velocity Java port
+      ansible.builtin.wait_for:
+        host: 0.0.0.0
+        port: "{{ minecraft_java_port }}"
+        timeout: 5
+
+    - name: Check Velocity Java port is publicly bound
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          listeners="$(ss -H -ltn "sport = :{{ minecraft_java_port }}")"
+          test -n "$listeners"
+          printf '%s\n' "$listeners" | awk '{ print $4 }' | grep -Fx "0.0.0.0:{{ minecraft_java_port }}"
+        executable: /bin/sh
+      changed_when: false
+
+    - name: Check Paper backend is bound only to localhost
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          listeners="$(ss -H -ltn "sport = :{{ minecraft_paper_port }}")"
+          test -n "$listeners"
+          printf '%s\n' "$listeners" | awk '{ print $4 }' | grep -Eq '^(127\.0\.0\.1|\[::1\]|::1):{{ minecraft_paper_port }}$'
+          if printf '%s\n' "$listeners" | awk '{ print $4 }' | grep -Ev '^(127\.0\.0\.1|\[::1\]|::1):{{ minecraft_paper_port }}$'; then
+            exit 1
+          fi
+        executable: /bin/sh
+      changed_when: false
+
+    - name: Check Geyser Bedrock UDP port
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          ss -H -lun "sport = :{{ minecraft_bedrock_port }}" | grep -F ":{{ minecraft_bedrock_port }}"
+        executable: /bin/sh
+      changed_when: false
+
+    - name: Check Minecraft plugin jars
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: minecraft_plugin_stats
+      loop:
+        - "{{ minecraft_paper_plugins_dir }}/ViaVersion.jar"
+        - "{{ minecraft_velocity_plugins_dir }}/Geyser-Velocity.jar"
+        - "{{ minecraft_velocity_plugins_dir }}/floodgate-velocity.jar"
+
+    - name: Require Minecraft plugin jars
+      ansible.builtin.assert:
+        that:
+          - (item.stat.exists | default(false)) and ((item.stat.size | default(0) | int) > 0)
+        fail_msg: "Missing or empty Minecraft plugin jar at {{ item.item }}"
+      loop: "{{ minecraft_plugin_stats.results }}"

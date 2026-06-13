@@ -43,3 +43,9 @@
   gather_facts: true
   roles:
     - copyparty
+
+- name: Configure minecraft LXC
+  hosts: minecraft
+  gather_facts: true
+  roles:
+    - minecraft
