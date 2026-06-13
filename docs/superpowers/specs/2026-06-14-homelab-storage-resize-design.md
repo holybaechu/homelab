@@ -16,6 +16,18 @@ Current LXC root disk usage:
 | downloads | 8G | 20.5% |
 | files | 6G | 4.3% |
 
+Current LXC CPU and memory usage:
+
+| LXC | Current CPU allocation | CPU usage | Current memory allocation | Memory usage |
+| --- | ---: | ---: | ---: | ---: |
+| edge | 1 core | 0.6% of 1 CPU | 512MB | 4.6% |
+| dns | 1 core | 0.5% of 1 CPU | 512MB | 10.2% |
+| tailnet | 1 core | 0.9% of 1 CPU | 512MB | 14.9% |
+| downloads | 2 cores | 54.0% of 2 CPUs | 2048MB | 18.2% |
+| files | 1 core | 4.0% of 1 CPU | 1024MB | 5.5% |
+
+The Proxmox host has 12 CPU cores and 24GB of memory. LXC allocations should stay close to current need while preserving service headroom.
+
 ## Decisions
 
 1. Reduce the declared `homelab-data` size from `1200G` to `896G`.
@@ -25,6 +37,10 @@ Current LXC root disk usage:
 5. Keep `downloads` root disk at `8G`; downloaded content lives on the shared data mount, but the larger root disk leaves room for qBittorrent, WireGuard, NAT-PMP helpers, package cache, and logs.
 6. Reduce the declared `files` root disk from `6G` to `4G`.
 7. Remove all active `music` and `bjh_deepfake_contest` share declarations, mount declarations, and storage directory management.
+8. Keep CPU allocations unchanged: `downloads` stays at 2 cores, and all other LXCs stay at 1 core.
+9. Reduce `downloads` memory from `2048MB` to `1024MB`.
+10. Reduce `files` memory from `1024MB` to `512MB`.
+11. Keep `edge`, `dns`, and `tailnet` memory at `512MB`.
 
 ## Scope
 
@@ -38,6 +54,7 @@ Update repo-managed declarations only:
 - `infra/opentofu/envs/prod/terraform.tfvars`
 - `infra/opentofu/envs/prod/terraform.tfvars.example`
 - tests that assert Copyparty and storage behavior
+- tests that assert intended LXC resource sizing
 
 ## Runtime Migration
 
@@ -57,6 +74,8 @@ The live `homelab-data` shrink should be documented as a manual runbook step:
 
 Existing LXC root disk shrink should also be handled manually or through rebuild/restore. The repo declaration should describe the intended state, not perform a destructive shrink.
 
+Increasing `edge` root disk and lowering LXC memory allocations can be applied through normal Proxmox/OpenTofu workflows. Reducing `files` root disk should be treated like any other root disk shrink: rebuild/restore or perform a cautious manual shrink outside the automated repo change.
+
 ## Validation
 
 Automated validation should confirm:
@@ -65,6 +84,8 @@ Automated validation should confirm:
 - Files LXC root options no longer mount `/srv/music` or `/srv/bjh_deepfake_contest`.
 - Proxmox storage setup no longer creates or chmods removed share directories.
 - Declared sizes are `homelab_data_lv_size: 896G`, `edge.root_disk_gb = 6`, and `files.root_disk_gb = 4`.
+- Declared memory is `downloads.memory_mb = 1024` and `files.memory_mb = 512`.
+- CPU allocations remain unchanged.
 
 Manual validation after runtime maintenance:
 
