@@ -112,11 +112,19 @@
     - name: Check Paper service
       ansible.builtin.command:
         cmd: systemctl is-active minecraft-paper
+      register: minecraft_paper_service_status
+      until: minecraft_paper_service_status.stdout == "active"
+      retries: 12
+      delay: 5
       changed_when: false
 
     - name: Check Velocity service
       ansible.builtin.command:
         cmd: systemctl is-active minecraft-velocity
+      register: minecraft_velocity_service_status
+      until: minecraft_velocity_service_status.stdout == "active"
+      retries: 12
+      delay: 5
       changed_when: false
 
     - name: Check Velocity Java port

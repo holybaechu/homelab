@@ -73,9 +73,17 @@ def test_validate_playbook_checks_minecraft_services_and_public_java_port():
 
     paper_service = find_task(play, "Check Paper service")
     assert paper_service["ansible.builtin.command"]["cmd"] == "systemctl is-active minecraft-paper"
+    assert paper_service["register"] == "minecraft_paper_service_status"
+    assert paper_service["until"] == 'minecraft_paper_service_status.stdout == "active"'
+    assert paper_service["retries"] >= 6
+    assert paper_service["delay"] > 0
 
     velocity_service = find_task(play, "Check Velocity service")
     assert velocity_service["ansible.builtin.command"]["cmd"] == "systemctl is-active minecraft-velocity"
+    assert velocity_service["register"] == "minecraft_velocity_service_status"
+    assert velocity_service["until"] == 'minecraft_velocity_service_status.stdout == "active"'
+    assert velocity_service["retries"] >= 6
+    assert velocity_service["delay"] > 0
 
     java_port = find_task(play, "Check Velocity Java port")
     wait_for = java_port["ansible.builtin.wait_for"]
