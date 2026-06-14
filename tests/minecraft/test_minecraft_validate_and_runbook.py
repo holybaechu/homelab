@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -16,6 +17,10 @@ def load_playbook(relative_path: str) -> list[dict]:
 
     assert isinstance(playbook, list)
     return playbook
+
+
+def read(relative_path: str) -> str:
+    return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 
 
 def find_play(plays: list[dict], name: str) -> dict:
@@ -39,6 +44,14 @@ def role_names(play: dict) -> list[str]:
         else:
             names.append(role["role"])
     return names
+
+
+def assert_export_immediately_precedes_command(runbook: str, command: str) -> None:
+    pattern = re.compile(
+        r"(?m)^[ \t]*export ANSIBLE_CONFIG=infra/ansible/ansible\.cfg[ \t]*\n"
+        rf"^[ \t]*{re.escape(command)}[ \t]*$"
+    )
+    assert pattern.search(runbook)
 
 
 def test_site_playbook_applies_minecraft_role():
@@ -134,3 +147,61 @@ def test_validate_playbook_asserts_plugins_exist_with_guarded_size_check():
         "(item.stat.exists | default(false)) and ((item.stat.size | default(0) | int) > 0)"
     ]
     assert "{{ item.item }}" in task["ansible.builtin.assert"]["fail_msg"]
+
+
+def test_minecraft_runbook_documents_dns_ports_and_join_checks():
+    runbook = read("docs/runbooks/minecraft-server.md").replace("\r\n", "\n")
+    bootstrap_command = (
+        "ansible-playbook -i infra/ansible/inventory/prod/hosts.yml "
+        "infra/ansible/playbooks/bootstrap.yml --limit pve,minecraft"
+    )
+    ansible_commands = [
+        bootstrap_command,
+        "ansible-playbook -i infra/ansible/inventory/prod/hosts.yml "
+        "infra/ansible/playbooks/site.yml --limit minecraft",
+        "ansible-playbook -i infra/ansible/inventory/prod/hosts.yml "
+        "infra/ansible/playbooks/validate.yml --limit minecraft",
+    ]
+
+    assert "_minecraft._tcp.hchu.me" in runbook
+    assert "home.hchu.me" in runbook
+    assert (
+        "| SRV | `_minecraft._tcp.hchu.me` | `0` | `0` | `25565` | `home.hchu.me` |"
+        in runbook
+    )
+    assert "TCP 25565" in runbook
+    assert "UDP 19132" in runbook
+    assert "192.168.0.8" in runbook
+    assert "- TCP 25565 -> 192.168.0.8:25565" in runbook
+    assert "- UDP 19132 -> 192.168.0.8:19132" in runbook
+    assert "ssh-keygen -R 192.168.0.8" in runbook
+    assert "ssh-keyscan -H -T 10 192.168.0.8" in runbook
+    assert "Java allowlist: `holybaechu`" in runbook
+    assert "Bedrock allowlist: `holybaechuwu`" in runbook
+    assert (
+        "Bedrock allowlist: `holybaechuwu`, represented on the backend as `.holybaechuwu`"
+        in runbook
+    )
+    assert "unlisted Java" in runbook
+    assert "unlisted Bedrock" in runbook
+    assert "Geyser cache" in runbook
+    assert (
+        "failed to resolve Minecraft allowlist. For Bedrock players, make sure the "
+        "gamertag is known to the GeyserMC UUID API cache"
+        in runbook
+    )
+    assert "failed to resolve Bedrock player holybaechuwu" in runbook
+    assert (
+        "Prime the cache by signing into any Geyser-backed server once as `holybaechuwu`, "
+        "then rerun the Minecraft Ansible role."
+        in runbook
+    )
+    assert "must not disable the whitelist" in runbook
+    assert "ANSIBLE_CONFIG=infra/ansible/ansible.cfg" in runbook
+    assert bootstrap_command in runbook
+    for ansible_command in ansible_commands:
+        assert_export_immediately_precedes_command(runbook, ansible_command)
+    assert "tofu -chdir=infra/opentofu/envs/prod plan" in runbook
+    assert "tofu -chdir=infra/opentofu/envs/prod apply" in runbook
+    assert "ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/site.yml --limit minecraft" in runbook
+    assert "ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/validate.yml --limit minecraft" in runbook
