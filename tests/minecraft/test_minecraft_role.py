@@ -127,8 +127,10 @@ def test_geyser_and_floodgate_templates_enable_bedrock_floodgate_auth():
     assert "address: 0.0.0.0" in geyser
     assert "port: {{ minecraft_bedrock_port }}" in geyser
     assert "auth-type: floodgate" in geyser
+    assert "key-file-name: key.pem" in floodgate
     assert "username-prefix: {{ minecraft_floodgate_username_prefix | to_json }}" in floodgate
     assert "send-floodgate-data: false" in floodgate
+    assert "config-version: 3" in floodgate
 
 
 def test_geyser_and_floodgate_render_parseable_yaml_with_escaped_prefix():
@@ -141,8 +143,15 @@ def test_geyser_and_floodgate_render_parseable_yaml_with_escaped_prefix():
     assert geyser["bedrock"]["address"] == "0.0.0.0"
     assert geyser["bedrock"]["port"] == 19132
     assert geyser["remote"]["auth-type"] == "floodgate"
+    assert floodgate["key-file-name"] == "key.pem"
     assert floodgate["username-prefix"] == prefix
     assert floodgate["send-floodgate-data"] is False
+    assert floodgate["disconnect"]["invalid-key"] == "Invalid Floodgate key."
+    assert floodgate["disconnect"]["invalid-arguments-length"] == (
+        "Expected {} arguments, got {}. Is Geyser up-to-date?"
+    )
+    assert "disconnect-message" not in floodgate
+    assert floodgate["config-version"] == 3
 
 
 def test_systemd_units_run_as_minecraft_user():
