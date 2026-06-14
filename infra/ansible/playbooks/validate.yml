@@ -144,8 +144,14 @@
           set -eu
           listeners="$(ss -H -ltn "sport = :{{ minecraft_paper_port }}")"
           test -n "$listeners"
-          printf '%s\n' "$listeners" | awk '{ print $4 }' | grep -Eq '^(127\.0\.0\.1|\[::1\]|::1):{{ minecraft_paper_port }}$'
-          if printf '%s\n' "$listeners" | awk '{ print $4 }' | grep -Ev '^(127\.0\.0\.1|\[::1\]|::1):{{ minecraft_paper_port }}$'; then
+          addresses="$(printf '%s\n' "$listeners" | awk '{ print $4 }')"
+          paper_loopback_pattern='^(127\.0\.0\.1|\[::1\]|::1|\[0:0:0:0:0:0:0:1\]|0:0:0:0:0:0:0:1|\[::ffff:127\.0\.0\.1\]|::ffff:127\.0\.0\.1):{{ minecraft_paper_port }}$'
+          if ! printf '%s\n' "$addresses" | grep -Eq "$paper_loopback_pattern"; then
+            printf 'Paper backend listeners are not loopback-only:\n%s\n' "$listeners" >&2
+            exit 1
+          fi
+          if public_listeners="$(printf '%s\n' "$addresses" | grep -Ev "$paper_loopback_pattern")"; then
+            printf 'Paper backend has non-loopback listeners:\n%s\n' "$public_listeners" >&2
             exit 1
           fi
         executable: /bin/sh

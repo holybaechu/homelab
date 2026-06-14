@@ -107,7 +107,10 @@ def test_validate_playbook_rejects_non_loopback_paper_backend_listeners():
 
     assert 'ss -H -ltn "sport = :{{ minecraft_paper_port }}"' in command
     assert "awk '{ print $4 }'" in command
-    assert "grep -Ev" in command
+    assert "paper_loopback_pattern=" in command
+    assert "::ffff:127\\.0\\.0\\.1" in command
+    assert "0:0:0:0:0:0:0:1" in command
+    assert "Paper backend listeners are not loopback-only" in command
     assert "127\\.0\\.0\\.1" in command
     assert "\\[::1\\]" in command
     assert "exit 1" in command
