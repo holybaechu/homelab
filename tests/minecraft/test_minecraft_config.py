@@ -123,7 +123,12 @@ def test_minecraft_allowed_players_are_source_controlled():
 
     assert allowed_players == {
         "java": [{"name": "holybaechu"}],
-        "bedrock": [{"gamertag": "holybaechuwu"}],
+        "bedrock": [
+            {
+                "gamertag": "holybaechuwu",
+                "uuid": "00000000-0000-0000-0009-01f46fc76cf7",
+            }
+        ],
     }
 
 
