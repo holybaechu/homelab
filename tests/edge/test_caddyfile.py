@@ -26,3 +26,22 @@ def test_proxmox_route_allows_same_origin_frames_for_web_shell():
     assert 'X-Frame-Options "SAMEORIGIN"' in content
     assert "import pve_headers" in pve_block
     assert "import secure_headers" not in pve_block
+
+
+def test_router_route_omits_nosniff_for_mislabelled_flutter_assets():
+    caddyfile = REPO_ROOT / "apps" / "edge" / "Caddyfile"
+    content = caddyfile.read_text(encoding="utf-8")
+    router_block = content.split("router.home.hchu.me {", maxsplit=1)[1].split(
+        "dns.hchu.me {", maxsplit=1
+    )[0]
+
+    assert "(router_headers)" in content
+    assert "import router_headers" in router_block
+    assert "import secure_headers" not in router_block
+
+    router_headers = content.split("(router_headers) {", maxsplit=1)[1].split(
+        "copyparty.hchu.me {", maxsplit=1
+    )[0]
+    assert "X-Content-Type-Options" not in router_headers
+    assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"' in router_headers
+    assert 'X-Frame-Options "DENY"' in router_headers
