@@ -34,12 +34,9 @@
       args:
         executable: /bin/sh
       changed_when: true
-      loop:
-        - "{{ dns_ip }}"
-        - "{{ edge_ip }}"
-        - "{{ tailnet_ip }}"
-        - "{{ downloads_ip }}"
-        - "{{ files_ip }}"
+      loop: >-
+        {{ (groups['alpine'] | default([]) + groups['debian'] | default([]))
+        | map('extract', hostvars, 'ansible_host') | list }}
 
 - name: Bootstrap Alpine LXCs
   hosts: alpine

@@ -149,6 +149,20 @@ def test_validate_playbook_asserts_plugins_exist_with_guarded_size_check():
     assert "{{ item.item }}" in task["ansible.builtin.assert"]["fail_msg"]
 
 
+def test_bootstrap_trusts_all_lxc_inventory_host_keys():
+    play = find_play(
+        load_playbook("infra/ansible/playbooks/bootstrap.yml"),
+        "Trust LXC SSH host keys",
+    )
+    task = find_task(play, "Add LXC SSH host keys to known_hosts")
+    loop = task["loop"]
+
+    assert "groups['alpine']" in loop
+    assert "groups['debian']" in loop
+    assert "hostvars" in loop
+    assert "ansible_host" in loop
+
+
 def test_minecraft_runbook_documents_dns_ports_and_join_checks():
     runbook = read("docs/runbooks/minecraft-server.md").replace("\r\n", "\n")
     bootstrap_command = (
