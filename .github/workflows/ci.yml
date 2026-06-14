@@ -33,7 +33,7 @@ jobs:
         run: ansible-galaxy collection install -r infra/ansible/requirements.yml
 
       - name: Run repository tests
-        run: pytest
+        run: PYTHONPATH=$PWD pytest
 
       - name: Install OpenTofu
         run: |
