@@ -103,6 +103,13 @@ def test_validate_playbook_checks_minecraft_services_and_public_java_port():
     assert "::" in command
     assert public_bind["changed_when"] is False
 
+    paper_port = find_task(play, "Check Paper backend port")
+    paper_wait_for = paper_port["ansible.builtin.wait_for"]
+    assert paper_wait_for["host"] == "127.0.0.1"
+    assert paper_wait_for["port"] == "{{ minecraft_paper_port }}"
+    assert isinstance(paper_wait_for["timeout"], int)
+    assert paper_wait_for["timeout"] > 0
+
 
 def test_validate_playbook_rejects_non_loopback_paper_backend_listeners():
     play = find_play(

@@ -146,6 +146,12 @@
         executable: /bin/sh
       changed_when: false
 
+    - name: Check Paper backend port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ minecraft_paper_port }}"
+        timeout: 60
+
     - name: Check Paper backend is bound only to localhost
       ansible.builtin.shell:
         cmd: |
