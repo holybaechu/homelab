@@ -7,6 +7,7 @@ from apps.minecraft.scripts import resolve_allowlist
 from apps.minecraft.scripts.resolve_allowlist import (
     dashed_uuid,
     normalize_bedrock_name,
+    write_ops,
     write_whitelist,
 )
 
@@ -86,6 +87,32 @@ def test_write_whitelist_replaces_target_atomically(tmp_path: Path, monkeypatch)
     assert not temp_path.exists()
     assert list(tmp_path.iterdir()) == [output]
     assert json.loads(output.read_text(encoding="utf-8")) == entries
+
+
+def test_write_ops_uses_paper_operator_format(tmp_path: Path):
+    output = tmp_path / "ops.json"
+    entries = [
+        {"uuid": "57e13c39-5755-4354-aefa-b60195ff6f27", "name": "holybaechu"},
+        {"uuid": "00000000-0000-0000-0009-01f46fc76cf7", "name": ".holybaechuwu"},
+    ]
+
+    assert write_ops(output, entries) == "changed"
+    assert write_ops(output, entries) == "unchanged"
+
+    assert json.loads(output.read_text(encoding="utf-8")) == [
+        {
+            "uuid": "57e13c39-5755-4354-aefa-b60195ff6f27",
+            "name": "holybaechu",
+            "level": 4,
+            "bypassesPlayerLimit": False,
+        },
+        {
+            "uuid": "00000000-0000-0000-0009-01f46fc76cf7",
+            "name": ".holybaechuwu",
+            "level": 4,
+            "bypassesPlayerLimit": False,
+        },
+    ]
 
 
 def test_resolve_java_player_wraps_fetch_failure_with_player_context(monkeypatch):
@@ -208,8 +235,11 @@ def test_resolve_bedrock_player_quotes_prefixed_name_and_prefix(monkeypatch):
     }
 
 
-def test_main_accepts_bedrock_uuid_override_and_writes_whitelist(tmp_path, monkeypatch):
+def test_main_accepts_bedrock_uuid_override_and_writes_access_files(
+    tmp_path, monkeypatch
+):
     output = tmp_path / "whitelist.json"
+    ops_output = tmp_path / "ops.json"
 
     def fail_fetch_json(url):
         raise AssertionError(f"fetch_json should not be called: {url}")
@@ -222,8 +252,12 @@ def test_main_accepts_bedrock_uuid_override_and_writes_whitelist(tmp_path, monke
             "resolve_allowlist.py",
             "--bedrock",
             "holybaechuwu=00000000000000000000000000000001",
+            "--bedrock-op",
+            "holybaechuwu=00000000000000000000000000000001",
             "--output",
             str(output),
+            "--ops-output",
+            str(ops_output),
         ],
     )
 
@@ -232,5 +266,13 @@ def test_main_accepts_bedrock_uuid_override_and_writes_whitelist(tmp_path, monke
         {
             "uuid": "00000000-0000-0000-0000-000000000001",
             "name": ".holybaechuwu",
+        }
+    ]
+    assert json.loads(ops_output.read_text(encoding="utf-8")) == [
+        {
+            "uuid": "00000000-0000-0000-0000-000000000001",
+            "name": ".holybaechuwu",
+            "level": 4,
+            "bypassesPlayerLimit": False,
         }
     ]

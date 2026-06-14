@@ -209,33 +209,46 @@
     group: root
     mode: "0755"
 
-- name: Generate Paper whitelist
+- name: Generate Paper player access files
   ansible.builtin.shell:
     cmd: >-
       /usr/local/bin/minecraft-resolve-allowlist
       {% for player in minecraft_allowed_players.java | default([]) %}
       --java {{ player.name | quote }}
+      {% if player.op | default(false) %}
+      --java-op {{ player.name | quote }}
+      {% endif %}
       {% endfor %}
       {% for player in minecraft_allowed_players.bedrock | default([]) %}
       {% if player.uuid is defined and player.uuid %}
       --bedrock {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}
+      {% if player.op | default(false) %}
+      --bedrock-op {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}
+      {% endif %}
       {% else %}
       --bedrock {{ player.gamertag | quote }}
+      {% if player.op | default(false) %}
+      --bedrock-op {{ player.gamertag | quote }}
+      {% endif %}
       {% endif %}
       {% endfor %}
       --bedrock-prefix {{ minecraft_floodgate_username_prefix | quote }}
       --output {{ (minecraft_paper_dir ~ '/whitelist.json') | quote }}
-  register: minecraft_allowlist_result
-  changed_when: minecraft_allowlist_result.stdout == "changed"
+      --ops-output {{ (minecraft_paper_dir ~ '/ops.json') | quote }}
+  register: minecraft_player_access_result
+  changed_when: minecraft_player_access_result.stdout == "changed"
   notify: Restart minecraft-paper
 
-- name: Set Paper whitelist ownership
+- name: Set Paper player access file ownership
   ansible.builtin.file:
-    path: "{{ minecraft_paper_dir }}/whitelist.json"
+    path: "{{ item }}"
     state: file
     owner: "{{ minecraft_user }}"
     group: "{{ minecraft_group }}"
     mode: "0644"
+  loop:
+    - "{{ minecraft_paper_dir }}/whitelist.json"
+    - "{{ minecraft_paper_dir }}/ops.json"
   notify: Restart minecraft-paper
 
 - name: Install Minecraft Paper systemd unit

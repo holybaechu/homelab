@@ -123,12 +123,14 @@ def test_minecraft_allowed_players_are_source_controlled():
     allowed_players = load_yaml("apps/minecraft/allowed-players.yml")
 
     assert allowed_players == {
-        "java": [{"name": "holybaechu"}],
+        "java": [{"name": "holybaechu", "op": True}, {"name": "squid4848"}],
         "bedrock": [
             {
                 "gamertag": "holybaechuwu",
                 "uuid": "00000000-0000-0000-0009-01f46fc76cf7",
-            }
+                "op": True,
+            },
+            {"gamertag": "squid48481223"},
         ],
     }
 
@@ -141,6 +143,7 @@ java:
 bedrock:
   - gamertag: holybaechuwu
     uuid: 00000000-0000-0000-0000-000000000001
+    op: true
 """,
         "inline allowed players",
     )
@@ -149,3 +152,4 @@ bedrock:
 
     assert bedrock_player["gamertag"] == "holybaechuwu"
     assert bedrock_player["uuid"] == "00000000-0000-0000-0000-000000000001"
+    assert bedrock_player["op"] is True

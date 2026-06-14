@@ -130,6 +130,8 @@ def test_geyser_and_floodgate_templates_enable_bedrock_floodgate_auth():
     assert "key-file-name: key.pem" in floodgate
     assert "username-prefix: {{ minecraft_floodgate_username_prefix | to_json }}" in floodgate
     assert "send-floodgate-data: false" in floodgate
+    assert "player-link:" in floodgate
+    assert "enable-global-linking: true" in floodgate
     assert "config-version: 3" in floodgate
 
 
@@ -146,6 +148,8 @@ def test_geyser_and_floodgate_render_parseable_yaml_with_escaped_prefix():
     assert floodgate["key-file-name"] == "key.pem"
     assert floodgate["username-prefix"] == prefix
     assert floodgate["send-floodgate-data"] is False
+    assert floodgate["player-link"]["enabled"] is True
+    assert floodgate["player-link"]["enable-global-linking"] is True
     assert floodgate["disconnect"]["invalid-key"] == "Invalid Floodgate key."
     assert floodgate["disconnect"]["invalid-arguments-length"] == (
         "Expected {} arguments, got {}. Is Geyser up-to-date?"
@@ -212,7 +216,7 @@ def test_minecraft_role_downloads_expected_artifacts_to_correct_plugin_paths():
     ) in downloads
 
 
-def test_minecraft_role_generates_secret_and_allowlist_without_committing_secrets():
+def test_minecraft_role_generates_secret_and_player_access_without_committing_secrets():
     tasks_text = read(ROLE / "tasks" / "main.yml")
     tasks = yaml.safe_load(tasks_text)
     stat_task = role_task(tasks, "Check Velocity forwarding secret")
@@ -245,13 +249,24 @@ def test_minecraft_role_generates_secret_and_allowlist_without_committing_secret
     assert set_fact_task["no_log"] is True
     assert "minecraft-resolve-allowlist" in tasks_text
     assert "--bedrock-prefix {{ minecraft_floodgate_username_prefix | quote }}" in tasks_text
+    assert "--ops-output {{ (minecraft_paper_dir ~ '/ops.json') | quote }}" in tasks_text
+    assert "--java-op {{ player.name | quote }}" in tasks_text
     assert (
         "--bedrock {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}"
         in tasks_text
     )
+    assert (
+        "--bedrock-op {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}"
+        in tasks_text
+    )
     assert "--bedrock {{ player.gamertag | quote }}" in tasks_text
+    assert "--bedrock-op {{ player.gamertag | quote }}" in tasks_text
     assert "player.uuid is defined" in tasks_text
-    assert 'changed_when: minecraft_allowlist_result.stdout == "changed"' in tasks_text
+    assert "player.op | default(false)" in tasks_text
+    assert 'changed_when: minecraft_player_access_result.stdout == "changed"' in tasks_text
+    assert "Set Paper player access file ownership" in tasks_text
+    assert "{{ minecraft_paper_dir }}/whitelist.json" in tasks_text
+    assert "{{ minecraft_paper_dir }}/ops.json" in tasks_text
 
 
 def test_paper_forwarding_config_is_installed_restrictively():

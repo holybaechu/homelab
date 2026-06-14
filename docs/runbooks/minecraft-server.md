@@ -7,8 +7,9 @@
 - Java entrypoint: Velocity on TCP `25565`
 - Bedrock entrypoint: Geyser on UDP `19132`
 - Backend: Paper on `127.0.0.1:25566`
-- Java allowlist: `holybaechu`
-- Bedrock allowlist: `holybaechuwu`, represented on the backend as `.holybaechuwu`
+- Java allowlist: `holybaechu`, `squid4848`
+- Bedrock allowlist: `holybaechuwu`, `squid48481223`, represented on the backend as `.holybaechuwu` and `.squid48481223`
+- Paper operators: `holybaechu` and `.holybaechuwu`
 
 ## Deploy
 
@@ -83,11 +84,31 @@ Do not forward TCP `25566`; Paper must stay reachable only through Velocity.
 
 ## Join Checks
 
-1. Join from Java as `holybaechu` using `hchu.me`.
-2. Join from Bedrock as `holybaechuwu` using `home.hchu.me`, port `19132`.
-3. Try an unlisted Java account and confirm it is rejected.
-4. Try an unlisted Bedrock account and confirm it is rejected.
+1. Join from Java as `holybaechu` or `squid4848` using `hchu.me`.
+2. Join from Bedrock as `holybaechuwu` or `squid48481223` using `home.hchu.me`, port `19132`.
+3. Confirm both joined identities have operator access.
+4. Try an unlisted Java account and confirm it is rejected.
+5. Try an unlisted Bedrock account and confirm it is rejected.
+
+## Bedrock And Java Account Linking
+
+Floodgate global linking is enabled in the Velocity Floodgate config. Local linking on this server is disabled, so use GeyserMC global linking.
+
+Before linking, move any Bedrock-only inventory, ender chest contents, armor, or
+location-dependent progress to the Java account. After linking, Floodgate uses
+the Java account's player data when the Bedrock account joins.
+
+1. Join `link.geysermc.org` with both accounts.
+   - Java: `link.geysermc.org`, port `25565`.
+   - Bedrock: `link.geysermc.org`, port `19132`.
+2. On either account, run `/linkaccount`.
+3. Copy the random code to the other account with `/linkaccount <code>`.
+4. Wait for the success kick message on both accounts.
+5. Join this server again. Java still uses `hchu.me`; Bedrock uses
+  `home.hchu.me`, port `19132`.
+
+To unlink later, join `link.geysermc.org` from either account and run `/unlinkaccount`.
 
 ## Bedrock UUID Cache
 
-The role resolves Bedrock allowlist identities through GeyserMC's UUID utility API. If the Geyser cache misses, the role fails before writing the allowlist and reports `failed to resolve Minecraft allowlist. For Bedrock players, make sure the gamertag is known to the GeyserMC UUID API cache or provide the correct Floodgate UUID before enabling the whitelist.`, followed by `failed to resolve Bedrock player holybaechuwu: ...`. Prime the cache by signing into any Geyser-backed server once as `holybaechuwu`, then rerun the Minecraft Ansible role. If cache priming is inconvenient, add `uuid` under the Bedrock entry in `apps/minecraft/allowed-players.yml` with the correct Floodgate UUID. The resolver accepts dashed UUIDs or 32-hex UUIDs and writes the backend name as `.holybaechuwu`. The role must not disable the whitelist to let unknown players into the world.
+The role resolves Bedrock allowlist identities through GeyserMC's UUID utility API. If the Geyser cache misses, the role fails before writing the allowlist and reports `failed to resolve Minecraft allowlist. For Bedrock players, make sure the gamertag is known to the GeyserMC UUID API cache or provide the correct Floodgate UUID before enabling the whitelist.`, followed by `failed to resolve Bedrock player <gamertag>: ...`. Prime the cache by signing into any Geyser-backed server once as the affected Bedrock gamertag, then rerun the Minecraft Ansible role. If cache priming is inconvenient, add `uuid` under the Bedrock entry in `apps/minecraft/allowed-players.yml` with the correct Floodgate UUID. The resolver accepts dashed UUIDs or 32-hex UUIDs and writes backend names with the configured Floodgate prefix, such as `.holybaechuwu` and `.squid48481223`. The role must not disable the whitelist to let unknown players into the world.

@@ -79,7 +79,7 @@ def resolve_bedrock_player(gamertag: str, prefix: str, uuid: str | None = None) 
         raise RuntimeError(f"failed to resolve Bedrock player {gamertag}: {exc}") from exc
 
 
-def write_whitelist(path: Path, entries: list[dict]) -> str:
+def write_json_file(path: Path, entries: list[dict]) -> str:
     content = json.dumps(entries, indent=2) + "\n"
     if path.exists() and path.read_text(encoding="utf-8") == content:
         return "unchanged"
@@ -103,25 +103,67 @@ def write_whitelist(path: Path, entries: list[dict]) -> str:
     return "changed"
 
 
+def write_whitelist(path: Path, entries: list[dict]) -> str:
+    return write_json_file(path, entries)
+
+
+def write_ops(
+    path: Path,
+    entries: list[dict],
+    level: int = 4,
+    bypasses_player_limit: bool = False,
+) -> str:
+    operators = [
+        {
+            "uuid": entry["uuid"],
+            "name": entry["name"],
+            "level": level,
+            "bypassesPlayerLimit": bypasses_player_limit,
+        }
+        for entry in entries
+    ]
+    return write_json_file(path, operators)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Resolve Java and Floodgate Bedrock players into Paper whitelist.json."
+        description="Resolve Java and Floodgate Bedrock players into Paper access files."
     )
     parser.add_argument("--java", action="append", default=[], help="Java username")
+    parser.add_argument(
+        "--java-op",
+        action="append",
+        default=[],
+        help="Java username to write to ops.json",
+    )
     parser.add_argument(
         "--bedrock",
         action="append",
         default=[],
         help="Bedrock gamertag, or gamertag=uuid to bypass GeyserMC UUID lookup",
     )
+    parser.add_argument(
+        "--bedrock-op",
+        action="append",
+        default=[],
+        help="Bedrock gamertag, or gamertag=uuid to write to ops.json",
+    )
     parser.add_argument("--bedrock-prefix", default=".", help="Floodgate username prefix")
     parser.add_argument("--output", required=True, help="Path to whitelist.json")
+    parser.add_argument("--ops-output", help="Path to ops.json")
+    parser.add_argument("--op-level", type=int, default=4, help="Paper operator level")
+    parser.add_argument(
+        "--op-bypasses-player-limit",
+        action="store_true",
+        help="Allow ops to bypass the player limit",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     entries = []
+    operator_entries = []
 
     try:
         entries.extend(resolve_java_player(name) for name in args.java)
@@ -129,7 +171,23 @@ def main() -> int:
             resolve_bedrock_player(gamertag, args.bedrock_prefix, uuid)
             for gamertag, uuid in (parse_bedrock_spec(spec) for spec in args.bedrock)
         )
-        result = write_whitelist(Path(args.output), entries)
+        operator_entries.extend(resolve_java_player(name) for name in args.java_op)
+        operator_entries.extend(
+            resolve_bedrock_player(gamertag, args.bedrock_prefix, uuid)
+            for gamertag, uuid in (
+                parse_bedrock_spec(spec) for spec in args.bedrock_op
+            )
+        )
+        results = [write_whitelist(Path(args.output), entries)]
+        if args.ops_output:
+            results.append(
+                write_ops(
+                    Path(args.ops_output),
+                    operator_entries,
+                    level=args.op_level,
+                    bypasses_player_limit=args.op_bypasses_player_limit,
+                )
+            )
     except Exception as exc:
         print(
             "failed to resolve Minecraft allowlist. For Bedrock players, make sure "
@@ -140,7 +198,7 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    print(result)
+    print("changed" if "changed" in results else "unchanged")
     return 0
 
 
