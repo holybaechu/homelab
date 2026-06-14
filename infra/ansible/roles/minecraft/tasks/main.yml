@@ -49,7 +49,7 @@
 
 - name: Download Paper server
   ansible.builtin.get_url:
-    url: "https://api.papermc.io/v2/projects/paper/versions/{{ minecraft_paper_version }}/builds/{{ minecraft_paper_build }}/downloads/paper-{{ minecraft_paper_version }}-{{ minecraft_paper_build }}.jar"
+    url: "https://fill-data.papermc.io/v1/objects/{{ minecraft_paper_sha256 }}/paper-{{ minecraft_paper_version }}-{{ minecraft_paper_build }}.jar"
     dest: "{{ minecraft_paper_dir }}/paper.jar"
     checksum: "sha256:{{ minecraft_paper_sha256 }}"
     owner: "{{ minecraft_user }}"
@@ -59,7 +59,7 @@
 
 - name: Download Velocity proxy
   ansible.builtin.get_url:
-    url: "https://api.papermc.io/v2/projects/velocity/versions/{{ minecraft_velocity_version }}/builds/{{ minecraft_velocity_build }}/downloads/velocity-{{ minecraft_velocity_version }}-{{ minecraft_velocity_build }}.jar"
+    url: "https://fill-data.papermc.io/v1/objects/{{ minecraft_velocity_sha256 }}/velocity-{{ minecraft_velocity_version }}-{{ minecraft_velocity_build }}.jar"
     dest: "{{ minecraft_velocity_dir }}/velocity.jar"
     checksum: "sha256:{{ minecraft_velocity_sha256 }}"
     owner: "{{ minecraft_user }}"

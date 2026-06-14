@@ -191,11 +191,11 @@ def test_minecraft_role_downloads_expected_artifacts_to_correct_plugin_paths():
     }
 
     assert (
-        "https://api.papermc.io/v2/projects/paper/versions/{{ minecraft_paper_version }}/builds/{{ minecraft_paper_build }}/downloads/paper-{{ minecraft_paper_version }}-{{ minecraft_paper_build }}.jar",
+        "https://fill-data.papermc.io/v1/objects/{{ minecraft_paper_sha256 }}/paper-{{ minecraft_paper_version }}-{{ minecraft_paper_build }}.jar",
         "{{ minecraft_paper_dir }}/paper.jar",
     ) in downloads
     assert (
-        "https://api.papermc.io/v2/projects/velocity/versions/{{ minecraft_velocity_version }}/builds/{{ minecraft_velocity_build }}/downloads/velocity-{{ minecraft_velocity_version }}-{{ minecraft_velocity_build }}.jar",
+        "https://fill-data.papermc.io/v1/objects/{{ minecraft_velocity_sha256 }}/velocity-{{ minecraft_velocity_version }}-{{ minecraft_velocity_build }}.jar",
         "{{ minecraft_velocity_dir }}/velocity.jar",
     ) in downloads
     assert (
