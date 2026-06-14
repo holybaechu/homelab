@@ -22,13 +22,13 @@ minecraft_motd: "hchu.me Minecraft"
 minecraft_max_players: 10
 minecraft_floodgate_username_prefix: "."
 
-minecraft_paper_version: "1.21.11"
-minecraft_paper_build: 69
-minecraft_paper_sha256: cf374f2af9d71dfcc75343f37b722a7abcb091c574131b95e3b13c6fc2cb8fae
+minecraft_paper_version: "26.1.2"
+minecraft_paper_build: 70
+minecraft_paper_sha256: 6c59eefe2752f97ee79f83ad0a61fe14865a0976e4ac06597f53de6c44afd6c5
 
-minecraft_velocity_version: "3.4.0-SNAPSHOT"
-minecraft_velocity_build: 559
-minecraft_velocity_sha256: ccc49f71751ece26568d3476392d6130c8b43f2e5f3a88313325b9278a52babd
+minecraft_velocity_version: "3.5.0-SNAPSHOT"
+minecraft_velocity_build: 601
+minecraft_velocity_sha256: 0407642d1ed2883100eb823c2805523f191fa637db1f42ac0ec7ef29cbe455a9
 
 minecraft_geyser_version: "2.10.1"
 minecraft_geyser_build: 1165
