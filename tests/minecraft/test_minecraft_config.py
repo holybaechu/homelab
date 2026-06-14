@@ -95,18 +95,10 @@ def test_minecraft_group_vars_pin_runtime_versions_and_ports():
     assert_no_latest_aliases(group_vars)
 
 
-def test_minecraft_allowed_players_path_resolves_from_playbook_dir():
+def test_minecraft_group_vars_do_not_configure_allowed_players_file():
     group_vars = load_yaml("infra/ansible/inventory/prod/group_vars/minecraft.yml")
-    allowed_players_template = group_vars["minecraft_allowed_players_file"]
-    playbook_dir = REPO_ROOT / "infra/ansible/playbooks"
-    rendered_path = allowed_players_template.replace("{{ playbook_dir }}", str(playbook_dir))
 
-    assert allowed_players_template == (
-        "{{ playbook_dir }}/../../../apps/minecraft/allowed-players.yml"
-    )
-    assert Path(rendered_path).resolve() == (
-        REPO_ROOT / "apps/minecraft/allowed-players.yml"
-    ).resolve()
+    assert "minecraft_allowed_players_file" not in group_vars
 
 
 def test_minecraft_checksum_pins_have_expected_digest_lengths():
@@ -119,37 +111,5 @@ def test_minecraft_checksum_pins_have_expected_digest_lengths():
     assert_digest_pin(group_vars, "minecraft_viaversion_sha512", 128)
 
 
-def test_minecraft_allowed_players_are_source_controlled():
-    allowed_players = load_yaml("apps/minecraft/allowed-players.yml")
-
-    assert allowed_players == {
-        "java": [{"name": "holybaechu", "op": True}, {"name": "squid4848"}],
-        "bedrock": [
-            {
-                "gamertag": "holybaechuwu",
-                "uuid": "00000000-0000-0000-0009-01f46fc76cf7",
-                "op": True,
-            },
-            {"gamertag": "squid48481223"},
-        ],
-    }
-
-
-def test_minecraft_allowed_players_schema_allows_optional_bedrock_uuid():
-    allowed_players = load_yaml_text(
-        """
-java:
-  - name: holybaechu
-bedrock:
-  - gamertag: holybaechuwu
-    uuid: 00000000-0000-0000-0000-000000000001
-    op: true
-""",
-        "inline allowed players",
-    )
-
-    bedrock_player = allowed_players["bedrock"][0]
-
-    assert bedrock_player["gamertag"] == "holybaechuwu"
-    assert bedrock_player["uuid"] == "00000000-0000-0000-0000-000000000001"
-    assert bedrock_player["op"] is True
+def test_minecraft_allowed_players_file_is_not_source_controlled():
+    assert not (REPO_ROOT / "apps/minecraft/allowed-players.yml").exists()

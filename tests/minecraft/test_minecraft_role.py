@@ -63,14 +63,14 @@ def role_task_index(tasks: list[dict], name: str) -> int:
     raise AssertionError(f"missing role task {name!r}")
 
 
-def test_paper_server_properties_blocks_direct_public_access_and_enforces_allowlist():
+def test_paper_server_properties_blocks_direct_public_access_without_whitelist():
     template = read(ROLE / "templates" / "server.properties.j2")
 
     assert "server-ip={{ minecraft_paper_bind_address }}" in template
     assert "server-port={{ minecraft_paper_port }}" in template
     assert "online-mode=false" in template
-    assert "white-list=true" in template
-    assert "enforce-whitelist=true" in template
+    assert "white-list=false" in template
+    assert "enforce-whitelist=false" in template
 
 
 def test_paper_global_enables_velocity_modern_forwarding():
@@ -216,7 +216,7 @@ def test_minecraft_role_downloads_expected_artifacts_to_correct_plugin_paths():
     ) in downloads
 
 
-def test_minecraft_role_generates_secret_and_player_access_without_committing_secrets():
+def test_minecraft_role_generates_secret_without_committing_secrets():
     tasks_text = read(ROLE / "tasks" / "main.yml")
     tasks = yaml.safe_load(tasks_text)
     stat_task = role_task(tasks, "Check Velocity forwarding secret")
@@ -247,26 +247,24 @@ def test_minecraft_role_generates_secret_and_player_access_without_committing_se
     assert slurp_task["no_log"] is True
     assert "minecraft_velocity_forwarding_secret" in set_fact_task["ansible.builtin.set_fact"]
     assert set_fact_task["no_log"] is True
-    assert "minecraft-resolve-allowlist" in tasks_text
-    assert "--bedrock-prefix {{ minecraft_floodgate_username_prefix | quote }}" in tasks_text
-    assert "--ops-output {{ (minecraft_paper_dir ~ '/ops.json') | quote }}" in tasks_text
-    assert "--java-op {{ player.name | quote }}" in tasks_text
-    assert (
-        "--bedrock {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}"
-        in tasks_text
-    )
-    assert (
-        "--bedrock-op {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}"
-        in tasks_text
-    )
-    assert "--bedrock {{ player.gamertag | quote }}" in tasks_text
-    assert "--bedrock-op {{ player.gamertag | quote }}" in tasks_text
-    assert "player.uuid is defined" in tasks_text
-    assert "player.op | default(false)" in tasks_text
-    assert 'changed_when: minecraft_player_access_result.stdout == "changed"' in tasks_text
-    assert "Set Paper player access file ownership" in tasks_text
+
+
+def test_minecraft_role_does_not_generate_player_whitelist():
+    tasks_text = read(ROLE / "tasks" / "main.yml")
+    tasks = yaml.safe_load(tasks_text)
+    remove_task = role_task(tasks, "Remove Paper whitelist file")
+
+    assert "Load Minecraft allowed players" not in tasks_text
+    assert "minecraft_allowed_players" not in tasks_text
+    assert "minecraft-resolve-allowlist" not in tasks_text
+    assert "Generate Paper player access files" not in tasks_text
+    assert "Set Paper player access file ownership" not in tasks_text
+    assert "{{ minecraft_paper_dir }}/ops.json" not in tasks_text
+    assert remove_task["ansible.builtin.file"] == {
+        "path": "{{ minecraft_paper_dir }}/whitelist.json",
+        "state": "absent",
+    }
     assert "{{ minecraft_paper_dir }}/whitelist.json" in tasks_text
-    assert "{{ minecraft_paper_dir }}/ops.json" in tasks_text
 
 
 def test_paper_forwarding_config_is_installed_restrictively():
@@ -296,24 +294,6 @@ def test_existing_velocity_forwarding_secret_permissions_are_enforced_before_slu
         "mode": "0600",
     }
     assert harden_task["no_log"] is True
-
-
-def test_minecraft_allowlist_resolver_source_resolves_from_playbook_dir():
-    tasks = load_role_yaml("tasks/main.yml")
-    resolver_task = role_task(tasks, "Install Minecraft allowlist resolver")
-    resolver_src = resolver_task["ansible.builtin.copy"]["src"]
-    playbook_dir = REPO_ROOT / "infra" / "ansible" / "playbooks"
-    resolved_src = Path(
-        resolver_src.replace("{{ playbook_dir }}", str(playbook_dir))
-    ).resolve()
-
-    assert resolver_src == (
-        "{{ playbook_dir }}/../../../apps/minecraft/scripts/resolve_allowlist.py"
-    )
-    assert resolved_src == (
-        REPO_ROOT / "apps" / "minecraft" / "scripts" / "resolve_allowlist.py"
-    ).resolve()
-    assert resolved_src.is_file()
 
 
 def test_minecraft_handlers_restart_both_services_with_systemd():

@@ -217,22 +217,15 @@ def test_minecraft_runbook_documents_dns_ports_and_join_checks():
     assert "- UDP 19132 -> 192.168.0.8:19132" in runbook
     assert "ssh-keygen -R 192.168.0.8" in runbook
     assert "ssh-keyscan -H -T 10 192.168.0.8" in runbook
-    assert "Java allowlist: `holybaechu`, `squid4848`" in runbook
-    assert "Bedrock allowlist: `holybaechuwu`" in runbook
-    assert (
-        "Bedrock allowlist: `holybaechuwu`, `squid48481223`, represented on the backend as `.holybaechuwu` and `.squid48481223`"
-        in runbook
-    )
-    assert "Paper operators: `holybaechu` and `.holybaechuwu`" in runbook
-    assert "unlisted Java" in runbook
-    assert "unlisted Bedrock" in runbook
-    assert "Confirm both joined identities have operator access." in runbook
-    assert "Join from Java as `holybaechu` or `squid4848` using `hchu.me`." in runbook
-    assert (
-        "Join from Bedrock as `holybaechuwu` or `squid48481223` using `home.hchu.me`, port `19132`."
-        in runbook
-    )
-    assert "Join from Bedrock as `holybaechuwu` using `hchu.me`" not in runbook
+    assert "Whitelist: disabled" in runbook
+    assert "any authenticated Java or Floodgate Bedrock player can join" in runbook
+    assert "This server does not source-control a Minecraft player allowlist." in runbook
+    assert "Paper operators:" not in runbook
+    assert "unlisted Java" not in runbook
+    assert "unlisted Bedrock" not in runbook
+    assert "Join from Java using `hchu.me`." in runbook
+    assert "Join from Bedrock using `home.hchu.me`, port `19132`." in runbook
+    assert "Join from Bedrock using `hchu.me`" not in runbook
     assert "Floodgate global linking is enabled" in runbook
     assert "Local linking on this server is disabled" in runbook
     assert "link.geysermc.org" in runbook
@@ -243,20 +236,10 @@ def test_minecraft_runbook_documents_dns_ports_and_join_checks():
     assert "run `/linkaccount`" in runbook
     assert "with `/linkaccount <code>`" in runbook
     assert "run `/unlinkaccount`" in runbook
-    assert "Geyser cache" in runbook
-    assert (
-        "failed to resolve Minecraft allowlist. For Bedrock players, make sure the "
-        "gamertag is known to the GeyserMC UUID API cache"
-        in runbook
-    )
-    assert "failed to resolve Bedrock player <gamertag>" in runbook
-    assert (
-        "Prime the cache by signing into any Geyser-backed server once as the affected Bedrock gamertag, "
-        "then rerun the Minecraft Ansible role."
-        in runbook
-    )
-    assert "add `uuid` under the Bedrock entry in `apps/minecraft/allowed-players.yml`" in runbook
-    assert "must not disable the whitelist" in runbook
+    assert "Geyser cache" not in runbook
+    assert "failed to resolve Minecraft allowlist" not in runbook
+    assert "failed to resolve Bedrock player <gamertag>" not in runbook
+    assert "apps/minecraft/allowed-players.yml" not in runbook
     assert "ANSIBLE_CONFIG=infra/ansible/ansible.cfg" in runbook
     assert bootstrap_command in runbook
     for ansible_command in ansible_commands:

@@ -1,9 +1,4 @@
 ---
-- name: Load Minecraft allowed players
-  ansible.builtin.include_vars:
-    file: "{{ minecraft_allowed_players_file }}"
-    name: minecraft_allowed_players
-
 - name: Install Minecraft packages
   ansible.builtin.apt:
     name:
@@ -201,54 +196,10 @@
     mode: "0644"
   notify: Restart minecraft-velocity
 
-- name: Install Minecraft allowlist resolver
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../../apps/minecraft/scripts/resolve_allowlist.py"
-    dest: /usr/local/bin/minecraft-resolve-allowlist
-    owner: root
-    group: root
-    mode: "0755"
-
-- name: Generate Paper player access files
-  ansible.builtin.shell:
-    cmd: >-
-      /usr/local/bin/minecraft-resolve-allowlist
-      {% for player in minecraft_allowed_players.java | default([]) %}
-      --java {{ player.name | quote }}
-      {% if player.op | default(false) %}
-      --java-op {{ player.name | quote }}
-      {% endif %}
-      {% endfor %}
-      {% for player in minecraft_allowed_players.bedrock | default([]) %}
-      {% if player.uuid is defined and player.uuid %}
-      --bedrock {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}
-      {% if player.op | default(false) %}
-      --bedrock-op {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}
-      {% endif %}
-      {% else %}
-      --bedrock {{ player.gamertag | quote }}
-      {% if player.op | default(false) %}
-      --bedrock-op {{ player.gamertag | quote }}
-      {% endif %}
-      {% endif %}
-      {% endfor %}
-      --bedrock-prefix {{ minecraft_floodgate_username_prefix | quote }}
-      --output {{ (minecraft_paper_dir ~ '/whitelist.json') | quote }}
-      --ops-output {{ (minecraft_paper_dir ~ '/ops.json') | quote }}
-  register: minecraft_player_access_result
-  changed_when: minecraft_player_access_result.stdout == "changed"
-  notify: Restart minecraft-paper
-
-- name: Set Paper player access file ownership
+- name: Remove Paper whitelist file
   ansible.builtin.file:
-    path: "{{ item }}"
-    state: file
-    owner: "{{ minecraft_user }}"
-    group: "{{ minecraft_group }}"
-    mode: "0644"
-  loop:
-    - "{{ minecraft_paper_dir }}/whitelist.json"
-    - "{{ minecraft_paper_dir }}/ops.json"
+    path: "{{ minecraft_paper_dir }}/whitelist.json"
+    state: absent
   notify: Restart minecraft-paper
 
 - name: Install Minecraft Paper systemd unit
