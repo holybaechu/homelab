@@ -10,7 +10,7 @@ minecraft_paper_plugins_dir: /var/lib/minecraft/paper/plugins
 minecraft_velocity_plugins_dir: /var/lib/minecraft/velocity/plugins
 minecraft_allowed_players_file: "{{ playbook_dir }}/../../../apps/minecraft/allowed-players.yml"
 
-minecraft_java_package: openjdk-21-jre-headless
+minecraft_java_package: openjdk-25-jre-headless
 minecraft_java_xms: 1024M
 minecraft_java_xmx: 3072M
 

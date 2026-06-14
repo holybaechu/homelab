@@ -81,6 +81,7 @@ def test_minecraft_group_vars_pin_runtime_versions_and_ports():
     assert group_vars["minecraft_java_port"] == 25565
     assert group_vars["minecraft_bedrock_port"] == 19132
     assert group_vars["minecraft_paper_port"] == 25566
+    assert group_vars["minecraft_java_package"] == "openjdk-25-jre-headless"
     assert group_vars["minecraft_paper_version"] == "26.1.2"
     assert group_vars["minecraft_paper_build"] == 70
     assert group_vars["minecraft_velocity_version"] == "3.5.0-SNAPSHOT"
