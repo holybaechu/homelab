@@ -131,7 +131,10 @@
           set -eu
           listeners="$(ss -H -ltn "sport = :{{ minecraft_java_port }}")"
           test -n "$listeners"
-          printf '%s\n' "$listeners" | awk '{ print $4 }' | grep -Fx "0.0.0.0:{{ minecraft_java_port }}"
+          if ! printf '%s\n' "$listeners" | awk '{ print $4 }' | grep -Eq '^(\*|0\.0\.0\.0|\[::\]|::):{{ minecraft_java_port }}$'; then
+            printf 'Velocity Java listeners are not publicly bound:\n%s\n' "$listeners" >&2
+            exit 1
+          fi
         executable: /bin/sh
       changed_when: false
 

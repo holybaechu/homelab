@@ -88,7 +88,11 @@ def test_validate_playbook_checks_minecraft_services_and_public_java_port():
     command = public_bind["ansible.builtin.shell"]["cmd"]
     assert 'ss -H -ltn "sport = :{{ minecraft_java_port }}"' in command
     assert "awk '{ print $4 }'" in command
-    assert 'grep -Fx "0.0.0.0:{{ minecraft_java_port }}"' in command
+    assert "grep -Eq" in command
+    assert "0\\.0\\.0\\.0" in command
+    assert "\\*" in command
+    assert "\\[::\\]" in command
+    assert "::" in command
     assert public_bind["changed_when"] is False
 
 
