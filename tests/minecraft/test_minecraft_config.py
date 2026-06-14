@@ -125,3 +125,21 @@ def test_minecraft_allowed_players_are_source_controlled():
         "java": [{"name": "holybaechu"}],
         "bedrock": [{"gamertag": "holybaechuwu"}],
     }
+
+
+def test_minecraft_allowed_players_schema_allows_optional_bedrock_uuid():
+    allowed_players = load_yaml_text(
+        """
+java:
+  - name: holybaechu
+bedrock:
+  - gamertag: holybaechuwu
+    uuid: 00000000-0000-0000-0000-000000000001
+""",
+        "inline allowed players",
+    )
+
+    bedrock_player = allowed_players["bedrock"][0]
+
+    assert bedrock_player["gamertag"] == "holybaechuwu"
+    assert bedrock_player["uuid"] == "00000000-0000-0000-0000-000000000001"

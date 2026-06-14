@@ -23,9 +23,30 @@ def test_dashed_uuid_rejects_non_hex_characters():
         dashed_uuid("z" * 32)
 
 
+def test_canonical_uuid_accepts_dashed_and_undashed_uuid():
+    assert (
+        resolve_allowlist.canonical_uuid("00000000-0000-0000-0000-000000000001")
+        == "00000000-0000-0000-0000-000000000001"
+    )
+    assert (
+        resolve_allowlist.canonical_uuid("00000000000000000000000000000001")
+        == "00000000-0000-0000-0000-000000000001"
+    )
+
+
 def test_normalize_bedrock_name_adds_floodgate_prefix_once():
     assert normalize_bedrock_name("holybaechuwu", ".") == ".holybaechuwu"
     assert normalize_bedrock_name(".holybaechuwu", ".") == ".holybaechuwu"
+
+
+def test_parse_bedrock_spec_allows_optional_uuid_override():
+    assert resolve_allowlist.parse_bedrock_spec("holybaechuwu") == (
+        "holybaechuwu",
+        None,
+    )
+    assert resolve_allowlist.parse_bedrock_spec(
+        "holybaechuwu=00000000000000000000000000000001"
+    ) == ("holybaechuwu", "00000000000000000000000000000001")
 
 
 def test_write_whitelist_is_stable_and_reports_change(tmp_path: Path):
@@ -109,6 +130,40 @@ def test_resolve_bedrock_player_wraps_malformed_payload_with_player_context(
     assert "Bedrock player holybaechuwu" in str(excinfo.value)
 
 
+@pytest.mark.parametrize(
+    "uuid",
+    [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000000000000000000000000001",
+    ],
+)
+def test_resolve_bedrock_player_uses_override_without_fetch(monkeypatch, uuid):
+    def fail_fetch_json(url):
+        raise AssertionError(f"fetch_json should not be called: {url}")
+
+    monkeypatch.setattr(resolve_allowlist, "fetch_json", fail_fetch_json)
+
+    result = resolve_allowlist.resolve_bedrock_player(
+        "holybaechuwu",
+        ".",
+        uuid,
+    )
+
+    assert result == {
+        "uuid": "00000000-0000-0000-0000-000000000001",
+        "name": ".holybaechuwu",
+    }
+
+
+def test_resolve_bedrock_player_wraps_malformed_override_with_player_context():
+    with pytest.raises(RuntimeError) as excinfo:
+        resolve_allowlist.resolve_bedrock_player("holybaechuwu", ".", "not-a-uuid")
+
+    message = str(excinfo.value)
+    assert "Bedrock player holybaechuwu" in message
+    assert "not-a-uuid" in message
+
+
 def test_resolve_java_player_quotes_profile_url(monkeypatch):
     urls = []
 
@@ -151,3 +206,31 @@ def test_resolve_bedrock_player_quotes_prefixed_name_and_prefix(monkeypatch):
         "uuid": "00000000-0000-0000-0000-000000000001",
         "name": "+bed rock/chu",
     }
+
+
+def test_main_accepts_bedrock_uuid_override_and_writes_whitelist(tmp_path, monkeypatch):
+    output = tmp_path / "whitelist.json"
+
+    def fail_fetch_json(url):
+        raise AssertionError(f"fetch_json should not be called: {url}")
+
+    monkeypatch.setattr(resolve_allowlist, "fetch_json", fail_fetch_json)
+    monkeypatch.setattr(
+        resolve_allowlist.sys,
+        "argv",
+        [
+            "resolve_allowlist.py",
+            "--bedrock",
+            "holybaechuwu=00000000000000000000000000000001",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert resolve_allowlist.main() == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == [
+        {
+            "uuid": "00000000-0000-0000-0000-000000000001",
+            "name": ".holybaechuwu",
+        }
+    ]

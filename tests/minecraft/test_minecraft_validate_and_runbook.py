@@ -172,6 +172,10 @@ def test_minecraft_runbook_documents_dns_ports_and_join_checks():
     assert "TCP 25565" in runbook
     assert "UDP 19132" in runbook
     assert "192.168.0.8" in runbook
+    assert "infra/opentofu/envs/prod/terraform.tfvars" in runbook
+    assert "terraform.tfvars.example" in runbook
+    assert "minecraft block" in runbook
+    assert "Changing only terraform.tfvars.example does not deploy the LXC." in runbook
     assert "- TCP 25565 -> 192.168.0.8:25565" in runbook
     assert "- UDP 19132 -> 192.168.0.8:19132" in runbook
     assert "ssh-keygen -R 192.168.0.8" in runbook
@@ -184,6 +188,12 @@ def test_minecraft_runbook_documents_dns_ports_and_join_checks():
     )
     assert "unlisted Java" in runbook
     assert "unlisted Bedrock" in runbook
+    assert "Join from Java as `holybaechu` using `hchu.me`." in runbook
+    assert (
+        "Join from Bedrock as `holybaechuwu` using `home.hchu.me`, port `19132`."
+        in runbook
+    )
+    assert "Join from Bedrock as `holybaechuwu` using `hchu.me`" not in runbook
     assert "Geyser cache" in runbook
     assert (
         "failed to resolve Minecraft allowlist. For Bedrock players, make sure the "
@@ -196,6 +206,7 @@ def test_minecraft_runbook_documents_dns_ports_and_join_checks():
         "then rerun the Minecraft Ansible role."
         in runbook
     )
+    assert "add `uuid` under the Bedrock entry in `apps/minecraft/allowed-players.yml`" in runbook
     assert "must not disable the whitelist" in runbook
     assert "ANSIBLE_CONFIG=infra/ansible/ansible.cfg" in runbook
     assert bootstrap_command in runbook

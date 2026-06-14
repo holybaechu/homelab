@@ -25,6 +25,10 @@ def dashed_uuid(value: str) -> str:
     )
 
 
+def canonical_uuid(value: str) -> str:
+    return dashed_uuid(value)
+
+
 def fetch_json(url: str) -> dict:
     request = Request(url, headers={"User-Agent": "homelab-minecraft-allowlist/1.0"})
     try:
@@ -41,6 +45,13 @@ def normalize_bedrock_name(name: str, prefix: str) -> str:
     return name if name.startswith(prefix) else f"{prefix}{name}"
 
 
+def parse_bedrock_spec(spec: str) -> tuple[str, str | None]:
+    if "=" not in spec:
+        return spec, None
+    gamertag, uuid = spec.split("=", 1)
+    return gamertag, uuid
+
+
 def resolve_java_player(name: str) -> dict:
     try:
         profile = fetch_json(MOJANG_PROFILE_URL.format(name=quote(name, safe="")))
@@ -49,9 +60,11 @@ def resolve_java_player(name: str) -> dict:
         raise RuntimeError(f"failed to resolve Java player {name}: {exc}") from exc
 
 
-def resolve_bedrock_player(gamertag: str, prefix: str) -> dict:
+def resolve_bedrock_player(gamertag: str, prefix: str, uuid: str | None = None) -> dict:
     try:
         prefixed_name = normalize_bedrock_name(gamertag, prefix)
+        if uuid is not None:
+            return {"uuid": canonical_uuid(uuid), "name": prefixed_name}
         profile = fetch_json(
             GEYSER_UUID_URL.format(
                 name=quote(prefixed_name, safe=""),
@@ -95,7 +108,12 @@ def parse_args() -> argparse.Namespace:
         description="Resolve Java and Floodgate Bedrock players into Paper whitelist.json."
     )
     parser.add_argument("--java", action="append", default=[], help="Java username")
-    parser.add_argument("--bedrock", action="append", default=[], help="Bedrock gamertag")
+    parser.add_argument(
+        "--bedrock",
+        action="append",
+        default=[],
+        help="Bedrock gamertag, or gamertag=uuid to bypass GeyserMC UUID lookup",
+    )
     parser.add_argument("--bedrock-prefix", default=".", help="Floodgate username prefix")
     parser.add_argument("--output", required=True, help="Path to whitelist.json")
     return parser.parse_args()
@@ -108,7 +126,8 @@ def main() -> int:
     try:
         entries.extend(resolve_java_player(name) for name in args.java)
         entries.extend(
-            resolve_bedrock_player(name, args.bedrock_prefix) for name in args.bedrock
+            resolve_bedrock_player(gamertag, args.bedrock_prefix, uuid)
+            for gamertag, uuid in (parse_bedrock_spec(spec) for spec in args.bedrock)
         )
         result = write_whitelist(Path(args.output), entries)
     except Exception as exc:

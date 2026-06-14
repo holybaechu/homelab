@@ -236,6 +236,12 @@ def test_minecraft_role_generates_secret_and_allowlist_without_committing_secret
     assert set_fact_task["no_log"] is True
     assert "minecraft-resolve-allowlist" in tasks_text
     assert "--bedrock-prefix {{ minecraft_floodgate_username_prefix | quote }}" in tasks_text
+    assert (
+        "--bedrock {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}"
+        in tasks_text
+    )
+    assert "--bedrock {{ player.gamertag | quote }}" in tasks_text
+    assert "player.uuid is defined" in tasks_text
     assert 'changed_when: minecraft_allowlist_result.stdout == "changed"' in tasks_text
 
 

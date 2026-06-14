@@ -217,7 +217,11 @@
       --java {{ player.name | quote }}
       {% endfor %}
       {% for player in minecraft_allowed_players.bedrock | default([]) %}
+      {% if player.uuid is defined and player.uuid %}
+      --bedrock {{ (player.gamertag ~ '=' ~ player.uuid) | quote }}
+      {% else %}
       --bedrock {{ player.gamertag | quote }}
+      {% endif %}
       {% endfor %}
       --bedrock-prefix {{ minecraft_floodgate_username_prefix | quote }}
       --output {{ (minecraft_paper_dir ~ '/whitelist.json') | quote }}
