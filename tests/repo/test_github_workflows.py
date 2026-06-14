@@ -52,6 +52,25 @@ def test_cd_workflow_does_not_pin_tailscale_version():
     assert "version:" not in connect_tailscale
 
 
+def test_cd_tofu_plan_and_apply_use_consistent_variable_sources():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+    plan_script = (REPO_ROOT / "scripts" / "ci" / "tofu-plan.sh").read_text(
+        encoding="utf-8"
+    )
+    apply_script = (REPO_ROOT / "scripts" / "ci" / "tofu-apply.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "TF_VAR_proxmox_api_token:" in workflow
+    assert "TF_VAR_ssh_public_keys:" in workflow
+    assert "TF_VAR_proxmox_insecure_tls:" in workflow
+    assert "-var=" not in plan_script
+    assert "tofu plan -out=prod.tfplan" in plan_script
+    assert "tofu apply -auto-approve prod.tfplan" in apply_script
+
+
 def test_ci_workflow_exists_for_pre_deploy_checks():
     workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8"

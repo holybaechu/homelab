@@ -34,34 +34,4 @@ tofu init "$@"
 tofu fmt -recursive -check ../..
 tofu validate
 
-set -- -out=prod.tfplan
-
-if [ -n "${TF_VAR_proxmox_endpoint:-}" ]; then
-  set -- "$@" "-var=proxmox_endpoint=${TF_VAR_proxmox_endpoint}"
-fi
-
-if [ -n "${TF_VAR_proxmox_api_token:-}" ]; then
-  set -- "$@" "-var=proxmox_api_token=${TF_VAR_proxmox_api_token}"
-fi
-
-if [ -n "${TF_VAR_proxmox_insecure_tls:-}" ]; then
-  set -- "$@" "-var=proxmox_insecure_tls=${TF_VAR_proxmox_insecure_tls}"
-fi
-
-if [ -n "${TF_VAR_node_name:-}" ]; then
-  set -- "$@" "-var=node_name=${TF_VAR_node_name}"
-fi
-
-if [ -n "${TF_VAR_bridge:-}" ]; then
-  set -- "$@" "-var=bridge=${TF_VAR_bridge}"
-fi
-
-if [ -n "${TF_VAR_root_datastore_id:-}" ]; then
-  set -- "$@" "-var=root_datastore_id=${TF_VAR_root_datastore_id}"
-fi
-
-if [ -n "${TF_VAR_ssh_public_keys:-}" ]; then
-  set -- "$@" "-var=ssh_public_keys=${TF_VAR_ssh_public_keys}"
-fi
-
-tofu plan "$@"
+tofu plan -out=prod.tfplan
