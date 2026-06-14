@@ -16,13 +16,13 @@ jobs:
     environment: prod
     env:
       ANSIBLE_CONFIG: infra/ansible/ansible.cfg
-      TF_VAR_proxmox_endpoint: ${{ secrets.PROXMOX_ENDPOINT }}
-      TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
-      TF_VAR_proxmox_insecure_tls: "true"
-      TF_VAR_node_name: ${{ vars.PVE_NODE_NAME }}
-      TF_VAR_bridge: ${{ vars.PVE_BRIDGE }}
-      TF_VAR_root_datastore_id: ${{ vars.PVE_ROOT_DATASTORE_ID }}
-      TF_VAR_ssh_public_keys: ${{ secrets.DEPLOY_SSH_PUBLIC_KEYS }}
+      PROXMOX_ENDPOINT: ${{ secrets.PROXMOX_ENDPOINT }}
+      PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+      PROXMOX_INSECURE_TLS: "true"
+      PVE_NODE_NAME: ${{ vars.PVE_NODE_NAME }}
+      PVE_BRIDGE: ${{ vars.PVE_BRIDGE }}
+      PVE_ROOT_DATASTORE_ID: ${{ vars.PVE_ROOT_DATASTORE_ID }}
+      DEPLOY_SSH_PUBLIC_KEYS: ${{ secrets.DEPLOY_SSH_PUBLIC_KEYS }}
       TOFU_STATE_BUCKET: ${{ vars.TOFU_STATE_BUCKET }}
       TOFU_STATE_KEY: ${{ vars.TOFU_STATE_KEY }}
       TOFU_STATE_REGION: ${{ vars.TOFU_STATE_REGION }}
@@ -110,7 +110,7 @@ jobs:
 
       - name: Remove Ansible extra vars
         if: always()
-        run: rm -f /tmp/ansible-extra-vars.json
+        run: rm -f /tmp/ansible-extra-vars.json infra/opentofu/envs/prod/ci.auto.tfvars.json
 
       - name: Disconnect Tailscale
         if: always()

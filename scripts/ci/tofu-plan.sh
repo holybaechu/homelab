@@ -14,6 +14,10 @@ if [ ! -f terraform.tfvars ] && [ -f terraform.tfvars.example ]; then
   cp terraform.tfvars.example terraform.tfvars
 fi
 
+if [ -n "${PROXMOX_ENDPOINT:-}${PROXMOX_API_TOKEN:-}${DEPLOY_SSH_PUBLIC_KEYS:-}" ]; then
+  python3 ../../../../scripts/ci/write_tofu_vars.py ci.auto.tfvars.json
+fi
+
 set -- \
   -backend-config="bucket=${TOFU_STATE_BUCKET}" \
   -backend-config="key=${TOFU_STATE_KEY}" \

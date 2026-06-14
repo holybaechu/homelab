@@ -52,7 +52,7 @@ def test_cd_workflow_does_not_pin_tailscale_version():
     assert "version:" not in connect_tailscale
 
 
-def test_cd_tofu_plan_and_apply_use_consistent_variable_sources():
+def test_cd_tofu_plan_and_apply_use_generated_variable_file():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"
     )
@@ -63,12 +63,24 @@ def test_cd_tofu_plan_and_apply_use_consistent_variable_sources():
         encoding="utf-8"
     )
 
-    assert "TF_VAR_proxmox_api_token:" in workflow
-    assert "TF_VAR_ssh_public_keys:" in workflow
-    assert "TF_VAR_proxmox_insecure_tls:" in workflow
+    assert "PROXMOX_API_TOKEN:" in workflow
+    assert "PROXMOX_INSECURE_TLS:" in workflow
+    assert "DEPLOY_SSH_PUBLIC_KEYS:" in workflow
+    assert "TF_VAR_proxmox_api_token:" not in workflow
+    assert "TF_VAR_ssh_public_keys:" not in workflow
+    assert "TF_VAR_proxmox_insecure_tls:" not in workflow
+    assert "ci.auto.tfvars.json" in workflow
     assert "-var=" not in plan_script
+    assert "write_tofu_vars.py" in plan_script
     assert "tofu plan -out=prod.tfplan" in plan_script
+    assert "test -f ci.auto.tfvars.json" in apply_script
     assert "tofu apply -auto-approve prod.tfplan" in apply_script
+
+
+def test_generated_tofu_secret_variable_files_are_ignored():
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    assert "*.tfvars.json" in gitignore
 
 
 def test_ci_workflow_exists_for_pre_deploy_checks():
