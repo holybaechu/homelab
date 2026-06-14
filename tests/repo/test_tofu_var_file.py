@@ -28,7 +28,7 @@ def test_write_tofu_vars_normalizes_github_secret_values(tmp_path):
             "PVE_BRIDGE": "vmbr0",
             "PVE_ROOT_DATASTORE_ID": "local-lvm",
             "DEPLOY_SSH_PUBLIC_KEYS": (
-                '["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHomelabDeployKeyMaterial '
+                '\ufeff["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHomelabDeployKeyMaterial '
                 'homelab-deploy"]'
             ),
         },

@@ -23,17 +23,17 @@ def _required(env, name):
 
 
 def _json_or_raw(value):
-    stripped = value.strip()
+    stripped = value.strip().lstrip("\ufeff").strip()
     if not stripped:
-        return value
+        return ""
 
     if stripped[0] in '[{"' or stripped in {"true", "false", "null"}:
         try:
             return json.loads(stripped)
         except json.JSONDecodeError:
-            return value
+            return stripped
 
-    return value
+    return stripped
 
 
 def _string(value, name):
