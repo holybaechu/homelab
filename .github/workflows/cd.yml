@@ -52,7 +52,6 @@ jobs:
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
           # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
-          version: "1.98.5"
           ping: ${{ vars.PVE_TAILSCALE_IP }}
 
       - name: Install tooling

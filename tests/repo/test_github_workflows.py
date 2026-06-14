@@ -41,6 +41,17 @@ def test_cd_workflow_configures_remote_tofu_state():
     assert "AWS_SECRET_ACCESS_KEY:" in workflow
 
 
+def test_cd_workflow_does_not_pin_tailscale_version():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+
+    connect_tailscale = workflow.split("- name: Connect Tailscale", maxsplit=1)[1]
+    connect_tailscale = connect_tailscale.split("- name: Install tooling", maxsplit=1)[0]
+
+    assert "version:" not in connect_tailscale
+
+
 def test_ci_workflow_exists_for_pre_deploy_checks():
     workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8"
