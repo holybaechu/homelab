@@ -126,7 +126,8 @@ def test_validate_playbook_checks_geyser_udp_port():
     command = task["ansible.builtin.shell"]["cmd"]
 
     assert 'ss -H -lun "sport = :{{ minecraft_bedrock_port }}"' in command
-    assert 'grep -F ":{{ minecraft_bedrock_port }}"' in command
+    assert "Geyser Bedrock UDP listener is not active" in command
+    assert "journalctl -u minecraft-velocity.service" in command
 
 
 def test_validate_playbook_stats_design_plugin_jars():

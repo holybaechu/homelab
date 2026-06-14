@@ -161,7 +161,19 @@
       ansible.builtin.shell:
         cmd: |
           set -eu
-          ss -H -lun "sport = :{{ minecraft_bedrock_port }}" | grep -F ":{{ minecraft_bedrock_port }}"
+          for _ in 1 2 3 4 5 6; do
+            listeners="$(ss -H -lun "sport = :{{ minecraft_bedrock_port }}" || true)"
+            if printf '%s\n' "$listeners" | grep -F ":{{ minecraft_bedrock_port }}"; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          printf 'Geyser Bedrock UDP listener is not active. UDP listeners:\n' >&2
+          ss -H -lun >&2 || true
+          printf '\nRecent Velocity journal:\n' >&2
+          journalctl -u minecraft-velocity.service -n 200 --no-pager >&2 || true
+          exit 1
         executable: /bin/sh
       changed_when: false
 
