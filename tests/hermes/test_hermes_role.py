@@ -24,6 +24,9 @@ def test_hermes_role_installs_native_service_without_docker_or_provider_keys():
     assert "src: hermes-webui.env.j2" in tasks
     assert "src: hermes-webui.service.j2" in tasks
     assert "name: hermes-webui.service" in tasks
+    assert "enabled: true" in tasks
+    assert "state: started" in tasks
+    assert "daemon_reload: true" in tasks
     assert "docker" not in tasks.lower()
     assert "API_SERVER_KEY" not in tasks
 
