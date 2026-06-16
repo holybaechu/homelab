@@ -109,4 +109,21 @@ containers = {
     swap_mb          = 1024
     startup_order    = 6
   }
+
+  hermes = {
+    vmid             = 116
+    hostname         = "hermes"
+    description      = "Hermes Agent WebUI managed by OpenTofu and Ansible"
+    tags             = ["homelab", "managed-by-opentofu", "role-hermes"]
+    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+    os_type          = "debian"
+    ip_address       = "192.168.0.9/24"
+    mac_address      = "02:00:00:BA:EC:09"
+    gateway          = "192.168.0.1"
+    root_disk_gb     = 16
+    cores            = 2
+    memory_mb        = 2048
+    swap_mb          = 1024
+    startup_order    = 7
+  }
 }
