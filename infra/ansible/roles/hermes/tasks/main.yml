@@ -1,0 +1,126 @@
+---
+- name: Require Hermes WebUI password
+  ansible.builtin.assert:
+    that:
+      - hermes_webui_password is defined
+      - hermes_webui_password | length > 0
+    fail_msg: hermes_webui_password must be provided through secrets.
+  no_log: true
+
+- name: Install Hermes runtime packages
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - ca-certificates
+      - curl
+      - git
+      - python3
+      - python3-pip
+      - python3-venv
+    update_cache: true
+    state: present
+
+- name: Create Hermes group
+  ansible.builtin.group:
+    name: "{{ hermes_group }}"
+    gid: "{{ hermes_gid }}"
+    state: present
+
+- name: Create Hermes user
+  ansible.builtin.user:
+    name: "{{ hermes_user }}"
+    uid: "{{ hermes_uid }}"
+    group: "{{ hermes_group }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    home: "{{ hermes_home }}"
+    state: present
+
+- name: Create Hermes install directory
+  ansible.builtin.file:
+    path: "{{ hermes_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create Hermes persistent directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0755"
+  loop:
+    - "{{ hermes_home }}"
+    - "{{ hermes_webui_state_dir }}"
+    - "{{ hermes_workspace }}"
+
+- name: Clone Hermes Agent
+  ansible.builtin.git:
+    repo: "{{ hermes_agent_repo }}"
+    dest: "{{ hermes_agent_dir }}"
+    version: "{{ hermes_agent_ref }}"
+    update: true
+  notify: Restart hermes-webui
+
+- name: Clone Hermes WebUI
+  ansible.builtin.git:
+    repo: "{{ hermes_webui_repo }}"
+    dest: "{{ hermes_webui_dir }}"
+    version: "{{ hermes_webui_ref }}"
+    update: true
+  notify: Restart hermes-webui
+
+- name: Create Hermes Python virtualenv
+  ansible.builtin.command:
+    cmd: python3 -m venv "{{ hermes_venv_path }}"
+    creates: "{{ hermes_venv_path }}/bin/python"
+
+- name: Upgrade Hermes virtualenv packaging tools
+  ansible.builtin.pip:
+    name:
+      - pip
+      - setuptools
+      - wheel
+    state: latest
+    virtualenv: "{{ hermes_venv_path }}"
+
+- name: Install Hermes Agent into virtualenv
+  ansible.builtin.pip:
+    name: "file://{{ hermes_agent_dir }}"
+    editable: true
+    virtualenv: "{{ hermes_venv_path }}"
+  notify: Restart hermes-webui
+
+- name: Install Hermes WebUI requirements into virtualenv
+  ansible.builtin.pip:
+    requirements: "{{ hermes_webui_dir }}/requirements.txt"
+    virtualenv: "{{ hermes_venv_path }}"
+  notify: Restart hermes-webui
+
+- name: Install Hermes WebUI environment
+  ansible.builtin.template:
+    src: hermes-webui.env.j2
+    dest: "{{ hermes_env_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart hermes-webui
+
+- name: Install Hermes WebUI systemd service
+  ansible.builtin.template:
+    src: hermes-webui.service.j2
+    dest: /etc/systemd/system/hermes-webui.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart hermes-webui
+
+- name: Enable Hermes WebUI
+  ansible.builtin.systemd:
+    name: hermes-webui.service
+    daemon_reload: true
+    enabled: true
+    state: started
