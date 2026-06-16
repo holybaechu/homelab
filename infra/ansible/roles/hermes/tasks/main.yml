@@ -10,6 +10,7 @@
 - name: Install Hermes runtime packages
   ansible.builtin.apt:
     name:
+      - bash
       - build-essential
       - ca-certificates
       - curl
@@ -31,7 +32,7 @@
     name: "{{ hermes_user }}"
     uid: "{{ hermes_uid }}"
     group: "{{ hermes_group }}"
-    shell: /usr/sbin/nologin
+    shell: /bin/bash
     create_home: false
     home: "{{ hermes_home }}"
     state: present
@@ -83,7 +84,7 @@
       - pip
       - setuptools
       - wheel
-    state: latest
+    state: present
     virtualenv: "{{ hermes_venv_path }}"
 
 - name: Install Hermes Agent into virtualenv
