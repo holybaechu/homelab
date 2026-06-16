@@ -1,11 +1,17 @@
 from pathlib import Path
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def read(relative_path: str) -> str:
     return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def read_yaml(relative_path: str):
+    return yaml.safe_load(read(relative_path))
 
 
 def test_hermes_role_installs_native_service_without_docker_or_provider_keys():
@@ -16,19 +22,26 @@ def test_hermes_role_installs_native_service_without_docker_or_provider_keys():
     assert "python3-venv" in tasks
     assert "python3-pip" in tasks
     assert "build-essential" in tasks
-    assert "name: \"{{ hermes_agent_repo }}\"" in tasks
+    assert "repo: \"{{ hermes_agent_repo }}\"" in tasks
     assert "version: \"{{ hermes_agent_ref }}\"" in tasks
-    assert "name: \"{{ hermes_webui_repo }}\"" in tasks
+    assert "repo: \"{{ hermes_webui_repo }}\"" in tasks
     assert "version: \"{{ hermes_webui_ref }}\"" in tasks
     assert "requirements: \"{{ hermes_webui_dir }}/requirements.txt\"" in tasks
     assert "src: hermes-webui.env.j2" in tasks
     assert "src: hermes-webui.service.j2" in tasks
-    assert "name: hermes-webui.service" in tasks
-    assert "enabled: true" in tasks
-    assert "state: started" in tasks
-    assert "daemon_reload: true" in tasks
     assert "docker" not in tasks.lower()
     assert "API_SERVER_KEY" not in tasks
+
+
+def test_hermes_role_enables_webui_service_with_systemd():
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+    task = next(task for task in tasks if task.get("name") == "Enable Hermes WebUI")
+
+    systemd = task["ansible.builtin.systemd"]
+    assert systemd["name"] == "hermes-webui.service"
+    assert systemd["daemon_reload"] is True
+    assert systemd["enabled"] is True
+    assert systemd["state"] == "started"
 
 
 def test_hermes_env_template_contains_webui_runtime_settings_only():
@@ -61,9 +74,10 @@ def test_hermes_service_template_runs_webui_from_agent_venv():
 
 
 def test_hermes_handler_restarts_webui_service():
-    handlers = read("infra/ansible/roles/hermes/handlers/main.yml")
+    handlers = read_yaml("infra/ansible/roles/hermes/handlers/main.yml")
+    handler = next(handler for handler in handlers if handler.get("name") == "Restart hermes-webui")
 
-    assert "- name: Restart hermes-webui" in handlers
-    assert "name: hermes-webui.service" in handlers
-    assert "state: restarted" in handlers
-    assert "daemon_reload: true" in handlers
+    systemd = handler["ansible.builtin.systemd"]
+    assert systemd["name"] == "hermes-webui.service"
+    assert systemd["state"] == "restarted"
+    assert systemd["daemon_reload"] is True
