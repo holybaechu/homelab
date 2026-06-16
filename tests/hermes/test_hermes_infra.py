@@ -1,0 +1,104 @@
+from pathlib import Path
+import re
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def read(relative_path: str) -> str:
+    return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def tfvars_container_body(tfvars_text: str, name: str) -> str:
+    match = re.search(
+        rf"^  {name} = \{{(?P<body>.*?)^  \}}",
+        tfvars_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None, f"{name} container block not found"
+    return match.group("body")
+
+
+def numeric_value(container_body: str, key: str) -> int:
+    match = re.search(rf"^\s+{key}\s+=\s+(\d+)$", container_body, re.MULTILINE)
+    assert match is not None, f"{key} not found"
+    return int(match.group(1))
+
+
+def test_hermes_lxc_is_declared_in_example_tfvars():
+    tfvars = read("infra/opentofu/envs/prod/terraform.tfvars.example")
+    body = tfvars_container_body(tfvars, "hermes")
+
+    assert 'hostname         = "hermes"' in body
+    assert 'description      = "Hermes Agent WebUI managed by OpenTofu and Ansible"' in body
+    assert 'tags             = ["homelab", "managed-by-opentofu", "role-hermes"]' in body
+    assert 'template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"' in body
+    assert 'os_type          = "debian"' in body
+    assert 'ip_address       = "192.168.0.9/24"' in body
+    assert 'mac_address      = "02:00:00:BA:EC:09"' in body
+    assert numeric_value(body, "vmid") == 116
+    assert numeric_value(body, "root_disk_gb") == 16
+    assert numeric_value(body, "cores") == 2
+    assert numeric_value(body, "memory_mb") == 2048
+    assert numeric_value(body, "swap_mb") == 1024
+    assert numeric_value(body, "startup_order") == 7
+
+
+def test_hermes_inventory_is_debian_host_and_role_group():
+    hosts = read("infra/ansible/inventory/prod/hosts.yml")
+
+    assert re.search(
+        r"debian:\s*\n\s+hosts:.*hermes:\s*\n\s+ansible_host: 192\.168\.0\.9",
+        hosts,
+        re.DOTALL,
+    )
+    assert re.search(r"hermes:\s*\n\s+hosts:\s*\n\s+hermes:", hosts)
+
+
+def test_hermes_all_group_vars_define_ip_ids_bootstrap_and_mounts():
+    all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
+
+    assert re.search(r"^hermes_ip: 192\.168\.0\.9$", all_vars, re.MULTILINE)
+    assert re.search(r"^hermes_service_uid: 1200$", all_vars, re.MULTILINE)
+    assert re.search(r"^hermes_service_gid: 1200$", all_vars, re.MULTILINE)
+    assert "  - vmid: 116\n    name: hermes\n    os_family: debian" in all_vars
+    assert "  - vmid: 116\n    name: hermes" in all_vars
+    assert "bind_mount_sources:" in all_vars
+    assert "      - /var/lib/homelab/hermes/home" in all_vars
+    assert "      - /var/lib/homelab/hermes/workspace" in all_vars
+    assert "mp=/var/lib/hermes" in all_vars
+    assert "mp=/workspace" in all_vars
+
+
+def test_hermes_group_vars_are_non_secret_service_settings():
+    group_vars = read("infra/ansible/inventory/prod/group_vars/hermes.yml")
+
+    assert "hermes_user: hermes" in group_vars
+    assert "hermes_group: hermes" in group_vars
+    assert "hermes_home: /var/lib/hermes" in group_vars
+    assert "hermes_workspace: /workspace" in group_vars
+    assert "hermes_webui_host: 0.0.0.0" in group_vars
+    assert "hermes_webui_port: 8787" in group_vars
+    assert "https://github.com/NousResearch/hermes-agent.git" in group_vars
+    assert "https://github.com/nesquena/hermes-webui.git" in group_vars
+    assert "hermes_webui_password:" not in group_vars
+    assert "API_SERVER_KEY" not in group_vars
+
+
+def test_proxmox_storage_role_creates_hermes_host_directories():
+    tasks = read("infra/ansible/roles/pve_homelab_storage/tasks/main.yml")
+
+    assert '"${mount_path}/hermes/home"' in tasks
+    assert '"${mount_path}/hermes/workspace"' in tasks
+    assert "homelab_container_uid_offset + hermes_service_uid" in tasks
+    assert "homelab_container_uid_offset + hermes_service_gid" in tasks
+    assert '"${mount_path}/hermes"' in tasks
+
+
+def test_cd_workflow_passes_hermes_password_to_ansible_extra_vars():
+    workflow = read(".github/workflows/cd.yml")
+
+    assert "HERMES_WEBUI_PASSWORD:" in workflow
+    assert '"hermes_webui_password": os.environ["HERMES_WEBUI_PASSWORD"]' in workflow
+    assert "HERMES_API_KEY" not in workflow
+    assert "API_SERVER_KEY" not in workflow
