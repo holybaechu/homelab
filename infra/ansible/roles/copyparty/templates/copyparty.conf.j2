@@ -2,6 +2,7 @@
 {% for user in copyparty_users %}
   {{ user.name }}: {{ user.password }}
 {% endfor %}
+{% set copyparty_user_names = copyparty_users | map(attribute='name') | list %}
 
 [global]
   e2dsa
@@ -24,7 +25,7 @@
 [/shared-readonly]
   /srv/shared-readonly
   accs:
-    r: holybaechu
+    r: {{ copyparty_user_names | join(', ') }}
     A: holybaechu
 
 [/downloads]
