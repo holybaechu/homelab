@@ -32,6 +32,26 @@ def test_adguard_role_installs_htpasswd_for_password_hashing():
     assert "- apache2-utils" in tasks
 
 
+def test_adguard_role_uses_versioned_download_and_extract_paths():
+    tasks = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "adguard"
+        / "tasks"
+        / "main.yml"
+    ).read_text(encoding="utf-8")
+
+    assert 'dest: "/tmp/AdGuardHome_{{ adguard_version }}_{{ adguard_arch }}.tar.gz"' in tasks
+    assert 'path: "/tmp/AdGuardHome-{{ adguard_version }}"' in tasks
+    assert 'src: "/tmp/AdGuardHome_{{ adguard_version }}_{{ adguard_arch }}.tar.gz"' in tasks
+    assert 'creates: "/tmp/AdGuardHome-{{ adguard_version }}/AdGuardHome/AdGuardHome"' in tasks
+    assert 'src: "/tmp/AdGuardHome-{{ adguard_version }}/AdGuardHome/AdGuardHome"' in tasks
+    assert "dest: /tmp/AdGuardHome.tar.gz" not in tasks
+    assert "creates: /tmp/AdGuardHome/AdGuardHome" not in tasks
+
+
 def test_adguard_role_hashes_plaintext_admin_password():
     tasks = (
         REPO_ROOT

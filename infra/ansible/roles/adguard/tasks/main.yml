@@ -39,22 +39,30 @@
     group: "{{ service_group }}"
     mode: "0750"
 
+- name: Create AdGuard versioned extract directory
+  ansible.builtin.file:
+    path: "/tmp/AdGuardHome-{{ adguard_version }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Download AdGuard Home
   ansible.builtin.get_url:
     url: "https://github.com/AdguardTeam/AdGuardHome/releases/download/{{ adguard_version }}/AdGuardHome_{{ adguard_arch }}.tar.gz"
-    dest: /tmp/AdGuardHome.tar.gz
+    dest: "/tmp/AdGuardHome_{{ adguard_version }}_{{ adguard_arch }}.tar.gz"
     mode: "0644"
 
 - name: Extract AdGuard Home
   ansible.builtin.unarchive:
-    src: /tmp/AdGuardHome.tar.gz
-    dest: /tmp
+    src: "/tmp/AdGuardHome_{{ adguard_version }}_{{ adguard_arch }}.tar.gz"
+    dest: "/tmp/AdGuardHome-{{ adguard_version }}"
     remote_src: true
-    creates: /tmp/AdGuardHome/AdGuardHome
+    creates: "/tmp/AdGuardHome-{{ adguard_version }}/AdGuardHome/AdGuardHome"
 
 - name: Install AdGuard binary
   ansible.builtin.copy:
-    src: /tmp/AdGuardHome/AdGuardHome
+    src: "/tmp/AdGuardHome-{{ adguard_version }}/AdGuardHome/AdGuardHome"
     dest: "{{ adguard_install_dir }}/AdGuardHome"
     remote_src: true
     owner: root
