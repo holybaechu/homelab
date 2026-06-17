@@ -77,6 +77,8 @@ def test_validate_playbook_checks_hermes_service_health_and_caddy_route():
     )
     assert "hermes.home.hchu.me:443:{{ edge_ip }}" in hermes_edge_cmd
     assert "https://hermes.home.hchu.me/login" in hermes_edge_cmd
+    assert " -I" not in hermes_edge_cmd
+    assert " -D - -o /dev/null" in hermes_edge_cmd
     assert "Via: 1.1 Caddy" in hermes_edge_cmd
 
     hermes_play = next(

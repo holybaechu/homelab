@@ -12,9 +12,9 @@ hermes_venv_path: "{{ hermes_install_dir }}/venv"
 hermes_env_path: /etc/hermes-webui.env
 
 hermes_agent_repo: https://github.com/NousResearch/hermes-agent.git
-hermes_agent_ref: main
+hermes_agent_ref: 36ae958473b8530ffb1a395c4944b8cdbcae82fe
 hermes_webui_repo: https://github.com/nesquena/hermes-webui.git
-hermes_webui_ref: master
+hermes_webui_ref: ce272d9cd5f8e5a4521278f56eb5388010901646
 
 hermes_webui_host: 0.0.0.0
 hermes_webui_port: 8787

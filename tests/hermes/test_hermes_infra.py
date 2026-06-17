@@ -1,6 +1,8 @@
 from pathlib import Path
 import re
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -83,6 +85,15 @@ def test_hermes_group_vars_are_non_secret_service_settings():
     assert "https://github.com/nesquena/hermes-webui.git" in group_vars
     assert "hermes_webui_password:" not in group_vars
     assert "API_SERVER_KEY" not in group_vars
+
+
+def test_hermes_upstream_refs_are_pinned_commit_hashes():
+    group_vars = yaml.safe_load(read("infra/ansible/inventory/prod/group_vars/hermes.yml"))
+
+    for key in ("hermes_agent_ref", "hermes_webui_ref"):
+        value = group_vars[key]
+        assert re.fullmatch(r"[0-9a-f]{40}", value), f"{key} must be pinned to a commit"
+        assert value not in {"main", "master"}
 
 
 def test_proxmox_storage_role_creates_hermes_host_directories():

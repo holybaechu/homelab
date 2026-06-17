@@ -45,6 +45,14 @@
     group: root
     mode: "0755"
 
+- name: Require Hermes persistent bind mounts
+  ansible.builtin.command:
+    cmd: mountpoint -q "{{ item }}"
+  changed_when: false
+  loop:
+    - "{{ hermes_home }}"
+    - "{{ hermes_workspace }}"
+
 - name: Create Hermes persistent directories
   ansible.builtin.file:
     path: "{{ item }}"

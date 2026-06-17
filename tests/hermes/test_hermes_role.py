@@ -60,6 +60,19 @@ def test_hermes_role_keeps_packaging_tools_present_without_pypi_drift():
     assert packaging_task["ansible.builtin.pip"]["state"] == "present"
 
 
+def test_hermes_role_requires_persistent_bind_mounts_before_writing_state():
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+
+    mount_task = find_task(tasks, "Require Hermes persistent bind mounts")
+    assert mount_task["ansible.builtin.command"]["cmd"] == 'mountpoint -q "{{ item }}"'
+    assert mount_task["changed_when"] is False
+    assert mount_task["loop"] == ["{{ hermes_home }}", "{{ hermes_workspace }}"]
+
+    mount_index = tasks.index(mount_task)
+    dirs_index = tasks.index(find_task(tasks, "Create Hermes persistent directories"))
+    assert mount_index < dirs_index
+
+
 def test_hermes_role_enables_webui_service_with_systemd():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
     task = find_task(tasks, "Enable Hermes WebUI")
