@@ -11,6 +11,7 @@ Expected encrypted values:
 - `proton_wireguard_private_key`
 - `tailscale_auth_key`
 - `qbittorrent_webui_password`
+- `hermes_webui_password`
 - `copyparty_users`, as a list of account objects with `name` and `password`
 - `adguard_admin_password`, as plaintext; the AdGuard role hashes it before writing the service config
 
