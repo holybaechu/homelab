@@ -41,6 +41,16 @@ def test_cd_workflow_configures_remote_tofu_state():
     assert "AWS_SECRET_ACCESS_KEY:" in workflow
 
 
+def test_cd_workflow_serializes_prod_deploys():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "concurrency:" in workflow
+    assert "group: cd-prod" in workflow
+    assert "cancel-in-progress: false" in workflow
+
+
 def test_cd_workflow_does_not_pin_tailscale_version():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"
