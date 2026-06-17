@@ -60,6 +60,22 @@ def test_hermes_role_keeps_packaging_tools_present_without_pypi_drift():
     assert packaging_task["ansible.builtin.pip"]["state"] == "present"
 
 
+def test_hermes_role_keeps_venv_writable_for_lazy_dependency_installs():
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+
+    ownership_task = find_task(tasks, "Allow Hermes service to manage lazy venv deps")
+    file_task = ownership_task["ansible.builtin.file"]
+    assert file_task["path"] == "{{ hermes_venv_path }}"
+    assert file_task["owner"] == "{{ hermes_user }}"
+    assert file_task["group"] == "{{ hermes_group }}"
+    assert file_task["recurse"] is True
+
+    ownership_index = tasks.index(ownership_task)
+    webui_pip_index = tasks.index(find_task(tasks, "Install Hermes WebUI requirements into virtualenv"))
+    service_index = tasks.index(find_task(tasks, "Enable Hermes WebUI"))
+    assert webui_pip_index < ownership_index < service_index
+
+
 def test_hermes_role_requires_persistent_bind_mounts_before_writing_state():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
 

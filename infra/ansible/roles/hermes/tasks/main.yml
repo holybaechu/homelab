@@ -108,6 +108,14 @@
     virtualenv: "{{ hermes_venv_path }}"
   notify: Restart hermes-webui
 
+- name: Allow Hermes service to manage lazy venv deps
+  ansible.builtin.file:
+    path: "{{ hermes_venv_path }}"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    recurse: true
+
 - name: Install Hermes WebUI environment
   ansible.builtin.template:
     src: hermes-webui.env.j2
