@@ -15,23 +15,21 @@ def read_yaml(relative_path: str):
     return yaml.safe_load(read(relative_path))
 
 
-def caddy_site_block(content: str, hostname: str) -> str:
+def caddy_site_block(content: str, hostname: str) -> str | None:
     match = re.search(
         rf"^{re.escape(hostname)} \{{\n(?P<body>.*?)(?=^\S|\Z)",
         content,
         re.MULTILINE | re.DOTALL,
     )
-    assert match is not None, f"{hostname} route not found"
+    if match is None:
+        return None
     return match.group("body")
 
 
-def test_caddyfile_exposes_hermes_as_private_route():
+def test_caddyfile_does_not_expose_hermes_gateway_route():
     caddyfile = read("apps/edge/Caddyfile")
 
-    block = caddy_site_block(caddyfile, "hermes.home.hchu.me")
-    assert "import private_only" in block
-    assert "import secure_headers" in block
-    assert "reverse_proxy 192.168.0.9:8787" in block
+    assert caddy_site_block(caddyfile, "hermes.home.hchu.me") is None
 
 
 def test_site_playbook_applies_hermes_role():
@@ -52,7 +50,7 @@ def test_site_playbook_applies_hermes_role():
     assert "hermes" in role_names
 
 
-def test_validate_playbook_checks_hermes_service_health_and_caddy_route():
+def test_validate_playbook_checks_hermes_gateway_service_only():
     validate = read_yaml("infra/ansible/playbooks/validate.yml")
     edge_play = next(
         (play for play in validate if play.get("name") == "Validate edge"),
@@ -62,24 +60,13 @@ def test_validate_playbook_checks_hermes_service_health_and_caddy_route():
         (
             task
             for task in (edge_play or {}).get("tasks", [])
-            if task.get("name") == "Check Hermes WebUI is served through Caddy TLS route"
+            if "Hermes" in task.get("name", "")
         ),
         None,
     )
 
     assert edge_play is not None
-    assert hermes_edge_task is not None
-    hermes_edge_shell = hermes_edge_task.get("ansible.builtin.shell") or {}
-    hermes_edge_cmd = (
-        hermes_edge_shell.get("cmd", "")
-        if isinstance(hermes_edge_shell, dict)
-        else hermes_edge_shell
-    )
-    assert "hermes.home.hchu.me:443:{{ edge_ip }}" in hermes_edge_cmd
-    assert "https://hermes.home.hchu.me/login" in hermes_edge_cmd
-    assert " -I" not in hermes_edge_cmd
-    assert " -D - -o /dev/null" in hermes_edge_cmd
-    assert "Via: 1.1 Caddy" in hermes_edge_cmd
+    assert hermes_edge_task is None
 
     hermes_play = next(
         (play for play in validate if play.get("name") == "Validate hermes"),
@@ -89,25 +76,32 @@ def test_validate_playbook_checks_hermes_service_health_and_caddy_route():
     assert hermes_play is not None
     assert hermes_play.get("hosts") == "hermes"
     hermes_tasks = yaml.safe_dump(hermes_play.get("tasks", []), sort_keys=True)
-    assert "systemctl is-active hermes-webui" in hermes_tasks
-    assert "http://127.0.0.1:{{ hermes_webui_port }}/health" in hermes_tasks
+    assert "systemctl is-active hermes-gateway" in hermes_tasks
+    assert "hermes-webui" not in hermes_tasks
+    assert "hermes_webui_port" not in hermes_tasks
 
 
-def test_secrets_readme_documents_hermes_password():
+def test_secrets_readme_documents_hermes_discord_secrets():
     secrets = read("secrets/README.md")
 
-    assert "hermes_webui_password" in secrets
+    assert "hermes_discord_bot_token" in secrets
+    assert "hermes_discord_allowed_users" in secrets
+    assert "hermes_webui_password" not in secrets
     for forbidden_key in ("HERMES_API_KEY", "API_SERVER_KEY", "OPENAI_API_KEY"):
         assert forbidden_key not in secrets
 
 
-def test_hermes_runbook_documents_deploy_validate_and_first_login():
-    runbook = read("docs/runbooks/hermes-agent-webui.md")
+def test_hermes_runbook_documents_discord_gateway_and_fresh_lxc_rebuild():
+    runbook = read("docs/runbooks/hermes-agent-discord.md")
 
-    assert "https://hermes.home.hchu.me" in runbook
+    assert "Hermes Agent Discord gateway" in runbook
     assert "infra/ansible/playbooks/bootstrap.yml" in runbook
     assert "infra/ansible/playbooks/site.yml" in runbook
     assert "infra/ansible/playbooks/validate.yml" in runbook
-    assert "HERMES_WEBUI_PASSWORD" in runbook
+    assert "HERMES_DISCORD_BOT_TOKEN" in runbook
+    assert "HERMES_DISCORD_ALLOWED_USERS" in runbook
+    assert "rebuild_hermes_lxc" in runbook
+    assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' in runbook
     assert "/workspace" in runbook
     assert "provider/model setup" in runbook
+    assert "https://hermes.home.hchu.me" not in runbook

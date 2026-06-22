@@ -34,4 +34,9 @@ tofu init "$@"
 tofu fmt -recursive -check ../..
 tofu validate
 
-tofu plan -out=prod.tfplan
+set --
+if [ "${REBUILD_HERMES_LXC:-false}" = "true" ]; then
+  set -- "$@" '-replace=module.lxc["hermes"].proxmox_virtual_environment_container.this'
+fi
+
+tofu plan -out=prod.tfplan "$@"

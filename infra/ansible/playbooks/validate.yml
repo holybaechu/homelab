@@ -18,16 +18,6 @@
         cmd: rc-service caddy status
       changed_when: false
 
-    - name: Check Hermes WebUI is served through Caddy TLS route
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          headers="$(curl -fsS --http1.1 --resolve "hermes.home.hchu.me:443:{{ edge_ip }}" -D - -o /dev/null https://hermes.home.hchu.me/login)"
-          printf '%s\n' "$headers" | grep -E "HTTP/1.1 (200|302)"
-          printf '%s\n' "$headers" | grep -F "Via: 1.1 Caddy"
-        executable: /bin/sh
-      changed_when: false
-
 - name: Validate DNS
   hosts: dns
   gather_facts: false
@@ -221,18 +211,7 @@
   hosts: hermes
   gather_facts: false
   tasks:
-    - name: Check Hermes WebUI service
+    - name: Check Hermes gateway service
       ansible.builtin.command:
-        cmd: systemctl is-active hermes-webui
-      changed_when: false
-
-    - name: Check Hermes WebUI port
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: "{{ hermes_webui_port }}"
-        timeout: 5
-
-    - name: Check Hermes WebUI health endpoint
-      ansible.builtin.command:
-        cmd: curl -fsS http://127.0.0.1:{{ hermes_webui_port }}/health
+        cmd: systemctl is-active hermes-gateway
       changed_when: false

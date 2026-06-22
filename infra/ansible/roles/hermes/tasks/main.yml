@@ -1,10 +1,12 @@
 ---
-- name: Require Hermes WebUI password
+- name: Require Hermes Discord gateway secrets
   ansible.builtin.assert:
     that:
-      - hermes_webui_password is defined
-      - hermes_webui_password | length > 0
-    fail_msg: hermes_webui_password must be provided through secrets.
+      - hermes_discord_bot_token is defined
+      - hermes_discord_bot_token | length > 0
+      - hermes_discord_allowed_users is defined
+      - hermes_discord_allowed_users | length > 0
+    fail_msg: Hermes Discord bot token and allowed users must be provided through secrets.
   no_log: true
 
 - name: Install Hermes runtime packages
@@ -45,6 +47,24 @@
     group: root
     mode: "0755"
 
+- name: Stop and disable old Hermes WebUI service
+  ansible.builtin.systemd:
+    name: hermes-webui.service
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  failed_when: false
+
+- name: Remove old Hermes WebUI artifacts
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ hermes_install_dir }}/hermes-webui"
+    - /etc/hermes-webui.env
+    - /etc/systemd/system/hermes-webui.service
+    - "{{ hermes_home }}/webui"
+
 - name: Require Hermes persistent bind mounts
   ansible.builtin.command:
     cmd: mountpoint -q "{{ item }}"
@@ -62,7 +82,6 @@
     mode: "0755"
   loop:
     - "{{ hermes_home }}"
-    - "{{ hermes_webui_state_dir }}"
     - "{{ hermes_workspace }}"
 
 - name: Clone Hermes Agent
@@ -71,15 +90,7 @@
     dest: "{{ hermes_agent_dir }}"
     version: "{{ hermes_agent_ref }}"
     update: true
-  notify: Restart hermes-webui
-
-- name: Clone Hermes WebUI
-  ansible.builtin.git:
-    repo: "{{ hermes_webui_repo }}"
-    dest: "{{ hermes_webui_dir }}"
-    version: "{{ hermes_webui_ref }}"
-    update: true
-  notify: Restart hermes-webui
+  notify: Restart hermes-gateway
 
 - name: Create Hermes Python virtualenv
   ansible.builtin.command:
@@ -95,18 +106,12 @@
     state: present
     virtualenv: "{{ hermes_venv_path }}"
 
-- name: Install Hermes Agent into virtualenv
+- name: Install Hermes Agent messaging extras into virtualenv
   ansible.builtin.pip:
-    name: "file://{{ hermes_agent_dir }}"
+    name: "{{ hermes_agent_dir }}[messaging]"
     editable: true
     virtualenv: "{{ hermes_venv_path }}"
-  notify: Restart hermes-webui
-
-- name: Install Hermes WebUI requirements into virtualenv
-  ansible.builtin.pip:
-    requirements: "{{ hermes_webui_dir }}/requirements.txt"
-    virtualenv: "{{ hermes_venv_path }}"
-  notify: Restart hermes-webui
+  notify: Restart hermes-gateway
 
 - name: Allow Hermes service to manage lazy venv deps
   ansible.builtin.file:
@@ -116,28 +121,28 @@
     group: "{{ hermes_group }}"
     recurse: true
 
-- name: Install Hermes WebUI environment
+- name: Install Hermes gateway environment
   ansible.builtin.template:
-    src: hermes-webui.env.j2
+    src: hermes-gateway.env.j2
     dest: "{{ hermes_env_path }}"
     owner: root
     group: root
     mode: "0600"
   no_log: true
-  notify: Restart hermes-webui
+  notify: Restart hermes-gateway
 
-- name: Install Hermes WebUI systemd service
+- name: Install Hermes gateway systemd service
   ansible.builtin.template:
-    src: hermes-webui.service.j2
-    dest: /etc/systemd/system/hermes-webui.service
+    src: hermes-gateway.service.j2
+    dest: /etc/systemd/system/hermes-gateway.service
     owner: root
     group: root
     mode: "0644"
-  notify: Restart hermes-webui
+  notify: Restart hermes-gateway
 
-- name: Enable Hermes WebUI
+- name: Enable Hermes gateway
   ansible.builtin.systemd:
-    name: hermes-webui.service
+    name: hermes-gateway.service
     daemon_reload: true
     enabled: true
     state: started

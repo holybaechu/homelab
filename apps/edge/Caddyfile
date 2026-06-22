@@ -51,12 +51,6 @@ qbt.home.hchu.me {
 	reverse_proxy 192.168.0.6:8080
 }
 
-hermes.home.hchu.me {
-	import private_only
-	import secure_headers
-	reverse_proxy 192.168.0.9:8787
-}
-
 pve.home.hchu.me {
 	import private_only
 	import pve_headers

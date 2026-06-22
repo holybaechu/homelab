@@ -2,6 +2,12 @@ name: cd
 
 on:
   workflow_dispatch:
+    inputs:
+      rebuild_hermes_lxc:
+        description: Destroy and recreate the Hermes LXC during this deployment
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -44,7 +50,9 @@ jobs:
       TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
       PROTON_WIREGUARD_PRIVATE_KEY: ${{ secrets.PROTON_WIREGUARD_PRIVATE_KEY }}
       QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
-      HERMES_WEBUI_PASSWORD: ${{ secrets.HERMES_WEBUI_PASSWORD }}
+      HERMES_DISCORD_BOT_TOKEN: ${{ secrets.HERMES_DISCORD_BOT_TOKEN }}
+      HERMES_DISCORD_ALLOWED_USERS: ${{ secrets.HERMES_DISCORD_ALLOWED_USERS }}
+      REBUILD_HERMES_LXC: ${{ inputs.rebuild_hermes_lxc || 'false' }}
       COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
     steps:
       - name: Checkout
@@ -92,7 +100,8 @@ jobs:
               "tailscale_auth_key": os.environ["TAILSCALE_AUTH_KEY"],
               "proton_wireguard_private_key": os.environ["PROTON_WIREGUARD_PRIVATE_KEY"],
               "qbittorrent_webui_password": os.environ["QBITTORRENT_WEBUI_PASSWORD"],
-              "hermes_webui_password": os.environ["HERMES_WEBUI_PASSWORD"],
+              "hermes_discord_bot_token": os.environ["HERMES_DISCORD_BOT_TOKEN"],
+              "hermes_discord_allowed_users": os.environ["HERMES_DISCORD_ALLOWED_USERS"],
               "copyparty_users": json.loads(os.environ["COPYPARTY_USERS_JSON"]),
           }
 

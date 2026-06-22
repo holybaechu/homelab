@@ -1,5 +1,5 @@
 [Unit]
-Description=Hermes Agent WebUI
+Description=Hermes Agent Discord gateway
 After=network-online.target
 Wants=network-online.target
 
@@ -8,8 +8,8 @@ Type=simple
 User={{ hermes_user }}
 Group={{ hermes_group }}
 EnvironmentFile={{ hermes_env_path }}
-WorkingDirectory={{ hermes_agent_dir }}
-ExecStart={{ hermes_venv_path }}/bin/python {{ hermes_webui_dir }}/server.py
+WorkingDirectory={{ hermes_workspace }}
+ExecStart={{ hermes_venv_path }}/bin/hermes gateway
 Restart=on-failure
 RestartSec=5
 

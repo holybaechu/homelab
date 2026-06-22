@@ -111,6 +111,20 @@ def test_cd_tofu_plan_and_apply_use_generated_variable_file():
     assert "tofu apply -auto-approve prod.tfplan" in apply_script
 
 
+def test_cd_workflow_can_plan_one_time_hermes_lxc_replacement():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+    plan_script = (REPO_ROOT / "scripts" / "ci" / "tofu-plan.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "rebuild_hermes_lxc:" in workflow
+    assert "REBUILD_HERMES_LXC:" in workflow
+    assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' in plan_script
+    assert "-replace=" in plan_script
+
+
 def test_generated_tofu_secret_variable_files_are_ignored_and_topology_is_tracked():
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
 

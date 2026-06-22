@@ -37,7 +37,8 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `TAILSCALE_AUTH_KEY`
 - `PROTON_WIREGUARD_PRIVATE_KEY`
 - `QBITTORRENT_WEBUI_PASSWORD`
-- `HERMES_WEBUI_PASSWORD`
+- `HERMES_DISCORD_BOT_TOKEN`
+- `HERMES_DISCORD_ALLOWED_USERS`
 - `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and `password`
 
 Example `COPYPARTY_USERS_JSON`:
@@ -70,6 +71,8 @@ Create an S3-compatible bucket for remote state and enable versioning if the pro
 The CI workflow validates OpenTofu with `tofu init -backend=false`; only CD needs the real remote-state credentials.
 Container topology is tracked in `infra/opentofu/envs/prod/containers.auto.tfvars`.
 Private provider values stay in ignored local tfvars files or the generated CI `ci.auto.tfvars.json`.
+
+To remove and recreate the Hermes LXC during a manual deployment, run the `cd` workflow with `rebuild_hermes_lxc` set to `true`. Leave it `false` for normal deploys.
 
 ## CD Parallelism
 

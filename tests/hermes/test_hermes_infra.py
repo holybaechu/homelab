@@ -32,7 +32,7 @@ def test_hermes_lxc_is_declared_in_tracked_topology_tfvars():
     body = tfvars_container_body(tfvars, "hermes")
 
     assert 'hostname         = "hermes"' in body
-    assert 'description      = "Hermes Agent WebUI managed by OpenTofu and Ansible"' in body
+    assert 'description      = "Hermes Agent Discord gateway managed by OpenTofu and Ansible"' in body
     assert 'tags             = ["homelab", "managed-by-opentofu", "role-hermes"]' in body
     assert 'template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"' in body
     assert 'os_type          = "debian"' in body
@@ -79,18 +79,20 @@ def test_hermes_group_vars_are_non_secret_service_settings():
     assert "hermes_group: hermes" in group_vars
     assert "hermes_home: /var/lib/hermes" in group_vars
     assert "hermes_workspace: /workspace" in group_vars
-    assert "hermes_webui_host: 0.0.0.0" in group_vars
-    assert "hermes_webui_port: 8787" in group_vars
     assert "https://github.com/NousResearch/hermes-agent.git" in group_vars
-    assert "https://github.com/nesquena/hermes-webui.git" in group_vars
+    assert "hermes_webui" not in group_vars
     assert "hermes_webui_password:" not in group_vars
+    assert "hermes_discord_bot_token:" not in group_vars
+    assert "hermes_discord_allowed_users:" not in group_vars
+    assert "hermes_discord_require_mention: true" in group_vars
+    assert "hermes_discord_ignore_no_mention: true" in group_vars
     assert "API_SERVER_KEY" not in group_vars
 
 
 def test_hermes_upstream_refs_are_pinned_commit_hashes():
     group_vars = yaml.safe_load(read("infra/ansible/inventory/prod/group_vars/hermes.yml"))
 
-    for key in ("hermes_agent_ref", "hermes_webui_ref"):
+    for key in ("hermes_agent_ref",):
         value = group_vars[key]
         assert re.fullmatch(r"[0-9a-f]{40}", value), f"{key} must be pinned to a commit"
         assert value not in {"main", "master"}
@@ -106,10 +108,23 @@ def test_proxmox_storage_role_creates_hermes_host_directories():
     assert '"${mount_path}/hermes"' in tasks
 
 
-def test_cd_workflow_passes_hermes_password_to_ansible_extra_vars():
+def test_cd_workflow_passes_hermes_discord_secrets_to_ansible_extra_vars():
     workflow = read(".github/workflows/cd.yml")
 
-    assert "HERMES_WEBUI_PASSWORD:" in workflow
-    assert '"hermes_webui_password": os.environ["HERMES_WEBUI_PASSWORD"]' in workflow
+    assert "HERMES_DISCORD_BOT_TOKEN:" in workflow
+    assert "HERMES_DISCORD_ALLOWED_USERS:" in workflow
+    assert '"hermes_discord_bot_token": os.environ["HERMES_DISCORD_BOT_TOKEN"]' in workflow
+    assert '"hermes_discord_allowed_users": os.environ["HERMES_DISCORD_ALLOWED_USERS"]' in workflow
+    assert "HERMES_WEBUI_PASSWORD:" not in workflow
     assert "HERMES_API_KEY" not in workflow
     assert "API_SERVER_KEY" not in workflow
+
+
+def test_cd_workflow_can_rebuild_hermes_lxc_on_manual_dispatch():
+    workflow = read(".github/workflows/cd.yml")
+    plan_script = read("scripts/ci/tofu-plan.sh")
+
+    assert "rebuild_hermes_lxc:" in workflow
+    assert "REBUILD_HERMES_LXC:" in workflow
+    assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' in plan_script
+    assert "-replace=" in plan_script
