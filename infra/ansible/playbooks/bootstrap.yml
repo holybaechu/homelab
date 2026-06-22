@@ -25,12 +25,24 @@
     - name: Add LXC SSH host keys to known_hosts
       ansible.builtin.shell: |
         set -eu
+        host="{{ item }}"
         mkdir -p "${HOME}/.ssh"
         touch "${HOME}/.ssh/known_hosts"
         chmod 700 "${HOME}/.ssh"
         chmod 600 "${HOME}/.ssh/known_hosts"
-        ssh-keygen -R "{{ item }}" >/dev/null 2>&1 || true
-        ssh-keyscan -H -T 10 "{{ item }}" >> "${HOME}/.ssh/known_hosts"
+        ssh-keygen -R "${host}" >/dev/null 2>&1 || true
+
+        for attempt in 1 2 3 4 5 6; do
+          if ssh-keyscan -H -T 10 "${host}" >> "${HOME}/.ssh/known_hosts"; then
+            exit 0
+          fi
+
+          echo "ssh-keyscan failed for ${host} (attempt ${attempt}/6); retrying" >&2
+          sleep 5
+        done
+
+        echo "ssh-keyscan failed for ${host} after 6 attempts" >&2
+        exit 1
       args:
         executable: /bin/sh
       changed_when: true
