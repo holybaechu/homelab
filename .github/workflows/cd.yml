@@ -107,10 +107,10 @@ jobs:
           PY
 
       - name: Deploy services
-        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/site.yml --extra-vars @/tmp/ansible-extra-vars.json
+        run: sh ./scripts/ci/run-ansible-parallel.sh site --extra-vars @/tmp/ansible-extra-vars.json
 
       - name: Validate services
-        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/validate.yml
+        run: sh ./scripts/ci/run-ansible-parallel.sh validate
 
       - name: Remove Ansible extra vars
         if: always()

@@ -25,9 +25,32 @@ def test_cd_workflow_runs_bootstrap_before_site_deploy():
     )
 
     bootstrap = workflow.index("infra/ansible/playbooks/bootstrap.yml")
-    site = workflow.index("infra/ansible/playbooks/site.yml")
+    site = workflow.index("scripts/ci/run-ansible-parallel.sh site")
 
     assert bootstrap < site
+
+
+def test_cd_workflow_parallelizes_service_deploy_and_validate():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "./scripts/ci/run-ansible-parallel.sh site" in workflow
+    assert "./scripts/ci/run-ansible-parallel.sh validate" in workflow
+    assert "ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/site.yml --extra-vars @/tmp/ansible-extra-vars.json" not in workflow
+    assert "ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/validate.yml" not in workflow
+
+
+def test_parallel_ansible_runner_limits_each_service_and_waits_for_failures():
+    runner = (REPO_ROOT / "scripts" / "ci" / "run-ansible-parallel.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'TARGETS="edge dns tailnet downloads files minecraft"' in runner
+    assert '--limit "${target}"' in runner
+    assert " &" in runner
+    assert "wait" in runner
+    assert "failed=1" in runner
 
 
 def test_cd_workflow_configures_remote_tofu_state():

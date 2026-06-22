@@ -68,6 +68,12 @@ Create an S3-compatible bucket for remote state and enable versioning if the pro
 
 The CI workflow validates OpenTofu with `tofu init -backend=false`; only CD needs the real remote-state credentials.
 
+## CD Parallelism
+
+The CD workflow keeps OpenTofu and bootstrap operations serial, then runs Ansible service deploy and validation in parallel across `edge`, `dns`, `tailnet`, `downloads`, `files`, and `minecraft`.
+
+Each service run uses `ansible-playbook --limit <service>` through `scripts/ci/run-ansible-parallel.sh`. GitHub logs are grouped per service, and the step fails if any service deploy or validation process fails.
+
 ## First Deployment
 
 1. Push these workflow changes and confirm `ci` passes.
