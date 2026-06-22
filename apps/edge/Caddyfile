@@ -8,33 +8,38 @@
 	respond @not_private 403
 }
 
-(secure_headers) {
+(base_headers) {
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		Referrer-Policy "no-referrer-when-downgrade"
+	}
+}
+
+(secure_headers) {
+	import base_headers
+	header {
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
-		Referrer-Policy "no-referrer-when-downgrade"
 	}
 }
 
 (pve_headers) {
+	import base_headers
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
-		Referrer-Policy "no-referrer-when-downgrade"
 	}
 }
 
 (router_headers) {
+	import base_headers
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 		X-Frame-Options "DENY"
-		Referrer-Policy "no-referrer-when-downgrade"
 	}
 }
 
 copyparty.hchu.me {
+	import private_only
 	import secure_headers
 	reverse_proxy 192.168.0.7:3923
 }
@@ -56,7 +61,8 @@ pve.home.hchu.me {
 	import pve_headers
 	reverse_proxy https://192.168.0.2:8006 {
 		transport http {
-			tls_insecure_skip_verify
+			tls_server_name pve.home.hchu.me
+			tls_trusted_ca_certs /etc/ssl/certs/homelab-pve-root-ca.pem
 		}
 	}
 }
@@ -72,7 +78,7 @@ dns.hchu.me {
 	handle /dns-query {
 		reverse_proxy https://192.168.0.3:443 {
 			transport http {
-				tls_insecure_skip_verify
+				tls_server_name dns.hchu.me
 			}
 		}
 	}

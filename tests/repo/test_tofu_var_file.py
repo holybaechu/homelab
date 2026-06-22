@@ -1,9 +1,6 @@
 import importlib.util
 import json
-from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO_ROOT
 SCRIPT = REPO_ROOT / "scripts" / "ci" / "write_tofu_vars.py"
 
 

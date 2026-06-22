@@ -6,7 +6,7 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO_ROOT
 ROLE = REPO_ROOT / "infra" / "ansible" / "roles" / "minecraft"
 TEMPLATES = ROLE / "templates"
 

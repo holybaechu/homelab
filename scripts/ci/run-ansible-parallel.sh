@@ -14,7 +14,7 @@ mode="$1"
 shift
 
 inventory="infra/ansible/inventory/prod/hosts.yml"
-TARGETS="edge dns tailnet downloads files minecraft hermes"
+TARGETS="edge:svc_edge dns:svc_dns tailnet:svc_tailnet downloads:svc_downloads files:svc_files minecraft:svc_minecraft hermes:svc_hermes"
 
 case "${mode}" in
   site)
@@ -38,15 +38,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for target in ${TARGETS}; do
+for entry in ${TARGETS}; do
+  target="${entry%%:*}"
+  limit="${entry#*:}"
   (
-    ansible-playbook \
-      -i "${inventory}" \
-      "${playbook}" \
-      --limit "${target}" \
-      "$@"
+    ansible-playbook       -i "${inventory}"       "${playbook}"       --limit "${limit}"       "$@"
   ) > "${log_dir}/${target}.log" 2>&1 &
-  printf '%s %s\n' "$!" "${target}" >> "${pid_file}"
+  printf '%s %s
+' "$!" "${target}" >> "${pid_file}"
 done
 
 failed=0
@@ -59,9 +58,11 @@ while read -r pid target; do
     failed=1
   fi
 
-  printf '::group::%s %s %s\n' "${mode}" "${target}" "${status}"
+  printf '::group::%s %s %s
+' "${mode}" "${target}" "${status}"
   cat "${log_dir}/${target}.log"
-  printf '::endgroup::\n'
+  printf '::endgroup::
+'
 done < "${pid_file}"
 
 exit "${failed}"

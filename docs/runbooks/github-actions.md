@@ -25,6 +25,7 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `PROXMOX_API_TOKEN`
 - `DEPLOY_SSH_PUBLIC_KEYS`
 - `DEPLOY_SSH_PRIVATE_KEY`
+- `DEPLOY_SSH_KNOWN_HOSTS`, pinned OpenSSH `known_hosts` lines for the Proxmox SSH host
 - `TOFU_STATE_ACCESS_KEY_ID`
 - `TOFU_STATE_SECRET_ACCESS_KEY`
 - `TS_OAUTH_CLIENT_ID`
@@ -39,7 +40,7 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `QBITTORRENT_WEBUI_PASSWORD`
 - `HERMES_DISCORD_BOT_TOKEN`
 - `HERMES_DISCORD_ALLOWED_USERS`
-- `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and `password`
+- `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and plaintext `password`
 
 Example `COPYPARTY_USERS_JSON`:
 
@@ -54,6 +55,22 @@ Example `COPYPARTY_USERS_JSON`:
 ```
 
 Do not include the Proxmox HTTP authorization prefix.
+
+`DEPLOY_SSH_KNOWN_HOSTS` is written directly to the GitHub runner's `~/.ssh/known_hosts` before Ansible connects to Proxmox. It only needs the Proxmox host SSH key; LXC SSH host keys are collected later through Proxmox with `pct exec` and added to `known_hosts` during `bootstrap.yml`.
+
+Generate the value from a trusted Proxmox console or an already-trusted SSH session:
+
+```sh
+awk '{print "192.168.0.2,pve,pve.home.hchu.me " $0}' /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+The secret value should look like this single line:
+
+```text
+192.168.0.2,pve,pve.home.hchu.me ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... root@pve
+```
+
+If the Proxmox SSH host key is regenerated, update this secret before the next CD run.
 
 ## Tailscale Setup
 

@@ -1,6 +1,6 @@
 ---
 - name: Validate edge
-  hosts: edge
+  hosts: svc_edge
   gather_facts: false
   tasks:
     - name: Validate Caddy config
@@ -19,7 +19,7 @@
       changed_when: false
 
 - name: Validate DNS
-  hosts: dns
+  hosts: svc_dns
   gather_facts: false
   tasks:
     - name: Check AdGuard service
@@ -51,7 +51,7 @@
       changed_when: false
 
 - name: Validate tailnet
-  hosts: tailnet
+  hosts: svc_tailnet
   gather_facts: false
   tasks:
     - name: Check tailscaled service
@@ -66,7 +66,7 @@
       when: tailscale_auth_key is defined
 
 - name: Validate downloads
-  hosts: downloads
+  hosts: svc_downloads
   gather_facts: false
   tasks:
     - name: Check WireGuard service
@@ -91,7 +91,7 @@
       changed_when: false
 
 - name: Validate files
-  hosts: files
+  hosts: svc_files
   gather_facts: false
   tasks:
     - name: Check Copyparty service
@@ -106,7 +106,7 @@
         timeout: 5
 
 - name: Validate minecraft service
-  hosts: minecraft
+  hosts: svc_minecraft
   gather_facts: false
   tasks:
     - name: Check Paper service
@@ -208,7 +208,7 @@
       loop: "{{ minecraft_plugin_stats.results }}"
 
 - name: Validate hermes
-  hosts: hermes
+  hosts: svc_hermes
   gather_facts: false
   tasks:
     - name: Check Hermes gateway service

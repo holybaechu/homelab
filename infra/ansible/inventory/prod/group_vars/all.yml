@@ -74,8 +74,8 @@ pve_lxc_root_options:
         pattern: '^mp1: /var/lib/homelab/copyparty/public,mp=/srv/public(,.*)?$'
         pct_args: '-mp1 /var/lib/homelab/copyparty/public,mp=/srv/public'
       - description: mount shared-readonly Copyparty share
-        pattern: '^mp2: /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly(,.*)?$'
-        pct_args: '-mp2 /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly'
+        pattern: '^mp2: /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly,ro=1(,.*)?$'
+        pct_args: '-mp2 /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly,ro=1'
   - vmid: 116
     name: hermes
     bind_mount_sources:

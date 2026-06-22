@@ -2,9 +2,9 @@ from pathlib import Path
 import re
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+from tests.helpers import REPO_ROOT
 def tfvars_container_body(tfvars_text: str, name: str) -> str:
     match = re.search(
         rf"^  {name} = \{{(?P<body>.*?)^  \}}",

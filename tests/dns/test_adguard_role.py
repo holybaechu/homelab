@@ -1,7 +1,4 @@
-from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO_ROOT
 
 
 def test_adguard_role_installs_drill_for_dns_validation():
@@ -144,7 +141,7 @@ def test_adguard_role_uses_configured_admin_username():
         / "inventory"
         / "prod"
         / "group_vars"
-        / "dns.yml"
+        / "svc_dns.yml"
     ).read_text(encoding="utf-8")
 
     assert "adguard_admin_username: admin" in dns_vars
@@ -172,7 +169,7 @@ def test_adguard_role_updates_trusted_proxies_and_filters_in_existing_config():
         / "inventory"
         / "prod"
         / "group_vars"
-        / "dns.yml"
+        / "svc_dns.yml"
     ).read_text(encoding="utf-8")
 
     assert "adguard_trusted_proxies:" in dns_vars

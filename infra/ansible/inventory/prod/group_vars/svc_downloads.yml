@@ -12,9 +12,12 @@ proton_wireguard_allowed_ips: "0.0.0.0/0, ::/0"
 proton_natpmp_gateway: 10.2.0.1
 qbittorrent_webui_port: 8080
 qbittorrent_webui_username: holybaechu
-qbittorrent_vuetorrent_root: /opt/vuetorrent
 # renovate: datasource=github-releases depName=VueTorrent/VueTorrent versioning=semver extractVersion=^v(?<version>.*)$
-qbittorrent_vuetorrent_release_url: https://github.com/VueTorrent/VueTorrent/releases/download/v2.34.0/vuetorrent.zip
+qbittorrent_vuetorrent_version: 2.34.0
+qbittorrent_vuetorrent_release_url: "https://github.com/VueTorrent/VueTorrent/releases/download/v{{ qbittorrent_vuetorrent_version }}/vuetorrent.zip"
+qbittorrent_vuetorrent_sha256: 22f34c20f6a5704e3b37c3ed73956af7bda5536c10458575c52b0618851b665e
+qbittorrent_vuetorrent_root: "/opt/vuetorrent/releases/{{ qbittorrent_vuetorrent_version }}"
+qbittorrent_vuetorrent_root_current: /opt/vuetorrent/current
 qbittorrent_user: qbittorrent
 qbittorrent_group: qbittorrent
 qbittorrent_uid: "{{ downloads_service_uid }}"

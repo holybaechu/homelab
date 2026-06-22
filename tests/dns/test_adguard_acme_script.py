@@ -1,7 +1,4 @@
-from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO_ROOT
 
 
 def test_adguard_acme_script_is_noninteractive():
@@ -35,6 +32,11 @@ def test_adguard_acme_loop_survives_transient_renewal_failures():
         / "main.yml"
     ).read_text(encoding="utf-8")
 
-    assert "if ! /usr/local/bin/renew-adguard-cert; then" in tasks
+    assert "loop_command: /usr/local/bin/renew-adguard-cert" in tasks
     assert "AdGuard ACME renewal failed; retrying" in tasks
-    assert "sleep {{ adguard_acme_interval_seconds }}" in tasks
+    loop_template = (
+        REPO_ROOT / "infra" / "ansible" / "templates" / "openrc-loop.sh.j2"
+    ).read_text(encoding="utf-8")
+    assert 'loop_interval_seconds: "{{ adguard_acme_interval_seconds }}"' in tasks
+    assert "if ! {{ loop_command }}; then" in loop_template
+    assert "sleep {{ loop_interval_seconds }}" in loop_template

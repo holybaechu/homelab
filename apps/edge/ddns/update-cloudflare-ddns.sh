@@ -5,16 +5,20 @@ set -eu
 : "${CLOUDFLARE_DDNS_TOKEN:?set CLOUDFLARE_DDNS_TOKEN}"
 : "${DDNS_RECORD_NAMES:?set DDNS_RECORD_NAMES}"
 
+api="https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records"
 PUBLIC_IP="$(curl -fsS https://api.ipify.org)"
+
+cf() {
+	curl -fsS \
+		-H "Authorization: Bearer ${CLOUDFLARE_DDNS_TOKEN}" \
+		-H "Content-Type: application/json" \
+		"$@"
+}
 
 for RECORD in ${DDNS_RECORD_NAMES}; do
 	RECORD_ID="$(
-		curl -fsS \
-			-H "Authorization: Bearer ${CLOUDFLARE_DDNS_TOKEN}" \
-			-H "Content-Type: application/json" \
-			"https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?type=A&name=${RECORD}" \
-			| sed -n 's/.*"id":"\([^"]*\)".*/\1/p' \
-			| head -n 1
+		cf "${api}?type=A&name=${RECORD}" \
+			| jq -er '.result[0].id // empty'
 	)"
 
 	if [ -z "${RECORD_ID}" ]; then
@@ -22,11 +26,15 @@ for RECORD in ${DDNS_RECORD_NAMES}; do
 		exit 1
 	fi
 
-	curl -fsS -X PATCH \
-		-H "Authorization: Bearer ${CLOUDFLARE_DDNS_TOKEN}" \
-		-H "Content-Type: application/json" \
-		--data "{\"type\":\"A\",\"name\":\"${RECORD}\",\"content\":\"${PUBLIC_IP}\",\"ttl\":120,\"proxied\":false}" \
-		"https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records/${RECORD_ID}" >/dev/null
+	payload="$(
+		jq -n \
+			--arg name "${RECORD}" \
+			--arg content "${PUBLIC_IP}" \
+			'{type:"A", name:$name, content:$content, ttl:120, proxied:false}'
+	)"
+
+	cf -X PATCH --data "${payload}" "${api}/${RECORD_ID}" \
+		| jq -e '.success == true' >/dev/null
 
 	echo "Updated ${RECORD} to ${PUBLIC_IP}"
 done

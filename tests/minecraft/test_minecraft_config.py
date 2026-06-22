@@ -1,11 +1,10 @@
-from pathlib import Path
 
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+from tests.helpers import REPO_ROOT
 def read(relative_path: str) -> str:
     return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 
@@ -76,7 +75,7 @@ def test_minecraft_yaml_loader_rejects_duplicate_keys():
 
 
 def test_minecraft_group_vars_pin_runtime_versions_and_ports():
-    group_vars = load_yaml("infra/ansible/inventory/prod/group_vars/minecraft.yml")
+    group_vars = load_yaml("infra/ansible/inventory/prod/group_vars/svc_minecraft.yml")
 
     assert group_vars["minecraft_java_port"] == 25565
     assert group_vars["minecraft_bedrock_port"] == 19132
@@ -96,13 +95,13 @@ def test_minecraft_group_vars_pin_runtime_versions_and_ports():
 
 
 def test_minecraft_group_vars_do_not_configure_allowed_players_file():
-    group_vars = load_yaml("infra/ansible/inventory/prod/group_vars/minecraft.yml")
+    group_vars = load_yaml("infra/ansible/inventory/prod/group_vars/svc_minecraft.yml")
 
     assert "minecraft_allowed_players_file" not in group_vars
 
 
 def test_minecraft_checksum_pins_have_expected_digest_lengths():
-    group_vars = load_yaml("infra/ansible/inventory/prod/group_vars/minecraft.yml")
+    group_vars = load_yaml("infra/ansible/inventory/prod/group_vars/svc_minecraft.yml")
 
     assert_digest_pin(group_vars, "minecraft_paper_sha256", 64)
     assert_digest_pin(group_vars, "minecraft_velocity_sha256", 64)

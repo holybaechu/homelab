@@ -56,6 +56,23 @@
     - "{{ caddy_config_dir }}"
     - "{{ caddy_data_dir }}"
 
+
+- name: Read Proxmox root CA for verified upstream TLS
+  ansible.builtin.slurp:
+    src: /etc/pve/pve-root-ca.pem
+  delegate_to: "{{ groups['pve_hosts'][0] }}"
+  run_once: true
+  register: caddy_pve_root_ca
+
+- name: Install Proxmox root CA for Caddy upstream TLS verification
+  ansible.builtin.copy:
+    content: "{{ caddy_pve_root_ca.content | b64decode }}"
+    dest: /etc/ssl/certs/homelab-pve-root-ca.pem
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
 - name: Install Caddyfile
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../../../apps/edge/Caddyfile"
@@ -63,7 +80,7 @@
     owner: "{{ service_user }}"
     group: "{{ service_group }}"
     mode: "0640"
-  notify: Restart caddy
+  notify: Reload caddy
 
 - name: Install Caddy environment
   ansible.builtin.template:

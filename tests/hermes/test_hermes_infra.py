@@ -1,12 +1,11 @@
-from pathlib import Path
 import re
 
 import yaml
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+from tests.helpers import REPO_ROOT
 def read(relative_path: str) -> str:
     return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 
@@ -54,7 +53,7 @@ def test_hermes_inventory_is_debian_host_and_role_group():
         hosts,
         re.DOTALL,
     )
-    assert re.search(r"hermes:\s*\n\s+hosts:\s*\n\s+hermes:", hosts)
+    assert re.search(r"svc_hermes:\s*\n\s+hosts:\s*\n\s+hermes:", hosts)
 
 
 def test_hermes_all_group_vars_define_ip_ids_bootstrap_and_mounts():
@@ -73,7 +72,7 @@ def test_hermes_all_group_vars_define_ip_ids_bootstrap_and_mounts():
 
 
 def test_hermes_group_vars_are_non_secret_service_settings():
-    group_vars = read("infra/ansible/inventory/prod/group_vars/hermes.yml")
+    group_vars = read("infra/ansible/inventory/prod/group_vars/svc_hermes.yml")
 
     assert "hermes_user: hermes" in group_vars
     assert "hermes_group: hermes" in group_vars
@@ -90,7 +89,7 @@ def test_hermes_group_vars_are_non_secret_service_settings():
 
 
 def test_hermes_upstream_refs_are_pinned_commit_hashes():
-    group_vars = yaml.safe_load(read("infra/ansible/inventory/prod/group_vars/hermes.yml"))
+    group_vars = yaml.safe_load(read("infra/ansible/inventory/prod/group_vars/svc_hermes.yml"))
 
     for key in ("hermes_agent_ref",):
         value = group_vars[key]
@@ -110,11 +109,14 @@ def test_proxmox_storage_role_creates_hermes_host_directories():
 
 def test_cd_workflow_passes_hermes_discord_secrets_to_ansible_extra_vars():
     workflow = read(".github/workflows/cd.yml")
+    writer = read("scripts/ci/write_ansible_extra_vars.py")
 
     assert "HERMES_DISCORD_BOT_TOKEN:" in workflow
     assert "HERMES_DISCORD_ALLOWED_USERS:" in workflow
-    assert '"hermes_discord_bot_token": os.environ["HERMES_DISCORD_BOT_TOKEN"]' in workflow
-    assert '"hermes_discord_allowed_users": os.environ["HERMES_DISCORD_ALLOWED_USERS"]' in workflow
+    assert "hermes_discord_bot_token" in writer
+    assert "HERMES_DISCORD_BOT_TOKEN" in writer
+    assert "hermes_discord_allowed_users" in writer
+    assert "HERMES_DISCORD_ALLOWED_USERS" in writer
     assert "HERMES_WEBUI_PASSWORD:" not in workflow
     assert "HERMES_API_KEY" not in workflow
     assert "API_SERVER_KEY" not in workflow

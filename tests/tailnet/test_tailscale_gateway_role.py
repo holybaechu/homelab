@@ -1,7 +1,4 @@
-from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO_ROOT
 
 
 def test_tailnet_lxc_disables_tailscale_dns_acceptance():
@@ -12,7 +9,7 @@ def test_tailnet_lxc_disables_tailscale_dns_acceptance():
         / "inventory"
         / "prod"
         / "group_vars"
-        / "tailnet.yml"
+        / "svc_tailnet.yml"
     ).read_text(encoding="utf-8")
     role = (
         REPO_ROOT

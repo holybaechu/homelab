@@ -3,3 +3,16 @@
   ansible.builtin.service:
     name: caddy
     state: restarted
+
+- name: Reload caddy
+  ansible.builtin.shell: |
+    set -eu
+    if [ -f "{{ caddy_env_path }}" ]; then
+      set -a
+      . "{{ caddy_env_path }}"
+      set +a
+    fi
+    caddy reload --config "{{ caddy_config_path }}" --adapter caddyfile
+  args:
+    executable: /bin/sh
+  changed_when: true

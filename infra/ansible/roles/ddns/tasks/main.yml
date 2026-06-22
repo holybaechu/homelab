@@ -9,23 +9,23 @@
   notify: Restart cloudflare-ddns
 
 - name: Install DDNS loop
-  ansible.builtin.copy:
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../templates/openrc-loop.sh.j2"
     dest: /usr/local/bin/cloudflare-ddns-loop
     owner: root
     group: root
     mode: "0700"
-    content: |
-      #!/bin/sh
-      set -eu
-      export CLOUDFLARE_ZONE_ID="{{ cloudflare_zone_id }}"
-      export CLOUDFLARE_DDNS_TOKEN="{{ cloudflare_ddns_token }}"
-      export DDNS_RECORD_NAMES="{{ ddns_record_names | join(' ') }}"
-      while true; do
-        if ! /usr/local/bin/update-cloudflare-ddns; then
-          echo "Cloudflare DDNS update failed; retrying" >&2
-        fi
-        sleep {{ ddns_interval_seconds }}
-      done
+  vars:
+    loop_environment:
+      - name: CLOUDFLARE_ZONE_ID
+        value: "{{ cloudflare_zone_id }}"
+      - name: CLOUDFLARE_DDNS_TOKEN
+        value: "{{ cloudflare_ddns_token }}"
+      - name: DDNS_RECORD_NAMES
+        value: "{{ ddns_record_names | join(' ') }}"
+    loop_command: /usr/local/bin/update-cloudflare-ddns
+    loop_failure_message: "Cloudflare DDNS update failed; retrying"
+    loop_interval_seconds: "{{ ddns_interval_seconds }}"
   no_log: true
   notify: Restart cloudflare-ddns
 

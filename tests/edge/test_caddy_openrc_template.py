@@ -1,7 +1,4 @@
-from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO_ROOT
 
 
 def test_caddy_openrc_exports_environment_from_confd():
@@ -38,7 +35,7 @@ def test_caddy_build_is_reproducible_and_version_sensitive():
         / "inventory"
         / "prod"
         / "group_vars"
-        / "edge.yml"
+        / "svc_edge.yml"
     ).read_text(encoding="utf-8")
 
     assert "github.com/caddy-dns/cloudflare@v" in edge_vars
@@ -47,3 +44,19 @@ def test_caddy_build_is_reproducible_and_version_sensitive():
     assert "creates: \"{{ caddy_build_output }}\"" in tasks
     assert "xcaddy-{{ xcaddy_version }}.stamp" in tasks
     assert "creates: /tmp/caddy" not in tasks
+
+
+def test_caddy_installs_proxmox_root_ca_for_upstream_tls():
+    tasks = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "caddy"
+        / "tasks"
+        / "main.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "Read Proxmox root CA for verified upstream TLS" in tasks
+    assert "/etc/pve/pve-root-ca.pem" in tasks
+    assert "/etc/ssl/certs/homelab-pve-root-ca.pem" in tasks

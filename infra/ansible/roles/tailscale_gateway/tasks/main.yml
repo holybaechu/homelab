@@ -49,4 +49,4 @@
       --auth-key={{ tailscale_auth_key }}
   no_log: true
   when: tailscale_auth_key is defined
-  changed_when: true
+  changed_when: false

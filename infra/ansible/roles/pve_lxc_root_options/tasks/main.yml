@@ -28,7 +28,7 @@
 
     restart=0
     if pct status "${vmid}" | grep -Eq 'status: running'; then
-      pct stop "${vmid}"
+      pct shutdown "${vmid}" --timeout 60 || pct stop "${vmid}"
       restart=1
     fi
 
