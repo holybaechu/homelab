@@ -47,6 +47,13 @@ def test_hermes_role_installs_bash_for_gateway_terminal():
     assert "bash" in package_task["ansible.builtin.apt"]["name"]
 
 
+def test_hermes_role_installs_github_cli_for_workspace_tasks():
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+
+    package_task = find_task(tasks, "Install Hermes runtime packages")
+    assert "gh" in package_task["ansible.builtin.apt"]["name"]
+
+
 def test_hermes_role_uses_bash_for_service_user_terminal():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
 

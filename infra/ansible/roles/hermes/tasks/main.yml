@@ -16,6 +16,7 @@
       - build-essential
       - ca-certificates
       - curl
+      - gh
       - git
       - python3
       - python3-pip
