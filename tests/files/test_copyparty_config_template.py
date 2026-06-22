@@ -58,6 +58,7 @@ def test_copyparty_secret_users_get_shared_read_only_access():
     assert "siregon72: guest-password" in accounts_section
     assert "ezmin1104: guest-password" in accounts_section
     assert "sieon: guest-password" in accounts_section
+    assert "\n  usernames\n" in rendered
     assert "r: holybaechu, siregon72, ezmin1104, sieon" in shared_section
     assert "A: holybaechu" in shared_section
     assert "siregon72" not in downloads_section
