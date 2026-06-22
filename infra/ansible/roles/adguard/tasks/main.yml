@@ -8,6 +8,7 @@
       - apache2-utils
       - ldns
       - libcap
+      - nftables
       - tar
     update_cache: true
     state: present
@@ -75,6 +76,21 @@
     cmd: "setcap cap_net_bind_service=+ep {{ adguard_install_dir }}/AdGuardHome"
   changed_when: false
 
+- name: Install AdGuard nftables config
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart adguard nftables
+
+- name: Enable AdGuard nftables
+  ansible.builtin.service:
+    name: nftables
+    enabled: true
+    state: started
+
 - name: Require AdGuard admin credentials
   ansible.builtin.assert:
     that:
@@ -86,7 +102,56 @@
     fail_msg: adguard_admin_username and adguard_admin_password must be provided; the role hashes the password before writing AdGuard config.
   no_log: true
 
-- name: Hash AdGuard admin password
+- name: Read existing AdGuard admin password hash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        from pathlib import Path
+        import sys
+
+        path = Path(sys.argv[1])
+        username = sys.argv[2]
+        if not path.exists():
+            print("")
+            raise SystemExit(0)
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            if line.strip() == f'- name: "{username}"':
+                for candidate in lines[index + 1 : index + 4]:
+                    stripped = candidate.strip()
+                    if stripped.startswith("password:"):
+                        print(stripped.split(":", 1)[1].strip().strip('"'))
+                        raise SystemExit(0)
+        print("")
+      - "{{ adguard_conf_dir }}/AdGuardHome.yaml"
+      - "{{ adguard_admin_username }}"
+  register: adguard_existing_admin_hash
+  changed_when: false
+  no_log: true
+
+- name: Verify existing AdGuard admin password hash
+  ansible.builtin.shell: |
+    set -eu
+    tmp="$(mktemp)"
+    trap 'rm -f "${tmp}"' EXIT
+    printf '%s:%s\n' "${ADGUARD_ADMIN_USERNAME}" "${ADGUARD_ADMIN_HASH}" > "${tmp}"
+    htpasswd -vb "${tmp}" "${ADGUARD_ADMIN_USERNAME}" "${ADGUARD_ADMIN_PASSWORD}" >/dev/null
+  args:
+    executable: /bin/sh
+  environment:
+    ADGUARD_ADMIN_USERNAME: "{{ adguard_admin_username }}"
+    ADGUARD_ADMIN_HASH: "{{ adguard_existing_admin_hash.stdout }}"
+    ADGUARD_ADMIN_PASSWORD: "{{ adguard_admin_password }}"
+  register: adguard_existing_admin_hash_verify
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: adguard_existing_admin_hash.stdout | length > 0
+
+- name: Hash AdGuard admin password when rotation is required
   ansible.builtin.command:
     argv:
       - htpasswd
@@ -100,10 +165,14 @@
   register: adguard_admin_htpasswd
   changed_when: false
   no_log: true
+  when: adguard_existing_admin_hash_verify.rc | default(1) != 0
 
 - name: Set AdGuard admin password hash
   ansible.builtin.set_fact:
-    adguard_admin_password_hash: "{{ adguard_admin_htpasswd.stdout.split(':', 1)[1] }}"
+    adguard_admin_password_hash: >-
+      {{ adguard_existing_admin_hash.stdout
+      if (adguard_existing_admin_hash_verify.rc | default(1)) == 0
+      else adguard_admin_htpasswd.stdout.split(':', 1)[1] }}
   no_log: true
 
 - name: Install baseline AdGuard config when no migrated config exists

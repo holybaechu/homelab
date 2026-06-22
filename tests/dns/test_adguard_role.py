@@ -64,9 +64,39 @@ def test_adguard_role_hashes_plaintext_admin_password():
     ).read_text(encoding="utf-8")
 
     assert "adguard_admin_password is defined" in tasks
-    assert "Hash AdGuard admin password" in tasks
-    assert "htpasswd" in tasks
+    assert "Read existing AdGuard admin password hash" in tasks
+    assert "Verify existing AdGuard admin password hash" in tasks
+    assert "Hash AdGuard admin password when rotation is required" in tasks
+    assert "adguard_existing_admin_hash_verify.rc | default(1) != 0" in tasks
     assert "adguard_admin_password_hash" in tasks
+
+
+def test_adguard_role_limits_plain_http_admin_ui_with_nftables():
+    tasks = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "adguard"
+        / "tasks"
+        / "main.yml"
+    ).read_text(encoding="utf-8")
+    nftables = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "adguard"
+        / "templates"
+        / "nftables.conf.j2"
+    ).read_text(encoding="utf-8")
+
+    assert "- nftables" in tasks
+    assert "Install AdGuard nftables config" in tasks
+    assert "Enable AdGuard nftables" in tasks
+    assert "ip saddr {{ edge_ip }} tcp dport {{ adguard_admin_port }} accept" in nftables
+    assert "ip saddr {{ homelab_tailscale_cidr }} tcp dport {{ adguard_admin_port }} accept" in nftables
+    assert "tcp dport {{ adguard_admin_port }} reject" in nftables
 
 
 def test_adguard_role_uses_configured_admin_username():

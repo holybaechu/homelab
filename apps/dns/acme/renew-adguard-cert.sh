@@ -34,4 +34,9 @@ chown root:"${TLS_GROUP}" "${CERT_DIR}" "${CERT_DIR}/fullchain.pem" "${CERT_DIR}
 chmod 0750 "${CERT_DIR}"
 chmod 0640 "${CERT_DIR}/fullchain.pem" "${CERT_DIR}/privkey.pem"
 
-rc-service adguardhome restart || true
+if [ -x /etc/init.d/adguardhome ]; then
+  rc-service adguardhome restart
+  rc-service adguardhome status
+else
+  echo "AdGuard Home service is not installed yet; certificate staged"
+fi

@@ -1,0 +1,13 @@
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy accept;
+
+    iif "lo" accept
+    ct state established,related accept
+    ip saddr {{ edge_ip }} tcp dport {{ adguard_admin_port }} accept
+    ip saddr {{ homelab_tailscale_cidr }} tcp dport {{ adguard_admin_port }} accept
+    tcp dport {{ adguard_admin_port }} reject
+  }
+}

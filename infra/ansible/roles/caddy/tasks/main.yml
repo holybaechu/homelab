@@ -11,17 +11,30 @@
 - name: Install xcaddy
   ansible.builtin.command:
     cmd: "go install github.com/caddyserver/xcaddy/cmd/xcaddy@{{ xcaddy_version }}"
-    creates: /root/go/bin/xcaddy
+    creates: "/root/go/bin/xcaddy-{{ xcaddy_version }}.stamp"
+
+- name: Stamp xcaddy version
+  ansible.builtin.copy:
+    dest: "/root/go/bin/xcaddy-{{ xcaddy_version }}.stamp"
+    content: "{{ xcaddy_version }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set Caddy versioned build output path
+  ansible.builtin.set_fact:
+    caddy_build_output: >-
+      /tmp/caddy-{{ caddy_version }}-{{ caddy_cloudflare_module | regex_replace('[^A-Za-z0-9_.-]', '_') }}
 
 - name: Build Caddy with Cloudflare DNS module
   ansible.builtin.command:
-    cmd: "/root/go/bin/xcaddy build {{ caddy_version }} --with {{ caddy_cloudflare_module }}"
+    cmd: "/root/go/bin/xcaddy build {{ caddy_version }} --with {{ caddy_cloudflare_module }} --output {{ caddy_build_output }}"
     chdir: /tmp
-    creates: /tmp/caddy
+    creates: "{{ caddy_build_output }}"
 
 - name: Install Caddy binary
   ansible.builtin.copy:
-    src: /tmp/caddy
+    src: "{{ caddy_build_output }}"
     dest: /usr/local/bin/caddy
     remote_src: true
     mode: "0755"

@@ -106,9 +106,35 @@ def test_cd_tofu_plan_and_apply_use_generated_variable_file():
     assert "-var=" not in plan_script
     assert "write_tofu_vars.py" in plan_script
     assert "terraform.tfvars.example" not in plan_script
-    assert "tofu plan -out=prod.tfplan" in plan_script
+    assert "tofu plan -input=false -out=prod.tfplan" in plan_script
     assert "test -f ci.auto.tfvars.json" in apply_script
-    assert "tofu apply -auto-approve prod.tfplan" in apply_script
+    assert "tofu apply -input=false -auto-approve prod.tfplan" in apply_script
+
+
+def test_cd_workflow_only_deploys_prod_from_main():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "jobs:\n  deploy:\n    if: github.ref == 'refs/heads/main'" in workflow
+
+
+def test_tofu_apply_is_guarded_against_destroying_lxcs():
+    module = (
+        REPO_ROOT / "infra" / "opentofu" / "modules" / "pve-lxc" / "main.tf"
+    ).read_text(encoding="utf-8")
+    plan_script = (REPO_ROOT / "scripts" / "ci" / "tofu-plan.sh").read_text(
+        encoding="utf-8"
+    )
+    guard_script = (REPO_ROOT / "scripts" / "ci" / "check_tofu_plan_safe.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "prevent_destroy = true" in module
+    assert "tofu show -json prod.tfplan" in plan_script
+    assert "check_tofu_plan_safe.py" in plan_script
+    assert "ALLOW_TOFU_DESTROY" in guard_script
+    assert '"delete" in actions' in guard_script
 
 
 def test_cd_workflow_does_not_plan_one_time_hermes_lxc_replacement():

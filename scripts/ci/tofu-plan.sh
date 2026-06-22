@@ -30,8 +30,9 @@ if [ -n "${TOFU_STATE_ENDPOINT:-}" ]; then
     -backend-config="use_path_style=true"
 fi
 
-tofu init "$@"
+tofu init -input=false "$@"
 tofu fmt -recursive -check ../..
 tofu validate
 
-tofu plan -out=prod.tfplan
+tofu plan -input=false -out=prod.tfplan
+tofu show -json prod.tfplan | python3 ../../../../scripts/ci/check_tofu_plan_safe.py
