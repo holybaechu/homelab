@@ -49,3 +49,9 @@
   gather_facts: true
   roles:
     - minecraft
+
+- name: Configure hermes LXC
+  hosts: hermes
+  gather_facts: true
+  roles:
+    - hermes

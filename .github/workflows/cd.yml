@@ -44,6 +44,7 @@ jobs:
       TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
       PROTON_WIREGUARD_PRIVATE_KEY: ${{ secrets.PROTON_WIREGUARD_PRIVATE_KEY }}
       QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
+      HERMES_WEBUI_PASSWORD: ${{ secrets.HERMES_WEBUI_PASSWORD }}
       COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
     steps:
       - name: Checkout
@@ -91,6 +92,7 @@ jobs:
               "tailscale_auth_key": os.environ["TAILSCALE_AUTH_KEY"],
               "proton_wireguard_private_key": os.environ["PROTON_WIREGUARD_PRIVATE_KEY"],
               "qbittorrent_webui_password": os.environ["QBITTORRENT_WEBUI_PASSWORD"],
+              "hermes_webui_password": os.environ["HERMES_WEBUI_PASSWORD"],
               "copyparty_users": json.loads(os.environ["COPYPARTY_USERS_JSON"]),
           }
 

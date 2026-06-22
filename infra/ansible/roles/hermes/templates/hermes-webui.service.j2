@@ -1,0 +1,17 @@
+[Unit]
+Description=Hermes Agent WebUI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ hermes_user }}
+Group={{ hermes_group }}
+EnvironmentFile={{ hermes_env_path }}
+WorkingDirectory={{ hermes_agent_dir }}
+ExecStart={{ hermes_venv_path }}/bin/python {{ hermes_webui_dir }}/server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

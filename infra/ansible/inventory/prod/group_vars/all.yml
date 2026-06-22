@@ -10,6 +10,7 @@ tailnet_ip: 192.168.0.5
 downloads_ip: 192.168.0.6
 files_ip: 192.168.0.7
 minecraft_ip: 192.168.0.8
+hermes_ip: 192.168.0.9
 
 service_user: homelab
 service_group: homelab
@@ -17,6 +18,8 @@ service_uid: 1000
 service_gid: 1000
 downloads_service_uid: 1100
 downloads_service_gid: 1100
+hermes_service_uid: 1200
+hermes_service_gid: 1200
 
 homelab_data_lv_name: homelab-data
 homelab_data_lv_size: 896G
@@ -73,6 +76,18 @@ pve_lxc_root_options:
       - description: mount shared-readonly Copyparty share
         pattern: '^mp2: /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly(,.*)?$'
         pct_args: '-mp2 /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly'
+  - vmid: 116
+    name: hermes
+    bind_mount_sources:
+      - /var/lib/homelab/hermes/home
+      - /var/lib/homelab/hermes/workspace
+    settings:
+      - description: mount Hermes home
+        pattern: '^mp0: /var/lib/homelab/hermes/home,mp=/var/lib/hermes(,.*)?$'
+        pct_args: '-mp0 /var/lib/homelab/hermes/home,mp=/var/lib/hermes'
+      - description: mount Hermes workspace
+        pattern: '^mp1: /var/lib/homelab/hermes/workspace,mp=/workspace(,.*)?$'
+        pct_args: '-mp1 /var/lib/homelab/hermes/workspace,mp=/workspace'
 
 pve_lxc_access_bootstrap:
   - vmid: 110
@@ -92,4 +107,7 @@ pve_lxc_access_bootstrap:
     os_family: alpine
   - vmid: 115
     name: minecraft
+    os_family: debian
+  - vmid: 116
+    name: hermes
     os_family: debian

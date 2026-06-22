@@ -1,0 +1,22 @@
+hermes_user: hermes
+hermes_group: hermes
+hermes_uid: "{{ hermes_service_uid }}"
+hermes_gid: "{{ hermes_service_gid }}"
+hermes_home: /var/lib/hermes
+hermes_workspace: /workspace
+
+hermes_install_dir: /opt/hermes
+hermes_agent_dir: "{{ hermes_install_dir }}/hermes-agent"
+hermes_webui_dir: "{{ hermes_install_dir }}/hermes-webui"
+hermes_venv_path: "{{ hermes_install_dir }}/venv"
+hermes_env_path: /etc/hermes-webui.env
+
+hermes_agent_repo: https://github.com/NousResearch/hermes-agent.git
+hermes_agent_ref: 36ae958473b8530ffb1a395c4944b8cdbcae82fe
+hermes_webui_repo: https://github.com/nesquena/hermes-webui.git
+hermes_webui_ref: ce272d9cd5f8e5a4521278f56eb5388010901646
+
+hermes_webui_host: 0.0.0.0
+hermes_webui_port: 8787
+hermes_webui_state_dir: "{{ hermes_home }}/webui"
+hermes_webui_default_workspace: "{{ hermes_workspace }}"
