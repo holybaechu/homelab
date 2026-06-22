@@ -43,12 +43,9 @@
     that:
       - copyparty_users is defined
       - copyparty_users | length > 0
-      - copyparty_password_hash_salt is defined
-      - copyparty_password_hash_salt | length >= 16
-      - copyparty_users | selectattr('password_hash', 'defined') | list | length == copyparty_users | length
-      - copyparty_users | selectattr('password_hash', 'match', '^\\+') | list | length == copyparty_users | length
-      - copyparty_users | selectattr('password', 'defined') | list | length == 0
-    fail_msg: "Set copyparty_users with Copyparty scrypt password_hash entries only and copyparty_password_hash_salt; plaintext password is rejected."
+      - copyparty_users | selectattr('password', 'defined') | list | length == copyparty_users | length
+      - copyparty_users | selectattr('password_hash', 'defined') | list | length == 0
+    fail_msg: "Set copyparty_users with plaintext password entries; password_hash is not used."
 
 - name: Create Copyparty virtualenv
   ansible.builtin.command:

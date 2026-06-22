@@ -1,12 +1,10 @@
 [accounts]
 {% for user in copyparty_users %}
-  {{ user.name }}: {{ user.password_hash }}
+  {{ user.name }}: {{ user.password }}
 {% endfor %}
 {% set copyparty_user_names = copyparty_users | map(attribute='name') | list %}
 
 [global]
-  ah-alg: scrypt
-  ah-salt: {{ copyparty_password_hash_salt }}
   e2dsa
   e2ts
   ansi

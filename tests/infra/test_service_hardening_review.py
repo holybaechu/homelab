@@ -26,16 +26,16 @@ def test_storage_role_only_reconciles_recursive_permissions_when_needed():
     assert "permissions_changed=1" in tasks
 
 
-def test_copyparty_role_requires_password_hashes_and_private_config_mode():
+def test_copyparty_role_uses_plaintext_passwords_and_private_config_mode():
     tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "copyparty" / "tasks" / "main.yml").read_text(encoding="utf-8")
     template = (REPO_ROOT / "infra" / "ansible" / "roles" / "copyparty" / "templates" / "copyparty.conf.j2").read_text(encoding="utf-8")
 
-    assert "password_hash" in tasks
-    assert "match', '^\\\\+'" in tasks
-    assert "copyparty_password_hash_salt" in tasks
-    assert "user.password_hash" in template
-    assert "ah-alg: scrypt" in template
-    assert "ah-salt: {{ copyparty_password_hash_salt }}" in template
+    assert "copyparty_password_hash_salt" not in tasks
+    assert "selectattr('password_hash', 'defined')" in tasks
+    assert "user.password" in template
+    assert "user.password_hash" not in template
+    assert "ah-alg" not in template
+    assert "ah-salt" not in template
     assert 'mode: "0600"' in tasks
 
 
