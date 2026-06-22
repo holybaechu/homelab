@@ -85,6 +85,17 @@ def test_cd_workflow_does_not_pin_tailscale_version():
     assert "version:" not in connect_tailscale
 
 
+def test_cd_workflow_disables_tailscale_dns_acceptance():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+
+    connect_tailscale = workflow.split("- name: Connect Tailscale", maxsplit=1)[1]
+    connect_tailscale = connect_tailscale.split("- name: Install tooling", maxsplit=1)[0]
+
+    assert "args: --accept-dns=false" in connect_tailscale
+
+
 def test_cd_tofu_plan_and_apply_use_generated_variable_file():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"

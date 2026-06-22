@@ -59,6 +59,7 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
+          args: --accept-dns=false
           ping: ${{ vars.PVE_TAILSCALE_IP }}
 
       - name: Install tooling

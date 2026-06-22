@@ -43,6 +43,7 @@
       tailscale up
       --hostname={{ tailscale_hostname }}
       --accept-routes={{ tailscale_accept_routes | lower }}
+      --accept-dns={{ tailscale_accept_dns | default(false) | lower }}
       --advertise-routes={{ tailscale_advertise_routes }}
       {{ '--advertise-exit-node' if tailscale_advertise_exit_node else '' }}
       --auth-key={{ tailscale_auth_key }}
