@@ -47,7 +47,7 @@ jobs:
       COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Connect Tailscale
         uses: tailscale/github-action@v4
