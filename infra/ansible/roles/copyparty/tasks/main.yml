@@ -43,7 +43,9 @@
     that:
       - copyparty_users is defined
       - copyparty_users | length > 0
-    fail_msg: "Set copyparty_users before starting Copyparty; the config references named users."
+      - copyparty_users | selectattr('password_hash', 'defined') | list | length == copyparty_users | length
+      - copyparty_users | selectattr('password', 'defined') | list | length == 0
+    fail_msg: "Set copyparty_users with password_hash entries only; plaintext password is rejected."
 
 - name: Create Copyparty virtualenv
   ansible.builtin.command:
@@ -63,7 +65,7 @@
     dest: "{{ copyparty_config_path }}"
     owner: "{{ service_user }}"
     group: "{{ service_group }}"
-    mode: "0640"
+    mode: "0600"
   no_log: true
   notify: Restart copyparty
 

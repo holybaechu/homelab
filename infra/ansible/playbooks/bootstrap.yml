@@ -18,25 +18,42 @@
     - pve_lxc_access_bootstrap
 
 - name: Trust LXC SSH host keys
-  hosts: localhost
-  connection: local
+  hosts: pve_hosts
   gather_facts: false
   tasks:
+    - name: Read LXC ed25519 host public keys through pct exec
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ item.vmid }}"
+          - --
+          - /bin/sh
+          - -lc
+          - cat /etc/ssh/ssh_host_ed25519_key.pub
+      changed_when: false
+      register: pve_lxc_host_key_results
+      loop: "{{ pve_lxc_access_bootstrap }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.vmid }})"
+
+    - name: Ensure local SSH directory exists
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/.ssh"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      run_once: true
+
     - name: Add LXC SSH host keys to known_hosts
-      ansible.builtin.shell: |
-        set -eu
-        mkdir -p "${HOME}/.ssh"
-        touch "${HOME}/.ssh/known_hosts"
-        chmod 700 "${HOME}/.ssh"
-        chmod 600 "${HOME}/.ssh/known_hosts"
-        ssh-keygen -R "{{ item }}" >/dev/null 2>&1 || true
-        ssh-keyscan -H -T 10 "{{ item }}" >> "${HOME}/.ssh/known_hosts"
-      args:
-        executable: /bin/sh
-      changed_when: true
-      loop: >-
-        {{ (groups['alpine'] | default([]) + groups['debian'] | default([]))
-        | map('extract', hostvars, 'ansible_host') | list }}
+      ansible.builtin.known_hosts:
+        path: "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
+        name: "{{ hostvars[item.item.name].ansible_host }}"
+        key: "{{ hostvars[item.item.name].ansible_host }} {{ item.stdout }}"
+      delegate_to: localhost
+      loop: "{{ pve_lxc_host_key_results.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
 
 - name: Bootstrap Alpine LXCs
   hosts: alpine

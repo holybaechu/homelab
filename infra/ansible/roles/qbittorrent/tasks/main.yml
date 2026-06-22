@@ -45,7 +45,7 @@
     group: "{{ qbittorrent_group }}"
     mode: "0700"
 
-- name: Create VueTorrent directory
+- name: Create VueTorrent release directory
   ansible.builtin.file:
     path: "{{ qbittorrent_vuetorrent_root }}"
     state: directory
@@ -53,23 +53,45 @@
     group: root
     mode: "0755"
 
+- name: Check VueTorrent version marker
+  ansible.builtin.stat:
+    path: "{{ qbittorrent_vuetorrent_root }}/.vuetorrent-{{ qbittorrent_vuetorrent_version }}.installed"
+  register: qbittorrent_vuetorrent_marker
+
 - name: Download VueTorrent
   ansible.builtin.get_url:
     url: "{{ qbittorrent_vuetorrent_release_url }}"
-    dest: /tmp/vuetorrent.zip
+    dest: "/tmp/vuetorrent-{{ qbittorrent_vuetorrent_version }}.zip"
+    checksum: "sha256:{{ qbittorrent_vuetorrent_sha256 }}"
     owner: root
     group: root
     mode: "0644"
-  notify: Restart qbittorrent
+  when: not qbittorrent_vuetorrent_marker.stat.exists
 
 - name: Install VueTorrent
-  ansible.builtin.unarchive:
-    src: /tmp/vuetorrent.zip
-    dest: "{{ qbittorrent_vuetorrent_root | dirname }}"
-    remote_src: true
-    owner: root
-    group: root
-    mode: "0755"
+  ansible.builtin.shell: |
+    set -eu
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "${tmp}"' EXIT
+    rm -rf "{{ qbittorrent_vuetorrent_root }}"
+    mkdir -p "{{ qbittorrent_vuetorrent_root }}"
+    unzip -q "/tmp/vuetorrent-{{ qbittorrent_vuetorrent_version }}.zip" -d "${tmp}"
+    cp -a "${tmp}/vuetorrent/." "{{ qbittorrent_vuetorrent_root }}/"
+    touch "{{ qbittorrent_vuetorrent_root }}/.vuetorrent-{{ qbittorrent_vuetorrent_version }}.installed"
+    chown -R root:root "{{ qbittorrent_vuetorrent_root }}"
+    chmod -R u=rwX,go=rX "{{ qbittorrent_vuetorrent_root }}"
+  args:
+    executable: /bin/sh
+  when: not qbittorrent_vuetorrent_marker.stat.exists
+  changed_when: true
+  notify: Restart qbittorrent
+
+- name: Point qBittorrent at current VueTorrent release
+  ansible.builtin.file:
+    src: "{{ qbittorrent_vuetorrent_root }}"
+    dest: "{{ qbittorrent_vuetorrent_root_current }}"
+    state: link
+    force: true
   notify: Restart qbittorrent
 
 - name: Generate qBittorrent Web UI password hash
@@ -96,22 +118,48 @@
     qbittorrent_webui_password_pbkdf2: "{{ qbittorrent_webui_password_pbkdf2_result.stdout }}"
   no_log: true
 
-- name: Gather service facts before qBittorrent config update
-  ansible.builtin.service_facts:
-
-- name: Stop qBittorrent before writing config
-  ansible.builtin.systemd:
-    name: qbittorrent.service
-    state: stopped
-  when: "'qbittorrent.service' in ansible_facts.services"
-
-- name: Install qBittorrent config
+- name: Render qBittorrent config candidate
   ansible.builtin.template:
     src: qBittorrent.conf.j2
-    dest: /var/lib/qbittorrent/.config/qBittorrent/qBittorrent.conf
+    dest: /tmp/qBittorrent.conf.candidate
     owner: "{{ qbittorrent_user }}"
     group: "{{ qbittorrent_group }}"
     mode: "0600"
+  changed_when: false
+  no_log: true
+
+- name: Compare qBittorrent config candidate
+  ansible.builtin.shell: |
+    set -eu
+    test -f /var/lib/qbittorrent/.config/qBittorrent/qBittorrent.conf \
+      && cmp -s /tmp/qBittorrent.conf.candidate /var/lib/qbittorrent/.config/qBittorrent/qBittorrent.conf
+  args:
+    executable: /bin/sh
+  register: qbittorrent_config_compare
+  failed_when: qbittorrent_config_compare.rc not in [0, 1]
+  changed_when: false
+  no_log: true
+
+- name: Gather service facts before qBittorrent config update
+  ansible.builtin.service_facts:
+
+- name: Stop qBittorrent before applying changed config
+  ansible.builtin.systemd:
+    name: qbittorrent.service
+    state: stopped
+  when:
+    - qbittorrent_config_compare.rc != 0
+    - "'qbittorrent.service' in ansible_facts.services"
+
+- name: Install qBittorrent config
+  ansible.builtin.copy:
+    src: /tmp/qBittorrent.conf.candidate
+    dest: /var/lib/qbittorrent/.config/qBittorrent/qBittorrent.conf
+    remote_src: true
+    owner: "{{ qbittorrent_user }}"
+    group: "{{ qbittorrent_group }}"
+    mode: "0600"
+  when: qbittorrent_config_compare.rc != 0
   no_log: true
   notify: Restart qbittorrent
 

@@ -11,6 +11,13 @@ Group={{ qbittorrent_group }}
 ExecStart=/usr/bin/qbittorrent-nox --webui-port={{ qbittorrent_webui_port }}
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/var/lib/qbittorrent {{ downloads_mount_path }}
 
 [Install]
 WantedBy=multi-user.target

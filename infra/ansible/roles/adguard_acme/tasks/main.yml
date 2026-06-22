@@ -31,25 +31,27 @@
   notify: Restart adguard-acme
 
 - name: Install AdGuard ACME loop
-  ansible.builtin.copy:
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../templates/openrc-loop.sh.j2"
     dest: /usr/local/bin/adguard-acme-loop
     owner: root
     group: root
     mode: "0700"
-    content: |
-      #!/bin/sh
-      set -eu
-      export CLOUDFLARE_ADGUARD_ACME_TOKEN="{{ cloudflare_adguard_acme_token }}"
-      export ADGUARD_CERT_DOMAIN="{{ adguard_cert_domain }}"
-      export ADGUARD_TLS_DIR="{{ adguard_tls_dir }}"
-      export ADGUARD_TLS_GROUP="{{ service_group }}"
-      export ACME_EMAIL="holybaechu@proton.me"
-      while true; do
-        if ! /usr/local/bin/renew-adguard-cert; then
-          echo "AdGuard ACME renewal failed; retrying" >&2
-        fi
-        sleep {{ adguard_acme_interval_seconds }}
-      done
+  vars:
+    loop_environment:
+      - name: CLOUDFLARE_ADGUARD_ACME_TOKEN
+        value: "{{ cloudflare_adguard_acme_token }}"
+      - name: ADGUARD_CERT_DOMAIN
+        value: "{{ adguard_cert_domain }}"
+      - name: ADGUARD_TLS_DIR
+        value: "{{ adguard_tls_dir }}"
+      - name: ADGUARD_TLS_GROUP
+        value: "{{ service_group }}"
+      - name: ACME_EMAIL
+        value: "holybaechu@proton.me"
+    loop_command: /usr/local/bin/renew-adguard-cert
+    loop_failure_message: "AdGuard ACME renewal failed; retrying"
+    loop_interval_seconds: "{{ adguard_acme_interval_seconds }}"
   no_log: true
   notify: Restart adguard-acme
 

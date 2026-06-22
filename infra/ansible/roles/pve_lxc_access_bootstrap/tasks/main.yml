@@ -8,28 +8,58 @@
       alpine)
         pct exec "${vmid}" -- /bin/sh -lc '
           set -eu
-          apk update
-          apk add --no-cache openssh python3
-          rc-update add sshd default
-          rc-service sshd restart || rc-service sshd start
+          changed=0
+          if ! apk info -e openssh >/dev/null 2>&1 || ! apk info -e python3 >/dev/null 2>&1; then
+            apk update
+            apk add --no-cache openssh python3
+            changed=1
+          fi
+          if ! rc-update show default | grep -q "sshd"; then
+            rc-update add sshd default
+            changed=1
+          fi
+          if ! rc-service sshd status >/dev/null 2>&1; then
+            rc-service sshd start
+            changed=1
+          fi
           # Allow SSH through active Alpine nftables firewall.
           if command -v nft >/dev/null 2>&1 && rc-service nftables status >/dev/null 2>&1; then
             if nft list chain inet filter input >/dev/null 2>&1; then
-              nft list chain inet filter input | grep -F "tcp dport 22" >/dev/null 2>&1 || {
+              if ! nft list chain inet filter input | grep -F "tcp dport 22" >/dev/null 2>&1; then
                 nft insert rule inet filter input ip saddr {{ homelab_lan_cidr }} tcp dport 22 accept
                 nft insert rule inet filter input ip saddr {{ homelab_tailscale_cidr }} tcp dport 22 accept
-              }
+                changed=1
+              fi
             fi
           fi
+          if [ "${changed}" -eq 1 ]; then echo changed=yes; else echo changed=no; fi
         '
         ;;
       debian)
         pct exec "${vmid}" -- /bin/bash -lc '
           set -eu
+          changed=0
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y openssh-server python3
-          systemctl enable --now ssh
+          missing=0
+          for pkg in openssh-server python3; do
+            if ! dpkg -s "${pkg}" >/dev/null 2>&1; then
+              missing=1
+            fi
+          done
+          if [ "${missing}" -eq 1 ]; then
+            apt-get update
+            apt-get install -y openssh-server python3
+            changed=1
+          fi
+          if ! systemctl is-enabled ssh >/dev/null 2>&1; then
+            systemctl enable ssh
+            changed=1
+          fi
+          if ! systemctl is-active ssh >/dev/null 2>&1; then
+            systemctl start ssh
+            changed=1
+          fi
+          if [ "${changed}" -eq 1 ]; then echo changed=yes; else echo changed=no; fi
         '
         ;;
       *)
@@ -40,7 +70,7 @@
   args:
     executable: /bin/sh
   register: pve_lxc_access_bootstrap_results
-  changed_when: true
+  changed_when: "'changed=yes' in pve_lxc_access_bootstrap_results.stdout"
   loop: "{{ pve_lxc_access_bootstrap }}"
   loop_control:
     label: "{{ item.name }} ({{ item.vmid }})"

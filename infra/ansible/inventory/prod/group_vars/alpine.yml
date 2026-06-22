@@ -4,3 +4,4 @@ common_alpine_packages:
   - openssh
   - tzdata
   - shadow
+  - jq

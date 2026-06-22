@@ -12,6 +12,12 @@ WorkingDirectory={{ hermes_workspace }}
 ExecStart={{ hermes_venv_path }}/bin/hermes gateway
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths={{ hermes_home }} {{ hermes_workspace }}
 
 [Install]
 WantedBy=multi-user.target

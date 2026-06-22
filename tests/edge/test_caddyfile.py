@@ -1,7 +1,4 @@
-from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO_ROOT
 
 
 def test_caddyfile_is_tracked_and_uses_current_lxc_ips():
@@ -43,5 +40,24 @@ def test_router_route_omits_nosniff_for_mislabelled_flutter_assets():
         "copyparty.hchu.me {", maxsplit=1
     )[0]
     assert "X-Content-Type-Options" not in router_headers
-    assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"' in router_headers
+    assert "import base_headers" in router_headers
     assert 'X-Frame-Options "DENY"' in router_headers
+
+
+def test_copyparty_route_is_private_only_and_tls_upstreams_are_verified():
+    content = (REPO_ROOT / "apps" / "edge" / "Caddyfile").read_text(encoding="utf-8")
+    copyparty = content.split("copyparty.hchu.me {", maxsplit=1)[1].split("adguard.home.hchu.me {", maxsplit=1)[0]
+
+    assert "import private_only" in copyparty
+    assert "tls_insecure_skip_verify" not in content
+    assert "tls_server_name dns.hchu.me" in content
+    assert "tls_server_name pve.home.hchu.me" in content
+    assert "tls_trusted_ca_certs /etc/ssl/certs/homelab-pve-root-ca.pem" in content
+
+
+def test_caddyfile_uses_base_header_snippet_to_reduce_repetition():
+    content = (REPO_ROOT / "apps" / "edge" / "Caddyfile").read_text(encoding="utf-8")
+
+    assert "(base_headers)" in content
+    assert "import base_headers" in content
+    assert content.count('Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"') == 1

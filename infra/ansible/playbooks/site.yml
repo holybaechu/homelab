@@ -12,46 +12,46 @@
     - common_debian
 
 - name: Configure edge LXC
-  hosts: edge
+  hosts: svc_edge
   gather_facts: true
   roles:
     - caddy
     - ddns
 
 - name: Configure DNS LXC
-  hosts: dns
+  hosts: svc_dns
   gather_facts: true
   roles:
     - adguard_acme
     - adguard
 
 - name: Configure tailnet LXC
-  hosts: tailnet
+  hosts: svc_tailnet
   gather_facts: true
   roles:
     - tailscale_gateway
 
 - name: Configure downloads LXC
-  hosts: downloads
+  hosts: svc_downloads
   gather_facts: true
   roles:
     - downloads_vpn
     - qbittorrent
 
 - name: Configure files LXC
-  hosts: files
+  hosts: svc_files
   gather_facts: true
   roles:
     - copyparty
 
 - name: Configure minecraft LXC
-  hosts: minecraft
+  hosts: svc_minecraft
   gather_facts: true
   roles:
     - minecraft
 
 - name: Configure hermes LXC
-  hosts: hermes
+  hosts: svc_hermes
   gather_facts: true
   roles:
     - hermes

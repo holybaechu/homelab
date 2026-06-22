@@ -1,34 +1,23 @@
-from pathlib import Path
-
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import render_role_template
 
 
 def render_copyparty_config(copyparty_users):
-    env = Environment(
-        loader=FileSystemLoader(
-            REPO_ROOT / "infra" / "ansible" / "roles" / "copyparty" / "templates"
-        ),
-        undefined=StrictUndefined,
-        trim_blocks=True,
-        lstrip_blocks=True,
-    )
-    template = env.get_template("copyparty.conf.j2")
-    return template.render(
+    return render_role_template(
+        "copyparty",
+        "copyparty.conf.j2",
         copyparty_users=copyparty_users,
         copyparty_listen_port=3923,
     )
 
 
-def test_copyparty_config_renders_only_supplied_accounts():
+def test_copyparty_config_renders_only_hashed_accounts():
     rendered = render_copyparty_config(
-        [{"name": "holybaechu", "password": "example-password"}]
+        [{"name": "holybaechu", "password_hash": "$2b$example-hash"}]
     )
 
     assert "[accounts]" in rendered
-    assert "holybaechu: example-password" in rendered
+    assert "holybaechu: $2b$example-hash" in rendered
+    assert "example-password" not in rendered
     accounts_section = rendered.split("[global]", 1)[0]
     assert "siregon72" not in rendered
     assert "ezmin1104" not in rendered
@@ -44,10 +33,10 @@ def test_copyparty_config_renders_only_supplied_accounts():
 def test_copyparty_secret_users_get_shared_read_only_access():
     rendered = render_copyparty_config(
         [
-            {"name": "holybaechu", "password": "owner-password"},
-            {"name": "siregon72", "password": "guest-password"},
-            {"name": "ezmin1104", "password": "guest-password"},
-            {"name": "sieon", "password": "guest-password"},
+            {"name": "holybaechu", "password_hash": "$2b$owner"},
+            {"name": "siregon72", "password_hash": "$2b$guest1"},
+            {"name": "ezmin1104", "password_hash": "$2b$guest2"},
+            {"name": "sieon", "password_hash": "$2b$guest3"},
         ]
     )
 
@@ -55,9 +44,10 @@ def test_copyparty_secret_users_get_shared_read_only_access():
     shared_section = rendered.split("[/shared-readonly]", 1)[1].split("[/downloads]", 1)[0]
     downloads_section = rendered.split("[/downloads]", 1)[1]
 
-    assert "siregon72: guest-password" in accounts_section
-    assert "ezmin1104: guest-password" in accounts_section
-    assert "sieon: guest-password" in accounts_section
+    assert "siregon72: $2b$guest1" in accounts_section
+    assert "ezmin1104: $2b$guest2" in accounts_section
+    assert "sieon: $2b$guest3" in accounts_section
+    assert "guest-password" not in rendered
     assert "\n  usernames\n" in rendered
     assert "r: holybaechu, siregon72, ezmin1104, sieon" in shared_section
     assert "A: holybaechu" in shared_section

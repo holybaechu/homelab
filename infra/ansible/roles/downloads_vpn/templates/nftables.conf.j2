@@ -2,29 +2,33 @@ flush ruleset
 
 table inet filter {
   chain input {
-    type filter hook input priority 0; policy accept;
+    type filter hook input priority 0; policy drop;
 
     iif "lo" accept
+    ct state invalid drop
     ct state established,related accept
+    ip saddr { {{ homelab_lan_cidr }}, {{ homelab_tailscale_cidr }} } tcp dport 22 accept
     ip saddr {{ edge_ip }} tcp dport {{ qbittorrent_webui_port }} accept
     ip saddr {{ homelab_tailscale_cidr }} tcp dport {{ qbittorrent_webui_port }} accept
     tcp dport {{ qbittorrent_webui_port }} reject
   }
 
   chain output {
-    type filter hook output priority 0; policy accept;
+    type filter hook output priority 0; policy drop;
 
     oif "lo" accept
-    udp dport 51820 accept
-
-    meta skuid {{ qbittorrent_uid }} oifname "{{ proton_wg_interface }}" accept
+    ct state invalid drop
     ct state established meta skuid {{ qbittorrent_uid }} ip daddr {{ edge_ip }} tcp sport {{ qbittorrent_webui_port }} accept
     ct state established meta skuid {{ qbittorrent_uid }} ip daddr {{ homelab_tailscale_cidr }} tcp sport {{ qbittorrent_webui_port }} accept
+    meta skuid {{ qbittorrent_uid }} oifname "{{ proton_wg_interface }}" accept
     meta skuid {{ qbittorrent_uid }} reject
 
+    ct state established,related accept
+    meta skuid != {{ qbittorrent_uid }} udp dport 51820 accept
     ip daddr {{ homelab_lan_cidr }} accept
     ip daddr {{ homelab_tailscale_cidr }} accept
     udp dport 53 accept
     tcp dport 53 accept
+    meta skuid != {{ qbittorrent_uid }} accept
   }
 }

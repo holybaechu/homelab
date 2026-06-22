@@ -1,10 +1,9 @@
-from pathlib import Path
 import re
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+from tests.helpers import REPO_ROOT
 def read(relative_path: str) -> str:
     return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 

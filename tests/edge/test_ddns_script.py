@@ -1,7 +1,4 @@
-from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO_ROOT
 
 
 def test_ddns_script_exists_and_targets_cloudflare_api():
@@ -26,6 +23,20 @@ def test_ddns_loop_survives_transient_update_failures():
         / "main.yml"
     ).read_text(encoding="utf-8")
 
-    assert "if ! /usr/local/bin/update-cloudflare-ddns; then" in tasks
+    assert "loop_command: /usr/local/bin/update-cloudflare-ddns" in tasks
     assert "Cloudflare DDNS update failed; retrying" in tasks
-    assert "sleep {{ ddns_interval_seconds }}" in tasks
+    loop_template = (
+        REPO_ROOT / "infra" / "ansible" / "templates" / "openrc-loop.sh.j2"
+    ).read_text(encoding="utf-8")
+    assert 'loop_interval_seconds: "{{ ddns_interval_seconds }}"' in tasks
+    assert "if ! {{ loop_command }}; then" in loop_template
+    assert "sleep {{ loop_interval_seconds }}" in loop_template
+
+
+def test_ddns_script_uses_jq_and_checks_cloudflare_success():
+    content = (REPO_ROOT / "apps" / "edge" / "ddns" / "update-cloudflare-ddns.sh").read_text(encoding="utf-8")
+
+    assert "jq -e" in content
+    assert ".success == true" in content
+    assert "jq -n" in content
+    assert "sed -n" not in content

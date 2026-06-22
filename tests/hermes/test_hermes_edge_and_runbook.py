@@ -1,12 +1,11 @@
 import re
-from pathlib import Path
 
 import yaml
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+from tests.helpers import REPO_ROOT
 def read(relative_path: str) -> str:
     return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 
@@ -40,7 +39,7 @@ def test_site_playbook_applies_hermes_role():
     )
 
     assert hermes_play is not None
-    assert hermes_play.get("hosts") == "hermes"
+    assert hermes_play.get("hosts") == "svc_hermes"
     roles = hermes_play.get("roles") or []
     role_names = [
         role if isinstance(role, str) else role.get("role")
@@ -74,7 +73,7 @@ def test_validate_playbook_checks_hermes_gateway_service_only():
     )
 
     assert hermes_play is not None
-    assert hermes_play.get("hosts") == "hermes"
+    assert hermes_play.get("hosts") == "svc_hermes"
     hermes_tasks = yaml.safe_dump(hermes_play.get("tasks", []), sort_keys=True)
     assert "systemctl is-active hermes-gateway" in hermes_tasks
     assert "hermes-webui" not in hermes_tasks

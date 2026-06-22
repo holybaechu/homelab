@@ -1,11 +1,10 @@
 import re
-from pathlib import Path
 
 import yaml
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
+from tests.helpers import REPO_ROOT
 VIA_VERSION_JAR = "{{ minecraft_paper_plugins_dir }}/ViaVersion.jar"
 GEYSER_JAR = "{{ minecraft_velocity_plugins_dir }}/Geyser-Velocity.jar"
 FLOODGATE_JAR = "{{ minecraft_velocity_plugins_dir }}/floodgate-velocity.jar"
@@ -57,7 +56,7 @@ def assert_export_immediately_precedes_command(runbook: str, command: str) -> No
 def test_site_playbook_applies_minecraft_role():
     play = find_play(load_playbook("infra/ansible/playbooks/site.yml"), "Configure minecraft LXC")
 
-    assert play["hosts"] == "minecraft"
+    assert play["hosts"] == "svc_minecraft"
     assert play["gather_facts"] is True
     assert "minecraft" in role_names(play)
 
@@ -68,7 +67,7 @@ def test_validate_playbook_checks_minecraft_services_and_public_java_port():
         "Validate minecraft service",
     )
 
-    assert play["hosts"] == "minecraft"
+    assert play["hosts"] == "svc_minecraft"
     assert play["gather_facts"] is False
 
     paper_service = find_task(play, "Check Paper service")
@@ -180,10 +179,10 @@ def test_bootstrap_trusts_all_lxc_inventory_host_keys():
     task = find_task(play, "Add LXC SSH host keys to known_hosts")
     loop = task["loop"]
 
-    assert "groups['alpine']" in loop
-    assert "groups['debian']" in loop
-    assert "hostvars" in loop
-    assert "ansible_host" in loop
+    assert loop == "{{ pve_lxc_host_key_results.results }}"
+    assert "hostvars[item.item.name].ansible_host" in task["ansible.builtin.known_hosts"]["name"]
+    assert "hostvars[item.item.name].ansible_host" in task["ansible.builtin.known_hosts"]["key"]
+    assert "item.stdout" in task["ansible.builtin.known_hosts"]["key"]
 
 
 def test_minecraft_runbook_documents_dns_ports_and_join_checks():

@@ -1,16 +1,13 @@
 import json
-from pathlib import Path
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO_ROOT
 
 OPERATIONAL_UPDATE_FILES = [
     ".github/workflows/ci.yml",
     ".github/workflows/cd.yml",
     "scripts/ci/install-tools.sh",
-    "infra/ansible/inventory/prod/group_vars/edge.yml",
-    "infra/ansible/inventory/prod/group_vars/dns.yml",
-    "infra/ansible/inventory/prod/group_vars/downloads.yml",
+    "infra/ansible/inventory/prod/group_vars/svc_edge.yml",
+    "infra/ansible/inventory/prod/group_vars/svc_dns.yml",
+    "infra/ansible/inventory/prod/group_vars/svc_downloads.yml",
     "infra/ansible/roles/copyparty/tasks/main.yml",
 ]
 
@@ -62,7 +59,7 @@ def test_renovate_regex_manager_scans_edge_inventory():
     ]
 
     assert any(
-        "infra\\/ansible\\/inventory\\/prod\\/group_vars\\/(edge|dns|downloads)\\.yml"
+        "infra\\/ansible\\/inventory\\/prod\\/group_vars\\/svc_(edge|dns|downloads)\\.yml"
         in pattern
         for manager in regex_managers
         for pattern in manager.get("managerFilePatterns", [])

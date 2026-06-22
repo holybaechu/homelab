@@ -17,10 +17,10 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: "3.14"
 
@@ -32,16 +32,14 @@ jobs:
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r infra/ansible/requirements.yml
 
+      - name: Check generated Ansible inventory
+        run: python3 scripts/ci/render_ansible_inventory.py --check
+
       - name: Run repository tests
         run: PYTHONPATH=$PWD pytest
 
       - name: Install OpenTofu
-        run: |
-          # renovate: datasource=github-releases depName=opentofu/opentofu versioning=semver extractVersion=^v(?<version>.*)$
-          TOFU_VERSION=1.12.3
-          curl -fsSLo /tmp/tofu.zip "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_amd64.zip"
-          sudo unzip -o /tmp/tofu.zip tofu -d /usr/local/bin
-          tofu version
+        run: ./scripts/ci/install-opentofu.sh
 
       - name: Validate OpenTofu
         run: |
