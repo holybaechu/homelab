@@ -12,6 +12,15 @@
           apk add --no-cache openssh python3
           rc-update add sshd default
           rc-service sshd restart || rc-service sshd start
+          # Allow SSH through active Alpine nftables firewall.
+          if command -v nft >/dev/null 2>&1 && rc-service nftables status >/dev/null 2>&1; then
+            if nft list chain inet filter input >/dev/null 2>&1; then
+              nft list chain inet filter input | grep -F "tcp dport 22" >/dev/null 2>&1 || {
+                nft insert rule inet filter input ip saddr {{ homelab_lan_cidr }} tcp dport 22 accept
+                nft insert rule inet filter input ip saddr {{ homelab_tailscale_cidr }} tcp dport 22 accept
+              }
+            fi
+          fi
         '
         ;;
       debian)

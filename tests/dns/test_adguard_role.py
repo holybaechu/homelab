@@ -18,6 +18,34 @@ def test_adguard_role_installs_drill_for_dns_validation():
     assert "- drill" in tasks
 
 
+def test_adguard_role_manages_nftables_firewall():
+    tasks = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "adguard"
+        / "tasks"
+        / "main.yml"
+    ).read_text(encoding="utf-8")
+    handlers = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "adguard"
+        / "handlers"
+        / "main.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "- nftables" in tasks
+    assert "src: nftables.conf.j2" in tasks
+    assert "dest: /etc/nftables.nft" in tasks
+    assert "validate: nft -c -f %s" in tasks
+    assert "name: nftables" in tasks
+    assert "Restart adguard nftables" in handlers
+
+
 def test_adguard_role_installs_htpasswd_for_password_hashing():
     tasks = (
         REPO_ROOT

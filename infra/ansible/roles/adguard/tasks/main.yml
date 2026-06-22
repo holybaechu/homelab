@@ -79,10 +79,11 @@
 - name: Install AdGuard nftables config
   ansible.builtin.template:
     src: nftables.conf.j2
-    dest: /etc/nftables.conf
+    dest: /etc/nftables.nft
     owner: root
     group: root
-    mode: "0644"
+    mode: "0600"
+    validate: nft -c -f %s
   notify: Restart adguard nftables
 
 - name: Enable AdGuard nftables
