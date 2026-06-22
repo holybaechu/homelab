@@ -1,4 +1,6 @@
+# renovate: datasource=github-releases depName=caddyserver/caddy versioning=semver extractVersion=^v(?<version>.*)$
 caddy_version: "v2.11.3"
+# renovate: datasource=github-releases depName=caddyserver/xcaddy versioning=semver extractVersion=^v(?<version>.*)$
 xcaddy_version: "v0.4.4"
 caddy_cloudflare_module: "github.com/caddy-dns/cloudflare"
 caddy_config_path: /etc/caddy/Caddyfile

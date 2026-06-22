@@ -8,14 +8,16 @@ OPERATIONAL_UPDATE_FILES = [
     ".github/workflows/ci.yml",
     ".github/workflows/cd.yml",
     "scripts/ci/install-tools.sh",
+    "infra/ansible/inventory/prod/group_vars/edge.yml",
     "infra/ansible/inventory/prod/group_vars/dns.yml",
     "infra/ansible/inventory/prod/group_vars/downloads.yml",
     "infra/ansible/roles/copyparty/tasks/main.yml",
 ]
 
 RENOVATE_MANAGED_DEPENDENCIES = [
-    "tailscale/tailscale",
     "opentofu/opentofu",
+    "caddyserver/caddy",
+    "caddyserver/xcaddy",
     "VueTorrent/VueTorrent",
     "AdguardTeam/AdGuardHome",
     "copyparty",
@@ -49,3 +51,43 @@ def test_renovate_has_regex_manager_for_inline_dependency_metadata():
         and any("renovate: datasource=" in match for match in manager["matchStrings"])
         for manager in config.get("customManagers", [])
     )
+
+
+def test_renovate_regex_manager_scans_edge_inventory():
+    config = json.loads(_read("renovate.json"))
+    regex_managers = [
+        manager
+        for manager in config.get("customManagers", [])
+        if manager.get("customType") == "regex"
+    ]
+
+    assert any(
+        "infra\\/ansible\\/inventory\\/prod\\/group_vars\\/(edge|dns|downloads)\\.yml"
+        in pattern
+        for manager in regex_managers
+        for pattern in manager.get("managerFilePatterns", [])
+    )
+
+
+def test_tailscale_binary_comment_is_not_marked_as_renovate_managed():
+    contents = "\n".join(_read(path) for path in OPERATIONAL_UPDATE_FILES)
+
+    assert "depName=tailscale/tailscale" not in contents
+
+
+def test_ansible_install_is_renovate_managed_requirement():
+    requirements = _read("requirements-deploy.txt")
+    ci_workflow = _read(".github/workflows/ci.yml")
+    install_tools = _read("scripts/ci/install-tools.sh")
+
+    assert "ansible==" in requirements
+    assert "requirements-deploy.txt" in ci_workflow
+    assert "requirements-deploy.txt" in install_tools
+    assert "pip install -r requirements-dev.txt ansible" not in ci_workflow
+    assert "pip install ansible" not in install_tools
+
+
+def test_opentofu_lockfile_is_not_ignored():
+    gitignore = _read(".gitignore")
+
+    assert ".terraform.lock.hcl" not in gitignore

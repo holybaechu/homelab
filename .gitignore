@@ -10,7 +10,6 @@
 !*.tfvars.example
 crash.log
 crash.*.log
-.terraform.lock.hcl
 
 secrets/*.sops.yml
 secrets/*.agekey

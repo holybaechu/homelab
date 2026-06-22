@@ -10,7 +10,7 @@
       "managerFilePatterns": [
         "/^\\.github\\/workflows\\/(ci|cd)\\.yml$/",
         "/^scripts\\/ci\\/install-tools\\.sh$/",
-        "/^infra\\/ansible\\/inventory\\/prod\\/group_vars\\/(dns|downloads)\\.yml$/",
+        "/^infra\\/ansible\\/inventory\\/prod\\/group_vars\\/(edge|dns|downloads)\\.yml$/",
         "/^infra\\/ansible\\/roles\\/copyparty\\/tasks\\/main\\.yml$/"
       ],
       "matchStrings": [

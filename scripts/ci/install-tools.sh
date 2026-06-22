@@ -7,7 +7,7 @@ sudo apt-get install -y curl unzip python3-pip python3-venv openssh-client
 ANSIBLE_VENV="${HOME}/.local/ansible-venv"
 python3 -m venv "${ANSIBLE_VENV}"
 "${ANSIBLE_VENV}/bin/python" -m pip install --upgrade pip
-"${ANSIBLE_VENV}/bin/python" -m pip install ansible
+"${ANSIBLE_VENV}/bin/python" -m pip install -r requirements-deploy.txt
 export PATH="${ANSIBLE_VENV}/bin:${PATH}"
 
 if [ -n "${GITHUB_PATH:-}" ]; then
