@@ -32,6 +32,17 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     assert "must use plaintext password, not password_hash" in script
 
 
+def test_github_actions_runbook_documents_pinned_ssh_known_hosts_secret():
+    runbook = (REPO_ROOT / "docs" / "runbooks" / "github-actions.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "DEPLOY_SSH_KNOWN_HOSTS" in runbook
+    assert "192.168.0.2,pve,pve.home.hchu.me" in runbook
+    assert "ssh_host_ed25519_key.pub" in runbook
+    assert "LXC SSH host keys" in runbook
+
+
 def test_cd_workflow_runs_bootstrap_before_site_deploy():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"
