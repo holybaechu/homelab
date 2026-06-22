@@ -107,6 +107,7 @@ jobs:
           HERMES_DISCORD_BOT_TOKEN: ${{ secrets.HERMES_DISCORD_BOT_TOKEN }}
           HERMES_DISCORD_ALLOWED_USERS: ${{ secrets.HERMES_DISCORD_ALLOWED_USERS }}
           COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
+          COPYPARTY_PASSWORD_HASH_SALT: ${{ secrets.COPYPARTY_PASSWORD_HASH_SALT }}
         run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Deploy services

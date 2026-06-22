@@ -39,12 +39,29 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `QBITTORRENT_WEBUI_PASSWORD`
 - `HERMES_DISCORD_BOT_TOKEN`
 - `HERMES_DISCORD_ALLOWED_USERS`
-- `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and `password`
+- `COPYPARTY_PASSWORD_HASH_SALT`, a stable random string used with Copyparty account password hashing
+- `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and Copyparty `password_hash`
+
+Generate `COPYPARTY_PASSWORD_HASH_SALT` once and keep it stable. Changing it invalidates existing Copyparty password hashes.
+
+```sh
+openssl rand -base64 24
+```
+
+Generate each `password_hash` with the same salt and Copyparty's configured scrypt account-hash algorithm:
+
+```sh
+python3 -m venv /tmp/copyparty-hash
+/tmp/copyparty-hash/bin/python -m pip install 'copyparty==1.20.16'
+/tmp/copyparty-hash/bin/copyparty --usernames --ah-alg scrypt --ah-salt '<COPYPARTY_PASSWORD_HASH_SALT>' --ah-gen 'holybaechu:<password>'
+```
+
+Use the final line starting with `+` as `password_hash`.
 
 Example `COPYPARTY_USERS_JSON`:
 
 ```json
-[{"name":"holybaechu","password":"replace-me"}]
+[{"name":"holybaechu","password_hash":"+replace-with-generated-hash"}]
 ```
 
 `PROXMOX_API_TOKEN` must use the bpg/proxmox provider format:

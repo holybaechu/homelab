@@ -31,7 +31,11 @@ def test_copyparty_role_requires_password_hashes_and_private_config_mode():
     template = (REPO_ROOT / "infra" / "ansible" / "roles" / "copyparty" / "templates" / "copyparty.conf.j2").read_text(encoding="utf-8")
 
     assert "password_hash" in tasks
+    assert "match', '^\\\\+'" in tasks
+    assert "copyparty_password_hash_salt" in tasks
     assert "user.password_hash" in template
+    assert "ah-alg: scrypt" in template
+    assert "ah-salt: {{ copyparty_password_hash_salt }}" in template
     assert 'mode: "0600"' in tasks
 
 

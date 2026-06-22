@@ -17,6 +17,7 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
         "PROTON_WIREGUARD_PRIVATE_KEY",
         "HERMES_DISCORD_BOT_TOKEN",
         "COPYPARTY_USERS_JSON",
+        "COPYPARTY_PASSWORD_HASH_SALT",
     ):
         assert f"{secret_name}:" not in job_env
 
@@ -24,9 +25,11 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     assert "${{ runner.temp }}/ansible-extra-vars.json" in workflow
     assert "ADGUARD_ADMIN_PASSWORD:" in workflow
     assert "COPYPARTY_USERS_JSON:" in workflow
+    assert "COPYPARTY_PASSWORD_HASH_SALT:" in workflow
     assert "os.open" in script
     assert "0o600" in script
     assert "password_hash" in script
+    assert "copyparty_password_hash_salt" in script
     assert '"password" not in user' in script
 
 
