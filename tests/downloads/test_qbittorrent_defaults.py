@@ -22,6 +22,21 @@ def test_qbittorrent_template_defaults_to_vuetorrent_without_password_hash():
     assert "qbittorrent_webui_password_hash" not in template
 
 
+def test_qbittorrent_template_disables_torrent_queueing():
+    template = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "qbittorrent"
+        / "templates"
+        / "qBittorrent.conf.j2"
+    ).read_text(encoding="utf-8")
+
+    assert "[BitTorrent]" in template
+    assert "Session\\QueueingSystemEnabled=false" in template
+
+
 def test_natpmp_updater_defaults_to_configured_qbittorrent_user():
     script = (
         REPO_ROOT / "apps" / "downloads" / "scripts" / "proton_natpmp_qbt.py"
