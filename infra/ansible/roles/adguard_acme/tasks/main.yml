@@ -45,7 +45,9 @@
       export ADGUARD_TLS_GROUP="{{ service_group }}"
       export ACME_EMAIL="holybaechu@proton.me"
       while true; do
-        /usr/local/bin/renew-adguard-cert
+        if ! /usr/local/bin/renew-adguard-cert; then
+          echo "AdGuard ACME renewal failed; retrying" >&2
+        fi
         sleep {{ adguard_acme_interval_seconds }}
       done
   no_log: true

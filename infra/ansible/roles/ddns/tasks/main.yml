@@ -21,7 +21,9 @@
       export CLOUDFLARE_DDNS_TOKEN="{{ cloudflare_ddns_token }}"
       export DDNS_RECORD_NAMES="{{ ddns_record_names | join(' ') }}"
       while true; do
-        /usr/local/bin/update-cloudflare-ddns
+        if ! /usr/local/bin/update-cloudflare-ddns; then
+          echo "Cloudflare DDNS update failed; retrying" >&2
+        fi
         sleep {{ ddns_interval_seconds }}
       done
   no_log: true

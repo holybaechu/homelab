@@ -3,3 +3,8 @@
   ansible.builtin.service:
     name: adguardhome
     state: restarted
+
+- name: Restart adguard nftables
+  ansible.builtin.service:
+    name: nftables
+    state: restarted
