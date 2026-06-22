@@ -209,10 +209,10 @@ def test_minecraft_runbook_documents_dns_ports_and_join_checks():
     assert "TCP 25565" in runbook
     assert "UDP 19132" in runbook
     assert "192.168.0.8" in runbook
+    assert "infra/opentofu/envs/prod/containers.auto.tfvars" in runbook
     assert "infra/opentofu/envs/prod/terraform.tfvars" in runbook
-    assert "terraform.tfvars.example" in runbook
-    assert "minecraft block" in runbook
-    assert "Changing only terraform.tfvars.example does not deploy the LXC." in runbook
+    assert "minecraft block is tracked" in runbook
+    assert "Changing only terraform.tfvars.example does not deploy the LXC." not in runbook
     assert "- TCP 25565 -> 192.168.0.8:25565" in runbook
     assert "- UDP 19132 -> 192.168.0.8:19132" in runbook
     assert "ssh-keygen -R 192.168.0.8" in runbook

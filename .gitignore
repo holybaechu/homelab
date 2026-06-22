@@ -7,6 +7,7 @@
 *.tfplan
 *.tfvars
 *.tfvars.json
+!infra/opentofu/envs/prod/containers.auto.tfvars
 !*.tfvars.example
 crash.log
 crash.*.log

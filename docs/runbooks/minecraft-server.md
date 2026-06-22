@@ -16,12 +16,10 @@ Run these commands from the repository root.
 
 1. Apply the OpenTofu LXC change.
 
-   Before running `tofu plan` or `tofu apply`, update the ignored
-   `infra/opentofu/envs/prod/terraform.tfvars` file with the minecraft block
-   from `infra/opentofu/envs/prod/terraform.tfvars.example`. For first-time
-   setup, copy `terraform.tfvars.example` to `terraform.tfvars`, then replace
-   real secrets and environment-specific values before planning or applying.
-   Changing only terraform.tfvars.example does not deploy the LXC.
+   The minecraft block is tracked in
+   `infra/opentofu/envs/prod/containers.auto.tfvars`. Keep private provider
+   values in the ignored `infra/opentofu/envs/prod/terraform.tfvars` file, or
+   provide them through the CI-generated `ci.auto.tfvars.json` path.
 
    ```sh
    tofu -chdir=infra/opentofu/envs/prod plan

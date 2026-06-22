@@ -12,6 +12,11 @@ Provider/model API keys are not deployed by this repo. Complete provider/model s
 
 1. Apply the OpenTofu LXC changes:
 
+   The Hermes LXC topology is tracked in
+   `infra/opentofu/envs/prod/containers.auto.tfvars`. Keep private provider
+   values in the ignored `infra/opentofu/envs/prod/terraform.tfvars` file, or
+   provide them through the CI-generated `ci.auto.tfvars.json` path.
+
    ```sh
    ./scripts/ci/tofu-plan.sh
    ./scripts/ci/tofu-apply.sh

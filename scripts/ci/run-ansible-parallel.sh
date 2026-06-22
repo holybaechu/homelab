@@ -14,7 +14,7 @@ mode="$1"
 shift
 
 inventory="infra/ansible/inventory/prod/hosts.yml"
-TARGETS="edge dns tailnet downloads files minecraft"
+TARGETS="edge dns tailnet downloads files minecraft hermes"
 
 case "${mode}" in
   site)

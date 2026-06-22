@@ -40,22 +40,14 @@ def assert_container_sizing(tfvars_path: Path):
             assert numeric_value(body, key) == expected_value
 
 
-def test_prod_lxc_resource_sizing_matches_capacity_plan():
-    prod_tfvars_path = (
-        REPO_ROOT / "infra" / "opentofu" / "envs" / "prod" / "terraform.tfvars"
-    )
-    if prod_tfvars_path.exists():
-        assert_container_sizing(prod_tfvars_path)
-
-
-def test_example_lxc_resource_sizing_matches_capacity_plan():
+def test_tracked_lxc_resource_sizing_matches_capacity_plan():
     assert_container_sizing(
         REPO_ROOT
         / "infra"
         / "opentofu"
         / "envs"
         / "prod"
-        / "terraform.tfvars.example"
+        / "containers.auto.tfvars"
     )
 
 

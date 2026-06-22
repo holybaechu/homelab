@@ -37,6 +37,7 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `TAILSCALE_AUTH_KEY`
 - `PROTON_WIREGUARD_PRIVATE_KEY`
 - `QBITTORRENT_WEBUI_PASSWORD`
+- `HERMES_WEBUI_PASSWORD`
 - `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and `password`
 
 Example `COPYPARTY_USERS_JSON`:
@@ -60,17 +61,19 @@ Create a Tailscale federated identity for GitHub Actions and allow it to create 
 The `tag:ci` ACL should only reach:
 
 - Proxmox SSH/API
-- LXC SSH targets on `192.168.0.3` through `192.168.0.7`
+- LXC SSH targets on `192.168.0.3` through `192.168.0.9`
 
 ## OpenTofu State
 
 Create an S3-compatible bucket for remote state and enable versioning if the provider supports it. The deployment script uses OpenTofu's S3 backend with native `use_lockfile` locking, so no DynamoDB table is required.
 
 The CI workflow validates OpenTofu with `tofu init -backend=false`; only CD needs the real remote-state credentials.
+Container topology is tracked in `infra/opentofu/envs/prod/containers.auto.tfvars`.
+Private provider values stay in ignored local tfvars files or the generated CI `ci.auto.tfvars.json`.
 
 ## CD Parallelism
 
-The CD workflow keeps OpenTofu and bootstrap operations serial, then runs Ansible service deploy and validation in parallel across `edge`, `dns`, `tailnet`, `downloads`, `files`, and `minecraft`.
+The CD workflow keeps OpenTofu and bootstrap operations serial, then runs Ansible service deploy and validation in parallel across `edge`, `dns`, `tailnet`, `downloads`, `files`, `minecraft`, and `hermes`.
 
 Each service run uses `ansible-playbook --limit <service>` through `scripts/ci/run-ansible-parallel.sh`. GitHub logs are grouped per service, and the step fails if any service deploy or validation process fails.
 

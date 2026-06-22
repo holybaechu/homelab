@@ -10,10 +10,6 @@ cd infra/opentofu/envs/prod
 TOFU_STATE_KEY="${TOFU_STATE_KEY:-prod/opentofu.tfstate}"
 TOFU_STATE_REGION="${TOFU_STATE_REGION:-auto}"
 
-if [ ! -f terraform.tfvars ] && [ -f terraform.tfvars.example ]; then
-  cp terraform.tfvars.example terraform.tfvars
-fi
-
 if [ -n "${PROXMOX_ENDPOINT:-}${PROXMOX_API_TOKEN:-}${DEPLOY_SSH_PUBLIC_KEYS:-}" ]; then
   python3 ../../../../scripts/ci/write_tofu_vars.py ci.auto.tfvars.json
 fi

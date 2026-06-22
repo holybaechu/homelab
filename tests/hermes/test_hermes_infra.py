@@ -27,8 +27,8 @@ def numeric_value(container_body: str, key: str) -> int:
     return int(match.group(1))
 
 
-def test_hermes_lxc_is_declared_in_example_tfvars():
-    tfvars = read("infra/opentofu/envs/prod/terraform.tfvars.example")
+def test_hermes_lxc_is_declared_in_tracked_topology_tfvars():
+    tfvars = read("infra/opentofu/envs/prod/containers.auto.tfvars")
     body = tfvars_container_body(tfvars, "hermes")
 
     assert 'hostname         = "hermes"' in body

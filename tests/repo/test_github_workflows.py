@@ -46,7 +46,7 @@ def test_parallel_ansible_runner_limits_each_service_and_waits_for_failures():
         encoding="utf-8"
     )
 
-    assert 'TARGETS="edge dns tailnet downloads files minecraft"' in runner
+    assert 'TARGETS="edge dns tailnet downloads files minecraft hermes"' in runner
     assert '--limit "${target}"' in runner
     assert " &" in runner
     assert "wait" in runner
@@ -105,15 +105,34 @@ def test_cd_tofu_plan_and_apply_use_generated_variable_file():
     assert "ci.auto.tfvars.json" in workflow
     assert "-var=" not in plan_script
     assert "write_tofu_vars.py" in plan_script
+    assert "terraform.tfvars.example" not in plan_script
     assert "tofu plan -out=prod.tfplan" in plan_script
     assert "test -f ci.auto.tfvars.json" in apply_script
     assert "tofu apply -auto-approve prod.tfplan" in apply_script
 
 
-def test_generated_tofu_secret_variable_files_are_ignored():
+def test_generated_tofu_secret_variable_files_are_ignored_and_topology_is_tracked():
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
 
+    assert "*.tfvars" in gitignore
     assert "*.tfvars.json" in gitignore
+    assert "!infra/opentofu/envs/prod/containers.auto.tfvars" in gitignore
+
+
+def test_tracked_tofu_container_topology_does_not_include_secrets():
+    topology = (
+        REPO_ROOT / "infra" / "opentofu" / "envs" / "prod" / "containers.auto.tfvars"
+    ).read_text(encoding="utf-8")
+
+    forbidden = (
+        "proxmox_api_token",
+        "proxmox_endpoint",
+        "ssh_public_keys",
+        "PRIVATE KEY",
+        "PVEAPIToken",
+    )
+    for marker in forbidden:
+        assert marker not in topology
 
 
 def test_ci_workflow_exists_for_pre_deploy_checks():
