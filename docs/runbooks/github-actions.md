@@ -72,8 +72,6 @@ The CI workflow validates OpenTofu with `tofu init -backend=false`; only CD need
 Container topology is tracked in `infra/opentofu/envs/prod/containers.auto.tfvars`.
 Private provider values stay in ignored local tfvars files or the generated CI `ci.auto.tfvars.json`.
 
-To remove and recreate the Hermes LXC during a manual deployment, run the `cd` workflow with `rebuild_hermes_lxc` set to `true`. Leave it `false` for normal deploys.
-
 ## CD Parallelism
 
 The CD workflow keeps OpenTofu and bootstrap operations serial, then runs Ansible service deploy and validation in parallel across `edge`, `dns`, `tailnet`, `downloads`, `files`, `minecraft`, and `hermes`.

@@ -100,8 +100,8 @@ def test_hermes_runbook_documents_discord_gateway_and_fresh_lxc_rebuild():
     assert "infra/ansible/playbooks/validate.yml" in runbook
     assert "HERMES_DISCORD_BOT_TOKEN" in runbook
     assert "HERMES_DISCORD_ALLOWED_USERS" in runbook
-    assert "rebuild_hermes_lxc" in runbook
-    assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' in runbook
+    assert "rebuild_hermes_lxc" not in runbook
+    assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' not in runbook
     assert "/workspace" in runbook
     assert "provider/model setup" in runbook
     assert "https://hermes.home.hchu.me" not in runbook

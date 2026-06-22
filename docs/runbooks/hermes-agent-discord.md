@@ -23,18 +23,6 @@ Provider/model API keys are not deployed by this repo. Complete provider/model s
 
 With the default repo settings, DMs always receive responses. Server channels require an explicit bot mention, and Hermes ignores messages that mention other users but not the bot.
 
-## Fresh LXC rebuild
-
-The Hermes topology stays at VMID `116`, hostname `hermes`, and IP `192.168.0.9`. To remove the current Hermes LXC and create a fresh one, manually run the `cd` workflow with `rebuild_hermes_lxc` set to `true`.
-
-That makes `scripts/ci/tofu-plan.sh` add this one-time replacement target:
-
-```text
-module.lxc["hermes"].proxmox_virtual_environment_container.this
-```
-
-Do not leave this enabled for normal deploys. The default value is `false`.
-
 ## Deploy and validate
 
 1. Confirm the Discord secrets exist in the `prod` environment.

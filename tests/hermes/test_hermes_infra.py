@@ -120,11 +120,11 @@ def test_cd_workflow_passes_hermes_discord_secrets_to_ansible_extra_vars():
     assert "API_SERVER_KEY" not in workflow
 
 
-def test_cd_workflow_can_rebuild_hermes_lxc_on_manual_dispatch():
+def test_cd_workflow_does_not_offer_destructive_hermes_lxc_rebuild():
     workflow = read(".github/workflows/cd.yml")
     plan_script = read("scripts/ci/tofu-plan.sh")
 
-    assert "rebuild_hermes_lxc:" in workflow
-    assert "REBUILD_HERMES_LXC:" in workflow
-    assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' in plan_script
-    assert "-replace=" in plan_script
+    assert "rebuild_hermes_lxc" not in workflow
+    assert "REBUILD_HERMES_LXC" not in workflow
+    assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' not in plan_script
+    assert "-replace=" not in plan_script

@@ -2,12 +2,6 @@ name: cd
 
 on:
   workflow_dispatch:
-    inputs:
-      rebuild_hermes_lxc:
-        description: Destroy and recreate the Hermes LXC during this deployment
-        required: false
-        type: boolean
-        default: false
   push:
     branches:
       - main
@@ -52,7 +46,6 @@ jobs:
       QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
       HERMES_DISCORD_BOT_TOKEN: ${{ secrets.HERMES_DISCORD_BOT_TOKEN }}
       HERMES_DISCORD_ALLOWED_USERS: ${{ secrets.HERMES_DISCORD_ALLOWED_USERS }}
-      REBUILD_HERMES_LXC: ${{ inputs.rebuild_hermes_lxc || 'false' }}
       COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
     steps:
       - name: Checkout
