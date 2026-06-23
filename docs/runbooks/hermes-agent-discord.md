@@ -8,10 +8,27 @@ Set these GitHub Actions secrets in the `prod` environment:
 
 - `HERMES_DISCORD_BOT_TOKEN`: Discord bot token from the Discord Developer Portal.
 - `HERMES_DISCORD_ALLOWED_USERS`: comma-separated Discord user IDs allowed to use the bot.
+- `PARALLEL_API_KEY`: Parallel API key used by Hermes `web_search`.
+- `FIRECRAWL_API_KEY`: Firecrawl API key used by Hermes `web_extract`.
 
-The CD workflow writes them to Ansible as `hermes_discord_bot_token` and `hermes_discord_allowed_users`. Ansible renders Hermes' expected runtime names, `DISCORD_BOT_TOKEN` and `DISCORD_ALLOWED_USERS`, into `/etc/hermes-gateway.env`.
+The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, `hermes_parallel_api_key`, and `hermes_firecrawl_api_key`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
 
-Provider/model API keys are not deployed by this repo. Complete provider/model setup from the Hermes CLI after the service is running.
+- `DISCORD_BOT_TOKEN`
+- `DISCORD_ALLOWED_USERS`
+- `PARALLEL_API_KEY`
+- `FIRECRAWL_API_KEY`
+
+## Web search
+
+This repo configures Hermes web tooling as:
+
+```yaml
+web:
+  search_backend: parallel
+  extract_backend: firecrawl
+```
+
+That gives Hermes Parallel-backed search results and Firecrawl-backed page extraction/scraping. The runtime config helper preserves the existing model/provider settings while enforcing these web backend settings.
 
 ## Discord setup
 

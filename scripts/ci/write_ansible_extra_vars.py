@@ -20,6 +20,8 @@ REQUIRED_ENV = {
     "qbittorrent_webui_password": "QBITTORRENT_WEBUI_PASSWORD",
     "hermes_discord_bot_token": "HERMES_DISCORD_BOT_TOKEN",
     "hermes_discord_allowed_users": "HERMES_DISCORD_ALLOWED_USERS",
+    "hermes_parallel_api_key": "PARALLEL_API_KEY",
+    "hermes_firecrawl_api_key": "FIRECRAWL_API_KEY",
 }
 
 
