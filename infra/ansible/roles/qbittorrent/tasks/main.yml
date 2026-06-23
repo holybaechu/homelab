@@ -143,10 +143,37 @@
 - name: Gather service facts before qBittorrent config update
   ansible.builtin.service_facts:
 
+- name: Stop NAT-PMP updater before applying changed qBittorrent config
+  ansible.builtin.shell: |
+    set -eu
+    changed=0
+
+    for unit in proton-natpmp-qbt.timer proton-natpmp-qbt.service; do
+      if systemctl cat "${unit}" >/dev/null 2>&1 && systemctl is-active --quiet "${unit}"; then
+        systemctl stop "${unit}"
+        changed=1
+      fi
+    done
+
+    if [ "${changed}" -eq 1 ]; then
+      echo "changed=yes"
+    else
+      echo "changed=no"
+    fi
+  args:
+    executable: /bin/sh
+  register: qbittorrent_stop_natpmp_before_config
+  changed_when: "'changed=yes' in qbittorrent_stop_natpmp_before_config.stdout"
+  when: qbittorrent_config_compare.rc != 0
+
 - name: Stop qBittorrent before applying changed config
   ansible.builtin.systemd:
     name: qbittorrent.service
     state: stopped
+  register: qbittorrent_stop_before_config
+  until: qbittorrent_stop_before_config is succeeded
+  retries: 3
+  delay: 3
   when:
     - qbittorrent_config_compare.rc != 0
     - "'qbittorrent.service' in ansible_facts.services"
