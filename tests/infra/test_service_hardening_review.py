@@ -60,6 +60,21 @@ def test_qbittorrent_and_hermes_units_use_systemd_sandboxing():
         assert "ReadWritePaths=" in unit
 
 
+def test_qbittorrent_can_write_public_copyparty_share_for_seeding():
+    all_vars = (REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "all.yml").read_text(encoding="utf-8")
+    downloads_vars = (REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "svc_downloads.yml").read_text(encoding="utf-8")
+    qbt_unit = (REPO_ROOT / "infra" / "ansible" / "roles" / "qbittorrent" / "templates" / "qbittorrent.service.j2").read_text(encoding="utf-8")
+    storage_tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "pve_homelab_storage" / "tasks" / "main.yml").read_text(encoding="utf-8")
+
+    assert "mp=/public,ro=1" not in all_vars
+    assert "mp=/public" in all_vars
+    assert "copyparty_public_mount_path: /public" in downloads_vars
+    assert "{{ copyparty_public_mount_path }}" in qbt_unit
+    assert "setfacl -R -m" in storage_tasks
+    assert "homelab_container_uid_offset + downloads_service_uid" in storage_tasks
+    assert '"${mount_path}/copyparty/public"' in storage_tasks
+
+
 def test_tailscale_up_is_not_reported_changed_unconditionally():
     tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "tailscale_gateway" / "tasks" / "main.yml").read_text(encoding="utf-8")
 

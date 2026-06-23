@@ -1,6 +1,7 @@
 downloads_mount_path: /downloads
 downloads_complete_path: /downloads/complete
 downloads_incomplete_path: /downloads/incomplete
+copyparty_public_mount_path: /public
 proton_wg_interface: wg-proton
 proton_server_list_url: https://raw.githubusercontent.com/qdm12/gluetun-servers/14277e92ce8291eb4515cd9af0dfad383a23f145/pkg/servers/protonvpn.json
 proton_server_country: Japan

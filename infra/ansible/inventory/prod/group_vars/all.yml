@@ -57,9 +57,9 @@ pve_lxc_root_options:
       - description: mount downloads data
         pattern: '^mp0: /var/lib/homelab/downloads,mp=/downloads(,.*)?$'
         pct_args: '-mp0 /var/lib/homelab/downloads,mp=/downloads'
-      - description: mount public Copyparty share read-only for migrated qBittorrent sessions
-        pattern: '^mp1: /var/lib/homelab/copyparty/public,mp=/public(,.*)?$'
-        pct_args: '-mp1 /var/lib/homelab/copyparty/public,mp=/public,ro=1'
+      - description: mount public Copyparty share read-write for seeded public content
+        pattern: '^mp1: /var/lib/homelab/copyparty/public,mp=/public$'
+        pct_args: '-mp1 /var/lib/homelab/copyparty/public,mp=/public'
   - vmid: 114
     name: files
     bind_mount_sources:
