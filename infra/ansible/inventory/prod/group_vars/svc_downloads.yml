@@ -11,6 +11,8 @@ proton_wireguard_endpoint_port: 51820
 proton_wireguard_dns: 1.1.1.1
 proton_wireguard_allowed_ips: "0.0.0.0/0, ::/0"
 proton_natpmp_gateway: 10.2.0.1
+proton_wireguard_table: 51820
+proton_wireguard_rule_priority: 100
 qbittorrent_webui_port: 8080
 qbittorrent_webui_username: holybaechu
 # renovate: datasource=github-releases depName=VueTorrent/VueTorrent versioning=semver extractVersion=^v(?<version>.*)$
