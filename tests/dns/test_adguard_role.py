@@ -1,4 +1,76 @@
+import json
+import subprocess
+import sys
+
+import yaml
+
 from tests.helpers import REPO_ROOT
+
+
+def load_adguard_tasks():
+    return yaml.safe_load(
+        (
+            REPO_ROOT
+            / "infra"
+            / "ansible"
+            / "roles"
+            / "adguard"
+            / "tasks"
+            / "main.yml"
+        ).read_text(encoding="utf-8")
+    )
+
+
+def adguard_task(name: str):
+    for task in load_adguard_tasks():
+        if task["name"] == name:
+            return task
+    raise AssertionError(f"missing AdGuard task {name!r}")
+
+
+def run_adguard_proxy_filter_updater(config_path):
+    task = adguard_task(
+        "Update AdGuard DNS, TLS, trusted proxies, and filters in existing config"
+    )
+    script = task["ansible.builtin.command"]["argv"][2]
+
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            str(config_path),
+            json.dumps(["127.0.0.0/8", "::1/128", "192.168.0.4/32"]),
+            json.dumps(
+                [
+                    {
+                        "enabled": True,
+                        "url": "https://adguardteam.github.io/HostlistsRegistry/assets/filter_48.txt",
+                        "name": "HaGeZi's Pro Blocklist",
+                        "id": 48,
+                    }
+                ]
+            ),
+            json.dumps(["tls://1.1.1.1", "tls://1.0.0.1"]),
+            json.dumps(["1.1.1.1", "1.0.0.1"]),
+            json.dumps(["1.1.1.1", "1.0.0.1"]),
+            json.dumps(
+                {
+                    "enabled": True,
+                    "server_name": "adguard.home.hchu.me",
+                    "force_https": False,
+                    "port_https": 443,
+                    "port_dns_over_tls": 853,
+                    "port_dns_over_quic": 853,
+                    "certificate_path": "/opt/adguardhome/tls/fullchain.pem",
+                    "private_key_path": "/opt/adguardhome/tls/privkey.pem",
+                }
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_adguard_role_installs_drill_for_dns_validation():
@@ -75,6 +147,80 @@ def test_adguard_role_uses_versioned_download_and_extract_paths():
     assert 'src: "/tmp/AdGuardHome-{{ adguard_version }}/AdGuardHome/AdGuardHome"' in tasks
     assert "dest: /tmp/AdGuardHome.tar.gz" not in tasks
     assert "creates: /tmp/AdGuardHome/AdGuardHome" not in tasks
+
+
+def test_adguard_config_updater_replaces_inline_fallback_dns_without_duplicate(tmp_path):
+    config = tmp_path / "AdGuardHome.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                "dns:",
+                "  upstream_dns:",
+                "    - https://old.example/dns-query",
+                "  bootstrap_dns:",
+                "    - 9.9.9.9",
+                "  fallback_dns: []",
+                "  upstream_mode: load_balance",
+                "tls:",
+                "  enabled: false",
+                "filters:",
+                "  - enabled: false",
+                "    url: https://old.example/filter.txt",
+                '    name: "Old filter"',
+                "    id: 1",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_adguard_proxy_filter_updater(config)
+
+    assert result.stdout.strip() == "changed"
+    updated = config.read_text(encoding="utf-8")
+    assert updated.count("  fallback_dns:") == 1
+    assert "  fallback_dns: []" not in updated
+    assert "  fallback_dns:\n    - 1.1.1.1\n    - 1.0.0.1" in updated
+    assert "  upstream_mode: load_balance" in updated
+
+
+def test_adguard_config_updater_collapses_existing_duplicate_fallback_dns(tmp_path):
+    config = tmp_path / "AdGuardHome.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                "dns:",
+                "  upstream_dns:",
+                "    - https://old.example/dns-query",
+                "  bootstrap_dns:",
+                "    - 9.9.9.9",
+                "  fallback_dns: []",
+                "  upstream_mode: load_balance",
+                "  pending_requests:",
+                "    enabled: true",
+                "  fallback_dns:",
+                "    - 1.1.1.1",
+                "    - 1.0.0.1",
+                "tls:",
+                "  enabled: false",
+                "filters:",
+                "  - enabled: false",
+                "    url: https://old.example/filter.txt",
+                '    name: "Old filter"',
+                "    id: 1",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_adguard_proxy_filter_updater(config)
+
+    assert result.stdout.strip() == "changed"
+    updated = config.read_text(encoding="utf-8")
+    assert updated.count("  fallback_dns:") == 1
+    assert "  fallback_dns: []" not in updated
+    assert "  pending_requests:\n    enabled: true" in updated
 
 
 def test_adguard_role_hashes_plaintext_admin_password():

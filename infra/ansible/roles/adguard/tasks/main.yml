@@ -297,26 +297,40 @@
                     break
 
             child_marker = f"  {child}:"
-            child_start = None
-            for index in range(parent_start + 1, parent_end):
-                if lines[index] == child_marker:
+            child_blocks = []
+            index = parent_start + 1
+            while index < parent_end:
+                line = lines[index]
+                if line == child_marker or line.startswith(f"{child_marker} "):
                     child_start = index
-                    break
+                    child_end = parent_end
+                    for end_index in range(child_start + 1, parent_end):
+                        next_line = lines[end_index]
+                        if next_line.startswith("  ") and not next_line.startswith("    "):
+                            child_end = end_index
+                            break
+                    child_blocks.append((child_start, child_end))
+                    index = child_end
+                else:
+                    index += 1
 
-            if child_start is None:
+            if not child_blocks:
                 insert_at = parent_end
                 return lines[:insert_at] + replacement + lines[insert_at:], True
 
-            child_end = parent_end
-            for index in range(child_start + 1, parent_end):
-                line = lines[index]
-                if line.startswith("  ") and not line.startswith("    "):
-                    child_end = index
-                    break
-
-            if lines[child_start:child_end] == replacement:
-                return lines, False
-            return lines[:child_start] + replacement + lines[child_end:], True
+            changed = False
+            updated = []
+            cursor = 0
+            for block_index, (child_start, child_end) in enumerate(child_blocks):
+                updated.extend(lines[cursor:child_start])
+                if block_index == 0:
+                    updated.extend(replacement)
+                    changed = changed or lines[child_start:child_end] != replacement
+                else:
+                    changed = True
+                cursor = child_end
+            updated.extend(lines[cursor:])
+            return updated, changed
 
         trusted_proxy_lines = ["  trusted_proxies:"]
         trusted_proxy_lines.extend(f"    - {proxy}" for proxy in trusted_proxies)
