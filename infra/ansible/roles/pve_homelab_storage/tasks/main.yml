@@ -1,4 +1,9 @@
 ---
+- name: Install ACL tools for shared bind-mount permissions
+  ansible.builtin.apt:
+    name: acl
+    state: present
+
 - name: Configure homelab data filesystem
   ansible.builtin.shell: |
     set -eu
@@ -7,6 +12,7 @@
     mount_path="{{ homelab_data_mount }}"
     tmp_mount="/mnt/{{ homelab_data_lv_name }}-init"
     permissions_marker="${mount_path}/.homelab-permissions-initialized"
+    public_qbt_acl_marker="${mount_path}/.homelab-public-qbittorrent-acl-v1"
 
     if [ ! -e "${lv_path}" ]; then
       lvcreate -V "{{ homelab_data_lv_size }}" -T pve/data -n "{{ homelab_data_lv_name }}"
@@ -63,6 +69,16 @@
       changed=1
     else
       echo "permissions_changed=0"
+    fi
+
+    if [ ! -e "${public_qbt_acl_marker}" ] || [ "{{ homelab_data_reconcile_permissions | default(false) | lower }}" = "true" ]; then
+      setfacl -R -m "u:{{ homelab_container_uid_offset + service_uid }}:rwX,u:{{ homelab_container_uid_offset + downloads_service_uid }}:rwX" "${mount_path}/copyparty/public"
+      find "${mount_path}/copyparty/public" -type d -exec setfacl -m "d:u:{{ homelab_container_uid_offset + service_uid }}:rwx,d:u:{{ homelab_container_uid_offset + downloads_service_uid }}:rwx" {} +
+      touch "${public_qbt_acl_marker}"
+      echo "public_qbittorrent_acl_changed=1"
+      changed=1
+    else
+      echo "public_qbittorrent_acl_changed=0"
     fi
 
     if [ "${changed}" -eq 1 ]; then

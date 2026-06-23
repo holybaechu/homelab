@@ -17,7 +17,7 @@ ProtectHome=true
 ProtectSystem=full
 RestrictSUIDSGID=true
 LockPersonality=true
-ReadWritePaths=/var/lib/qbittorrent {{ downloads_mount_path }}
+ReadWritePaths=/var/lib/qbittorrent {{ downloads_mount_path }} {{ copyparty_public_mount_path }}
 
 [Install]
 WantedBy=multi-user.target
