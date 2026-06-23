@@ -1,6 +1,7 @@
 # renovate: datasource=github-releases depName=AdguardTeam/AdGuardHome versioning=semver extractVersion=^v(?<version>.*)$
 adguard_version: "v0.107.77"
 adguard_arch: "linux_amd64"
+adguard_sha256: 9d77af61881fbcef04ba50d53fa80af16ce8dd9b02fdb4faea154b741d08c72b
 adguard_install_dir: /opt/adguardhome
 adguard_work_dir: /opt/adguardhome/work
 adguard_conf_dir: /opt/adguardhome/conf

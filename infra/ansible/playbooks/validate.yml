@@ -1,4 +1,25 @@
 ---
+- name: Validate Proxmox LXC root-only settings
+  hosts: pve_hosts
+  gather_facts: false
+  tasks:
+    - name: Validate root-only LXC settings match inventory
+      ansible.builtin.shell: |
+        set -eu
+        config="$(pct config "{{ item.vmid }}")"
+        {% for setting in item.settings %}
+        if ! printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
+          printf 'Missing {{ setting.description }} on {{ item.name }} ({{ item.vmid }})\n' >&2
+          exit 1
+        fi
+        {% endfor %}
+      args:
+        executable: /bin/sh
+      changed_when: false
+      loop: "{{ pve_lxc_root_options }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.vmid }})"
+
 - name: Validate edge
   hosts: svc_edge
   gather_facts: false

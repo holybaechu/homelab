@@ -43,6 +43,8 @@ def test_caddy_build_is_reproducible_and_version_sensitive():
     assert "--output {{ caddy_build_output }}" in tasks
     assert "creates: \"{{ caddy_build_output }}\"" in tasks
     assert "xcaddy-{{ xcaddy_version }}.stamp" in tasks
+    assert "GOSUMDB: sum.golang.org" in tasks
+    assert "GONOSUMDB: \"\"" in tasks
     assert "creates: /tmp/caddy" not in tasks
 
 

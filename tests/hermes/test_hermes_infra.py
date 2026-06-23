@@ -59,7 +59,7 @@ def test_hermes_inventory_is_debian_host_and_role_group():
 def test_hermes_all_group_vars_define_ip_ids_bootstrap_and_mounts():
     all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
 
-    assert re.search(r"^hermes_ip: 192\.168\.0\.9$", all_vars, re.MULTILINE)
+    assert re.search(r"^hermes_ip: \"\{\{ hostvars\['hermes'\]\.ansible_host \}\}\"$", all_vars, re.MULTILINE)
     assert re.search(r"^hermes_service_uid: 1200$", all_vars, re.MULTILINE)
     assert re.search(r"^hermes_service_gid: 1200$", all_vars, re.MULTILINE)
     assert "  - vmid: 116\n    name: hermes\n    os_family: debian" in all_vars

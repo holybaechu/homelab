@@ -30,9 +30,9 @@ def test_adguard_nftables_allows_ssh_and_limits_dns_service_ports():
     )
 
 
-def test_adguard_nftables_limits_admin_http_to_edge_and_tailnet():
+def test_adguard_nftables_limits_plain_admin_http_to_edge_only():
     rendered = render_adguard_nftables()
 
     assert "ip saddr 192.168.0.4 tcp dport 80 accept" in rendered
-    assert "ip saddr 100.64.0.0/10 tcp dport 80 accept" in rendered
+    assert "ip saddr 100.64.0.0/10 tcp dport 80 accept" not in rendered
     assert "tcp dport 80 reject" in rendered

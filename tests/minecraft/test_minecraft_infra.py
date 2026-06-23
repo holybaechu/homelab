@@ -57,5 +57,5 @@ def test_minecraft_inventory_is_debian_host_and_role_group():
 def test_minecraft_ip_and_bootstrap_are_in_all_group_vars():
     all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
 
-    assert re.search(r"^minecraft_ip: 192\.168\.0\.8$", all_vars, re.MULTILINE)
+    assert re.search(r"^minecraft_ip: \"\{\{ hostvars\['minecraft'\]\.ansible_host \}\}\"$", all_vars, re.MULTILINE)
     assert "  - vmid: 115\n    name: minecraft\n    os_family: debian" in all_vars

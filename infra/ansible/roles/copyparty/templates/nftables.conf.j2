@@ -25,14 +25,9 @@ table inet filter {
     } ip6 hoplimit 255 accept
 
     ip saddr { {{ homelab_lan_cidr }}, {{ homelab_tailscale_cidr }} } tcp dport 22 accept
-    ip saddr { {{ homelab_lan_cidr }}, {{ homelab_tailscale_cidr }} } udp dport {{ adguard_dns_port }} accept
-    ip saddr { {{ homelab_lan_cidr }}, {{ homelab_tailscale_cidr }} } tcp dport {{ adguard_dns_port }} accept
-    ip saddr { {{ homelab_lan_cidr }}, {{ homelab_tailscale_cidr }} } tcp dport {{ adguard_dot_port }} accept
-    ip saddr { {{ homelab_lan_cidr }}, {{ homelab_tailscale_cidr }} } udp dport {{ adguard_dot_port }} accept
-    ip saddr {{ edge_ip }} tcp dport {{ adguard_https_port }} accept
-
-    ip saddr {{ edge_ip }} tcp dport {{ adguard_admin_port }} accept
-    tcp dport {{ adguard_admin_port }} reject
+    ip saddr {{ edge_ip }} tcp dport {{ copyparty_listen_port }} accept
+    ip saddr {{ homelab_tailscale_cidr }} tcp dport {{ copyparty_listen_port }} accept
+    tcp dport {{ copyparty_listen_port }} reject
   }
 
   chain forward {

@@ -4,45 +4,16 @@
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
-from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2]
-TOPOLOGY = ROOT / "infra" / "opentofu" / "envs" / "prod" / "containers.auto.tfvars"
+from homelab_topology import ROOT, load_containers, service_names
+
 INVENTORY = ROOT / "infra" / "ansible" / "inventory" / "prod" / "hosts.yml"
-SERVICE_ORDER = ["edge", "dns", "tailnet", "downloads", "files", "minecraft", "hermes"]
 
 
-def _parse_value(body: str, key: str) -> str:
-    match = re.search(rf'^\s*{key}\s*=\s*"?([^"\n]+)"?\s*$', body, re.MULTILINE)
-    if not match:
-        raise ValueError(f"missing {key} in container block")
-    return match.group(1)
-
-
-def load_containers(path: Path = TOPOLOGY) -> dict[str, dict[str, Any]]:
-    text = path.read_text(encoding="utf-8")
-    containers: dict[str, dict[str, Any]] = {}
-    for match in re.finditer(
-        r"^\s{2}([a-z0-9_-]+)\s*=\s*\{(.*?)^\s{2}\}",
-        text,
-        re.MULTILINE | re.DOTALL,
-    ):
-        name, body = match.groups()
-        containers[name] = {
-            "hostname": _parse_value(body, "hostname"),
-            "os_type": _parse_value(body, "os_type"),
-            "ip_address": _parse_value(body, "ip_address").split("/", 1)[0],
-        }
-    missing = [name for name in SERVICE_ORDER if name not in containers]
-    if missing:
-        raise ValueError(f"missing containers: {', '.join(missing)}")
-    return containers
-
-
-def render_inventory(containers: dict[str, dict[str, Any]]) -> str:
+def render_inventory(containers: dict[str, dict[str, object]]) -> str:
+    names = service_names(containers)
     lines = [
         "all:",
         "  vars:",
@@ -55,10 +26,10 @@ def render_inventory(containers: dict[str, dict[str, Any]]) -> str:
     ]
     for os_type in ("alpine", "debian"):
         lines += [f"    {os_type}:", "      hosts:"]
-        for name in SERVICE_ORDER:
+        for name in names:
             if containers[name]["os_type"] == os_type:
                 lines += [f"        {name}:", f"          ansible_host: {containers[name]['ip_address']}"]
-    for name in SERVICE_ORDER:
+    for name in names:
         lines += [f"    svc_{name}:", "      hosts:", f"        {name}:"]
     return "\n".join(lines) + "\n"
 
