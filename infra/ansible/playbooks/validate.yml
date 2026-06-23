@@ -54,7 +54,7 @@
           set -eu
           headers="$(curl -fsSI --http1.1 --resolve "adguard.home.hchu.me:443:{{ edge_ip }}" https://adguard.home.hchu.me/login.html)"
           printf '%s\n' "$headers" | grep -F "HTTP/1.1 200"
-          printf '%s\n' "$headers" | grep -F "Via: 1.1 Caddy"
+          printf '%s\n' "$headers" | grep -Fi "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload"
         executable: /bin/sh
       changed_when: false
 
