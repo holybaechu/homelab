@@ -22,9 +22,9 @@
 
 ## Encrypted DNS Cutover
 
-1. Forward TCP `853` to `192.168.0.3` only if public DoT is required.
-2. Forward UDP `853` to `192.168.0.3` only if public DoQ is required.
-3. Confirm AdGuard has a valid `dns.hchu.me` certificate.
+1. Do not publish a public DoH endpoint.
+2. Keep AdGuard encrypted DNS ports private to LAN/Tailscale unless public DoT/DoQ is intentionally re-enabled later.
+3. Confirm AdGuard has a valid `adguard.home.hchu.me` certificate for private HTTPS upstreams.
 
 ## Downloads Cutover
 

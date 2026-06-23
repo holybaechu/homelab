@@ -232,7 +232,7 @@
   no_log: true
   notify: Restart adguardhome
 
-- name: Update AdGuard trusted proxies and DNS filters in existing config
+- name: Update AdGuard DNS, TLS, trusted proxies, and filters in existing config
   ansible.builtin.command:
     argv:
       - python3
@@ -245,9 +245,23 @@
         path = Path(sys.argv[1])
         trusted_proxies = json.loads(sys.argv[2])
         dns_filters = json.loads(sys.argv[3])
+        upstream_dns = json.loads(sys.argv[4])
+        bootstrap_dns = json.loads(sys.argv[5])
+        fallback_dns = json.loads(sys.argv[6])
+        tls_config = json.loads(sys.argv[7])
 
         def yaml_quote(value):
             return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+        def yaml_scalar(value):
+            if isinstance(value, bool):
+                return str(value).lower()
+            return str(value)
+
+        def nested_list_lines(key, values):
+            lines = [f"  {key}:"]
+            lines.extend(f"    - {value}" for value in values)
+            return lines
 
         def replace_top_level_block(lines, key, replacement):
             marker = f"{key}:"
@@ -307,6 +321,23 @@
         trusted_proxy_lines = ["  trusted_proxies:"]
         trusted_proxy_lines.extend(f"    - {proxy}" for proxy in trusted_proxies)
 
+        upstream_dns_lines = nested_list_lines("upstream_dns", upstream_dns)
+        bootstrap_dns_lines = nested_list_lines("bootstrap_dns", bootstrap_dns)
+        fallback_dns_lines = nested_list_lines("fallback_dns", fallback_dns)
+
+        tls_lines = ["tls:"]
+        for key in (
+            "enabled",
+            "server_name",
+            "force_https",
+            "port_https",
+            "port_dns_over_tls",
+            "port_dns_over_quic",
+            "certificate_path",
+            "private_key_path",
+        ):
+            tls_lines.append(f"  {key}: {yaml_scalar(tls_config[key])}")
+
         filter_lines = ["filters:"]
         for dns_filter in dns_filters:
             enabled = str(dns_filter.get("enabled", True)).lower()
@@ -325,6 +356,14 @@
             lines, "dns", "trusted_proxies", trusted_proxy_lines
         )
         changed = changed or block_changed
+        lines, block_changed = replace_nested_block(lines, "dns", "upstream_dns", upstream_dns_lines)
+        changed = changed or block_changed
+        lines, block_changed = replace_nested_block(lines, "dns", "bootstrap_dns", bootstrap_dns_lines)
+        changed = changed or block_changed
+        lines, block_changed = replace_nested_block(lines, "dns", "fallback_dns", fallback_dns_lines)
+        changed = changed or block_changed
+        lines, block_changed = replace_top_level_block(lines, "tls", tls_lines)
+        changed = changed or block_changed
         lines, block_changed = replace_top_level_block(lines, "filters", filter_lines)
         changed = changed or block_changed
 
@@ -336,9 +375,23 @@
       - "{{ adguard_conf_dir }}/AdGuardHome.yaml"
       - "{{ adguard_trusted_proxies | to_json }}"
       - "{{ adguard_dns_filters | to_json }}"
+      - "{{ adguard_upstream_dns | to_json }}"
+      - "{{ adguard_bootstrap_dns | to_json }}"
+      - "{{ adguard_fallback_dns | to_json }}"
+      - "{{ adguard_tls_config | to_json }}"
   register: adguard_proxy_filter_config
   changed_when: adguard_proxy_filter_config.stdout == "changed"
   notify: Restart adguardhome
+  vars:
+    adguard_tls_config:
+      enabled: true
+      server_name: "{{ adguard_cert_domain }}"
+      force_https: false
+      port_https: "{{ adguard_https_port }}"
+      port_dns_over_tls: "{{ adguard_dot_port }}"
+      port_dns_over_quic: "{{ adguard_dot_port }}"
+      certificate_path: "{{ adguard_tls_dir }}/fullchain.pem"
+      private_key_path: "{{ adguard_tls_dir }}/privkey.pem"
 
 - name: Install AdGuard OpenRC service
   ansible.builtin.template:

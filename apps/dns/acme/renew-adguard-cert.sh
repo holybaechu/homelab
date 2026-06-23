@@ -3,7 +3,7 @@ set -eu
 
 export CF_DNS_API_TOKEN="${CLOUDFLARE_ADGUARD_ACME_TOKEN}"
 
-DOMAIN="${ADGUARD_CERT_DOMAIN:-dns.hchu.me}"
+DOMAIN="${ADGUARD_CERT_DOMAIN:-adguard.home.hchu.me}"
 CERT_DIR="${ADGUARD_TLS_DIR:-/opt/adguardhome/tls}"
 TLS_GROUP="${ADGUARD_TLS_GROUP:-homelab}"
 LEGO_PATH="${LEGO_PATH:-/var/lib/lego}"
