@@ -39,7 +39,6 @@
 }
 
 copyparty.hchu.me {
-	import private_only
 	import secure_headers
 	reverse_proxy 192.168.0.7:3923
 }
