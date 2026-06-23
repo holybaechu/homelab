@@ -102,12 +102,9 @@ def test_downloads_routes_only_qbittorrent_through_vpn():
 
     assert "apt_bypass_vpn" not in downloads_vars
     assert "apt_bypass_vpn" not in common_debian
-    assert "Migrate active downloads WireGuard away from host-wide VPN before package installs" in common_debian
-    assert common_debian.index("Migrate active downloads WireGuard away from host-wide VPN before package installs") < common_debian.index("Install Debian base packages")
-    assert "wg show \"${interface}\" fwmark" in common_debian
-    assert "not from all fwmark" in common_debian
-    assert "suppress_prefixlength 0" in common_debian
-    assert "uidrange \"${qbt_uid}-${qbt_uid}\" lookup \"${table}\"" in common_debian
+    assert "Migrate active downloads WireGuard away from host-wide VPN before package installs" not in common_debian
+    assert "not from all fwmark" not in common_debian
+    assert "suppress_prefixlength 0" not in common_debian
     assert "proton_wireguard_table: 51820" in downloads_vars
     assert "proton_wireguard_rule_priority: 100" in downloads_vars
     assert "Table = off" in wg_config
