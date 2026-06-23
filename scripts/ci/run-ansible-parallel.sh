@@ -13,8 +13,9 @@ fi
 mode="$1"
 shift
 
-inventory="infra/ansible/inventory/prod/hosts.yml"
-TARGETS="edge:svc_edge dns:svc_dns tailnet:svc_tailnet downloads:svc_downloads files:svc_files minecraft:svc_minecraft hermes:svc_hermes"
+repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+inventory="${repo_root}/infra/ansible/inventory/prod/hosts.yml"
+TARGETS="$(python3 "${repo_root}/scripts/ci/render_ansible_targets.py")"
 
 case "${mode}" in
   site)
@@ -29,6 +30,10 @@ case "${mode}" in
     ;;
 esac
 
+if [ "$mode" = "validate" ]; then
+  TARGETS="pve:pve_hosts ${TARGETS}"
+fi
+
 log_dir="$(mktemp -d)"
 pid_file="${log_dir}/pids"
 : > "${pid_file}"
@@ -42,7 +47,7 @@ for entry in ${TARGETS}; do
   target="${entry%%:*}"
   limit="${entry#*:}"
   (
-    ansible-playbook       -i "${inventory}"       "${playbook}"       --limit "${limit}"       "$@"
+    ansible-playbook       -i "${inventory}"       "${repo_root}/${playbook}"       --limit "${limit}"       "$@"
   ) > "${log_dir}/${target}.log" 2>&1 &
   printf '%s %s
 ' "$!" "${target}" >> "${pid_file}"

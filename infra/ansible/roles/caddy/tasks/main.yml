@@ -12,6 +12,9 @@
   ansible.builtin.command:
     cmd: "go install github.com/caddyserver/xcaddy/cmd/xcaddy@{{ xcaddy_version }}"
     creates: "/root/go/bin/xcaddy-{{ xcaddy_version }}.stamp"
+  environment:
+    GOSUMDB: sum.golang.org
+    GONOSUMDB: ""
 
 - name: Stamp xcaddy version
   ansible.builtin.copy:
@@ -31,6 +34,9 @@
     cmd: "/root/go/bin/xcaddy build {{ caddy_version }} --with {{ caddy_cloudflare_module }} --output {{ caddy_build_output }}"
     chdir: /tmp
     creates: "{{ caddy_build_output }}"
+  environment:
+    GOSUMDB: sum.golang.org
+    GONOSUMDB: ""
 
 - name: Install Caddy binary
   ansible.builtin.copy:

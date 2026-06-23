@@ -23,3 +23,16 @@
     shell: /usr/sbin/nologin
     create_home: false
     state: present
+
+- name: Configure Debian SSH hardening
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?{{ item.split()[0] }}\s+'
+    line: "{{ item }}"
+    validate: /usr/sbin/sshd -t -f %s
+  loop:
+    - PasswordAuthentication no
+    - KbdInteractiveAuthentication no
+    - ChallengeResponseAuthentication no
+    - PermitRootLogin prohibit-password
+  notify: Restart Debian ssh

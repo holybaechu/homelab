@@ -141,6 +141,7 @@ def test_adguard_role_uses_versioned_download_and_extract_paths():
     ).read_text(encoding="utf-8")
 
     assert 'dest: "/tmp/AdGuardHome_{{ adguard_version }}_{{ adguard_arch }}.tar.gz"' in tasks
+    assert 'checksum: "sha256:{{ adguard_sha256 }}"' in tasks
     assert 'path: "/tmp/AdGuardHome-{{ adguard_version }}"' in tasks
     assert 'src: "/tmp/AdGuardHome_{{ adguard_version }}_{{ adguard_arch }}.tar.gz"' in tasks
     assert 'creates: "/tmp/AdGuardHome-{{ adguard_version }}/AdGuardHome/AdGuardHome"' in tasks
@@ -223,6 +224,21 @@ def test_adguard_config_updater_collapses_existing_duplicate_fallback_dns(tmp_pa
     assert "  pending_requests:\n    enabled: true" in updated
 
 
+def test_adguard_release_checksum_is_pinned_in_inventory():
+    dns_vars = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "inventory"
+        / "prod"
+        / "group_vars"
+        / "svc_dns.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "adguard_sha256: 9d77af61881fbcef04ba50d53fa80af16ce8dd9b02fdb4faea154b741d08c72b" in dns_vars
+
+
+
 def test_adguard_role_hashes_plaintext_admin_password():
     tasks = (
         REPO_ROOT
@@ -266,7 +282,7 @@ def test_adguard_role_limits_plain_http_admin_ui_with_nftables():
     assert "Install AdGuard nftables config" in tasks
     assert "Enable AdGuard nftables" in tasks
     assert "ip saddr {{ edge_ip }} tcp dport {{ adguard_admin_port }} accept" in nftables
-    assert "ip saddr {{ homelab_tailscale_cidr }} tcp dport {{ adguard_admin_port }} accept" in nftables
+    assert "ip saddr {{ homelab_tailscale_cidr }} tcp dport {{ adguard_admin_port }} accept" not in nftables
     assert "tcp dport {{ adguard_admin_port }} reject" in nftables
 
 

@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from homelab_topology import expected_lxc_count
+
 LXC_RESOURCE_SUFFIX = ".proxmox_virtual_environment_container.this"
 
 
@@ -56,6 +58,13 @@ def _create_only_lxc_changes(plan: dict[str, Any]) -> list[str]:
     return create_only
 
 
+def _expected_lxc_count() -> int:
+    configured = os.environ.get("TOFU_EXPECTED_LXC_COUNT")
+    if configured:
+        return int(configured)
+    return expected_lxc_count()
+
+
 def main(argv: list[str]) -> int:
     plan = _load_plan(argv)
     destructive = _destructive_changes(plan)
@@ -77,8 +86,8 @@ def main(argv: list[str]) -> int:
         return 1
 
     create_only_lxcs = _create_only_lxc_changes(plan)
-    expected_lxc_count = int(os.environ.get("TOFU_EXPECTED_LXC_COUNT", "7"))
-    if len(create_only_lxcs) >= expected_lxc_count and not _truthy(
+    expected_lxcs = _expected_lxc_count()
+    if len(create_only_lxcs) >= expected_lxcs and not _truthy(
         os.environ.get("ALLOW_EMPTY_STATE_BOOTSTRAP")
     ):
         print("OpenTofu plan appears to be a create-only LXC bootstrap plan:", file=sys.stderr)

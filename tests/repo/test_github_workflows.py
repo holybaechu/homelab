@@ -65,16 +65,30 @@ def test_cd_workflow_parallelizes_service_deploy_and_validate():
     assert "ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/validate.yml" not in workflow
 
 
-def test_parallel_ansible_runner_limits_each_service_and_waits_for_failures():
+def test_parallel_ansible_runner_derives_service_targets_from_topology():
     runner = (REPO_ROOT / "scripts" / "ci" / "run-ansible-parallel.sh").read_text(
         encoding="utf-8"
     )
+    target_renderer = (REPO_ROOT / "scripts" / "ci" / "render_ansible_targets.py").read_text(
+        encoding="utf-8"
+    )
 
-    assert 'TARGETS="edge:svc_edge dns:svc_dns tailnet:svc_tailnet downloads:svc_downloads files:svc_files minecraft:svc_minecraft hermes:svc_hermes"' in runner
+    assert "scripts/ci/render_ansible_targets.py" in runner
+    assert 'TARGETS="edge:svc_edge dns:svc_dns tailnet:svc_tailnet downloads:svc_downloads files:svc_files minecraft:svc_minecraft hermes:svc_hermes"' not in runner
     assert '--limit "${limit}"' in runner
     assert " &" in runner
     assert "wait" in runner
     assert "failed=1" in runner
+    assert "load_containers" in target_renderer
+
+
+def test_parallel_validate_runner_includes_pve_drift_validation_target():
+    runner = (REPO_ROOT / "scripts" / "ci" / "run-ansible-parallel.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'TARGETS="pve:pve_hosts ${TARGETS}"' in runner
+    assert 'mode" = "validate"' in runner
 
 
 def test_cd_workflow_configures_remote_tofu_state():

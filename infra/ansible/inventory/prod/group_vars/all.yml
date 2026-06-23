@@ -4,13 +4,13 @@ homelab_lan_cidr: 192.168.0.0/24
 homelab_tailscale_cidr: 100.64.0.0/10
 homelab_timezone: Asia/Seoul
 
-edge_ip: 192.168.0.4
-dns_ip: 192.168.0.3
-tailnet_ip: 192.168.0.5
-downloads_ip: 192.168.0.6
-files_ip: 192.168.0.7
-minecraft_ip: 192.168.0.8
-hermes_ip: 192.168.0.9
+edge_ip: "{{ hostvars['edge'].ansible_host }}"
+dns_ip: "{{ hostvars['dns'].ansible_host }}"
+tailnet_ip: "{{ hostvars['tailnet'].ansible_host }}"
+downloads_ip: "{{ hostvars['downloads'].ansible_host }}"
+files_ip: "{{ hostvars['files'].ansible_host }}"
+minecraft_ip: "{{ hostvars['minecraft'].ansible_host }}"
+hermes_ip: "{{ hostvars['hermes'].ansible_host }}"
 
 service_user: homelab
 service_group: homelab

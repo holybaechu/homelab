@@ -6,6 +6,7 @@
       - py3-pip
       - py3-virtualenv
       - ffmpeg
+      - nftables
     update_cache: true
     state: present
 
@@ -68,6 +69,22 @@
     mode: "0600"
   no_log: true
   notify: Restart copyparty
+
+- name: Install Copyparty nftables config
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.nft
+    owner: root
+    group: root
+    mode: "0600"
+    validate: nft -c -f %s
+  notify: Restart copyparty nftables
+
+- name: Enable Copyparty nftables
+  ansible.builtin.service:
+    name: nftables
+    enabled: true
+    state: started
 
 - name: Install Copyparty OpenRC service
   ansible.builtin.template:
