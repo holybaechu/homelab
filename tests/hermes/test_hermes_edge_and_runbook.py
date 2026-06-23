@@ -107,6 +107,8 @@ def test_hermes_runbook_documents_discord_gateway_web_search_and_fresh_lxc_rebui
     assert "FIRECRAWL_API_KEY" in runbook
     assert "search_backend: parallel" in runbook
     assert "extract_backend: firecrawl" in runbook
+    assert "threshold: 0.85" in runbook
+    assert "codex_gpt55_autoraise: false" in runbook
     assert "rebuild_hermes_lxc" not in runbook
     assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' not in runbook
     assert "/workspace" in runbook

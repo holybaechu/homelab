@@ -136,6 +136,23 @@ def test_hermes_role_configures_parallel_search_and_firecrawl_extract():
     assert configure_task["notify"] == "Restart hermes-gateway"
 
 
+def test_hermes_role_configures_compression_threshold_and_codex_gpt55_autoraise():
+    group_vars = read_yaml("infra/ansible/inventory/prod/group_vars/svc_hermes.yml")
+    script = read("infra/ansible/roles/hermes/templates/hermes-configure-runtime.py.j2")
+
+    assert group_vars["hermes_compression_threshold"] == 0.85
+    assert group_vars["hermes_compression_codex_gpt55_autoraise"] is False
+
+    assert "DESIRED_COMPRESSION_THRESHOLD" in script
+    assert "DESIRED_CODEX_GPT55_AUTORAISE" in script
+    assert 'runtime_compression = ensure_dict(config, "compression")' in script
+    assert 'runtime_compression["threshold"] = DESIRED_COMPRESSION_THRESHOLD' in script
+    assert (
+        'runtime_compression["codex_gpt55_autoraise"] = '
+        'DESIRED_CODEX_GPT55_AUTORAISE'
+    ) in script
+
+
 def test_hermes_role_requires_persistent_bind_mounts_before_writing_state():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
 
