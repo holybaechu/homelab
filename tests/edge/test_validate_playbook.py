@@ -17,7 +17,10 @@ def test_validate_playbook_checks_adguard_webui_uses_caddy_tls_route():
 
     assert '--resolve "adguard.home.hchu.me:443:{{ edge_ip }}"' in validate
     assert "https://adguard.home.hchu.me/login.html" in validate
-    assert "Via: 1.1 Caddy" in validate
+    assert (
+        "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload"
+        in validate
+    )
 
 
 def test_validate_playbook_checks_private_home_dns_rewrite():
