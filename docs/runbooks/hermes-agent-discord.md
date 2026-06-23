@@ -30,6 +30,18 @@ web:
 
 That gives Hermes Parallel-backed search results and Firecrawl-backed page extraction/scraping. The runtime config helper preserves the existing model/provider settings while enforcing these web backend settings.
 
+## Context compression
+
+The runtime config helper also enforces Hermes' global context-compression behavior:
+
+```yaml
+compression:
+  threshold: 0.85
+  codex_gpt55_autoraise: false
+```
+
+This keeps the general compaction trigger at 85% and disables the Codex gpt-5.5 route-specific autoraise override, so the deployed gateway follows the tracked repo setting instead of an operator-only live edit.
+
 ## Discord setup
 
 1. Create a Discord application and bot in the Discord Developer Portal.

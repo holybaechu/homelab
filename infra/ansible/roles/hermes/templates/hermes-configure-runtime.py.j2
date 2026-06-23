@@ -9,6 +9,8 @@ import yaml
 
 CONFIG_PATH = Path("{{ hermes_home }}/config.yaml")
 DESIRED_COMPRESSION_PROVIDER = "{{ hermes_auxiliary_compression_provider }}"
+DESIRED_COMPRESSION_THRESHOLD = {{ hermes_compression_threshold | float }}
+DESIRED_CODEX_GPT55_AUTORAISE = {{ (hermes_compression_codex_gpt55_autoraise | bool) | ternary('True', 'False') }}
 DESIRED_WEB_SEARCH_BACKEND = "{{ hermes_web_search_backend }}"
 DESIRED_WEB_EXTRACT_BACKEND = "{{ hermes_web_extract_backend }}"
 SERVICE_USER = "{{ hermes_user }}"
@@ -37,6 +39,7 @@ def main():
 
     auxiliary = ensure_dict(config, "auxiliary")
     compression = ensure_dict(auxiliary, "compression")
+    runtime_compression = ensure_dict(config, "compression")
     web = ensure_dict(config, "web")
 
     changed = False
@@ -45,6 +48,16 @@ def main():
         changed = True
     if compression.get("model") != "":
         compression["model"] = ""
+        changed = True
+
+    if runtime_compression.get("threshold") != DESIRED_COMPRESSION_THRESHOLD:
+        runtime_compression["threshold"] = DESIRED_COMPRESSION_THRESHOLD
+        changed = True
+    if (
+        runtime_compression.get("codex_gpt55_autoraise")
+        != DESIRED_CODEX_GPT55_AUTORAISE
+    ):
+        runtime_compression["codex_gpt55_autoraise"] = DESIRED_CODEX_GPT55_AUTORAISE
         changed = True
 
     if web.get("search_backend") != DESIRED_WEB_SEARCH_BACKEND:
