@@ -18,11 +18,14 @@ def render_adguard_config():
     return template.render(
         adguard_admin_password_hash="hash",
         adguard_admin_username="holybaechu",
-        adguard_cert_domain="dns.hchu.me",
+        adguard_cert_domain="adguard.home.hchu.me",
         adguard_dns_port=53,
         adguard_dot_port=853,
         adguard_https_port=443,
         adguard_admin_port=80,
+        adguard_upstream_dns=["tls://1.1.1.1", "tls://1.0.0.1"],
+        adguard_bootstrap_dns=["1.1.1.1", "1.0.0.1"],
+        adguard_fallback_dns=["1.1.1.1", "1.0.0.1"],
         adguard_tls_dir="/opt/adguardhome/tls",
         adguard_work_dir="/opt/adguardhome/work",
         adguard_trusted_proxies=["192.168.0.4/32"],
@@ -43,7 +46,7 @@ def test_adguard_baseline_config_uses_current_schema_for_bootstrap_dns():
     rendered = render_adguard_config()
 
     assert "schema_version: 34" in rendered
-    assert "bootstrap_dns:\n    - 1.1.1.1\n    - 9.9.9.9" in rendered
+    assert "bootstrap_dns:\n    - 1.1.1.1\n    - 1.0.0.1" in rendered
     assert "bootstrap_dns:\n    - - 1.1.1.1" not in rendered
 
 
@@ -90,3 +93,21 @@ def test_adguard_uses_hagezi_pro_blocklist_instead_of_default_filter():
     assert "id: 48" in rendered
     assert "AdGuard DNS filter" not in rendered
     assert "filter_1.txt" not in rendered
+
+
+def test_adguard_baseline_config_does_not_enable_public_encrypted_dns():
+    rendered = render_adguard_config()
+
+    assert "server_name: dns.hchu.me" not in rendered
+    assert "server_name: adguard.home.hchu.me" in rendered
+    assert "certificate_path: /opt/adguardhome/tls/fullchain.pem" in rendered
+    assert "private_key_path: /opt/adguardhome/tls/privkey.pem" in rendered
+
+
+def test_adguard_uses_cloudflare_tls_upstreams_with_plain_dns_fallbacks():
+    rendered = render_adguard_config()
+
+    assert "upstream_dns:\n    - tls://1.1.1.1\n    - tls://1.0.0.1" in rendered
+    assert "fallback_dns:\n    - 1.1.1.1\n    - 1.0.0.1" in rendered
+    assert "https://dns10.quad9.net/dns-query" not in rendered
+    assert "https://cloudflare-dns.com/dns-query" not in rendered

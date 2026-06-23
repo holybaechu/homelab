@@ -47,7 +47,11 @@ copyparty.hchu.me {
 adguard.home.hchu.me {
 	import private_only
 	import secure_headers
-	reverse_proxy 192.168.0.3:80
+	reverse_proxy https://192.168.0.3:443 {
+		transport http {
+			tls_server_name adguard.home.hchu.me
+		}
+	}
 }
 
 qbt.home.hchu.me {
@@ -71,16 +75,4 @@ router.home.hchu.me {
 	import private_only
 	import router_headers
 	reverse_proxy http://192.168.0.1
-}
-
-dns.hchu.me {
-	import secure_headers
-	handle /dns-query {
-		reverse_proxy https://192.168.0.3:443 {
-			transport http {
-				tls_server_name dns.hchu.me
-			}
-		}
-	}
-	respond 404
 }

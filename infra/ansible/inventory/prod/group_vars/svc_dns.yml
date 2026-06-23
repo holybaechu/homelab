@@ -5,13 +5,22 @@ adguard_install_dir: /opt/adguardhome
 adguard_work_dir: /opt/adguardhome/work
 adguard_conf_dir: /opt/adguardhome/conf
 adguard_tls_dir: /opt/adguardhome/tls
-adguard_cert_domain: dns.hchu.me
+adguard_cert_domain: adguard.home.hchu.me
 adguard_admin_username: admin
 adguard_admin_port: 80
 adguard_https_port: 443
 adguard_dns_port: 53
 adguard_dot_port: 853
 adguard_acme_interval_seconds: 43200
+adguard_upstream_dns:
+  - tls://1.1.1.1
+  - tls://1.0.0.1
+adguard_bootstrap_dns:
+  - 1.1.1.1
+  - 1.0.0.1
+adguard_fallback_dns:
+  - 1.1.1.1
+  - 1.0.0.1
 adguard_trusted_proxies:
   - 127.0.0.0/8
   - ::1/128

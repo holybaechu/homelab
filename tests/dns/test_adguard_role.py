@@ -180,7 +180,41 @@ def test_adguard_role_updates_trusted_proxies_and_filters_in_existing_config():
     assert "HaGeZi's Pro Blocklist" in dns_vars
     assert "filter_48.txt" in dns_vars
     assert "AdGuard DNS filter" not in dns_vars
-    assert "Update AdGuard trusted proxies and DNS filters in existing config" in tasks
+    assert "Update AdGuard DNS, TLS, trusted proxies, and filters in existing config" in tasks
     assert "adguard_trusted_proxies | to_json" in tasks
     assert "adguard_dns_filters | to_json" in tasks
+
+
+def test_adguard_role_updates_upstreams_fallbacks_and_tls_in_existing_config():
+    tasks = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "adguard"
+        / "tasks"
+        / "main.yml"
+    ).read_text(encoding="utf-8")
+    dns_vars = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "inventory"
+        / "prod"
+        / "group_vars"
+        / "svc_dns.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "adguard_upstream_dns:" in dns_vars
+    assert "  - tls://1.1.1.1" in dns_vars
+    assert "  - tls://1.0.0.1" in dns_vars
+    assert "adguard_fallback_dns:" in dns_vars
+    assert "adguard_bootstrap_dns:" in dns_vars
+    assert "adguard_upstream_dns | to_json" in tasks
+    assert "adguard_bootstrap_dns | to_json" in tasks
+    assert "adguard_fallback_dns | to_json" in tasks
+    assert "adguard_tls_config | to_json" in tasks
+    assert 'replace_nested_block(lines, "dns", "upstream_dns", upstream_dns_lines)' in tasks
+    assert 'replace_nested_block(lines, "dns", "fallback_dns", fallback_dns_lines)' in tasks
+    assert 'replace_top_level_block(lines, "tls", tls_lines)' in tasks
 

@@ -6,7 +6,8 @@ def test_caddyfile_is_tracked_and_uses_current_lxc_ips():
     content = caddyfile.read_text(encoding="utf-8")
 
     assert "reverse_proxy 192.168.0.7:3923" in content
-    assert "reverse_proxy 192.168.0.3:80" in content
+    assert "reverse_proxy https://192.168.0.3:443" in content
+    assert "reverse_proxy 192.168.0.3:80" not in content
     assert "reverse_proxy 192.168.0.6:8080" in content
     assert "reverse_proxy https://192.168.0.2:8006" in content
     assert "192.168.0.14" not in content
@@ -28,9 +29,8 @@ def test_proxmox_route_allows_same_origin_frames_for_web_shell():
 def test_router_route_omits_nosniff_for_mislabelled_flutter_assets():
     caddyfile = REPO_ROOT / "apps" / "edge" / "Caddyfile"
     content = caddyfile.read_text(encoding="utf-8")
-    router_block = content.split("router.home.hchu.me {", maxsplit=1)[1].split(
-        "dns.hchu.me {", maxsplit=1
-    )[0]
+    router_tail = content.split("router.home.hchu.me {", maxsplit=1)[1]
+    router_block = router_tail.split("dns.hchu.me {", maxsplit=1)[0]
 
     assert "(router_headers)" in content
     assert "import router_headers" in router_block
@@ -44,13 +44,21 @@ def test_router_route_omits_nosniff_for_mislabelled_flutter_assets():
     assert 'X-Frame-Options "DENY"' in router_headers
 
 
+def test_public_doh_route_is_not_exposed_by_edge():
+    content = (REPO_ROOT / "apps" / "edge" / "Caddyfile").read_text(encoding="utf-8")
+
+    assert "dns.hchu.me {" not in content
+    assert "handle /dns-query" not in content
+    assert "tls_server_name dns.hchu.me" not in content
+
+
 def test_copyparty_route_is_private_only_and_tls_upstreams_are_verified():
     content = (REPO_ROOT / "apps" / "edge" / "Caddyfile").read_text(encoding="utf-8")
     copyparty = content.split("copyparty.hchu.me {", maxsplit=1)[1].split("adguard.home.hchu.me {", maxsplit=1)[0]
 
     assert "import private_only" in copyparty
     assert "tls_insecure_skip_verify" not in content
-    assert "tls_server_name dns.hchu.me" in content
+    assert "tls_server_name adguard.home.hchu.me" in content
     assert "tls_server_name pve.home.hchu.me" in content
     assert "tls_trusted_ca_certs /etc/ssl/certs/homelab-pve-root-ca.pem" in content
 

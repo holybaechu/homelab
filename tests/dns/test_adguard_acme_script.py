@@ -8,6 +8,8 @@ def test_adguard_acme_script_is_noninteractive():
 
     assert "--accept-tos" in script
     assert "run || lego" not in script
+    assert "ADGUARD_CERT_DOMAIN:-adguard.home.hchu.me" in script
+    assert "ADGUARD_CERT_DOMAIN:-dns.hchu.me" not in script
 
 
 def test_adguard_acme_restart_failure_is_not_hidden_when_service_exists():

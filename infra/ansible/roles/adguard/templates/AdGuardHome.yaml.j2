@@ -34,11 +34,17 @@ dns:
   anonymize_client_ip: false
   ratelimit: 20
   upstream_dns:
-    - https://dns10.quad9.net/dns-query
-    - https://cloudflare-dns.com/dns-query
+{% for upstream in adguard_upstream_dns %}
+    - {{ upstream }}
+{% endfor %}
   bootstrap_dns:
-    - 1.1.1.1
-    - 9.9.9.9
+{% for bootstrap in adguard_bootstrap_dns %}
+    - {{ bootstrap }}
+{% endfor %}
+  fallback_dns:
+{% for fallback in adguard_fallback_dns %}
+    - {{ fallback }}
+{% endfor %}
   upstream_mode: load_balance
   cache_optimistic_answer_ttl: 30s
   cache_optimistic_max_age: 12h
