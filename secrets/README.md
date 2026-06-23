@@ -13,12 +13,16 @@ Expected encrypted values:
 - `qbittorrent_webui_password`
 - `hermes_discord_bot_token`
 - `hermes_discord_allowed_users`
+- `hermes_parallel_api_key`
+- `hermes_firecrawl_api_key`
 - `copyparty_users`, as a list of account objects with `name` and `password`
 - `adguard_admin_password`, as plaintext; the AdGuard role hashes it before writing the service config
 
 Non-secret deployment values:
 
 - `adguard_admin_username`, optional; defaults to `admin`
+
+GitHub Actions secret names for the Hermes web backends are `PARALLEL_API_KEY` and `FIRECRAWL_API_KEY`; the CD helper maps them to `hermes_parallel_api_key` and `hermes_firecrawl_api_key` for Ansible.
 
 Do not commit decrypted secret files.
 

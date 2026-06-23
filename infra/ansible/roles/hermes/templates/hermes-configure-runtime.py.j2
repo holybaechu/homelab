@@ -9,6 +9,8 @@ import yaml
 
 CONFIG_PATH = Path("{{ hermes_home }}/config.yaml")
 DESIRED_COMPRESSION_PROVIDER = "{{ hermes_auxiliary_compression_provider }}"
+DESIRED_WEB_SEARCH_BACKEND = "{{ hermes_web_search_backend }}"
+DESIRED_WEB_EXTRACT_BACKEND = "{{ hermes_web_extract_backend }}"
 SERVICE_USER = "{{ hermes_user }}"
 SERVICE_GROUP = "{{ hermes_group }}"
 
@@ -35,6 +37,7 @@ def main():
 
     auxiliary = ensure_dict(config, "auxiliary")
     compression = ensure_dict(auxiliary, "compression")
+    web = ensure_dict(config, "web")
 
     changed = False
     if compression.get("provider") != DESIRED_COMPRESSION_PROVIDER:
@@ -42,6 +45,16 @@ def main():
         changed = True
     if compression.get("model") != "":
         compression["model"] = ""
+        changed = True
+
+    if web.get("search_backend") != DESIRED_WEB_SEARCH_BACKEND:
+        web["search_backend"] = DESIRED_WEB_SEARCH_BACKEND
+        changed = True
+    if web.get("extract_backend") != DESIRED_WEB_EXTRACT_BACKEND:
+        web["extract_backend"] = DESIRED_WEB_EXTRACT_BACKEND
+        changed = True
+    if web.get("backend") != "":
+        web["backend"] = ""
         changed = True
 
     if not changed:

@@ -17,11 +17,13 @@ def find_task(tasks, name: str):
     return next(task for task in tasks if task.get("name") == name)
 
 
-def test_hermes_role_installs_native_gateway_without_webui_or_provider_keys():
+def test_hermes_role_installs_native_gateway_without_webui_or_model_provider_keys():
     tasks = read("infra/ansible/roles/hermes/tasks/main.yml")
 
     assert "hermes_discord_bot_token is defined" in tasks
     assert "hermes_discord_allowed_users is defined" in tasks
+    assert "hermes_parallel_api_key is defined" in tasks
+    assert "hermes_firecrawl_api_key is defined" in tasks
     assert "- bash" in tasks
     assert "python3-venv" in tasks
     assert "python3-pip" in tasks
@@ -98,7 +100,7 @@ def test_hermes_role_routes_auxiliary_compression_to_main_provider():
     assert template_task["ansible.builtin.template"]["dest"] == "{{ hermes_install_dir }}/configure-runtime.py"
     assert template_task["ansible.builtin.template"]["mode"] == "0755"
 
-    configure_task = find_task(tasks, "Configure Hermes auxiliary compression route")
+    configure_task = find_task(tasks, "Configure Hermes runtime settings")
     assert configure_task["ansible.builtin.command"]["cmd"] == (
         "{{ hermes_venv_path }}/bin/python "
         "{{ hermes_install_dir }}/configure-runtime.py"
@@ -115,6 +117,23 @@ def test_hermes_role_routes_auxiliary_compression_to_main_provider():
     assert 'compression["model"] = ""' in script
     assert "gpt-5.5" not in script
     assert "api_key" not in script
+
+
+def test_hermes_role_configures_parallel_search_and_firecrawl_extract():
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+    group_vars = read_yaml("infra/ansible/inventory/prod/group_vars/svc_hermes.yml")
+    script = read("infra/ansible/roles/hermes/templates/hermes-configure-runtime.py.j2")
+
+    assert group_vars["hermes_web_search_backend"] == "parallel"
+    assert group_vars["hermes_web_extract_backend"] == "firecrawl"
+
+    assert "DESIRED_WEB_SEARCH_BACKEND" in script
+    assert "DESIRED_WEB_EXTRACT_BACKEND" in script
+    assert 'web["search_backend"] = DESIRED_WEB_SEARCH_BACKEND' in script
+    assert 'web["extract_backend"] = DESIRED_WEB_EXTRACT_BACKEND' in script
+
+    configure_task = find_task(tasks, "Configure Hermes runtime settings")
+    assert configure_task["notify"] == "Restart hermes-gateway"
 
 
 def test_hermes_role_requires_persistent_bind_mounts_before_writing_state():
@@ -160,7 +179,7 @@ def test_hermes_role_enables_gateway_service_with_systemd():
     assert systemd["state"] == "started"
 
 
-def test_hermes_env_template_contains_discord_gateway_runtime_settings_only():
+def test_hermes_env_template_contains_discord_gateway_runtime_and_web_credentials():
     env_template = read("infra/ansible/roles/hermes/templates/hermes-gateway.env.j2")
 
     assert "HERMES_HOME={{ hermes_home | quote }}" in env_template
@@ -171,6 +190,8 @@ def test_hermes_env_template_contains_discord_gateway_runtime_settings_only():
     assert "DISCORD_ALLOWED_USERS={{ hermes_discord_allowed_users | quote }}" in env_template
     assert "DISCORD_REQUIRE_MENTION={{ hermes_discord_require_mention | string | lower | quote }}" in env_template
     assert "DISCORD_IGNORE_NO_MENTION={{ hermes_discord_ignore_no_mention | string | lower | quote }}" in env_template
+    assert "PARALLEL_API_KEY={{ hermes_parallel_api_key | quote }}" in env_template
+    assert "FIRECRAWL_API_KEY={{ hermes_firecrawl_api_key | quote }}" in env_template
     assert "HERMES_WEBUI" not in env_template
     assert "API_SERVER_KEY" not in env_template
     assert "OPENAI_API_KEY" not in env_template

@@ -106,6 +106,8 @@ jobs:
           QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
           HERMES_DISCORD_BOT_TOKEN: ${{ secrets.HERMES_DISCORD_BOT_TOKEN }}
           HERMES_DISCORD_ALLOWED_USERS: ${{ secrets.HERMES_DISCORD_ALLOWED_USERS }}
+          PARALLEL_API_KEY: ${{ secrets.PARALLEL_API_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
         run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
 
