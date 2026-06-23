@@ -122,6 +122,21 @@
     group: "{{ hermes_group }}"
     recurse: true
 
+- name: Install Hermes runtime configuration helper
+  ansible.builtin.template:
+    src: hermes-configure-runtime.py.j2
+    dest: "{{ hermes_install_dir }}/configure-runtime.py"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure Hermes auxiliary compression route
+  ansible.builtin.command:
+    cmd: "{{ hermes_venv_path }}/bin/python {{ hermes_install_dir }}/configure-runtime.py"
+  register: hermes_runtime_config
+  changed_when: hermes_runtime_config.stdout == "changed"
+  notify: Restart hermes-gateway
+
 - name: Install Hermes gateway environment
   ansible.builtin.template:
     src: hermes-gateway.env.j2

@@ -13,5 +13,7 @@ hermes_env_path: /etc/hermes-gateway.env
 hermes_agent_repo: https://github.com/NousResearch/hermes-agent.git
 hermes_agent_ref: 36ae958473b8530ffb1a395c4944b8cdbcae82fe
 
+hermes_auxiliary_compression_provider: main
+
 hermes_discord_require_mention: true
 hermes_discord_ignore_no_mention: true

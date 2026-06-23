@@ -83,6 +83,40 @@ def test_hermes_role_keeps_venv_writable_for_lazy_dependency_installs():
     assert agent_pip_index < ownership_index < service_index
 
 
+def test_hermes_role_routes_auxiliary_compression_to_main_provider():
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+    group_vars = read_yaml("infra/ansible/inventory/prod/group_vars/svc_hermes.yml")
+    script_path = REPO_ROOT / "infra/ansible/roles/hermes/templates/hermes-configure-runtime.py.j2"
+    assert script_path.exists()
+    script = script_path.read_text(encoding="utf-8")
+
+    assert group_vars["hermes_auxiliary_compression_provider"] == "main"
+    assert "hermes_auxiliary_compression_model" not in group_vars
+
+    template_task = find_task(tasks, "Install Hermes runtime configuration helper")
+    assert template_task["ansible.builtin.template"]["src"] == "hermes-configure-runtime.py.j2"
+    assert template_task["ansible.builtin.template"]["dest"] == "{{ hermes_install_dir }}/configure-runtime.py"
+    assert template_task["ansible.builtin.template"]["mode"] == "0755"
+
+    configure_task = find_task(tasks, "Configure Hermes auxiliary compression route")
+    assert configure_task["ansible.builtin.command"]["cmd"] == (
+        "{{ hermes_venv_path }}/bin/python "
+        "{{ hermes_install_dir }}/configure-runtime.py"
+    )
+    assert configure_task["changed_when"] == 'hermes_runtime_config.stdout == "changed"'
+    assert configure_task["notify"] == "Restart hermes-gateway"
+
+    configure_index = tasks.index(configure_task)
+    ownership_index = tasks.index(find_task(tasks, "Allow Hermes service to manage lazy venv deps"))
+    service_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
+    assert ownership_index < configure_index < service_index
+
+    assert "hermes_auxiliary_compression_provider" in script
+    assert 'compression["model"] = ""' in script
+    assert "gpt-5.5" not in script
+    assert "api_key" not in script
+
+
 def test_hermes_role_requires_persistent_bind_mounts_before_writing_state():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
 
