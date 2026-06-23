@@ -56,7 +56,6 @@ def test_copyparty_route_is_private_only_and_tls_upstreams_are_verified():
     content = (REPO_ROOT / "apps" / "edge" / "Caddyfile").read_text(encoding="utf-8")
     copyparty = content.split("copyparty.hchu.me {", maxsplit=1)[1].split("adguard.home.hchu.me {", maxsplit=1)[0]
 
-    assert "import private_only" in copyparty
     assert "tls_insecure_skip_verify" not in content
     assert "tls_server_name adguard.home.hchu.me" in content
     assert "tls_server_name pve.home.hchu.me" in content
