@@ -75,6 +75,43 @@ def test_qbittorrent_can_write_public_copyparty_share_for_seeding():
     assert '"${mount_path}/copyparty/public"' in storage_tasks
 
 
+def test_downloads_routes_only_qbittorrent_through_vpn():
+    site = (REPO_ROOT / "infra" / "ansible" / "playbooks" / "site.yml").read_text(encoding="utf-8")
+    downloads_vars = (REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "svc_downloads.yml").read_text(encoding="utf-8")
+    common_debian = (REPO_ROOT / "infra" / "ansible" / "roles" / "common_debian" / "tasks" / "main.yml").read_text(encoding="utf-8")
+    qbt_tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "qbittorrent" / "tasks" / "main.yml").read_text(encoding="utf-8")
+    qbt_config = (REPO_ROOT / "infra" / "ansible" / "roles" / "qbittorrent" / "templates" / "qBittorrent.conf.j2").read_text(encoding="utf-8")
+    nftables = (REPO_ROOT / "infra" / "ansible" / "roles" / "downloads_vpn" / "templates" / "nftables.conf.j2").read_text(encoding="utf-8")
+    wg_config = (REPO_ROOT / "infra" / "ansible" / "roles" / "downloads_vpn" / "templates" / "wg-proton.conf.j2").read_text(encoding="utf-8")
+    vpn_tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "downloads_vpn" / "tasks" / "main.yml").read_text(encoding="utf-8")
+
+    downloads_play = site.split("- name: Configure downloads LXC", maxsplit=1)[1].split("- name: Configure files LXC", maxsplit=1)[0]
+    assert downloads_play.index("- qbittorrent") < downloads_play.index("- downloads_vpn")
+
+    assert "apt_bypass_vpn" not in downloads_vars
+    assert "apt_bypass_vpn" not in common_debian
+    assert "proton_wireguard_table: 51820" in downloads_vars
+    assert "proton_wireguard_rule_priority: 100" in downloads_vars
+    assert "Table = off" in wg_config
+    assert "to {{ homelab_lan_cidr }} lookup main" in wg_config
+    assert "to {{ homelab_tailscale_cidr }} lookup main" in wg_config
+    assert "ip -4 route replace default dev %i table {{ proton_wireguard_table }}" in wg_config
+    assert "uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} lookup {{ proton_wireguard_table }}" in wg_config
+    assert "{{ proton_natpmp_gateway }}/32 dev %i" in wg_config
+    assert "ip -4 rule del priority {{ proton_wireguard_rule_priority }}" in wg_config
+
+    assert "Connection\\Interface={{ proton_wg_interface }}" in qbt_config
+    assert "meta skuid {{ qbittorrent_uid }} oifname \"{{ proton_wg_interface }}\" accept" in nftables
+    assert "meta skuid {{ qbittorrent_uid }} reject" in nftables
+    assert "meta skuid != {{ qbittorrent_uid }} accept" in nftables
+
+    enable_qbt_task = qbt_tasks.split("- name: Enable qBittorrent and NAT-PMP timer", maxsplit=1)[1]
+    assert "enabled: true" in enable_qbt_task
+    assert "state: started" not in enable_qbt_task
+
+    assert vpn_tasks.index("Enable WireGuard") < vpn_tasks.index("Start qBittorrent and NAT-PMP timer after VPN is up")
+
+
 def test_tailscale_up_is_not_reported_changed_unconditionally():
     tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "tailscale_gateway" / "tasks" / "main.yml").read_text(encoding="utf-8")
 

@@ -2,6 +2,20 @@
 PrivateKey = {{ proton_wireguard_private_key }}
 Address = {{ proton_wireguard_address }}
 DNS = {{ proton_wireguard_dns }}
+Table = off
+PostUp = ip -4 route replace default dev %i table {{ proton_wireguard_table }}
+PostUp = ip -4 route replace {{ proton_natpmp_gateway }}/32 dev %i
+PostUp = ip -4 rule del priority {{ (proton_wireguard_rule_priority | int) - 2 }} uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} to {{ homelab_lan_cidr }} lookup main 2>/dev/null || true
+PostUp = ip -4 rule add priority {{ (proton_wireguard_rule_priority | int) - 2 }} uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} to {{ homelab_lan_cidr }} lookup main
+PostUp = ip -4 rule del priority {{ (proton_wireguard_rule_priority | int) - 1 }} uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} to {{ homelab_tailscale_cidr }} lookup main 2>/dev/null || true
+PostUp = ip -4 rule add priority {{ (proton_wireguard_rule_priority | int) - 1 }} uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} to {{ homelab_tailscale_cidr }} lookup main
+PostUp = ip -4 rule del priority {{ proton_wireguard_rule_priority }} uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} lookup {{ proton_wireguard_table }} 2>/dev/null || true
+PostUp = ip -4 rule add priority {{ proton_wireguard_rule_priority }} uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} lookup {{ proton_wireguard_table }}
+PreDown = ip -4 rule del priority {{ proton_wireguard_rule_priority }} uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} lookup {{ proton_wireguard_table }} 2>/dev/null || true
+PreDown = ip -4 rule del priority {{ (proton_wireguard_rule_priority | int) - 1 }} uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} to {{ homelab_tailscale_cidr }} lookup main 2>/dev/null || true
+PreDown = ip -4 rule del priority {{ (proton_wireguard_rule_priority | int) - 2 }} uidrange {{ qbittorrent_uid }}-{{ qbittorrent_uid }} to {{ homelab_lan_cidr }} lookup main 2>/dev/null || true
+PreDown = ip -4 route del default dev %i table {{ proton_wireguard_table }} 2>/dev/null || true
+PreDown = ip -4 route del {{ proton_natpmp_gateway }}/32 dev %i 2>/dev/null || true
 
 [Peer]
 PublicKey = {{ proton_wireguard_selected.public_key }}

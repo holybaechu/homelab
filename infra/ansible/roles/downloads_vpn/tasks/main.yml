@@ -65,3 +65,23 @@
     name: "wg-quick@{{ proton_wg_interface }}"
     enabled: true
     state: started
+
+- name: Apply VPN configuration changes before starting qBittorrent
+  ansible.builtin.meta: flush_handlers
+
+- name: Check qBittorrent service units
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ item }}"
+  loop:
+    - qbittorrent.service
+    - proton-natpmp-qbt.timer
+  register: downloads_vpn_qbittorrent_units
+
+- name: Start qBittorrent and NAT-PMP timer after VPN is up
+  ansible.builtin.systemd:
+    name: "{{ item.item }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+  loop: "{{ downloads_vpn_qbittorrent_units.results }}"
+  when: item.stat.exists

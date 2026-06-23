@@ -224,7 +224,6 @@
     name: "{{ item }}"
     daemon_reload: true
     enabled: true
-    state: started
   loop:
     - qbittorrent.service
     - proton-natpmp-qbt.timer

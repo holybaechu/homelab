@@ -35,8 +35,8 @@
   hosts: svc_downloads
   gather_facts: true
   roles:
-    - downloads_vpn
     - qbittorrent
+    - downloads_vpn
 
 - name: Configure files LXC
   hosts: svc_files
