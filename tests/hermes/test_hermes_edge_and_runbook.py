@@ -80,17 +80,21 @@ def test_validate_playbook_checks_hermes_gateway_service_only():
     assert "hermes_webui_port" not in hermes_tasks
 
 
-def test_secrets_readme_documents_hermes_discord_secrets():
+def test_secrets_readme_documents_hermes_discord_and_web_secrets():
     secrets = read("secrets/README.md")
 
     assert "hermes_discord_bot_token" in secrets
     assert "hermes_discord_allowed_users" in secrets
+    assert "hermes_parallel_api_key" in secrets
+    assert "hermes_firecrawl_api_key" in secrets
+    assert "PARALLEL_API_KEY" in secrets
+    assert "FIRECRAWL_API_KEY" in secrets
     assert "hermes_webui_password" not in secrets
     for forbidden_key in ("HERMES_API_KEY", "API_SERVER_KEY", "OPENAI_API_KEY"):
         assert forbidden_key not in secrets
 
 
-def test_hermes_runbook_documents_discord_gateway_and_fresh_lxc_rebuild():
+def test_hermes_runbook_documents_discord_gateway_web_search_and_fresh_lxc_rebuild():
     runbook = read("docs/runbooks/hermes-agent-discord.md")
 
     assert "Hermes Agent Discord gateway" in runbook
@@ -99,8 +103,12 @@ def test_hermes_runbook_documents_discord_gateway_and_fresh_lxc_rebuild():
     assert "infra/ansible/playbooks/validate.yml" in runbook
     assert "HERMES_DISCORD_BOT_TOKEN" in runbook
     assert "HERMES_DISCORD_ALLOWED_USERS" in runbook
+    assert "PARALLEL_API_KEY" in runbook
+    assert "FIRECRAWL_API_KEY" in runbook
+    assert "search_backend: parallel" in runbook
+    assert "extract_backend: firecrawl" in runbook
     assert "rebuild_hermes_lxc" not in runbook
     assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' not in runbook
     assert "/workspace" in runbook
-    assert "provider/model setup" in runbook
+    assert "provider/model setup" not in runbook
     assert "https://hermes.home.hchu.me" not in runbook

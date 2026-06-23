@@ -1,12 +1,16 @@
 ---
-- name: Require Hermes Discord gateway secrets
+- name: Require Hermes Discord gateway and web backend secrets
   ansible.builtin.assert:
     that:
       - hermes_discord_bot_token is defined
       - hermes_discord_bot_token | length > 0
       - hermes_discord_allowed_users is defined
       - hermes_discord_allowed_users | length > 0
-    fail_msg: Hermes Discord bot token and allowed users must be provided through secrets.
+      - hermes_parallel_api_key is defined
+      - hermes_parallel_api_key | length > 0
+      - hermes_firecrawl_api_key is defined
+      - hermes_firecrawl_api_key | length > 0
+    fail_msg: Hermes Discord and web backend credentials must be provided through secrets.
   no_log: true
 
 - name: Install Hermes runtime packages
@@ -130,7 +134,7 @@
     group: root
     mode: "0755"
 
-- name: Configure Hermes auxiliary compression route
+- name: Configure Hermes runtime settings
   ansible.builtin.command:
     cmd: "{{ hermes_venv_path }}/bin/python {{ hermes_install_dir }}/configure-runtime.py"
   register: hermes_runtime_config

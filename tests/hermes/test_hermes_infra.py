@@ -107,7 +107,7 @@ def test_proxmox_storage_role_creates_hermes_host_directories():
     assert '"${mount_path}/hermes"' in tasks
 
 
-def test_cd_workflow_passes_hermes_discord_secrets_to_ansible_extra_vars():
+def test_cd_workflow_passes_hermes_discord_and_web_secrets_to_ansible_extra_vars():
     workflow = read(".github/workflows/cd.yml")
     writer = read("scripts/ci/write_ansible_extra_vars.py")
 
@@ -117,6 +117,14 @@ def test_cd_workflow_passes_hermes_discord_secrets_to_ansible_extra_vars():
     assert "HERMES_DISCORD_BOT_TOKEN" in writer
     assert "hermes_discord_allowed_users" in writer
     assert "HERMES_DISCORD_ALLOWED_USERS" in writer
+
+    assert "PARALLEL_API_KEY:" in workflow
+    assert "FIRECRAWL_API_KEY:" in workflow
+    assert "hermes_parallel_api_key" in writer
+    assert "PARALLEL_API_KEY" in writer
+    assert "hermes_firecrawl_api_key" in writer
+    assert "FIRECRAWL_API_KEY" in writer
+
     assert "HERMES_WEBUI_PASSWORD:" not in workflow
     assert "HERMES_API_KEY" not in workflow
     assert "API_SERVER_KEY" not in workflow
