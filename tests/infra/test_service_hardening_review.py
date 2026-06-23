@@ -1,13 +1,25 @@
 from tests.helpers import REPO_ROOT
 
 
-def test_qbittorrent_config_update_only_stops_service_when_config_changes():
+def test_qbittorrent_config_update_stops_natpmp_before_qbittorrent_when_config_changes():
     tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "qbittorrent" / "tasks" / "main.yml").read_text(encoding="utf-8")
 
     assert "Render qBittorrent config candidate" in tasks
     assert "Compare qBittorrent config candidate" in tasks
     assert "when: qbittorrent_config_compare.rc != 0" in tasks
+    assert "Stop NAT-PMP updater before applying changed qBittorrent config" in tasks
     assert "Stop qBittorrent before applying changed config" in tasks
+    assert tasks.index("Stop NAT-PMP updater before applying changed qBittorrent config") < tasks.index("Stop qBittorrent before applying changed config")
+
+    natpmp_stop_task = tasks.split("- name: Stop NAT-PMP updater before applying changed qBittorrent config", maxsplit=1)[1].split("- name: Stop qBittorrent before applying changed config", maxsplit=1)[0]
+    assert "proton-natpmp-qbt.timer" in natpmp_stop_task
+    assert "proton-natpmp-qbt.service" in natpmp_stop_task
+    assert "qbittorrent_config_compare.rc != 0" in natpmp_stop_task
+
+    qbt_stop_task = tasks.split("- name: Stop qBittorrent before applying changed config", maxsplit=1)[1].split("- name: Install qBittorrent config", maxsplit=1)[0]
+    assert "retries:" in qbt_stop_task
+    assert "delay:" in qbt_stop_task
+    assert "until: qbittorrent_stop_before_config is succeeded" in qbt_stop_task
 
 
 def test_root_only_lxc_options_use_graceful_shutdown_before_stop():
