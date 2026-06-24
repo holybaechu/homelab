@@ -1,5 +1,5 @@
 ---
-- name: Require Hermes Discord gateway and web backend secrets
+- name: Require Hermes Discord gateway, web backend, and browser credentials
   ansible.builtin.assert:
     that:
       - hermes_discord_bot_token is defined
@@ -10,7 +10,11 @@
       - hermes_parallel_api_key | length > 0
       - hermes_firecrawl_api_key is defined
       - hermes_firecrawl_api_key | length > 0
-    fail_msg: Hermes Discord and web backend credentials must be provided through secrets.
+      - hermes_browserbase_api_key is defined
+      - hermes_browserbase_api_key | length > 0
+      - hermes_browserbase_project_id is defined
+      - hermes_browserbase_project_id | length > 0
+    fail_msg: Hermes Discord, web backend, and Browserbase credentials must be provided through secrets.
   no_log: true
 
 - name: Install Hermes runtime packages
@@ -22,6 +26,8 @@
       - curl
       - gh
       - git
+      - nodejs
+      - npm
       - python3
       - python3-pip
       - python3-venv
@@ -95,6 +101,7 @@
     dest: "{{ hermes_agent_dir }}"
     version: "{{ hermes_agent_ref }}"
     update: true
+  register: hermes_agent_checkout
   notify: Restart hermes-gateway
 
 - name: Create Hermes Python virtualenv
@@ -117,6 +124,51 @@
     editable: true
     virtualenv: "{{ hermes_venv_path }}"
   notify: Restart hermes-gateway
+
+- name: Check Hermes browser automation CLI
+  ansible.builtin.stat:
+    path: "{{ hermes_agent_dir }}/node_modules/.bin/agent-browser"
+  register: hermes_agent_browser_cli
+
+- name: Install Hermes browser automation Node dependencies
+  ansible.builtin.command:
+    cmd: npm ci --omit=dev --silent --workspaces=false
+    chdir: "{{ hermes_agent_dir }}"
+  when: hermes_agent_checkout.changed or not hermes_agent_browser_cli.stat.exists
+  notify: Restart hermes-gateway
+
+- name: Create Hermes local browser runtime directory
+  ansible.builtin.file:
+    path: "{{ hermes_browser_browsers_path }}"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0755"
+
+- name: Check Hermes local browser runtime
+  ansible.builtin.find:
+    paths: "{{ hermes_browser_browsers_path }}"
+    patterns:
+      - chrome-*
+    file_type: directory
+  register: hermes_local_browser_builds
+
+- name: Install Hermes local browser runtime for private URL routing
+  ansible.builtin.command:
+    cmd: "{{ hermes_agent_dir }}/node_modules/.bin/agent-browser install --with-deps"
+    chdir: "{{ hermes_agent_dir }}"
+  environment:
+    HOME: "{{ hermes_home }}"
+  when: hermes_browser_auto_local_for_private_urls | bool and (hermes_agent_checkout.changed or not hermes_agent_browser_cli.stat.exists or hermes_local_browser_builds.matched | int == 0)
+  notify: Restart hermes-gateway
+
+- name: Allow Hermes service to manage local browser runtime
+  ansible.builtin.file:
+    path: "{{ hermes_browser_browsers_path }}"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    recurse: true
 
 - name: Allow Hermes service to manage lazy venv deps
   ansible.builtin.file:

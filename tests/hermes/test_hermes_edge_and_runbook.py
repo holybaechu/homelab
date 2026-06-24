@@ -49,7 +49,7 @@ def test_site_playbook_applies_hermes_role():
     assert "hermes" in role_names
 
 
-def test_validate_playbook_checks_hermes_gateway_service_only():
+def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     validate = read_yaml("infra/ansible/playbooks/validate.yml")
     edge_play = next(
         (play for play in validate if play.get("name") == "Validate edge"),
@@ -76,25 +76,33 @@ def test_validate_playbook_checks_hermes_gateway_service_only():
     assert hermes_play.get("hosts") == "svc_hermes"
     hermes_tasks = yaml.safe_dump(hermes_play.get("tasks", []), sort_keys=True)
     assert "systemctl is-active hermes-gateway" in hermes_tasks
+    assert "node_modules/.bin/agent-browser" in hermes_tasks
+    assert "hermes_browser_browsers_path" in hermes_tasks
+    assert "chrome-" in hermes_tasks
+    assert "chromium-" not in hermes_tasks
     assert "hermes-webui" not in hermes_tasks
     assert "hermes_webui_port" not in hermes_tasks
 
 
-def test_secrets_readme_documents_hermes_discord_and_web_secrets():
+def test_secrets_readme_documents_hermes_discord_web_and_browser_secrets():
     secrets = read("secrets/README.md")
 
     assert "hermes_discord_bot_token" in secrets
     assert "hermes_discord_allowed_users" in secrets
     assert "hermes_parallel_api_key" in secrets
     assert "hermes_firecrawl_api_key" in secrets
+    assert "hermes_browserbase_api_key" in secrets
+    assert "hermes_browserbase_project_id" in secrets
     assert "PARALLEL_API_KEY" in secrets
     assert "FIRECRAWL_API_KEY" in secrets
+    assert "BROWSERBASE_API_KEY" in secrets
+    assert "BROWSERBASE_PROJECT_ID" in secrets
     assert "hermes_webui_password" not in secrets
     for forbidden_key in ("HERMES_API_KEY", "API_SERVER_KEY", "OPENAI_API_KEY"):
         assert forbidden_key not in secrets
 
 
-def test_hermes_runbook_documents_discord_gateway_web_search_and_fresh_lxc_rebuild():
+def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_and_fresh_lxc_rebuild():
     runbook = read("docs/runbooks/hermes-agent-discord.md")
 
     assert "Hermes Agent Discord gateway" in runbook
@@ -105,8 +113,16 @@ def test_hermes_runbook_documents_discord_gateway_web_search_and_fresh_lxc_rebui
     assert "HERMES_DISCORD_ALLOWED_USERS" in runbook
     assert "PARALLEL_API_KEY" in runbook
     assert "FIRECRAWL_API_KEY" in runbook
+    assert "BROWSERBASE_API_KEY" in runbook
+    assert "BROWSERBASE_PROJECT_ID" in runbook
     assert "search_backend: parallel" in runbook
     assert "extract_backend: firecrawl" in runbook
+    assert "cloud_provider: browserbase" in runbook
+    assert "auto_local_for_private_urls: true" in runbook
+    assert "agent-browser" in runbook
+    assert "local browser runtime" in runbook
+    assert "/var/lib/hermes/.agent-browser/browsers" in runbook
+    assert "HOME=/var/lib/hermes" in runbook
     assert "threshold: 0.85" in runbook
     assert "codex_gpt55_autoraise: false" in runbook
     assert "rebuild_hermes_lxc" not in runbook

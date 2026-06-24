@@ -18,6 +18,11 @@ hermes_compression_threshold: 0.85
 hermes_compression_codex_gpt55_autoraise: false
 hermes_web_search_backend: parallel
 hermes_web_extract_backend: firecrawl
+hermes_browser_cloud_provider: browserbase
+hermes_browser_auto_local_for_private_urls: true
+hermes_browser_browsers_path: "{{ hermes_home }}/.agent-browser/browsers"
+hermes_browserbase_proxies: true
+hermes_browserbase_advanced_stealth: false
 
 hermes_discord_require_mention: true
 hermes_discord_ignore_no_mention: true
