@@ -27,7 +27,7 @@ def assert_container_sizing(tfvars_path: Path):
     expected = {
         "edge": {"root_disk_gb": 6, "cores": 1, "memory_mb": 512},
         "downloads": {"root_disk_gb": 8, "cores": 2, "memory_mb": 1024},
-        "files": {"root_disk_gb": 4, "cores": 1, "memory_mb": 512},
+        "files": {"root_disk_gb": 4, "cores": 1, "memory_mb": 1024},
         "dns": {"root_disk_gb": 4, "cores": 1, "memory_mb": 512},
         "tailnet": {"root_disk_gb": 4, "cores": 1, "memory_mb": 512},
         "minecraft": {"root_disk_gb": 32, "cores": 4, "memory_mb": 4096},

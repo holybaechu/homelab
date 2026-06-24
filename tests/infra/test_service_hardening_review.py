@@ -135,7 +135,8 @@ def test_tailscale_up_is_not_reported_changed_unconditionally():
     assert "changed_when: true" not in join_task
 
 
-def test_shared_readonly_mount_is_readonly_at_lxc_boundary():
+def test_shared_readonly_mount_is_writable_at_lxc_boundary_for_copyparty_index():
     all_vars = (REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "all.yml").read_text(encoding="utf-8")
 
-    assert "mp=/srv/shared-readonly,ro=1" in all_vars
+    assert "mp=/srv/shared-readonly,ro=1" not in all_vars
+    assert "mp=/srv/shared-readonly" in all_vars

@@ -12,6 +12,7 @@ WorkingDirectory={{ hermes_workspace }}
 ExecStart={{ hermes_venv_path }}/bin/hermes gateway
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=210s
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full

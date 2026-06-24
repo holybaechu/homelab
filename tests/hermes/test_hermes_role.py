@@ -225,6 +225,7 @@ def test_hermes_service_template_runs_gateway_from_agent_venv():
     assert "ExecStart={{ hermes_venv_path }}/bin/hermes gateway" in service
     assert "Restart=on-failure" in service
     assert "WantedBy=multi-user.target" in service
+    assert "TimeoutStopSec=210s" in service
 
 
 def test_hermes_handler_restarts_gateway_service():

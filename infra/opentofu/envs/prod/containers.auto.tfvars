@@ -79,7 +79,7 @@ containers = {
     gateway          = "192.168.0.1"
     root_disk_gb     = 4
     cores            = 1
-    memory_mb        = 512
+    memory_mb        = 1024
     swap_mb          = 0
     startup_order    = 5
   }
