@@ -24,7 +24,7 @@ Expected encrypted values:
 Non-secret deployment values:
 
 - `adguard_admin_username`, optional; defaults to `admin`
-- `hermes_newrrow_username_ref` and `hermes_newrrow_password_ref`, as 1Password secret references (for example `op://Hermes/Newrrow/username` and `op://Hermes/Newrrow/password`) read by the Hermes Newrrow skill at runtime
+- `hermes_newrrow_username_ref` and `hermes_newrrow_password_ref`, as 1Password secret references (for example `op://Hermes/Newrrow/username` and `op://Hermes/Newrrow/password`) read by the Hermes Newrrow browser-login plugin at runtime; these are references, not secret values
 
 GitHub Actions secret names for the Hermes web, browser, and 1Password backends are `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, and `OP_SERVICE_ACCOUNT_TOKEN`; the CD helper maps them to `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, and `hermes_1password_service_account_token` for Ansible.
 

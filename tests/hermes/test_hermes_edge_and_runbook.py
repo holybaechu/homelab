@@ -91,6 +91,10 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     assert "Check Hermes Newrrow points skill" in hermes_tasks
     assert "skills/productivity/newrrow-points-automation/SKILL.md" in hermes_tasks
     assert "scripts/newrrow-login.sh" in hermes_tasks
+    assert "plugins/newrrow-browser-login/plugin.yaml" in hermes_tasks
+    assert "newrrow-browser-login plugin is not enabled" in hermes_tasks
+    assert "discord platform" in hermes_tasks
+    assert "browser toolset" in hermes_tasks
     assert "chromium-" not in hermes_tasks
     assert "hermes-webui" not in hermes_tasks
     assert "hermes_webui_port" not in hermes_tasks
@@ -145,13 +149,18 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert ".config/op" in runbook
     assert "0600" in runbook
     assert "newrrow-points-automation" in runbook
+    assert "newrrow-browser-login" in runbook
+    assert "newrrow_browser_login" in runbook
+    assert "browser_navigate" in runbook
+    assert "browser_*" in runbook
     assert "NEWRROW_USERNAME_REF" in runbook
     assert "NEWRROW_PASSWORD_REF" in runbook
     assert "NEWRROW_BASE_URL" not in runbook
     assert "NEWRROW_HOME_URL" not in runbook
     assert "NEWRROW_LOGIN_URL" not in runbook
     assert "op://" in runbook
-    assert "agent-browser auth save" in runbook
+    assert "Do not use bare `agent-browser open`, `agent-browser auth save`" in runbook
+    assert "bare `agent-browser" in runbook
     assert "threshold: 0.85" in runbook
     assert "codex_gpt55_autoraise: false" in runbook
     assert "auxiliary:" in runbook

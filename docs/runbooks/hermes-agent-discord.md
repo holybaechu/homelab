@@ -71,7 +71,7 @@ Do not ask Hermes to print raw secret values unless you explicitly need to revea
 
 ## Newrrow points automation
 
-The role installs a local Hermes skill at `/var/lib/hermes/skills/productivity/newrrow-points-automation`. It migrates the packaged Newrrow point checklist workflow to Hermes browser automation/`agent-browser` and keeps the detailed UI route/checklist reference under the skill's `references/ui-flow.md`.
+The role installs a local Hermes skill at `/var/lib/hermes/skills/productivity/newrrow-points-automation` and a trusted Hermes plugin at `/var/lib/hermes/plugins/newrrow-browser-login`. It migrates the packaged Newrrow point checklist workflow to Hermes `browser_*` tools so public Newrrow URLs use the configured Browserbase browser path, while the local browser runtime remains only for private/LAN auto-local routing. The detailed UI route/checklist reference lives under the skill's `references/ui-flow.md`.
 
 Newrrow login uses 1Password secret references instead of live browser password-manager state. The tracked inventory configures:
 
@@ -80,15 +80,15 @@ hermes_newrrow_username_ref: op://Hermes/Newrrow/username
 hermes_newrrow_password_ref: op://Hermes/Newrrow/password
 ```
 
-Ansible renders those into `/etc/hermes-gateway.env` as `NEWRROW_USERNAME_REF` and `NEWRROW_PASSWORD_REF`. The Newrrow URL is hardcoded in the skill/helper as `https://gbsm.newrrow.com/csr-platform/home` instead of being exposed as gateway environment. Ensure the Hermes 1Password service account can read the referenced item fields, then ask Hermes to use `$newrrow-points-automation`.
+Ansible renders those into `/etc/hermes-gateway.env` as `NEWRROW_USERNAME_REF` and `NEWRROW_PASSWORD_REF`. The Newrrow URL is hardcoded in the skill/plugin as `https://gbsm.newrrow.com/csr-platform/home` instead of being exposed as gateway environment. Ensure the Hermes 1Password service account can read the referenced item fields, then ask Hermes to use `$newrrow-points-automation`.
 
-If Newrrow presents a login page, the skill directs Hermes to run:
+The runtime flow is:
 
-```bash
-bash "$HERMES_HOME/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
-```
+1. Use `browser_navigate` on the public Newrrow home URL.
+2. If the snapshot shows a login page, call the plugin tool `newrrow_browser_login`. The plugin reads the configured `op://` refs with `op read` inside the Hermes process, injects credentials into the active Browserbase/CDP-backed browser-tool session, and returns only non-secret status.
+3. Continue all Newrrow UI work with Hermes `browser_*` tools (`browser_click`, `browser_type`, `browser_scroll`, `browser_press`, `browser_snapshot`).
 
-The helper reads the configured `op://` refs with `op read`, sends the password only through `agent-browser auth save --password-stdin`, runs `agent-browser auth login`, falls back to clicking the visible `로그인` button when the auth helper fills fields but fails to submit, handles the first-run `뉴로우 시작하기` invitation screen, and deletes the temporary auth profile. Do not print the Newrrow username/password values in Discord or logs.
+Do not type raw Newrrow passwords through `browser_type`, because its arguments/results are model-visible. Do not use bare `agent-browser open`, `agent-browser auth save`, or `agent-browser auth login` for Newrrow runtime operation; that bypasses Hermes browser routing and can silently use local Chromium for this public URL. `scripts/newrrow-login.sh` is retained only as a deployment/debugging credential preflight that verifies the 1Password refs and prints `newrrow_1password_refs_ready`.
 
 ## Context compression
 
