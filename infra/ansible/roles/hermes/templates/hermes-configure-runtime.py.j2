@@ -9,6 +9,8 @@ import yaml
 
 CONFIG_PATH = Path("{{ hermes_home }}/config.yaml")
 DESIRED_COMPRESSION_PROVIDER = "{{ hermes_auxiliary_compression_provider }}"
+DESIRED_COMPRESSION_MODEL = "{{ hermes_auxiliary_compression_model | default('') }}"
+DESIRED_COMPRESSION_TIMEOUT = {{ hermes_auxiliary_compression_timeout | default(120) | int }}
 DESIRED_COMPRESSION_THRESHOLD = {{ hermes_compression_threshold | float }}
 DESIRED_CODEX_GPT55_AUTORAISE = {{ (hermes_compression_codex_gpt55_autoraise | bool) | ternary('True', 'False') }}
 DESIRED_WEB_SEARCH_BACKEND = "{{ hermes_web_search_backend }}"
@@ -60,8 +62,17 @@ def main():
     if compression.get("provider") != DESIRED_COMPRESSION_PROVIDER:
         compression["provider"] = DESIRED_COMPRESSION_PROVIDER
         changed = True
-    if compression.get("model") != "":
-        compression["model"] = ""
+    if compression.get("model") != DESIRED_COMPRESSION_MODEL:
+        compression["model"] = DESIRED_COMPRESSION_MODEL
+        changed = True
+    if compression.get("timeout") != DESIRED_COMPRESSION_TIMEOUT:
+        compression["timeout"] = DESIRED_COMPRESSION_TIMEOUT
+        changed = True
+    if compression.get("base_url") != "":
+        compression["base_url"] = ""
+        changed = True
+    if compression.get("api_key") != "":
+        compression["api_key"] = ""
         changed = True
 
     if runtime_compression.get("threshold") != DESIRED_COMPRESSION_THRESHOLD:

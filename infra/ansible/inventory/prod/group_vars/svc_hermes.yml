@@ -13,7 +13,9 @@ hermes_env_path: /etc/hermes-gateway.env
 hermes_agent_repo: https://github.com/NousResearch/hermes-agent.git
 hermes_agent_ref: 36ae958473b8530ffb1a395c4944b8cdbcae82fe
 
-hermes_auxiliary_compression_provider: main
+hermes_auxiliary_compression_provider: copilot
+hermes_auxiliary_compression_model: gpt-4o-mini
+hermes_auxiliary_compression_timeout: 90
 hermes_compression_threshold: 0.85
 hermes_compression_codex_gpt55_autoraise: false
 hermes_web_search_backend: parallel

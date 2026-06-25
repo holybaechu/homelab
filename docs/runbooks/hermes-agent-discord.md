@@ -71,15 +71,20 @@ Do not ask Hermes to print raw secret values unless you explicitly need to revea
 
 ## Context compression
 
-The runtime config helper also enforces Hermes' global context-compression behavior:
+The runtime config helper also enforces Hermes' global context-compression behavior and routes compression summaries away from the main Codex `gpt-5.5` Responses path:
 
 ```yaml
 compression:
   threshold: 0.85
   codex_gpt55_autoraise: false
+auxiliary:
+  compression:
+    provider: copilot
+    model: gpt-4o-mini
+    timeout: 90
 ```
 
-This keeps the general compaction trigger at 85% and disables the Codex gpt-5.5 route-specific autoraise override, so the deployed gateway follows the tracked repo setting instead of an operator-only live edit.
+This keeps the general compaction trigger at 85% and disables the Codex gpt-5.5 route-specific autoraise override, so the deployed gateway follows the tracked repo setting instead of an operator-only live edit. Compression summaries use Copilot `gpt-4o-mini` because the Codex auxiliary Responses stream has repeatedly exceeded the 120s total timeout with `Codex auxiliary Responses stream exceeded 120.0s`, causing Hermes to insert fallback context markers instead of durable summaries. Keep a working Copilot credential in `/var/lib/hermes/auth.json`; the validate playbook asserts the configured compression route after deploy.
 
 ## Discord setup
 
