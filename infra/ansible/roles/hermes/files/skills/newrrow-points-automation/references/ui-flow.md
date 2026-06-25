@@ -84,15 +84,19 @@ Observed task controls:
 Task registration:
 1. Check whether a task dated today already exists; if yes, mark already done.
 2. Otherwise add `클컴 공부`, `자바 공부`, or `뉴로우 포인트 점검 YYYY-MM-DD`.
-3. Verify the new row appears with today's date.
+3. Prefer the bottom quick-entry textbox `업무를 등록해 주세요.` if the inline `할 일 추가` form opens but submit produces no visible row; filling the quick-entry and clicking its enabled `추가` was verified to create a visible row such as `뉴로우 포인트 점검 대기 미지정 보통 성과 등록`.
+4. Verify the new row appears near the top of `나의 할 일 목록`.
 
 Timetable registration:
-1. On the same page, find an empty `시간 슬롯 HH:MM AM/PM` button in the visible timetable.
-2. Click it. The modal/article contains `업무명`, textbox `입력하세요`, priority `보통`, `하루 종일`, start/end time boxes, `취소`, `저장`.
-3. Enter `클컴 공부`, `자바 공부`, or `뉴로우 포인트 점검`.
-4. Keep the default 30-minute range unless the user specified a time.
-5. Click `저장` only after the `저장` button is enabled.
-6. Verify a timetable block with the entered name appears.
+1. On `/working-station/tasks`, find an empty `시간 슬롯 HH:MM AM/PM` button in the visible timetable.
+2. Click it. The expected modal/article contains `업무명`, textbox `입력하세요`, priority `보통`, `하루 종일`, start/end time boxes, `취소`, `저장`.
+3. If `agent-browser click @ref` on a visible `시간 슬롯` does not open the modal, use the screenshot/box coordinates for the empty gap and click the center with `agent-browser mouse move <x> <y> && agent-browser mouse down && agent-browser mouse up`. This was verified to open the timetable modal for an empty `01:10 PM` gap where direct ref-clicks were no-ops.
+4. Enter `클컴 공부`, `자바 공부`, or `뉴로우 포인트 점검`.
+5. Keep the default 30-minute range unless the user specified a time.
+6. Click `저장` only after the `저장` button is enabled.
+7. Verify a timetable block with the entered name appears.
+8. Pitfall: the home-page `일정 생성` button can open a `면담` modal, not a timetable block editor. Do not use that as the timetable path; cancel it and return to `/working-station/tasks`.
+9. Only record timetable as blocked/skipped after both ref-click and coordinate-click fail.
 
 ## CSR Question
 
