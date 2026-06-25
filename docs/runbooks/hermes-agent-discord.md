@@ -23,6 +23,7 @@ The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_di
 - `BROWSERBASE_PROJECT_ID`
 - `BROWSERBASE_PROXIES`
 - `BROWSERBASE_ADVANCED_STEALTH`
+- `AGENT_BROWSER_ARGS` (set to `--no-sandbox,--disable-dev-shm-usage` for the local Chrome sidecar inside the unprivileged LXC)
 - `HOME` (set to `/var/lib/hermes` for `agent-browser`'s local browser cache)
 
 ## Web search

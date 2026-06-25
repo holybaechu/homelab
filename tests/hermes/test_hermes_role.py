@@ -229,6 +229,7 @@ def test_hermes_role_configures_browserbase_browser_automation():
     assert group_vars["hermes_browser_cloud_provider"] == "browserbase"
     assert group_vars["hermes_browser_auto_local_for_private_urls"] is True
     assert group_vars["hermes_browser_browsers_path"] == "{{ hermes_home }}/.agent-browser/browsers"
+    assert group_vars["hermes_browser_args"] == "--no-sandbox,--disable-dev-shm-usage"
     assert group_vars["hermes_browserbase_proxies"] is True
     assert group_vars["hermes_browserbase_advanced_stealth"] is False
 
@@ -326,6 +327,7 @@ def test_hermes_env_template_contains_discord_gateway_runtime_web_and_browser_cr
     assert "BROWSERBASE_PROJECT_ID={{ hermes_browserbase_project_id | quote }}" in env_template
     assert "BROWSERBASE_PROXIES={{ hermes_browserbase_proxies | string | lower | quote }}" in env_template
     assert "BROWSERBASE_ADVANCED_STEALTH={{ hermes_browserbase_advanced_stealth | string | lower | quote }}" in env_template
+    assert "AGENT_BROWSER_ARGS={{ hermes_browser_args | quote }}" in env_template
     assert "HOME={{ hermes_home | quote }}" in env_template
     assert "HERMES_WEBUI" not in env_template
     assert "API_SERVER_KEY" not in env_template
