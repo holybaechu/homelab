@@ -138,6 +138,10 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert ".config/op" in runbook
     assert "threshold: 0.85" in runbook
     assert "codex_gpt55_autoraise: false" in runbook
+    assert "auxiliary:" in runbook
+    assert "provider: main" in runbook
+    assert "timeout: 300" in runbook
+    assert "Codex auxiliary Responses stream exceeded 120.0s" in runbook
     assert "rebuild_hermes_lxc" not in runbook
     assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' not in runbook
     assert "/workspace" in runbook

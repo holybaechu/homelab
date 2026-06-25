@@ -248,6 +248,31 @@
           python3 -c 'import os, sys; p = "{{ hermes_browser_browsers_path }}"; sys.exit(0 if os.path.isdir(p) and any(n.startswith("chrome-") for n in os.listdir(p)) else 1)'
       changed_when: false
 
+    - name: Check Hermes compression timeout
+      ansible.builtin.shell: |
+        {{ hermes_venv_path }}/bin/python - <<'PY'
+        from pathlib import Path
+        import yaml
+
+        config = yaml.safe_load(Path("{{ hermes_home }}/config.yaml").read_text(encoding="utf-8")) or {}
+        compression = (config.get("auxiliary") or {}).get("compression") or {}
+        checks = [
+            ("auxiliary.compression.provider", compression.get("provider"), "main"),
+            ("auxiliary.compression.model", compression.get("model"), ""),
+            ("auxiliary.compression.timeout", compression.get("timeout"), 300),
+        ]
+        mismatches = [
+            f"{label}={actual!r} expected {expected!r}"
+            for label, actual, expected in checks
+            if actual != expected
+        ]
+        if mismatches:
+            raise SystemExit("; ".join(mismatches))
+        PY
+      args:
+        executable: /bin/bash
+      changed_when: false
+
     - name: Check Hermes 1Password CLI
       ansible.builtin.command:
         cmd: op --version
