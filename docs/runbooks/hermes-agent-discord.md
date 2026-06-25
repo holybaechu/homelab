@@ -76,13 +76,11 @@ The role installs a local Hermes skill at `/var/lib/hermes/skills/productivity/n
 Newrrow login uses 1Password secret references instead of live browser password-manager state. The tracked inventory configures:
 
 ```yaml
-hermes_newrrow_base_url: https://gbsm.newrrow.com
-hermes_newrrow_home_url: https://gbsm.newrrow.com/csr-platform/home
-hermes_newrrow_username_ref: op://Homelab/Newrrow/username
-hermes_newrrow_password_ref: op://Homelab/Newrrow/password
+hermes_newrrow_username_ref: op://Hermes/뉴로우/username
+hermes_newrrow_password_ref: op://Hermes/뉴로우/password
 ```
 
-Ansible renders those into `/etc/hermes-gateway.env` as `NEWRROW_BASE_URL`, `NEWRROW_HOME_URL`, `NEWRROW_LOGIN_URL`, `NEWRROW_USERNAME_REF`, and `NEWRROW_PASSWORD_REF`. Ensure the Hermes 1Password service account can read the referenced item fields, then ask Hermes to use `$newrrow-points-automation`.
+Ansible renders those into `/etc/hermes-gateway.env` as `NEWRROW_USERNAME_REF` and `NEWRROW_PASSWORD_REF`. The Newrrow URL is hardcoded in the skill/helper as `https://gbsm.newrrow.com/csr-platform/home` instead of being exposed as gateway environment. Ensure the Hermes 1Password service account can read the referenced item fields, then ask Hermes to use `$newrrow-points-automation`.
 
 If Newrrow presents a login page, the skill directs Hermes to run:
 

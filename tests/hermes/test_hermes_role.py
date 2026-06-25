@@ -164,17 +164,18 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     ui_flow = (skill_root / "references/ui-flow.md").read_text(encoding="utf-8")
     login_helper = (skill_root / "scripts/newrrow-login.sh").read_text(encoding="utf-8")
 
-    assert group_vars["hermes_newrrow_base_url"] == "https://gbsm.newrrow.com"
-    assert group_vars["hermes_newrrow_home_url"] == (
-        "https://gbsm.newrrow.com/csr-platform/home"
-    )
-    assert group_vars["hermes_newrrow_username_ref"].startswith("op://")
-    assert group_vars["hermes_newrrow_password_ref"].startswith("op://")
+    assert "hermes_newrrow_base_url" not in group_vars
+    assert "hermes_newrrow_home_url" not in group_vars
+    assert "hermes_newrrow_login_url" not in group_vars
+    assert group_vars["hermes_newrrow_username_ref"] == "op://Hermes/뉴로우/username"
+    assert group_vars["hermes_newrrow_password_ref"] == "op://Hermes/뉴로우/password"
 
-    assert "NEWRROW_BASE_URL={{ hermes_newrrow_base_url | quote }}" in env_template
-    assert "NEWRROW_HOME_URL={{ hermes_newrrow_home_url | quote }}" in env_template
+    assert "NEWRROW_BASE_URL" not in env_template
+    assert "NEWRROW_HOME_URL" not in env_template
+    assert "NEWRROW_LOGIN_URL" not in env_template
     assert "NEWRROW_USERNAME_REF={{ hermes_newrrow_username_ref | quote }}" in env_template
-    assert "NEWRROW_PASSWORD_REF={{ hermes_newrrow_password_ref | quote }}" in env_template
+    assert "NEWRROW_PASSWORD_REF=" in env_template
+    assert "hermes_newrrow_password_ref | quote" in env_template
 
     assert "name: newrrow-points-automation" in skill
     assert "platforms:" in skill
@@ -183,6 +184,8 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     assert "op read" in skill
     assert "NEWRROW_USERNAME_REF" in skill
     assert "NEWRROW_PASSWORD_REF" in skill
+    assert "NEWRROW_HOME_URL" not in skill
+    assert "https://gbsm.newrrow.com/csr-platform/home" in skill
     assert "agent-browser" in skill
     assert "todo" in skill
     assert "Proton Pass" not in skill
@@ -192,12 +195,18 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     assert "Point Checklist" in ui_flow
     assert "1Password" in ui_flow
     assert "NEWRROW_USERNAME_REF" in ui_flow
+    assert "NEWRROW_HOME_URL" not in ui_flow
+    assert "https://gbsm.newrrow.com/csr-platform/home" in ui_flow
     assert "Proton Pass" not in ui_flow
 
     assert "op read" in login_helper
     assert "agent-browser auth save" in login_helper
     assert "--password-stdin" in login_helper
     assert "agent-browser auth delete" in login_helper
+    assert "NEWRROW_BASE_URL" not in login_helper
+    assert "NEWRROW_HOME_URL" not in login_helper
+    assert "NEWRROW_LOGIN_URL" not in login_helper
+    assert "https://gbsm.newrrow.com/csr-platform/home" in login_helper
     assert "set -x" not in login_helper
 
     skill_check_task = find_task(tasks, "Check Hermes Newrrow points skill")

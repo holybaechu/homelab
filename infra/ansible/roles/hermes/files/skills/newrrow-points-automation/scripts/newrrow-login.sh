@@ -3,9 +3,7 @@ set -euo pipefail
 
 OP_BIN="${OP_BIN:-op}"
 AGENT_BROWSER_BIN="${AGENT_BROWSER_BIN:-/opt/hermes/hermes-agent/node_modules/.bin/agent-browser}"
-NEWRROW_BASE_URL="${NEWRROW_BASE_URL:-https://gbsm.newrrow.com}"
-NEWRROW_HOME_URL="${NEWRROW_HOME_URL:-${NEWRROW_BASE_URL}/csr-platform/home}"
-NEWRROW_LOGIN_URL="${NEWRROW_LOGIN_URL:-$NEWRROW_HOME_URL}"
+newrrow_home_url="https://gbsm.newrrow.com/csr-platform/home"
 NEWRROW_AUTH_NAME="${NEWRROW_AUTH_NAME:-newrrow-iac-1password}"
 AGENT_BROWSER_SESSION_NAME="${AGENT_BROWSER_SESSION_NAME:-newrrow-points}"
 export AGENT_BROWSER_SESSION_NAME
@@ -35,18 +33,18 @@ trap cleanup EXIT
 
 # Store credentials only in agent-browser auth save's temporary profile; cleanup calls agent-browser auth delete.
 printf '%s' "$newrrow_pw" | "$AGENT_BROWSER_BIN" auth save "$NEWRROW_AUTH_NAME" \
-  --url "$NEWRROW_LOGIN_URL" \
+  --url "$newrrow_home_url" \
   --username "$username" \
   --password-stdin >/dev/null
 
-"$AGENT_BROWSER_BIN" open "$NEWRROW_HOME_URL" >/dev/null
+"$AGENT_BROWSER_BIN" open "$newrrow_home_url" >/dev/null
 snapshot="$($AGENT_BROWSER_BIN snapshot -i 2>/dev/null || true)"
 current_url="$($AGENT_BROWSER_BIN get url 2>/dev/null || true)"
 
 if printf '%s\n%s\n' "$current_url" "$snapshot" | grep -Eiq 'login|로그인|password|비밀번호|아이디|email'; then
   "$AGENT_BROWSER_BIN" auth login "$NEWRROW_AUTH_NAME" >/dev/null
   "$AGENT_BROWSER_BIN" wait 2000 >/dev/null || true
-  "$AGENT_BROWSER_BIN" open "$NEWRROW_HOME_URL" >/dev/null || true
+  "$AGENT_BROWSER_BIN" open "$newrrow_home_url" >/dev/null || true
 fi
 
 printf 'newrrow_login_ready\n'

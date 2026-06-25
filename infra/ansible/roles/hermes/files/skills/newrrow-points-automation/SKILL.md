@@ -25,12 +25,11 @@ $HERMES_HOME/skills/productivity/newrrow-points-automation
 
 The Hermes gateway environment provides:
 
-- `NEWRROW_BASE_URL` (default `https://gbsm.newrrow.com`)
-- `NEWRROW_HOME_URL` (default `https://gbsm.newrrow.com/csr-platform/home`)
-- `NEWRROW_LOGIN_URL` (default equal to the home URL)
 - `NEWRROW_USERNAME_REF` (1Password secret reference for the Newrrow username)
 - `NEWRROW_PASSWORD_REF` (1Password secret reference for the Newrrow password)
 - `OP_SERVICE_ACCOUNT_TOKEN` for non-interactive `op` access
+
+The Newrrow URL is intentionally hardcoded in this skill/helper as `https://gbsm.newrrow.com/csr-platform/home` instead of being rendered as a gateway environment variable.
 
 Before acting, read `references/ui-flow.md`. It contains the observed routes, point checklist, selectors, and safety rules for submissions.
 
@@ -49,7 +48,7 @@ If the helper cannot read the configured 1Password refs, report the missing ref 
 ## Operating Rules
 
 - Work in Korean when the user is Korean.
-- Start from `NEWRROW_HOME_URL` (`/csr-platform/home`); identify today's date and which checklist items already show `완료`.
+- Start from `https://gbsm.newrrow.com/csr-platform/home`; identify today's date and which checklist items already show `완료`.
 - Before point actions, create or update a Hermes `todo` plan using the visible Newrrow point checklist as plan steps. Keep exactly one unresolved action `in_progress`, and update the plan as soon as each item is visibly confirmed, skipped, or blocked.
 - Skip items that are already complete. Do not duplicate submissions just to increase confidence.
 - Prefer short default content for generic point tasks, such as `클컴 공부`, `자바 공부`, or `뉴로우 포인트 점검`.

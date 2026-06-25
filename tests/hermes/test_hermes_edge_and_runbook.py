@@ -147,6 +147,9 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "newrrow-points-automation" in runbook
     assert "NEWRROW_USERNAME_REF" in runbook
     assert "NEWRROW_PASSWORD_REF" in runbook
+    assert "NEWRROW_BASE_URL" not in runbook
+    assert "NEWRROW_HOME_URL" not in runbook
+    assert "NEWRROW_LOGIN_URL" not in runbook
     assert "op://" in runbook
     assert "agent-browser auth save" in runbook
     assert "threshold: 0.85" in runbook
