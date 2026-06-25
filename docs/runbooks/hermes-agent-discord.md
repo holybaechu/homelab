@@ -76,8 +76,8 @@ The role installs a local Hermes skill at `/var/lib/hermes/skills/productivity/n
 Newrrow login uses 1Password secret references instead of live browser password-manager state. The tracked inventory configures:
 
 ```yaml
-hermes_newrrow_username_ref: op://Hermes/뉴로우/username
-hermes_newrrow_password_ref: op://Hermes/뉴로우/password
+hermes_newrrow_username_ref: op://Hermes/Newrrow/username
+hermes_newrrow_password_ref: op://Hermes/Newrrow/password
 ```
 
 Ansible renders those into `/etc/hermes-gateway.env` as `NEWRROW_USERNAME_REF` and `NEWRROW_PASSWORD_REF`. The Newrrow URL is hardcoded in the skill/helper as `https://gbsm.newrrow.com/csr-platform/home` instead of being exposed as gateway environment. Ensure the Hermes 1Password service account can read the referenced item fields, then ask Hermes to use `$newrrow-points-automation`.
@@ -88,7 +88,7 @@ If Newrrow presents a login page, the skill directs Hermes to run:
 bash "$HERMES_HOME/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
 ```
 
-The helper reads the configured `op://` refs with `op read`, sends the password only through `agent-browser auth save --password-stdin`, runs `agent-browser auth login`, and deletes the temporary auth profile. Do not print the Newrrow username/password values in Discord or logs.
+The helper reads the configured `op://` refs with `op read`, sends the password only through `agent-browser auth save --password-stdin`, runs `agent-browser auth login`, falls back to clicking the visible `로그인` button when the auth helper fills fields but fails to submit, handles the first-run `뉴로우 시작하기` invitation screen, and deletes the temporary auth profile. Do not print the Newrrow username/password values in Discord or logs.
 
 ## Context compression
 

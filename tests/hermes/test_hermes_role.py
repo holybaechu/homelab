@@ -167,8 +167,8 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     assert "hermes_newrrow_base_url" not in group_vars
     assert "hermes_newrrow_home_url" not in group_vars
     assert "hermes_newrrow_login_url" not in group_vars
-    assert group_vars["hermes_newrrow_username_ref"] == "op://Hermes/뉴로우/username"
-    assert group_vars["hermes_newrrow_password_ref"] == "op://Hermes/뉴로우/password"
+    assert group_vars["hermes_newrrow_username_ref"] == "op://Hermes/Newrrow/username"
+    assert group_vars["hermes_newrrow_password_ref"] == "op://Hermes/Newrrow/password"
 
     assert "NEWRROW_BASE_URL" not in env_template
     assert "NEWRROW_HOME_URL" not in env_template
@@ -199,8 +199,14 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     assert "https://gbsm.newrrow.com/csr-platform/home" in ui_flow
     assert "Proton Pass" not in ui_flow
 
-    assert "op read" in login_helper
+    assert "$OP_BIN read" in login_helper
+    assert "op item get" not in login_helper
+    assert "op://Hermes/뉴로우" not in login_helper
     assert "agent-browser auth save" in login_helper
+    assert "click_visible_login_button" in login_helper
+    assert "button \"로그인\"" in login_helper
+    assert "find text \"뉴로우 시작하기\" click --exact" in login_helper
+    assert "Newrrow login did not reach an authenticated page" in login_helper
     assert "--password-stdin" in login_helper
     assert "agent-browser auth delete" in login_helper
     assert "NEWRROW_BASE_URL" not in login_helper
