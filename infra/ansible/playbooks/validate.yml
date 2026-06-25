@@ -236,3 +236,14 @@
       ansible.builtin.command:
         cmd: systemctl is-active hermes-gateway
       changed_when: false
+
+    - name: Check Hermes browser automation CLI
+      ansible.builtin.command:
+        cmd: test -x "{{ hermes_agent_dir }}/node_modules/.bin/agent-browser"
+      changed_when: false
+
+    - name: Check Hermes local browser runtime
+      ansible.builtin.command:
+        cmd: >-
+          python3 -c 'import os, sys; p = "{{ hermes_browser_browsers_path }}"; sys.exit(0 if os.path.isdir(p) and any(n.startswith("chrome-") for n in os.listdir(p)) else 1)'
+      changed_when: false

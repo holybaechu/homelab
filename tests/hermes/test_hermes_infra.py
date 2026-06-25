@@ -83,6 +83,8 @@ def test_hermes_group_vars_are_non_secret_service_settings():
     assert "hermes_webui_password:" not in group_vars
     assert "hermes_discord_bot_token:" not in group_vars
     assert "hermes_discord_allowed_users:" not in group_vars
+    assert "hermes_browserbase_api_key:" not in group_vars
+    assert "hermes_browserbase_project_id:" not in group_vars
     assert "hermes_discord_require_mention: true" in group_vars
     assert "hermes_discord_ignore_no_mention: true" in group_vars
     assert "API_SERVER_KEY" not in group_vars
@@ -107,7 +109,7 @@ def test_proxmox_storage_role_creates_hermes_host_directories():
     assert '"${mount_path}/hermes"' in tasks
 
 
-def test_cd_workflow_passes_hermes_discord_and_web_secrets_to_ansible_extra_vars():
+def test_cd_workflow_passes_hermes_discord_web_and_browser_secrets_to_ansible_extra_vars():
     workflow = read(".github/workflows/cd.yml")
     writer = read("scripts/ci/write_ansible_extra_vars.py")
 
@@ -124,6 +126,13 @@ def test_cd_workflow_passes_hermes_discord_and_web_secrets_to_ansible_extra_vars
     assert "PARALLEL_API_KEY" in writer
     assert "hermes_firecrawl_api_key" in writer
     assert "FIRECRAWL_API_KEY" in writer
+
+    assert "BROWSERBASE_API_KEY:" in workflow
+    assert "BROWSERBASE_PROJECT_ID:" in workflow
+    assert "hermes_browserbase_api_key" in writer
+    assert "BROWSERBASE_API_KEY" in writer
+    assert "hermes_browserbase_project_id" in writer
+    assert "BROWSERBASE_PROJECT_ID" in writer
 
     assert "HERMES_WEBUI_PASSWORD:" not in workflow
     assert "HERMES_API_KEY" not in workflow

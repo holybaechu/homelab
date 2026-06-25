@@ -10,13 +10,20 @@ Set these GitHub Actions secrets in the `prod` environment:
 - `HERMES_DISCORD_ALLOWED_USERS`: comma-separated Discord user IDs allowed to use the bot.
 - `PARALLEL_API_KEY`: Parallel API key used by Hermes `web_search`.
 - `FIRECRAWL_API_KEY`: Firecrawl API key used by Hermes `web_extract`.
+- `BROWSERBASE_API_KEY`: Browserbase API key used by Hermes browser automation.
+- `BROWSERBASE_PROJECT_ID`: Browserbase project ID used by Hermes browser automation.
 
-The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, `hermes_parallel_api_key`, and `hermes_firecrawl_api_key`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
+The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, and `hermes_browserbase_project_id`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
 - `PARALLEL_API_KEY`
 - `FIRECRAWL_API_KEY`
+- `BROWSERBASE_API_KEY`
+- `BROWSERBASE_PROJECT_ID`
+- `BROWSERBASE_PROXIES`
+- `BROWSERBASE_ADVANCED_STEALTH`
+- `HOME` (set to `/var/lib/hermes` for `agent-browser`'s local browser cache)
 
 ## Web search
 
@@ -29,6 +36,22 @@ web:
 ```
 
 That gives Hermes Parallel-backed search results and Firecrawl-backed page extraction/scraping. The runtime config helper preserves the existing model/provider settings while enforcing these web backend settings.
+
+## Browser automation
+
+Hermes browser automation is enabled for the Discord gateway with Browserbase cloud browsing:
+
+```yaml
+browser:
+  cloud_provider: browserbase
+  auto_local_for_private_urls: true
+platform_toolsets:
+  discord:
+    - hermes-discord
+    - browser
+```
+
+The Ansible role installs Node.js/npm and the `agent-browser` package from the pinned Hermes Agent checkout. Browserbase hosts Chromium for public cloud sessions. Because `auto_local_for_private_urls: true` keeps LAN/localhost URLs out of Browserbase, the role also installs a local browser runtime under `/var/lib/hermes/.agent-browser/browsers` with `HOME=/var/lib/hermes` so Hermes' local sidecar can handle private targets.
 
 ## Context compression
 
@@ -54,7 +77,7 @@ With the default repo settings, DMs always receive responses. Server channels re
 
 ## Deploy and validate
 
-1. Confirm the Discord secrets exist in the `prod` environment.
+1. Confirm the Discord, web backend, and Browserbase secrets exist in the `prod` environment.
 2. Run `infra/ansible/playbooks/bootstrap.yml` through CD, or directly if doing a controlled maintenance deploy.
 3. Run `infra/ansible/playbooks/site.yml`.
 4. Run `infra/ansible/playbooks/validate.yml`.

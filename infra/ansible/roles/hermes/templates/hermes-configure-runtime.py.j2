@@ -13,6 +13,9 @@ DESIRED_COMPRESSION_THRESHOLD = {{ hermes_compression_threshold | float }}
 DESIRED_CODEX_GPT55_AUTORAISE = {{ (hermes_compression_codex_gpt55_autoraise | bool) | ternary('True', 'False') }}
 DESIRED_WEB_SEARCH_BACKEND = "{{ hermes_web_search_backend }}"
 DESIRED_WEB_EXTRACT_BACKEND = "{{ hermes_web_extract_backend }}"
+DESIRED_BROWSER_CLOUD_PROVIDER = "{{ hermes_browser_cloud_provider }}"
+DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS = {{ (hermes_browser_auto_local_for_private_urls | bool) | ternary('True', 'False') }}
+DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser"]
 SERVICE_USER = "{{ hermes_user }}"
 SERVICE_GROUP = "{{ hermes_group }}"
 
@@ -22,6 +25,15 @@ def ensure_dict(parent, key):
     if isinstance(current, dict):
         return current
     current = {}
+    parent[key] = current
+    return current
+
+
+def ensure_list(parent, key, default_items):
+    current = parent.get(key)
+    if isinstance(current, list):
+        return current
+    current = list(default_items)
     parent[key] = current
     return current
 
@@ -41,6 +53,8 @@ def main():
     compression = ensure_dict(auxiliary, "compression")
     runtime_compression = ensure_dict(config, "compression")
     web = ensure_dict(config, "web")
+    browser = ensure_dict(config, "browser")
+    platform_toolsets = ensure_dict(config, "platform_toolsets")
 
     changed = False
     if compression.get("provider") != DESIRED_COMPRESSION_PROVIDER:
@@ -69,6 +83,29 @@ def main():
     if web.get("backend") != "":
         web["backend"] = ""
         changed = True
+
+    if browser.get("cloud_provider") != DESIRED_BROWSER_CLOUD_PROVIDER:
+        browser["cloud_provider"] = DESIRED_BROWSER_CLOUD_PROVIDER
+        changed = True
+    if (
+        browser.get("auto_local_for_private_urls")
+        != DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS
+    ):
+        browser["auto_local_for_private_urls"] = DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS
+        changed = True
+
+    discord_toolsets_existing = platform_toolsets.get("discord")
+    discord_toolsets = ensure_list(
+        platform_toolsets,
+        "discord",
+        DESIRED_DISCORD_TOOLSETS,
+    )
+    if not isinstance(discord_toolsets_existing, list):
+        changed = True
+    for toolset in DESIRED_DISCORD_TOOLSETS:
+        if toolset not in discord_toolsets:
+            discord_toolsets.append(toolset)
+            changed = True
 
     if not changed:
         print("ok")
