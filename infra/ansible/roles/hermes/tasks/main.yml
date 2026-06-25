@@ -172,6 +172,15 @@
     group: "{{ hermes_group }}"
     recurse: true
 
+- name: Allow Hermes service to manage 1Password CLI config
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/.config/op"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0700"
+    recurse: true
+
 - name: Check Hermes browser automation CLI
   ansible.builtin.stat:
     path: "{{ hermes_agent_dir }}/node_modules/.bin/agent-browser"

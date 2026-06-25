@@ -264,7 +264,7 @@
         set -a
         . "{{ hermes_env_path }}"
         set +a
-        op whoami >/dev/null
+        runuser -u "{{ hermes_user }}" -- env "HOME={{ hermes_home }}" "OP_SERVICE_ACCOUNT_TOKEN=$OP_SERVICE_ACCOUNT_TOKEN" op whoami >/dev/null
       args:
         executable: /bin/bash
       changed_when: false

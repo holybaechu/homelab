@@ -102,6 +102,14 @@ def test_hermes_role_installs_1password_cli_and_skill_for_secret_access():
     assert ownership_task["ansible.builtin.file"]["group"] == "{{ hermes_group }}"
     assert ownership_task["ansible.builtin.file"]["recurse"] is True
 
+    op_config_task = find_task(tasks, "Allow Hermes service to manage 1Password CLI config")
+    assert op_config_task["ansible.builtin.file"]["path"] == "{{ hermes_home }}/.config/op"
+    assert op_config_task["ansible.builtin.file"]["state"] == "directory"
+    assert op_config_task["ansible.builtin.file"]["owner"] == "{{ hermes_user }}"
+    assert op_config_task["ansible.builtin.file"]["group"] == "{{ hermes_group }}"
+    assert op_config_task["ansible.builtin.file"]["mode"] == "0700"
+    assert op_config_task["ansible.builtin.file"]["recurse"] is True
+
     runtime_package_index = tasks.index(find_task(tasks, "Install Hermes runtime packages"))
     key_index = tasks.index(key_task)
     repo_index = tasks.index(repo_task)
@@ -110,9 +118,10 @@ def test_hermes_role_installs_1password_cli_and_skill_for_secret_access():
     skill_check_index = tasks.index(skill_check_task)
     skill_index = tasks.index(skill_task)
     ownership_index = tasks.index(ownership_task)
+    op_config_index = tasks.index(op_config_task)
     service_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
     assert runtime_package_index < key_index < repo_index < op_index
-    assert agent_pip_index < skill_check_index < skill_index < ownership_index < service_index
+    assert agent_pip_index < skill_check_index < skill_index < ownership_index < op_config_index < service_index
 
 
 def test_hermes_role_installs_agent_browser_node_dependencies():
