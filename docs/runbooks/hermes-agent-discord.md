@@ -67,7 +67,7 @@ op read "op://Vault/Item/field"
 op run -- env | grep '^EXAMPLE_'
 ```
 
-Do not ask Hermes to print raw secret values unless you explicitly need to reveal one; prefer `op run` and `op inject` for commands and templates. Scope the 1Password service account narrowly to the vaults/items Hermes is allowed to read, because allowed Discord users can ask Hermes to run terminal commands that use this token. The role keeps `/var/lib/hermes/.config/op` owned by the `hermes` service user so validation and service commands do not leave root-owned 1Password CLI state behind.
+Do not ask Hermes to print raw secret values unless you explicitly need to reveal one; prefer `op run` and `op inject` for commands and templates. Scope the 1Password service account narrowly to the vaults/items Hermes is allowed to read, because allowed Discord users can ask Hermes to run terminal commands that use this token. The role keeps `/var/lib/hermes/.config/op` owned by the `hermes` service user and keeps `/var/lib/hermes/.config/op/config` at mode `0600`, because the 1Password CLI refuses to read that config file when its permissions are broader.
 
 ## Context compression
 

@@ -283,6 +283,36 @@
         cmd: test -f "{{ hermes_home }}/skills/security/1password/SKILL.md"
       changed_when: false
 
+    - name: Check Hermes 1Password CLI config file mode
+      ansible.builtin.shell: |
+        {{ hermes_venv_path }}/bin/python - <<'PY'
+        from pathlib import Path
+        import pwd
+        import grp
+        import stat
+
+        path = Path("{{ hermes_home }}/.config/op/config")
+        if not path.exists():
+            raise SystemExit(0)
+        if path.is_symlink():
+            raise SystemExit(f"{path} must not be a symlink")
+        st = path.stat()
+        expected_uid = pwd.getpwnam("{{ hermes_user }}").pw_uid
+        expected_gid = grp.getgrnam("{{ hermes_group }}").gr_gid
+        failures = []
+        if st.st_uid != expected_uid:
+            failures.append(f"owner uid {st.st_uid} != {expected_uid}")
+        if st.st_gid != expected_gid:
+            failures.append(f"group gid {st.st_gid} != {expected_gid}")
+        if stat.S_IMODE(st.st_mode) != 0o600:
+            failures.append(f"mode {stat.S_IMODE(st.st_mode):04o} != 0600")
+        if failures:
+            raise SystemExit("; ".join(failures))
+        PY
+      args:
+        executable: /bin/bash
+      changed_when: false
+
     - name: Check Hermes 1Password service account authentication
       ansible.builtin.shell: |
         set -euo pipefail

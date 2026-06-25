@@ -108,7 +108,25 @@ def test_hermes_role_installs_1password_cli_and_skill_for_secret_access():
     assert op_config_task["ansible.builtin.file"]["owner"] == "{{ hermes_user }}"
     assert op_config_task["ansible.builtin.file"]["group"] == "{{ hermes_group }}"
     assert op_config_task["ansible.builtin.file"]["mode"] == "0700"
-    assert op_config_task["ansible.builtin.file"]["recurse"] is True
+    assert "recurse" not in op_config_task["ansible.builtin.file"]
+
+    op_config_file_check_task = find_task(tasks, "Check Hermes 1Password CLI config file")
+    assert op_config_file_check_task["ansible.builtin.stat"]["path"] == (
+        "{{ hermes_home }}/.config/op/config"
+    )
+    assert op_config_file_check_task["ansible.builtin.stat"]["follow"] is False
+    assert op_config_file_check_task["register"] == "hermes_op_config_file"
+
+    op_config_file_task = find_task(tasks, "Secure Hermes 1Password CLI config file")
+    assert op_config_file_task["ansible.builtin.file"]["path"] == (
+        "{{ hermes_home }}/.config/op/config"
+    )
+    assert op_config_file_task["ansible.builtin.file"]["state"] == "file"
+    assert op_config_file_task["ansible.builtin.file"]["owner"] == "{{ hermes_user }}"
+    assert op_config_file_task["ansible.builtin.file"]["group"] == "{{ hermes_group }}"
+    assert op_config_file_task["ansible.builtin.file"]["mode"] == "0600"
+    assert op_config_file_task["ansible.builtin.file"]["follow"] is False
+    assert op_config_file_task["when"] == "hermes_op_config_file.stat.exists"
 
     runtime_package_index = tasks.index(find_task(tasks, "Install Hermes runtime packages"))
     key_index = tasks.index(key_task)
@@ -119,9 +137,20 @@ def test_hermes_role_installs_1password_cli_and_skill_for_secret_access():
     skill_index = tasks.index(skill_task)
     ownership_index = tasks.index(ownership_task)
     op_config_index = tasks.index(op_config_task)
+    op_config_file_check_index = tasks.index(op_config_file_check_task)
+    op_config_file_index = tasks.index(op_config_file_task)
     service_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
     assert runtime_package_index < key_index < repo_index < op_index
-    assert agent_pip_index < skill_check_index < skill_index < ownership_index < op_config_index < service_index
+    assert (
+        agent_pip_index
+        < skill_check_index
+        < skill_index
+        < ownership_index
+        < op_config_index
+        < op_config_file_check_index
+        < op_config_file_index
+        < service_index
+    )
 
 
 def test_hermes_role_installs_agent_browser_node_dependencies():

@@ -179,7 +179,22 @@
     owner: "{{ hermes_user }}"
     group: "{{ hermes_group }}"
     mode: "0700"
-    recurse: true
+
+- name: Check Hermes 1Password CLI config file
+  ansible.builtin.stat:
+    path: "{{ hermes_home }}/.config/op/config"
+    follow: false
+  register: hermes_op_config_file
+
+- name: Secure Hermes 1Password CLI config file
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/.config/op/config"
+    state: file
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0600"
+    follow: false
+  when: hermes_op_config_file.stat.exists
 
 - name: Check Hermes browser automation CLI
   ansible.builtin.stat:
