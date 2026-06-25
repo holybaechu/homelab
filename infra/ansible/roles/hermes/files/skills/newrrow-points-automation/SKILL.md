@@ -41,7 +41,7 @@ If Newrrow asks for login, use 1Password instead of browser password managers. P
 bash "$HERMES_HOME/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
 ```
 
-The helper uses `op read` against `NEWRROW_USERNAME_REF` and `NEWRROW_PASSWORD_REF`, pipes the password to `agent-browser auth save --password-stdin`, runs `agent-browser auth login`, and deletes the temporary auth profile afterward. Do not echo, print, log, or include the secret values in the final answer.
+The helper reads `NEWRROW_USERNAME_REF` and `NEWRROW_PASSWORD_REF` with `op read`, pipes the password to `agent-browser auth save --password-stdin`, runs `agent-browser auth login`, falls back to clicking the visible `로그인` button when the auth helper fills the fields but fails to submit, handles the first-run `뉴로우 시작하기` invitation screen, and deletes the temporary auth profile afterward. Do not echo, print, log, or include the secret values in the final answer.
 
 If the helper cannot read the configured 1Password refs, report the missing ref names and ask the user to update the 1Password item or IaC variables. If Newrrow requires 2FA, CAPTCHA, account chooser, or another visible security prompt, stop and ask the user to complete that step.
 

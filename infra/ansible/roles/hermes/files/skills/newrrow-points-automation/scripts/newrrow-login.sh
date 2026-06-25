@@ -16,7 +16,7 @@ if [ ! -x "$AGENT_BROWSER_BIN" ]; then
   exit 1
 fi
 
-# Read credentials with op read through the configurable OP_BIN.
+# Read credentials through op without printing secret values.
 username="$($OP_BIN read "$NEWRROW_USERNAME_REF")"
 newrrow_pw="$($OP_BIN read "$NEWRROW_PASSWORD_REF")"
 
@@ -37,15 +37,61 @@ printf '%s' "$newrrow_pw" | "$AGENT_BROWSER_BIN" auth save "$NEWRROW_AUTH_NAME" 
   --username "$username" \
   --password-stdin >/dev/null
 
-"$AGENT_BROWSER_BIN" open "$newrrow_home_url" >/dev/null
-snapshot="$($AGENT_BROWSER_BIN snapshot -i 2>/dev/null || true)"
-current_url="$($AGENT_BROWSER_BIN get url 2>/dev/null || true)"
+refresh_page_state() {
+  snapshot="$($AGENT_BROWSER_BIN snapshot -i 2>/dev/null || true)"
+  current_url="$($AGENT_BROWSER_BIN get url 2>/dev/null || true)"
+}
 
-if printf '%s\n%s\n' "$current_url" "$snapshot" | grep -Eiq 'login|로그인|password|비밀번호|아이디|email'; then
-  "$AGENT_BROWSER_BIN" auth login "$NEWRROW_AUTH_NAME" >/dev/null
-  "$AGENT_BROWSER_BIN" wait 2000 >/dev/null || true
+click_visible_login_button() {
+  local login_ref=""
+  refresh_page_state
+  login_ref="$(printf '%s\n' "$snapshot" | sed -n 's/.*button "로그인".*\[ref=\(e[0-9][0-9]*\)\].*/@\1/p' | head -1)"
+  if [ -n "$login_ref" ]; then
+    "$AGENT_BROWSER_BIN" click "$login_ref" >/dev/null 2>&1
+  else
+    "$AGENT_BROWSER_BIN" find text "로그인" click --exact >/dev/null 2>&1
+  fi
+}
+
+wait_for_newrrow_state() {
+  local _
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    refresh_page_state
+    if printf '%s\n%s\n' "$current_url" "$snapshot" \
+      | grep -Eiq 'login|로그인|password|비밀번호|아이디|이메일|csr-platform/(home|invitation)|뉴로우 시작하기|오늘 할 일'; then
+      return 0
+    fi
+    "$AGENT_BROWSER_BIN" wait 1000 >/dev/null || true
+  done
+  refresh_page_state
+}
+
+"$AGENT_BROWSER_BIN" open "$newrrow_home_url" >/dev/null
+wait_for_newrrow_state
+
+if printf '%s\n%s\n' "$current_url" "$snapshot" | grep -Eiq 'login|로그인|password|비밀번호|아이디|이메일'; then
+  if ! "$AGENT_BROWSER_BIN" auth login "$NEWRROW_AUTH_NAME" >/dev/null 2>&1; then
+    click_visible_login_button || true
+  fi
+  "$AGENT_BROWSER_BIN" wait 5000 >/dev/null || true
   "$AGENT_BROWSER_BIN" open "$newrrow_home_url" >/dev/null || true
+  wait_for_newrrow_state
+fi
+
+refresh_page_state
+current_url="$($AGENT_BROWSER_BIN get url 2>/dev/null || true)"
+if printf '%s\n%s\n' "$current_url" "$snapshot" | grep -Eq 'csr-platform/invitation|뉴로우 시작하기'; then
+  "$AGENT_BROWSER_BIN" find text "뉴로우 시작하기" click --exact >/dev/null 2>&1 || true
+  "$AGENT_BROWSER_BIN" wait 5000 >/dev/null || true
+  "$AGENT_BROWSER_BIN" open "$newrrow_home_url" >/dev/null || true
+  wait_for_newrrow_state
+fi
+
+current_url="$($AGENT_BROWSER_BIN get url 2>/dev/null || true)"
+if printf '%s\n' "$current_url" | grep -Eiq 'login|auth\.inhrplus\.com'; then
+  printf 'Newrrow login did not reach an authenticated page\n' >&2
+  exit 1
 fi
 
 printf 'newrrow_login_ready\n'
-"$AGENT_BROWSER_BIN" get url 2>/dev/null || true
+printf '%s\n' "$current_url"
