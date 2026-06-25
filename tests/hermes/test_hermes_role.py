@@ -197,6 +197,9 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     assert "NEWRROW_USERNAME_REF" in ui_flow
     assert "NEWRROW_HOME_URL" not in ui_flow
     assert "https://gbsm.newrrow.com/csr-platform/home" in ui_flow
+    assert "업무를 등록해 주세요." in ui_flow
+    assert "agent-browser mouse move <x> <y>" in ui_flow
+    assert "Only record timetable as blocked/skipped after both ref-click and coordinate-click fail" in ui_flow
     assert "Proton Pass" not in ui_flow
 
     assert "$OP_BIN read" in login_helper
