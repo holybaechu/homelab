@@ -313,6 +313,68 @@
         executable: /bin/bash
       changed_when: false
 
+
+    - name: Check Hermes 5+1 profiles and Kanban routing config
+      ansible.builtin.shell: |
+        {{ hermes_venv_path }}/bin/python - <<'PY'
+        from pathlib import Path
+        import yaml
+
+        hermes_home = Path("{{ hermes_home }}")
+        expected_profiles = {{ hermes_profiles | map(attribute='name') | list | to_json }}
+        expected_cli_toolsets = {
+        {% for profile in hermes_profiles %}
+            "{{ profile.name }}": {{ profile.cli_toolsets | to_json }},
+        {% endfor %}
+        }
+        expected_proxy = {
+        {% for profile in hermes_profiles %}
+            "{{ profile.name }}": "{{ profile.browserbase_proxies | string | lower }}",
+        {% endfor %}
+        }
+
+        config = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8")) or {}
+        kanban = config.get("kanban") or {}
+        checks = [
+            ("kanban.dispatch_in_gateway", kanban.get("dispatch_in_gateway"), True),
+            ("kanban.orchestrator_profile", kanban.get("orchestrator_profile"), "{{ hermes_kanban.orchestrator_profile }}"),
+            ("kanban.default_assignee", kanban.get("default_assignee"), "{{ hermes_kanban.default_assignee }}"),
+            ("kanban.max_in_progress_per_profile", kanban.get("max_in_progress_per_profile"), {{ hermes_kanban.max_in_progress_per_profile }}),
+        ]
+        discord_toolsets = (config.get("platform_toolsets") or {}).get("discord") or []
+        if "kanban" not in discord_toolsets:
+            raise SystemExit("discord platform is missing kanban toolset")
+        for label, actual, expected in checks:
+            if actual != expected:
+                raise SystemExit(f"{label}={actual!r} expected {expected!r}")
+
+        for name in expected_profiles:
+            profile_dir = hermes_home / "profiles" / name
+            if not profile_dir.is_dir():
+                raise SystemExit(f"missing profile dir: {name}")
+            profile_config = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8")) or {}
+            profile_meta = yaml.safe_load((profile_dir / "profile.yaml").read_text(encoding="utf-8")) or {}
+            profile_kanban = profile_config.get("kanban") or {}
+            profile_toolsets = (profile_config.get("platform_toolsets") or {}).get("cli") or []
+            if profile_kanban.get("dispatch_in_gateway") is not False:
+                raise SystemExit(f"{name}: kanban.dispatch_in_gateway must be false")
+            if profile_toolsets != expected_cli_toolsets[name]:
+                raise SystemExit(f"{name}: cli toolsets {profile_toolsets!r} expected {expected_cli_toolsets[name]!r}")
+            if not (profile_meta.get("description") or "").strip():
+                raise SystemExit(f"{name}: missing profile description")
+            env_text = (profile_dir / ".env").read_text(encoding="utf-8")
+            if f"BROWSERBASE_PROXIES={expected_proxy[name]}" not in env_text:
+                raise SystemExit(f"{name}: BROWSERBASE_PROXIES override mismatch")
+        PY
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Check Hermes Kanban board is initialized
+      ansible.builtin.command:
+        cmd: test -f "{{ hermes_home }}/kanban.db"
+      changed_when: false
+
     - name: Check Hermes 1Password CLI config file mode
       ansible.builtin.shell: |
         {{ hermes_venv_path }}/bin/python - <<'PY'

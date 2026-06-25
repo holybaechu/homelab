@@ -23,7 +23,7 @@ hermes_browser_cloud_provider: browserbase
 hermes_browser_auto_local_for_private_urls: true
 hermes_browser_browsers_path: "{{ hermes_home }}/.agent-browser/browsers"
 hermes_browser_args: --no-sandbox,--disable-dev-shm-usage
-hermes_browserbase_proxies: true
+hermes_browserbase_proxies: false
 hermes_browserbase_advanced_stealth: false
 
 hermes_newrrow_username_ref: op://Hermes/Newrrow/username
@@ -31,3 +31,115 @@ hermes_newrrow_password_ref: op://Hermes/Newrrow/password
 
 hermes_discord_require_mention: true
 hermes_discord_ignore_no_mention: true
+
+# Hermes multi-profile Kanban fleet
+# 5 workers + 1 orchestrator. The default profile remains the Discord gateway
+# and hosts the gateway-embedded Kanban dispatcher.
+hermes_kanban:
+  dispatch_in_gateway: true
+  dispatch_interval_seconds: 60
+  failure_limit: 2
+  max_spawn: 3
+  max_in_progress: 3
+  max_in_progress_per_profile: 1
+  auto_decompose: true
+  auto_decompose_per_tick: 2
+  orchestrator_profile: orchestrator
+  default_assignee: orchestrator
+  dispatch_stale_timeout_seconds: 14400
+
+hermes_profiles:
+  - name: orchestrator
+    description: >-
+      Kanban intake and orchestration profile. Decomposes broad goals into
+      linked cards, assigns work to the five specialist profiles, comments on
+      handoffs, and avoids implementation work.
+    cli_toolsets:
+      - kanban
+      - skills
+      - session_search
+      - todo
+      - memory
+    browserbase_proxies: false
+  - name: homelab
+    description: >-
+      Homelab operations profile for holybaechu/homelab IaC, OpenTofu,
+      Ansible, Proxmox LXC, GitHub Actions, deployment validation, and
+      production incident triage.
+    cli_toolsets:
+      - terminal
+      - file
+      - web
+      - browser
+      - skills
+      - todo
+      - memory
+      - session_search
+      - code_execution
+      - delegation
+      - kanban
+    browserbase_proxies: false
+  - name: dev
+    description: >-
+      General software development profile for coding, debugging, tests,
+      refactors, documentation, local builds, and GitHub pull-request work
+      outside production homelab operations.
+    cli_toolsets:
+      - terminal
+      - file
+      - web
+      - browser
+      - skills
+      - todo
+      - memory
+      - session_search
+      - code_execution
+      - delegation
+      - kanban
+    browserbase_proxies: false
+  - name: research
+    description: >-
+      Research and synthesis profile for web/docs/paper discovery,
+      source-backed summaries, technical comparisons, monitoring, and written
+      briefs with citations.
+    cli_toolsets:
+      - web
+      - browser
+      - file
+      - skills
+      - todo
+      - memory
+      - session_search
+      - kanban
+    browserbase_proxies: false
+  - name: sandbox
+    description: >-
+      Low-trust experiment profile for unfamiliar repositories, dependency
+      spikes, build trials, throwaway scripts, and risky commands that should
+      stay out of the main/default long-term context.
+    cli_toolsets:
+      - terminal
+      - file
+      - web
+      - skills
+      - todo
+      - memory
+      - session_search
+      - code_execution
+      - kanban
+    browserbase_proxies: false
+  - name: browser-protected
+    description: >-
+      Protected-web profile for public sites that need Browserbase residential
+      proxy mode, stronger browser continuity, CAPTCHA/security-prompt
+      recovery, or datacenter-IP avoidance.
+    cli_toolsets:
+      - browser
+      - web
+      - file
+      - skills
+      - todo
+      - memory
+      - session_search
+      - kanban
+    browserbase_proxies: true

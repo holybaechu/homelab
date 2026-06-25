@@ -308,6 +308,27 @@
     group: "{{ hermes_group }}"
     recurse: true
 
+
+- name: Create Hermes 5+1 profile directories
+  ansible.builtin.command:
+    argv:
+      - "{{ hermes_venv_path }}/bin/hermes"
+      - profile
+      - create
+      - "{{ item.name }}"
+      - --no-alias
+      - --description
+      - "{{ item.description }}"
+    creates: "{{ hermes_home }}/profiles/{{ item.name }}"
+  become: true
+  become_user: "{{ hermes_user }}"
+  environment:
+    HERMES_HOME: "{{ hermes_home }}"
+    HOME: "{{ hermes_home }}"
+  loop: "{{ hermes_profiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+
 - name: Install Hermes runtime configuration helper
   ansible.builtin.template:
     src: hermes-configure-runtime.py.j2
@@ -322,6 +343,20 @@
   register: hermes_runtime_config
   changed_when: hermes_runtime_config.stdout == "changed"
   notify: Restart hermes-gateway
+
+
+- name: Initialize Hermes Kanban board
+  ansible.builtin.command:
+    argv:
+      - "{{ hermes_venv_path }}/bin/hermes"
+      - kanban
+      - init
+    creates: "{{ hermes_home }}/kanban.db"
+  become: true
+  become_user: "{{ hermes_user }}"
+  environment:
+    HERMES_HOME: "{{ hermes_home }}"
+    HOME: "{{ hermes_home }}"
 
 - name: Install Hermes gateway environment
   ansible.builtin.template:

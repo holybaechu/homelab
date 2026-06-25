@@ -439,8 +439,8 @@ def test_hermes_role_routes_auxiliary_compression_to_main_provider_with_longer_t
 
     assert "hermes_auxiliary_compression_provider" in script
     assert "hermes_auxiliary_compression_timeout" in script
-    assert 'compression["model"] = ""' in script
-    assert 'compression["timeout"] = DESIRED_COMPRESSION_TIMEOUT' in script
+    assert 'set_value(compression, "model", "")' in script
+    assert 'set_value(compression, "timeout", DESIRED_COMPRESSION_TIMEOUT)' in script
     assert "gpt-5.5" not in script
     assert "api_key" not in script
 
@@ -471,12 +471,103 @@ def test_hermes_role_configures_parallel_search_and_firecrawl_extract():
 
     assert "DESIRED_WEB_SEARCH_BACKEND" in script
     assert "DESIRED_WEB_EXTRACT_BACKEND" in script
-    assert 'web["search_backend"] = DESIRED_WEB_SEARCH_BACKEND' in script
-    assert 'web["extract_backend"] = DESIRED_WEB_EXTRACT_BACKEND' in script
+    assert 'set_value(web, "search_backend", DESIRED_WEB_SEARCH_BACKEND)' in script
+    assert 'set_value(web, "extract_backend", DESIRED_WEB_EXTRACT_BACKEND)' in script
 
     configure_task = find_task(tasks, "Configure Hermes runtime settings")
     assert configure_task["notify"] == "Restart hermes-gateway"
 
+
+
+
+
+def test_hermes_role_configures_5_plus_1_profiles_and_kanban_dispatcher():
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+    group_vars = read_yaml("infra/ansible/inventory/prod/group_vars/svc_hermes.yml")
+    script = read("infra/ansible/roles/hermes/templates/hermes-configure-runtime.py.j2")
+
+    expected_profiles = [
+        "orchestrator",
+        "homelab",
+        "dev",
+        "research",
+        "sandbox",
+        "browser-protected",
+    ]
+    assert [profile["name"] for profile in group_vars["hermes_profiles"]] == expected_profiles
+    assert group_vars["hermes_kanban"] == {
+        "dispatch_in_gateway": True,
+        "dispatch_interval_seconds": 60,
+        "failure_limit": 2,
+        "max_spawn": 3,
+        "max_in_progress": 3,
+        "max_in_progress_per_profile": 1,
+        "auto_decompose": True,
+        "auto_decompose_per_tick": 2,
+        "orchestrator_profile": "orchestrator",
+        "default_assignee": "orchestrator",
+        "dispatch_stale_timeout_seconds": 14400,
+    }
+
+    create_task = find_task(tasks, "Create Hermes 5+1 profile directories")
+    assert create_task["ansible.builtin.command"]["argv"] == [
+        "{{ hermes_venv_path }}/bin/hermes",
+        "profile",
+        "create",
+        "{{ item.name }}",
+        "--no-alias",
+        "--description",
+        "{{ item.description }}",
+    ]
+    assert create_task["ansible.builtin.command"]["creates"] == (
+        "{{ hermes_home }}/profiles/{{ item.name }}"
+    )
+    assert create_task["become_user"] == "{{ hermes_user }}"
+    assert create_task["loop"] == "{{ hermes_profiles }}"
+
+    kanban_init_task = find_task(tasks, "Initialize Hermes Kanban board")
+    assert kanban_init_task["ansible.builtin.command"]["argv"] == [
+        "{{ hermes_venv_path }}/bin/hermes",
+        "kanban",
+        "init",
+    ]
+    assert kanban_init_task["ansible.builtin.command"]["creates"] == "{{ hermes_home }}/kanban.db"
+    assert kanban_init_task["become_user"] == "{{ hermes_user }}"
+
+    assert 'DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser", "kanban"]' in script
+    assert "DESIRED_KANBAN" in script
+    assert "DESIRED_PROFILES" in script
+    assert "apply_profile_runtime" in script
+    assert 'set_value(kanban, "dispatch_in_gateway", False)' in script
+    assert 'config["platform_toolsets"] = {"cli": desired_cli_toolsets}' in script
+    assert "BROWSERBASE_PROXIES" in script
+    assert "MANAGED_SOUL_START" in script
+
+    browser_profile = next(
+        profile for profile in group_vars["hermes_profiles"] if profile["name"] == "browser-protected"
+    )
+    normal_profiles = [
+        profile for profile in group_vars["hermes_profiles"] if profile["name"] != "browser-protected"
+    ]
+    assert browser_profile["browserbase_proxies"] is True
+    assert all(profile["browserbase_proxies"] is False for profile in normal_profiles)
+
+    orchestrator = group_vars["hermes_profiles"][0]
+    assert orchestrator["cli_toolsets"] == [
+        "kanban",
+        "skills",
+        "session_search",
+        "todo",
+        "memory",
+    ]
+    assert "terminal" not in orchestrator["cli_toolsets"]
+    assert "file" not in orchestrator["cli_toolsets"]
+
+    configure_index = tasks.index(find_task(tasks, "Configure Hermes runtime settings"))
+    create_index = tasks.index(create_task)
+    init_index = tasks.index(kanban_init_task)
+    service_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
+    assert create_index < configure_index < init_index < service_index
 
 def test_hermes_role_configures_browserbase_browser_automation():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
@@ -487,20 +578,19 @@ def test_hermes_role_configures_browserbase_browser_automation():
     assert group_vars["hermes_browser_auto_local_for_private_urls"] is True
     assert group_vars["hermes_browser_browsers_path"] == "{{ hermes_home }}/.agent-browser/browsers"
     assert group_vars["hermes_browser_args"] == "--no-sandbox,--disable-dev-shm-usage"
-    assert group_vars["hermes_browserbase_proxies"] is True
+    assert group_vars["hermes_browserbase_proxies"] is False
     assert group_vars["hermes_browserbase_advanced_stealth"] is False
 
     assert "DESIRED_BROWSER_CLOUD_PROVIDER" in script
     assert "DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS" in script
     assert 'browser = ensure_dict(config, "browser")' in script
-    assert 'browser["cloud_provider"] = DESIRED_BROWSER_CLOUD_PROVIDER' in script
+    assert 'set_value(browser, "cloud_provider", cloud_provider)' in script
     assert (
-        'browser["auto_local_for_private_urls"] = '
-        'DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS'
+        'set_value(browser, "auto_local_for_private_urls", auto_local)'
     ) in script
     assert 'platform_toolsets = ensure_dict(config, "platform_toolsets")' in script
     assert 'plugins = ensure_dict(config, "plugins")' in script
-    assert 'DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser"]' in script
+    assert 'DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser", "kanban"]' in script
     assert 'DESIRED_PLUGINS = ["newrrow-browser-login"]' in script
     assert "discord_toolsets = ensure_list" in script
     assert "plugins_enabled = ensure_list" in script
@@ -520,10 +610,9 @@ def test_hermes_role_configures_compression_threshold_and_codex_gpt55_autoraise(
     assert "DESIRED_COMPRESSION_THRESHOLD" in script
     assert "DESIRED_CODEX_GPT55_AUTORAISE" in script
     assert 'runtime_compression = ensure_dict(config, "compression")' in script
-    assert 'runtime_compression["threshold"] = DESIRED_COMPRESSION_THRESHOLD' in script
+    assert 'set_value(runtime_compression, "threshold", DESIRED_COMPRESSION_THRESHOLD)' in script
     assert (
-        'runtime_compression["codex_gpt55_autoraise"] = '
-        'DESIRED_CODEX_GPT55_AUTORAISE'
+        'set_value(\n        runtime_compression,\n        "codex_gpt55_autoraise",\n        DESIRED_CODEX_GPT55_AUTORAISE,\n    )'
     ) in script
 
 

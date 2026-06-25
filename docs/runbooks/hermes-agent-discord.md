@@ -107,6 +107,48 @@ auxiliary:
 
 This keeps the general compaction trigger at 85%, disables the Codex gpt-5.5 route-specific autoraise override, and raises the compression-summary call timeout above the previous 120s live setting that produced `Codex auxiliary Responses stream exceeded 120.0s total timeout`. The summary provider remains `main`, so compression continues to use the configured main Hermes model route with a longer budget instead of an operator-only live edit.
 
+
+## Multi-profile Kanban fleet
+
+The default `/var/lib/hermes` profile remains the Discord gateway and the single gateway-embedded Kanban dispatcher. IaC also creates a homelab-managed **5+1** profile fleet under `/var/lib/hermes/profiles`:
+
+| Profile | Role |
+| --- | --- |
+| `orchestrator` | +1 Kanban intake/orchestration profile; decomposes broad goals, links cards, assigns specialist workers, and avoids implementation work. |
+| `homelab` | Production homelab IaC/ops: `holybaechu/homelab`, OpenTofu, Ansible, Proxmox LXC, GitHub Actions, deployment validation. |
+| `dev` | General coding, debugging, tests, refactors, docs, and PR work outside production homelab ops. |
+| `research` | Web/docs/paper discovery, source-backed summaries, technical comparisons, monitoring, written briefs. |
+| `sandbox` | Low-trust experiments, unfamiliar repos, dependency spikes, build trials, and throwaway scripts. |
+| `browser-protected` | Protected public web automation that should use Browserbase residential proxy mode. |
+
+Kanban is the communication layer between profiles. The default gateway config owns dispatching:
+
+```yaml
+platform_toolsets:
+  discord:
+    - hermes-discord
+    - browser
+    - kanban
+kanban:
+  dispatch_in_gateway: true
+  orchestrator_profile: orchestrator
+  default_assignee: orchestrator
+  max_spawn: 3
+  max_in_progress: 3
+  max_in_progress_per_profile: 1
+```
+
+Every named profile gets `kanban.dispatch_in_gateway: false` so accidentally starting a per-profile gateway does not create a second dispatcher racing on the same board. Worker profiles receive task-scoped `kanban_*` tools when spawned by the dispatcher; the `orchestrator` profile also has the `kanban` toolset on CLI so it can create/link/comment cards. IaC runs `hermes kanban init`, creating `/var/lib/hermes/kanban.db` on the persistent home mount.
+
+Browserbase proxy policy is profile-scoped through each profile's `.env`: default/normal profiles keep `BROWSERBASE_PROXIES=false`, while `browser-protected` sets `BROWSERBASE_PROXIES=true` for sites that actually need residential proxy mode. API keys still come from the gateway service environment; profile `.env` files contain only non-secret runtime overrides.
+
+Useful checks after deploy:
+
+```bash
+runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes profile list
+runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes kanban list
+```
+
 ## Discord setup
 
 1. Create a Discord application and bot in the Discord Developer Portal.
