@@ -21,6 +21,7 @@ hermes_web_extract_backend: firecrawl
 hermes_browser_cloud_provider: browserbase
 hermes_browser_auto_local_for_private_urls: true
 hermes_browser_browsers_path: "{{ hermes_home }}/.agent-browser/browsers"
+hermes_browser_args: --no-sandbox,--disable-dev-shm-usage
 hermes_browserbase_proxies: true
 hermes_browserbase_advanced_stealth: false
 
