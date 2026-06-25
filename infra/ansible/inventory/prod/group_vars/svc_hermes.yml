@@ -26,5 +26,8 @@ hermes_browser_args: --no-sandbox,--disable-dev-shm-usage
 hermes_browserbase_proxies: true
 hermes_browserbase_advanced_stealth: false
 
+hermes_newrrow_username_ref: op://Hermes/뉴로우/username
+hermes_newrrow_password_ref: op://Hermes/뉴로우/password
+
 hermes_discord_require_mention: true
 hermes_discord_ignore_no_mention: true

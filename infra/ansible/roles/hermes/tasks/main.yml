@@ -16,7 +16,11 @@
       - hermes_browserbase_project_id | length > 0
       - hermes_1password_service_account_token is defined
       - hermes_1password_service_account_token | length > 0
-    fail_msg: Hermes Discord, web backend, Browserbase, and 1Password credentials must be provided through secrets.
+      - hermes_newrrow_username_ref is defined
+      - hermes_newrrow_username_ref | length > 0
+      - hermes_newrrow_password_ref is defined
+      - hermes_newrrow_password_ref | length > 0
+    fail_msg: Hermes Discord, web backend, Browserbase, 1Password, and Newrrow 1Password refs must be provided.
   no_log: true
 
 - name: Install Hermes runtime packages
@@ -195,6 +199,36 @@
     mode: "0600"
     follow: false
   when: hermes_op_config_file.stat.exists
+
+- name: Check Hermes Newrrow points skill
+  ansible.builtin.stat:
+    path: "{{ hermes_home }}/skills/productivity/newrrow-points-automation/SKILL.md"
+  register: hermes_newrrow_points_skill
+
+- name: Create Hermes Newrrow points skill directory
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/skills/productivity/newrrow-points-automation"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0755"
+
+- name: Install Hermes Newrrow points skill
+  ansible.builtin.copy:
+    src: skills/newrrow-points-automation/
+    dest: "{{ hermes_home }}/skills/productivity/newrrow-points-automation/"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: preserve
+  notify: Restart hermes-gateway
+
+- name: Make Hermes Newrrow login helper executable
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
+    state: file
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0755"
 
 - name: Check Hermes browser automation CLI
   ansible.builtin.stat:

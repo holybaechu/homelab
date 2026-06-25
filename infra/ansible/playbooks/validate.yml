@@ -283,6 +283,16 @@
         cmd: test -f "{{ hermes_home }}/skills/security/1password/SKILL.md"
       changed_when: false
 
+    - name: Check Hermes Newrrow points skill
+      ansible.builtin.shell: |
+        set -euo pipefail
+        test -f "{{ hermes_home }}/skills/productivity/newrrow-points-automation/SKILL.md"
+        test -f "{{ hermes_home }}/skills/productivity/newrrow-points-automation/references/ui-flow.md"
+        test -x "{{ hermes_home }}/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
+      args:
+        executable: /bin/bash
+      changed_when: false
+
     - name: Check Hermes 1Password CLI config file mode
       ansible.builtin.shell: |
         {{ hermes_venv_path }}/bin/python - <<'PY'

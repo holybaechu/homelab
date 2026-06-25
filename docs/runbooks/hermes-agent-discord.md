@@ -69,6 +69,27 @@ op run -- env | grep '^EXAMPLE_'
 
 Do not ask Hermes to print raw secret values unless you explicitly need to reveal one; prefer `op run` and `op inject` for commands and templates. Scope the 1Password service account narrowly to the vaults/items Hermes is allowed to read, because allowed Discord users can ask Hermes to run terminal commands that use this token. The role keeps `/var/lib/hermes/.config/op` owned by the `hermes` service user and keeps `/var/lib/hermes/.config/op/config` at mode `0600`, because the 1Password CLI refuses to read that config file when its permissions are broader.
 
+## Newrrow points automation
+
+The role installs a local Hermes skill at `/var/lib/hermes/skills/productivity/newrrow-points-automation`. It migrates the packaged Newrrow point checklist workflow to Hermes browser automation/`agent-browser` and keeps the detailed UI route/checklist reference under the skill's `references/ui-flow.md`.
+
+Newrrow login uses 1Password secret references instead of live browser password-manager state. The tracked inventory configures:
+
+```yaml
+hermes_newrrow_username_ref: op://Hermes/뉴로우/username
+hermes_newrrow_password_ref: op://Hermes/뉴로우/password
+```
+
+Ansible renders those into `/etc/hermes-gateway.env` as `NEWRROW_USERNAME_REF` and `NEWRROW_PASSWORD_REF`. The Newrrow URL is hardcoded in the skill/helper as `https://gbsm.newrrow.com/csr-platform/home` instead of being exposed as gateway environment. Ensure the Hermes 1Password service account can read the referenced item fields, then ask Hermes to use `$newrrow-points-automation`.
+
+If Newrrow presents a login page, the skill directs Hermes to run:
+
+```bash
+bash "$HERMES_HOME/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
+```
+
+The helper reads the configured `op://` refs with `op read`, sends the password only through `agent-browser auth save --password-stdin`, runs `agent-browser auth login`, and deletes the temporary auth profile. Do not print the Newrrow username/password values in Discord or logs.
+
 ## Context compression
 
 The runtime config helper also enforces Hermes' global context-compression behavior:
