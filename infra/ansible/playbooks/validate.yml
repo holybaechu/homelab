@@ -289,6 +289,26 @@
         test -f "{{ hermes_home }}/skills/productivity/newrrow-points-automation/SKILL.md"
         test -f "{{ hermes_home }}/skills/productivity/newrrow-points-automation/references/ui-flow.md"
         test -x "{{ hermes_home }}/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
+        test -f "{{ hermes_home }}/plugins/newrrow-browser-login/plugin.yaml"
+        test -f "{{ hermes_home }}/plugins/newrrow-browser-login/__init__.py"
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Check Hermes Newrrow browser login plugin is enabled
+      ansible.builtin.shell: |
+        {{ hermes_venv_path }}/bin/python - <<'PY'
+        from pathlib import Path
+        import yaml
+
+        config = yaml.safe_load(Path("{{ hermes_home }}/config.yaml").read_text(encoding="utf-8")) or {}
+        enabled = ((config.get("plugins") or {}).get("enabled") or [])
+        if "newrrow-browser-login" not in enabled:
+            raise SystemExit("newrrow-browser-login plugin is not enabled")
+        toolsets = ((config.get("platform_toolsets") or {}).get("discord") or [])
+        if "browser" not in toolsets:
+            raise SystemExit("discord platform is missing browser toolset")
+        PY
       args:
         executable: /bin/bash
       changed_when: false

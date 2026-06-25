@@ -1,6 +1,6 @@
 ---
 name: newrrow-points-automation
-description: Use when the user asks Hermes to open Newrrow or complete, automate, verify, or recover Newrrow daily or weekly point tasks using agent-browser and 1Password-backed login.
+description: Use when the user asks Hermes to open Newrrow or complete, automate, verify, or recover Newrrow daily or weekly point tasks using Hermes browser tools, Browserbase routing, and 1Password-backed login.
 version: 1.0.0
 author: holybaechu + Hermes Agent
 license: MIT
@@ -13,7 +13,7 @@ metadata:
 
 # Newrrow Points Automation
 
-Automate the Newrrow point checklist through Hermes browser automation or the installed `agent-browser` CLI. Use visible UI state only; do not inspect cookies, local storage, password stores, browser profile files, or hidden credential data.
+Automate the Newrrow point checklist through Hermes browser automation. Newrrow is a public URL, so the default homelab route is Hermes `browser_*` tools backed by Browserbase; local `agent-browser` is reserved only for Hermes' private/LAN auto-local sidecar. Use visible UI state only; do not inspect cookies, local storage, password stores, browser profile files, or hidden credential data.
 
 ## Required Setup
 
@@ -28,22 +28,23 @@ The Hermes gateway environment provides:
 - `NEWRROW_USERNAME_REF` (1Password secret reference for the Newrrow username)
 - `NEWRROW_PASSWORD_REF` (1Password secret reference for the Newrrow password)
 - `OP_SERVICE_ACCOUNT_TOKEN` for non-interactive `op` access
+- the `newrrow-browser-login` Hermes plugin, which exposes `newrrow_browser_login` inside the `browser` toolset
 
-The Newrrow URL is intentionally hardcoded in this skill/helper as `https://gbsm.newrrow.com/csr-platform/home` instead of being rendered as a gateway environment variable.
+The Newrrow URL is intentionally hardcoded in this skill/plugin as `https://gbsm.newrrow.com/csr-platform/home` instead of being rendered as a gateway environment variable.
 
 Before acting, read `references/ui-flow.md`. It contains the observed routes, point checklist, selectors, and safety rules for submissions.
 
 ## Login with 1Password
 
-If Newrrow asks for login, use 1Password instead of browser password managers. Prefer the helper script so secrets are not printed into the transcript:
+Start with the Hermes browser tools, not the standalone `agent-browser` CLI:
 
-```bash
-bash "$HERMES_HOME/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
-```
+1. Call `browser_navigate` on `https://gbsm.newrrow.com/csr-platform/home`.
+2. If the snapshot shows the authenticated Newrrow home, continue the point workflow with `browser_click`, `browser_type`, `browser_scroll`, `browser_press`, and `browser_snapshot`.
+3. If the snapshot shows the login form, call `newrrow_browser_login` once. The plugin reads `NEWRROW_USERNAME_REF` and `NEWRROW_PASSWORD_REF` with `op read` inside the tool handler, injects credentials into the active Hermes browser-tool session through CDP, and returns only non-secret status. This preserves the Hermes browser router: public Newrrow URLs use Browserbase in homelab, while private/LAN URLs still use Hermes' local sidecar.
 
-The helper reads `NEWRROW_USERNAME_REF` and `NEWRROW_PASSWORD_REF` with `op read`, pipes the password to `agent-browser auth save --password-stdin`, runs `agent-browser auth login`, falls back to clicking the visible `로그인` button when the auth helper fills the fields but fails to submit, handles the first-run `뉴로우 시작하기` invitation screen, and deletes the temporary auth profile afterward. Do not echo, print, log, or include the secret values in the final answer.
+Do **not** call `browser_type` with raw Newrrow passwords or `op read` output; `browser_type` arguments/results are model-visible. Do **not** use bare `agent-browser open/auth/login` for Newrrow runtime operation because that bypasses Hermes browser routing and can silently fall back to local Chromium. The `scripts/newrrow-login.sh` file is only a 1Password credential preflight helper for deployment/debugging; it does not log into the site.
 
-If the helper cannot read the configured 1Password refs, report the missing ref names and ask the user to update the 1Password item or IaC variables. If Newrrow requires 2FA, CAPTCHA, account chooser, or another visible security prompt, stop and ask the user to complete that step.
+If the plugin cannot read the configured 1Password refs, report the missing ref names and ask the user to update the 1Password item or IaC variables. If Newrrow requires 2FA, CAPTCHA, account chooser, or another visible security prompt, stop and ask the user to complete that step.
 
 ## Operating Rules
 

@@ -200,6 +200,31 @@
     follow: false
   when: hermes_op_config_file.stat.exists
 
+- name: Create Hermes plugins directory
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/plugins"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0755"
+
+- name: Create Hermes Newrrow browser login plugin directory
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/plugins/newrrow-browser-login"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0755"
+
+- name: Install Hermes Newrrow browser login plugin
+  ansible.builtin.copy:
+    src: plugins/newrrow-browser-login/
+    dest: "{{ hermes_home }}/plugins/newrrow-browser-login/"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: preserve
+  notify: Restart hermes-gateway
+
 - name: Check Hermes Newrrow points skill
   ansible.builtin.stat:
     path: "{{ hermes_home }}/skills/productivity/newrrow-points-automation/SKILL.md"

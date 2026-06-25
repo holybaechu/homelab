@@ -162,6 +162,9 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     skill_root = REPO_ROOT / "infra/ansible/roles/hermes/files/skills/newrrow-points-automation"
     skill = (skill_root / "SKILL.md").read_text(encoding="utf-8")
     ui_flow = (skill_root / "references/ui-flow.md").read_text(encoding="utf-8")
+    plugin_root = REPO_ROOT / "infra/ansible/roles/hermes/files/plugins/newrrow-browser-login"
+    plugin_manifest = (plugin_root / "plugin.yaml").read_text(encoding="utf-8")
+    plugin_code = (plugin_root / "__init__.py").read_text(encoding="utf-8")
     login_helper = (skill_root / "scripts/newrrow-login.sh").read_text(encoding="utf-8")
 
     assert "hermes_newrrow_base_url" not in group_vars
@@ -180,43 +183,63 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     assert "name: newrrow-points-automation" in skill
     assert "platforms:" in skill
     assert "Hermes" in skill
+    assert "Browserbase" in skill
+    assert "browser_navigate" in skill
+    assert "newrrow_browser_login" in skill
     assert "1Password" in skill
     assert "op read" in skill
     assert "NEWRROW_USERNAME_REF" in skill
     assert "NEWRROW_PASSWORD_REF" in skill
     assert "NEWRROW_HOME_URL" not in skill
     assert "https://gbsm.newrrow.com/csr-platform/home" in skill
-    assert "agent-browser" in skill
+    assert "bare `agent-browser" in skill
     assert "todo" in skill
     assert "Proton Pass" not in skill
     assert "chrome:control-chrome" not in skill
     assert "update_plan" not in skill
 
     assert "Point Checklist" in ui_flow
+    assert "Browserbase" in ui_flow
+    assert "browser_navigate" in ui_flow
+    assert "newrrow_browser_login" in ui_flow
     assert "1Password" in ui_flow
     assert "NEWRROW_USERNAME_REF" in ui_flow
     assert "NEWRROW_HOME_URL" not in ui_flow
     assert "https://gbsm.newrrow.com/csr-platform/home" in ui_flow
     assert "업무를 등록해 주세요." in ui_flow
-    assert "agent-browser mouse move <x> <y>" in ui_flow
+    assert "browser_console" in ui_flow
+    assert "document.elementFromPoint(x, y)?.click()" in ui_flow
+    assert "bare `agent-browser mouse" in ui_flow
     assert "Only record timetable as blocked/skipped after both ref-click and coordinate-click fail" in ui_flow
     assert "Proton Pass" not in ui_flow
 
     assert "$OP_BIN read" in login_helper
+    assert "newrrow_1password_refs_ready" in login_helper
+    assert "Credential preflight only" in login_helper
     assert "op item get" not in login_helper
     assert "op://Hermes/뉴로우" not in login_helper
-    assert "agent-browser auth save" in login_helper
-    assert "click_visible_login_button" in login_helper
-    assert "button \"로그인\"" in login_helper
-    assert "find text \"뉴로우 시작하기\" click --exact" in login_helper
-    assert "Newrrow login did not reach an authenticated page" in login_helper
-    assert "--password-stdin" in login_helper
-    assert "agent-browser auth delete" in login_helper
+    assert "agent-browser auth save" not in login_helper
+    assert "agent-browser auth login" not in login_helper
+    assert "agent-browser auth delete" not in login_helper
+    assert "--password-stdin" not in login_helper
     assert "NEWRROW_BASE_URL" not in login_helper
     assert "NEWRROW_HOME_URL" not in login_helper
     assert "NEWRROW_LOGIN_URL" not in login_helper
-    assert "https://gbsm.newrrow.com/csr-platform/home" in login_helper
     assert "set -x" not in login_helper
+
+    assert "name: newrrow-browser-login" in plugin_manifest
+    assert "newrrow_browser_login" in plugin_manifest
+    assert "OP_SERVICE_ACCOUNT_TOKEN" in plugin_manifest
+    assert "newrrow_browser_login" in plugin_code
+    assert "ctx.register_tool" in plugin_code
+    assert "toolset=\"browser\"" in plugin_code
+    assert "browser_tool.browser_navigate" in plugin_code
+    assert "browser_tool._get_session_info" in plugin_code
+    assert "Runtime.evaluate" in plugin_code
+    assert "websockets.connect" in plugin_code
+    assert "NEWRROW_USERNAME_REF" in plugin_code
+    assert "NEWRROW_PASSWORD_REF" in plugin_code
+    assert "browser_tool.browser_type" not in plugin_code
 
     skill_check_task = find_task(tasks, "Check Hermes Newrrow points skill")
     assert skill_check_task["ansible.builtin.stat"]["path"] == (
@@ -241,6 +264,23 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     assert skill_task["ansible.builtin.copy"]["group"] == "{{ hermes_group }}"
     assert skill_task["notify"] == "Restart hermes-gateway"
 
+    plugin_dir_task = find_task(tasks, "Create Hermes Newrrow browser login plugin directory")
+    assert plugin_dir_task["ansible.builtin.file"]["path"] == (
+        "{{ hermes_home }}/plugins/newrrow-browser-login"
+    )
+    assert plugin_dir_task["ansible.builtin.file"]["state"] == "directory"
+    assert plugin_dir_task["ansible.builtin.file"]["owner"] == "{{ hermes_user }}"
+    assert plugin_dir_task["ansible.builtin.file"]["group"] == "{{ hermes_group }}"
+
+    plugin_task = find_task(tasks, "Install Hermes Newrrow browser login plugin")
+    assert plugin_task["ansible.builtin.copy"]["src"] == "plugins/newrrow-browser-login/"
+    assert plugin_task["ansible.builtin.copy"]["dest"] == (
+        "{{ hermes_home }}/plugins/newrrow-browser-login/"
+    )
+    assert plugin_task["ansible.builtin.copy"]["owner"] == "{{ hermes_user }}"
+    assert plugin_task["ansible.builtin.copy"]["group"] == "{{ hermes_group }}"
+    assert plugin_task["notify"] == "Restart hermes-gateway"
+
     login_helper_task = find_task(tasks, "Make Hermes Newrrow login helper executable")
     assert login_helper_task["ansible.builtin.file"]["path"] == (
         "{{ hermes_home }}/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
@@ -248,12 +288,13 @@ def test_hermes_role_installs_newrrow_points_skill_with_1password_login():
     assert login_helper_task["ansible.builtin.file"]["mode"] == "0755"
 
     op_index = tasks.index(find_task(tasks, "Install 1Password CLI"))
+    plugin_index = tasks.index(plugin_task)
     skill_check_index = tasks.index(skill_check_task)
     skill_dir_index = tasks.index(skill_dir_task)
     skill_index = tasks.index(skill_task)
     helper_index = tasks.index(login_helper_task)
     service_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
-    assert op_index < skill_check_index < skill_dir_index < skill_index < helper_index < service_index
+    assert op_index < plugin_index < skill_check_index < skill_dir_index < skill_index < helper_index < service_index
 
 
 def test_hermes_role_installs_agent_browser_node_dependencies():
@@ -458,8 +499,11 @@ def test_hermes_role_configures_browserbase_browser_automation():
         'DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS'
     ) in script
     assert 'platform_toolsets = ensure_dict(config, "platform_toolsets")' in script
+    assert 'plugins = ensure_dict(config, "plugins")' in script
     assert 'DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser"]' in script
+    assert 'DESIRED_PLUGINS = ["newrrow-browser-login"]' in script
     assert "discord_toolsets = ensure_list" in script
+    assert "plugins_enabled = ensure_list" in script
     assert '"discord"' in script
 
     configure_task = find_task(tasks, "Configure Hermes runtime settings")

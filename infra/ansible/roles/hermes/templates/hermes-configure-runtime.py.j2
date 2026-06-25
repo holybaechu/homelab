@@ -17,6 +17,7 @@ DESIRED_WEB_EXTRACT_BACKEND = "{{ hermes_web_extract_backend }}"
 DESIRED_BROWSER_CLOUD_PROVIDER = "{{ hermes_browser_cloud_provider }}"
 DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS = {{ (hermes_browser_auto_local_for_private_urls | bool) | ternary('True', 'False') }}
 DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser"]
+DESIRED_PLUGINS = ["newrrow-browser-login"]
 SERVICE_USER = "{{ hermes_user }}"
 SERVICE_GROUP = "{{ hermes_group }}"
 
@@ -55,6 +56,7 @@ def main():
     runtime_compression = ensure_dict(config, "compression")
     web = ensure_dict(config, "web")
     browser = ensure_dict(config, "browser")
+    plugins = ensure_dict(config, "plugins")
     platform_toolsets = ensure_dict(config, "platform_toolsets")
 
     changed = False
@@ -109,6 +111,15 @@ def main():
     for toolset in DESIRED_DISCORD_TOOLSETS:
         if toolset not in discord_toolsets:
             discord_toolsets.append(toolset)
+            changed = True
+
+    plugins_enabled_existing = plugins.get("enabled")
+    plugins_enabled = ensure_list(plugins, "enabled", DESIRED_PLUGINS)
+    if not isinstance(plugins_enabled_existing, list):
+        changed = True
+    for plugin in DESIRED_PLUGINS:
+        if plugin not in plugins_enabled:
+            plugins_enabled.append(plugin)
             changed = True
 
     if not changed:
