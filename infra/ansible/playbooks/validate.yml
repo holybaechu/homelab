@@ -332,10 +332,11 @@
       changed_when: false
 
 
-    - name: Check Hermes 5+1 profiles and Kanban routing config
+    - name: Check Hermes 5+1 profiles, policy files, and Kanban routing config
       ansible.builtin.shell: |
         {{ hermes_venv_path }}/bin/python - <<'PY'
         from pathlib import Path
+        import sqlite3
         import yaml
 
         hermes_home = Path("{{ hermes_home }}")
@@ -350,6 +351,12 @@
             "{{ profile.name }}": "{{ profile.browserbase_proxies | string | lower }}",
         {% endfor %}
         }
+        expected_required_skills = {
+        {% for profile in hermes_profiles %}
+            "{{ profile.name }}": {{ (profile.required_skills | default([])) | to_json }},
+        {% endfor %}
+        }
+        expected_boards = {{ hermes_kanban_boards | map(attribute='slug') | list | to_json }}
 
         config = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8")) or {}
         kanban = config.get("kanban") or {}
@@ -358,6 +365,7 @@
             ("kanban.orchestrator_profile", kanban.get("orchestrator_profile"), "{{ hermes_kanban.orchestrator_profile }}"),
             ("kanban.default_assignee", kanban.get("default_assignee"), "{{ hermes_kanban.default_assignee }}"),
             ("kanban.max_in_progress_per_profile", kanban.get("max_in_progress_per_profile"), {{ hermes_kanban.max_in_progress_per_profile }}),
+            ("kanban.auto_decompose", kanban.get("auto_decompose"), {{ hermes_kanban.auto_decompose | bool }}),
         ]
         discord_toolsets = (config.get("platform_toolsets") or {}).get("discord") or []
         if "kanban" not in discord_toolsets:
@@ -365,6 +373,19 @@
         for label, actual, expected in checks:
             if actual != expected:
                 raise SystemExit(f"{label}={actual!r} expected {expected!r}")
+
+        default_soul = (hermes_home / "SOUL.md").read_text(encoding="utf-8")
+        if "HOMELAB-HERMES-DEFAULT-CONTROL-PLANE:START" not in default_soul:
+            raise SystemExit("default profile is missing control-plane guidance")
+        policy_dir = hermes_home / "kanban" / "policies"
+        for filename, required_text in {
+            "routing-matrix.md": "Profile lanes",
+            "card-template.md": "Evidence required",
+            "review-required.md": "review-required",
+        }.items():
+            text = (policy_dir / filename).read_text(encoding="utf-8")
+            if required_text not in text:
+                raise SystemExit(f"{filename} is missing {required_text!r}")
 
         for name in expected_profiles:
             profile_dir = hermes_home / "profiles" / name
@@ -380,9 +401,33 @@
                 raise SystemExit(f"{name}: cli toolsets {profile_toolsets!r} expected {expected_cli_toolsets[name]!r}")
             if not (profile_meta.get("description") or "").strip():
                 raise SystemExit(f"{name}: missing profile description")
-            env_text = (profile_dir / ".env").read_text(encoding="utf-8")
-            if f"BROWSERBASE_PROXIES={expected_proxy[name]}" not in env_text:
-                raise SystemExit(f"{name}: BROWSERBASE_PROXIES override mismatch")
+            if profile_meta.get("required_skills") != expected_required_skills[name]:
+                raise SystemExit(f"{name}: required skills metadata mismatch")
+            if not profile_meta.get("routing"):
+                raise SystemExit(f"{name}: missing routing metadata")
+            soul = (profile_dir / "SOUL.md").read_text(encoding="utf-8")
+            if "Required skills to attach or load" not in soul or "Completion contract" not in soul:
+                raise SystemExit(f"{name}: managed SOUL contract is missing")
+            for skill in expected_required_skills[name]:
+                skill_matches = list((profile_dir / "skills").rglob("SKILL.md"))
+                if not any(f"name: {skill}" in p.read_text(encoding="utf-8") for p in skill_matches):
+                    raise SystemExit(f"{name}: required skill not seeded: {skill}")
+            env_lines = (profile_dir / ".env").read_text(encoding="utf-8").splitlines()
+            proxy_lines = [line for line in env_lines if line.strip().startswith("BROWSERBASE_PROXIES=")]
+            if proxy_lines != [f"BROWSERBASE_PROXIES={expected_proxy[name]}"]:
+                raise SystemExit(f"{name}: BROWSERBASE_PROXIES effective override mismatch or duplicate")
+            stealth_lines = [line for line in env_lines if line.strip().startswith("BROWSERBASE_ADVANCED_STEALTH=")]
+            if len(stealth_lines) != 1:
+                raise SystemExit(f"{name}: BROWSERBASE_ADVANCED_STEALTH override must appear exactly once")
+
+        for board in expected_boards:
+            db_path = hermes_home / "kanban.db" if board == "default" else hermes_home / "kanban" / "boards" / board / "kanban.db"
+            if not db_path.is_file():
+                raise SystemExit(f"missing kanban board db: {board}")
+            with sqlite3.connect(db_path) as conn:
+                result = conn.execute("PRAGMA quick_check").fetchone()
+            if not result or result[0] != "ok":
+                raise SystemExit(f"kanban board db quick_check failed: {board}: {result}")
         PY
       args:
         executable: /bin/bash
@@ -391,6 +436,41 @@
     - name: Check Hermes Kanban board is initialized
       ansible.builtin.command:
         cmd: test -f "{{ hermes_home }}/kanban.db"
+      changed_when: false
+
+    - name: Check Hermes Kanban diagnostics cron
+      ansible.builtin.shell: |
+        {{ hermes_venv_path }}/bin/python - <<'PY'
+        import json
+        from pathlib import Path
+
+        script = Path("{{ hermes_home }}/scripts/{{ hermes_kanban_diagnostics_cron.script }}")
+        if not script.is_file():
+            raise SystemExit(f"missing diagnostics script: {script}")
+        if not script.stat().st_mode & 0o111:
+            raise SystemExit(f"diagnostics script is not executable: {script}")
+        jobs_path = Path("{{ hermes_home }}/cron/jobs.json")
+        data = json.loads(jobs_path.read_text(encoding="utf-8")) if jobs_path.exists() else {"jobs": []}
+        matches = [job for job in data.get("jobs", []) if job.get("name") == "{{ hermes_kanban_diagnostics_cron.name }}"]
+        if len(matches) != 1:
+            raise SystemExit(f"expected one diagnostics cron job, found {len(matches)}")
+        job = matches[0]
+        expected = {
+            "script": "{{ hermes_kanban_diagnostics_cron.script }}",
+            "no_agent": True,
+            "deliver": "{{ hermes_kanban_diagnostics_cron.deliver }}",
+            "schedule_display": "{{ hermes_kanban_diagnostics_cron.schedule }}",
+        }
+        for key, value in expected.items():
+            if job.get(key) != value:
+                raise SystemExit(f"diagnostics cron {key}={job.get(key)!r} expected {value!r}")
+        env_path = Path("{{ hermes_env_path }}")
+        env_lines = env_path.read_text(encoding="utf-8").splitlines()
+        if not any(line.startswith("DISCORD_HOME_CHANNEL=") and line.split("=", 1)[1].strip().strip('"\'') for line in env_lines):
+            raise SystemExit("DISCORD_HOME_CHANNEL must be set for diagnostics cron deliver=discord")
+        PY
+      args:
+        executable: /bin/bash
       changed_when: false
 
     - name: Check Hermes 1Password CLI config file mode

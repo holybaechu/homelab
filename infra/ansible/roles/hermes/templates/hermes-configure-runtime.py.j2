@@ -24,10 +24,17 @@ DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser", "kanban"]
 DESIRED_PLUGINS = ["newrrow-browser-login"]
 DESIRED_KANBAN = json.loads({{ hermes_kanban | default({}) | to_json | to_json }})
 DESIRED_PROFILES = json.loads({{ hermes_profiles | default([]) | to_json | to_json }})
+DESIRED_DEFAULT_CONTROL_PLANE = json.loads({{ hermes_default_control_plane_guidance | default("") | to_json | to_json }})
+DESIRED_KANBAN_CARD_TEMPLATE = json.loads({{ hermes_kanban_card_template | default("") | to_json | to_json }})
+DESIRED_KANBAN_REVIEW_REQUIRED_POLICY = json.loads({{ hermes_kanban_review_required_policy | default("") | to_json | to_json }})
+DESIRED_KANBAN_BOARDS = json.loads({{ hermes_kanban_boards | default([]) | to_json | to_json }})
+SKILLS_ROOT = HERMES_HOME / "skills"
 SERVICE_USER = "{{ hermes_user }}"
 SERVICE_GROUP = "{{ hermes_group }}"
 MANAGED_SOUL_START = "<!-- HOMELAB-HERMES-PROFILE-ROLE:START -->"
 MANAGED_SOUL_END = "<!-- HOMELAB-HERMES-PROFILE-ROLE:END -->"
+MANAGED_DEFAULT_SOUL_START = "<!-- HOMELAB-HERMES-DEFAULT-CONTROL-PLANE:START -->"
+MANAGED_DEFAULT_SOUL_END = "<!-- HOMELAB-HERMES-DEFAULT-CONTROL-PLANE:END -->"
 
 
 def ensure_dict(parent, key):
@@ -177,6 +184,10 @@ def ensure_env_values(path, values):
         replaced = False
         for key, value in rendered.items():
             if stripped.startswith(f"{key}=") or stripped.startswith(f"export {key}="):
+                if key in seen:
+                    changed = True
+                    replaced = True
+                    break
                 newline = f"{key}={value}"
                 if line != newline:
                     changed = True
@@ -199,43 +210,204 @@ def ensure_env_values(path, values):
     return changed
 
 
-def ensure_profile_soul(profile_dir, profile):
-    name = profile["name"]
-    description = profile.get("description", "").strip()
-    if name == DESIRED_KANBAN.get("orchestrator_profile", "orchestrator"):
-        behavior = (
-            "You are the Kanban orchestrator. Decompose broad user goals into "
-            "small linked Kanban cards, choose assignees from the configured "
-            "specialist profiles, comment with routing rationale, and avoid "
-            "doing implementation work yourself."
-        )
-    else:
-        behavior = (
-            "You are a Kanban worker profile. When spawned for a Kanban task, "
-            "first read the card through kanban_show, do only the work that "
-            "matches this profile role, leave durable comments/metadata, and "
-            "finish with kanban_complete or kanban_block."
-        )
-    block = (
-        f"{MANAGED_SOUL_START}\n"
-        f"# Homelab-managed profile role: {name}\n\n"
-        f"Role summary: {description}\n\n"
-        f"{behavior}\n"
-        f"{MANAGED_SOUL_END}\n"
-    )
-    soul_path = profile_dir / "SOUL.md"
-    current = soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
-    if MANAGED_SOUL_START in current and MANAGED_SOUL_END in current:
-        before, rest = current.split(MANAGED_SOUL_START, 1)
-        _, after = rest.split(MANAGED_SOUL_END, 1)
+def format_bullets(items):
+    return "\n".join(f"- {str(item).strip()}" for item in (items or []) if str(item).strip()) or "- None specified."
+
+
+def replace_managed_block(path, start_marker, end_marker, block, *, default_mode=0o644):
+    current = path.read_text(encoding="utf-8") if path.exists() else ""
+    if start_marker in current and end_marker in current:
+        before, rest = current.split(start_marker, 1)
+        _, after = rest.split(end_marker, 1)
         new_text = before.rstrip() + "\n\n" + block + after.lstrip("\n")
     else:
         new_text = current.rstrip() + "\n\n" + block
     if current != new_text:
-        atomic_write_text(soul_path, new_text, default_mode=0o644)
+        atomic_write_text(path, new_text, default_mode=default_mode)
         return True
     return False
 
+
+def ensure_default_soul():
+    if not DESIRED_DEFAULT_CONTROL_PLANE:
+        return False
+    block = (
+        f"{MANAGED_DEFAULT_SOUL_START}\n"
+        "# Homelab-managed default control-plane guidance\n\n"
+        f"{DESIRED_DEFAULT_CONTROL_PLANE}\n\n"
+        "Default may use Kanban directly for triage, but complex execution should be routed to "
+        "the orchestrator or specialist profiles using the managed card template.\n"
+        f"{MANAGED_DEFAULT_SOUL_END}\n"
+    )
+    return replace_managed_block(
+        HERMES_HOME / "SOUL.md",
+        MANAGED_DEFAULT_SOUL_START,
+        MANAGED_DEFAULT_SOUL_END,
+        block,
+    )
+
+
+def ensure_policy_files():
+    policies_dir = HERMES_HOME / "kanban" / "policies"
+    routing_rows = []
+    for profile in DESIRED_PROFILES:
+        routing = profile.get("routing") or {}
+        handles = "; ".join(str(item).strip() for item in routing.get("handles") or [] if str(item).strip())
+        avoid = "; ".join(str(item).strip() for item in routing.get("avoid") or [] if str(item).strip())
+        skills = ", ".join(str(item).strip() for item in profile.get("required_skills") or [] if str(item).strip())
+        routing_rows.append(
+            f"| `{profile['name']}` | `{routing.get('default_board', 'default')}` | {handles or '—'} | {avoid or '—'} | {skills or '—'} |"
+        )
+    board_rows = []
+    for board in DESIRED_KANBAN_BOARDS:
+        board_rows.append(
+            f"| `{board['slug']}` | {board.get('name', board['slug'])} | {board.get('description', '')} |"
+        )
+    routing_matrix = (
+        "# Homelab Hermes Kanban routing matrix\n\n"
+        "This file is generated by homelab IaC. It is the routing contract for the orchestrator profile.\n\n"
+        "## Boards\n\n"
+        "| Board | Name | Purpose |\n| --- | --- | --- |\n"
+        + "\n".join(board_rows)
+        + "\n\n## Profile lanes\n\n"
+        "| Profile | Default board | Handles | Avoids | Required skills |\n| --- | --- | --- | --- | --- |\n"
+        + "\n".join(routing_rows)
+        + "\n"
+    )
+    files = {
+        "routing-matrix.md": routing_matrix,
+        "card-template.md": "# Homelab Hermes Kanban card template\n\n" + DESIRED_KANBAN_CARD_TEMPLATE.strip() + "\n",
+        "review-required.md": "# Homelab Hermes review-required policy\n\n" + DESIRED_KANBAN_REVIEW_REQUIRED_POLICY.strip() + "\n",
+    }
+    changed = False
+    for name, content in files.items():
+        changed |= write_text_if_changed(policies_dir / name, content, default_mode=0o644)
+    return changed
+
+
+def write_text_if_changed(path, content, *, default_mode=0o644):
+    if path.exists() and path.read_text(encoding="utf-8") == content:
+        return False
+    atomic_write_text(path, content, default_mode=default_mode)
+    return True
+
+
+def find_skill_source(skill_name):
+    if not skill_name or not SKILLS_ROOT.is_dir():
+        return None
+    direct_matches = [
+        SKILLS_ROOT / skill_name,
+        *SKILLS_ROOT.glob(f"*/{skill_name}"),
+    ]
+    for candidate in direct_matches:
+        if (candidate / "SKILL.md").is_file():
+            return candidate
+    for skill_file in SKILLS_ROOT.rglob("SKILL.md"):
+        try:
+            for line in skill_file.read_text(encoding="utf-8").splitlines()[:40]:
+                if line.startswith("name:"):
+                    name = line.split(":", 1)[1].strip().strip('"\'')
+                    if name == skill_name:
+                        return skill_file.parent
+                    break
+        except OSError:
+            continue
+    return None
+
+
+def tree_fingerprint(root):
+    if not root.exists():
+        return None
+    fingerprint = []
+    for path in sorted(root.rglob("*")):
+        rel = path.relative_to(root).as_posix()
+        if path.is_dir():
+            fingerprint.append((rel, "dir", None))
+        elif path.is_file():
+            fingerprint.append((rel, "file", path.read_bytes()))
+    return fingerprint
+
+
+def sync_skill_tree(src, dest):
+    if tree_fingerprint(src) == tree_fingerprint(dest):
+        return False
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dest)
+    if hasattr(shutil, "chown"):
+        for path in [dest, *dest.rglob("*")]:
+            try:
+                shutil.chown(path, user=SERVICE_USER, group=SERVICE_GROUP)
+            except LookupError:
+                break
+    return True
+
+
+def ensure_profile_required_skills(profile_dir, profile):
+    changed = False
+    required = list(profile.get("required_skills") or [])
+    if not required:
+        return False
+    for skill_name in required:
+        source = find_skill_source(skill_name)
+        if source is None:
+            raise SystemExit(f"missing required skill source in {SKILLS_ROOT}: {skill_name}")
+        rel = source.relative_to(SKILLS_ROOT)
+        changed |= sync_skill_tree(source, profile_dir / "skills" / rel)
+    return changed
+
+
+def ensure_profile_soul(profile_dir, profile):
+    name = profile["name"]
+    description = profile.get("description", "").strip()
+    routing = profile.get("routing") or {}
+    required_skills = profile.get("required_skills") or []
+    completion_contract = profile.get("completion_contract") or []
+    if name == DESIRED_KANBAN.get("orchestrator_profile", "orchestrator"):
+        behavior = (
+            "You are the Kanban orchestrator. Use the managed routing matrix and card template, "
+            "decompose broad goals into small linked cards, choose specialist assignees, attach "
+            "relevant required skills, comment with routing rationale, and avoid implementation work."
+        )
+    else:
+        behavior = (
+            "You are a Kanban worker profile. On spawn, call kanban_show first, do only work that "
+            "matches this profile role, keep evidence in comments/metadata, heartbeat during long work, "
+            "and finish with kanban_complete or kanban_block."
+        )
+    review_rule = (
+        "For code, IaC, deployment, account-impacting browser, or risky sandbox changes, add a structured "
+        "kanban_comment and block with `review-required: ...` unless the card explicitly says review is not needed."
+        if profile.get("review_required_for_changes")
+        else "This profile may complete non-changing routing/research cards when the evidence contract is satisfied."
+    )
+    block = (
+        f"{MANAGED_SOUL_START}\n"
+        f"# Homelab-managed profile role: {name}\n\n"
+        f"Role summary: {description}\n\n"
+        "## Behavior\n"
+        f"{behavior}\n\n"
+        "## Routing lane\n"
+        f"Default board: `{routing.get('default_board', 'default')}`\n\n"
+        "Handles:\n"
+        f"{format_bullets(routing.get('handles'))}\n\n"
+        "Avoids:\n"
+        f"{format_bullets(routing.get('avoid'))}\n\n"
+        "## Required skills to attach or load when relevant\n"
+        f"{format_bullets(required_skills)}\n\n"
+        "## Completion contract\n"
+        f"{format_bullets(completion_contract)}\n\n"
+        "## Review gate\n"
+        f"{review_rule}\n"
+        f"{MANAGED_SOUL_END}\n"
+    )
+    return replace_managed_block(
+        profile_dir / "SOUL.md",
+        MANAGED_SOUL_START,
+        MANAGED_SOUL_END,
+        block,
+    )
 
 def apply_profile_runtime(profile, base_config):
     name = profile["name"]
@@ -279,10 +451,15 @@ def apply_profile_runtime(profile, base_config):
         {
             "description": profile.get("description", "").strip(),
             "description_auto": False,
+            "routing": profile.get("routing") or {},
+            "required_skills": list(profile.get("required_skills") or []),
+            "completion_contract": list(profile.get("completion_contract") or []),
+            "review_required_for_changes": bool(profile.get("review_required_for_changes", False)),
         },
         default_mode=0o644,
     )
     changed |= ensure_profile_soul(profile_dir, profile)
+    changed |= ensure_profile_required_skills(profile_dir, profile)
     changed |= ensure_env_values(
         profile_dir / ".env",
         {
@@ -300,6 +477,8 @@ def main():
     config = load_yaml_mapping(CONFIG_PATH)
     changed = apply_default_runtime(config)
     changed |= write_yaml_if_changed(CONFIG_PATH, config)
+    changed |= ensure_default_soul()
+    changed |= ensure_policy_files()
 
     # Use the just-normalized default config as the non-secret profile base.
     # Per-profile .env files below intentionally contain only non-secret

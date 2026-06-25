@@ -470,6 +470,35 @@ def test_hermes_role_configures_5_plus_1_profiles_and_kanban_dispatcher():
         "browser-protected",
     ]
     assert [profile["name"] for profile in group_vars["hermes_profiles"]] == expected_profiles
+    assert [board["slug"] for board in group_vars["hermes_kanban_boards"]] == [
+        "default",
+        "homelab",
+        "research",
+        "automation",
+    ]
+    assert group_vars["hermes_discord_home_channel"] == "{{ hermes_discord_allowed_users }}"
+    assert group_vars["hermes_kanban_diagnostics_cron"] == {
+        "name": "homelab-kanban-daily-diagnostics",
+        "schedule": "0 9 * * *",
+        "deliver": "discord",
+        "script": "hermes-kanban-diagnostics.sh",
+    }
+    assert {item["name"] for item in group_vars["hermes_profile_bundled_skill_sources"]} == {
+        "plan",
+        "hermes-agent",
+        "github-pr-workflow",
+        "requesting-code-review",
+        "systematic-debugging",
+        "test-driven-development",
+        "arxiv",
+        "youtube-content",
+        "spike",
+    }
+    assert "model" not in yaml.safe_dump(group_vars["hermes_profiles"])
+    assert "provider" not in yaml.safe_dump(group_vars["hermes_profiles"])
+    assert "Evidence required" in group_vars["hermes_kanban_card_template"]
+    assert "review-required" in group_vars["hermes_kanban_review_required_policy"]
+    assert "control plane" in group_vars["hermes_default_control_plane_guidance"]
     assert group_vars["hermes_kanban"] == {
         "dispatch_in_gateway": True,
         "dispatch_interval_seconds": 60,
@@ -483,6 +512,15 @@ def test_hermes_role_configures_5_plus_1_profiles_and_kanban_dispatcher():
         "default_assignee": "orchestrator",
         "dispatch_stale_timeout_seconds": 14400,
     }
+
+    required_skill_task = find_task(tasks, "Install Hermes bundled profile required skills")
+    assert required_skill_task["ansible.builtin.copy"]["src"] == "{{ hermes_agent_dir }}/skills/{{ item.path }}/"
+    assert required_skill_task["ansible.builtin.copy"]["dest"] == "{{ hermes_home }}/skills/{{ item.path }}/"
+    assert required_skill_task["ansible.builtin.copy"]["remote_src"] is True
+    assert required_skill_task["loop"] == "{{ hermes_profile_bundled_skill_sources }}"
+    manage_required_skills_task = find_task(tasks, "Allow Hermes service to manage required profile skills")
+    assert manage_required_skills_task["ansible.builtin.file"]["path"] == "{{ hermes_home }}/skills"
+    assert manage_required_skills_task["ansible.builtin.file"]["recurse"] is True
 
     create_task = find_task(tasks, "Create Hermes 5+1 profile directories")
     assert create_task["ansible.builtin.command"]["argv"] == [
@@ -509,14 +547,26 @@ def test_hermes_role_configures_5_plus_1_profiles_and_kanban_dispatcher():
     assert kanban_init_task["ansible.builtin.command"]["creates"] == "{{ hermes_home }}/kanban.db"
     assert kanban_init_task["become_user"] == "{{ hermes_user }}"
 
+    env_template = read("infra/ansible/roles/hermes/templates/hermes-gateway.env.j2")
+    assert "DISCORD_HOME_CHANNEL={{ hermes_discord_home_channel | quote }}" in env_template
     assert 'DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser", "kanban"]' in script
     assert "DESIRED_KANBAN" in script
     assert "DESIRED_PROFILES" in script
+    assert "DESIRED_DEFAULT_CONTROL_PLANE" in script
+    assert "DESIRED_KANBAN_CARD_TEMPLATE" in script
+    assert "DESIRED_KANBAN_REVIEW_REQUIRED_POLICY" in script
+    assert "DESIRED_KANBAN_BOARDS" in script
+    assert "ensure_default_soul" in script
+    assert "ensure_policy_files" in script
+    assert "ensure_profile_required_skills" in script
+    assert "missing required skill source" in script
     assert "apply_profile_runtime" in script
     assert 'set_value(kanban, "dispatch_in_gateway", False)' in script
     assert 'config["platform_toolsets"] = {"cli": desired_cli_toolsets}' in script
     assert "BROWSERBASE_PROXIES" in script
+    assert "key in seen" in script
     assert "MANAGED_SOUL_START" in script
+    assert "MANAGED_DEFAULT_SOUL_START" in script
 
     browser_profile = next(
         profile for profile in group_vars["hermes_profiles"] if profile["name"] == "browser-protected"
@@ -535,14 +585,48 @@ def test_hermes_role_configures_5_plus_1_profiles_and_kanban_dispatcher():
         "todo",
         "memory",
     ]
+    assert orchestrator["required_skills"] == ["plan", "hermes-agent"]
+    assert orchestrator["routing"]["default_board"] == "default"
     assert "terminal" not in orchestrator["cli_toolsets"]
     assert "file" not in orchestrator["cli_toolsets"]
+    homelab = next(profile for profile in group_vars["hermes_profiles"] if profile["name"] == "homelab")
+    assert homelab["routing"]["default_board"] == "homelab"
+    assert homelab["review_required_for_changes"] is True
+    assert "github-pr-workflow" in homelab["required_skills"]
+    browser_protected = next(profile for profile in group_vars["hermes_profiles"] if profile["name"] == "browser-protected")
+    assert browser_protected["routing"]["default_board"] == "automation"
+    assert "newrrow-points-automation" in browser_protected["required_skills"]
+
+    boards_task = find_task(tasks, "Configure Hermes Kanban boards")
+    assert "kanban_db as kb" in boards_task["ansible.builtin.shell"]
+    assert "kb.create_board" in boards_task["ansible.builtin.shell"]
+    script_dir_task = find_task(tasks, "Create Hermes scripts directory")
+    assert script_dir_task["ansible.builtin.file"]["path"] == "{{ hermes_home }}/scripts"
+    diagnostics_script_task = find_task(tasks, "Install Hermes Kanban diagnostics script")
+    assert diagnostics_script_task["ansible.builtin.template"]["src"] == "hermes-kanban-diagnostics.sh.j2"
+    cron_task = find_task(tasks, "Configure Hermes Kanban diagnostics cron")
+    assert "create_job" in cron_task["ansible.builtin.shell"]
+    assert "no_agent=True" in cron_task["ansible.builtin.shell"]
+    diagnostics_template = read("infra/ansible/roles/hermes/templates/hermes-kanban-diagnostics.sh.j2")
+    assert "kanban boards list" in diagnostics_template
+    assert "kanban --board" in diagnostics_template
+    assert "diagnostics" in diagnostics_template
+
+    kanban_state_task = find_task(tasks, "Allow Hermes service to manage Kanban state")
+    assert kanban_state_task["ansible.builtin.file"]["path"] == "{{ hermes_home }}/kanban"
+    assert kanban_state_task["ansible.builtin.file"]["recurse"] is True
 
     configure_index = tasks.index(find_task(tasks, "Configure Hermes runtime settings"))
+    required_skill_index = tasks.index(required_skill_task)
+    manage_required_skill_index = tasks.index(manage_required_skills_task)
     create_index = tasks.index(create_task)
+    kanban_state_index = tasks.index(kanban_state_task)
     init_index = tasks.index(kanban_init_task)
+    boards_index = tasks.index(boards_task)
+    script_index = tasks.index(diagnostics_script_task)
+    cron_index = tasks.index(cron_task)
     service_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
-    assert create_index < configure_index < init_index < service_index
+    assert required_skill_index < manage_required_skill_index < create_index < configure_index < kanban_state_index < init_index < boards_index < script_index < cron_index < service_index
 
 def test_hermes_role_configures_browserbase_browser_automation():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
@@ -565,6 +649,8 @@ def test_hermes_role_configures_browserbase_browser_automation():
     ) in script
     assert 'platform_toolsets = ensure_dict(config, "platform_toolsets")' in script
     assert 'plugins = ensure_dict(config, "plugins")' in script
+    env_template = read("infra/ansible/roles/hermes/templates/hermes-gateway.env.j2")
+    assert "DISCORD_HOME_CHANNEL={{ hermes_discord_home_channel | quote }}" in env_template
     assert 'DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser", "kanban"]' in script
     assert 'DESIRED_PLUGINS = ["newrrow-browser-login"]' in script
     assert "changed |= set_list" in script
@@ -642,6 +728,7 @@ def test_hermes_env_template_contains_discord_gateway_runtime_web_and_browser_cr
     assert "PYTHONUNBUFFERED=1" in env_template
     assert "DISCORD_BOT_TOKEN={{ hermes_discord_bot_token | quote }}" in env_template
     assert "DISCORD_ALLOWED_USERS={{ hermes_discord_allowed_users | quote }}" in env_template
+    assert "DISCORD_HOME_CHANNEL={{ hermes_discord_home_channel | quote }}" in env_template
     assert "DISCORD_REQUIRE_MENTION={{ hermes_discord_require_mention | string | lower | quote }}" in env_template
     assert "DISCORD_IGNORE_NO_MENTION={{ hermes_discord_ignore_no_mention | string | lower | quote }}" in env_template
     assert "PARALLEL_API_KEY={{ hermes_parallel_api_key | quote }}" in env_template
