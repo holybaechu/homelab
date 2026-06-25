@@ -79,12 +79,15 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     assert "node_modules/.bin/agent-browser" in hermes_tasks
     assert "hermes_browser_browsers_path" in hermes_tasks
     assert "chrome-" in hermes_tasks
+    assert "op --version" in hermes_tasks
+    assert "skills/security/1password/SKILL.md" in hermes_tasks
+    assert "op whoami" in hermes_tasks
     assert "chromium-" not in hermes_tasks
     assert "hermes-webui" not in hermes_tasks
     assert "hermes_webui_port" not in hermes_tasks
 
 
-def test_secrets_readme_documents_hermes_discord_web_and_browser_secrets():
+def test_secrets_readme_documents_hermes_discord_web_browser_and_1password_secrets():
     secrets = read("secrets/README.md")
 
     assert "hermes_discord_bot_token" in secrets
@@ -93,16 +96,18 @@ def test_secrets_readme_documents_hermes_discord_web_and_browser_secrets():
     assert "hermes_firecrawl_api_key" in secrets
     assert "hermes_browserbase_api_key" in secrets
     assert "hermes_browserbase_project_id" in secrets
+    assert "hermes_1password_service_account_token" in secrets
     assert "PARALLEL_API_KEY" in secrets
     assert "FIRECRAWL_API_KEY" in secrets
     assert "BROWSERBASE_API_KEY" in secrets
     assert "BROWSERBASE_PROJECT_ID" in secrets
+    assert "OP_SERVICE_ACCOUNT_TOKEN" in secrets
     assert "hermes_webui_password" not in secrets
     for forbidden_key in ("HERMES_API_KEY", "API_SERVER_KEY", "OPENAI_API_KEY"):
         assert forbidden_key not in secrets
 
 
-def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_and_fresh_lxc_rebuild():
+def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_1password_and_fresh_lxc_rebuild():
     runbook = read("docs/runbooks/hermes-agent-discord.md")
 
     assert "Hermes Agent Discord gateway" in runbook
@@ -115,6 +120,7 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "FIRECRAWL_API_KEY" in runbook
     assert "BROWSERBASE_API_KEY" in runbook
     assert "BROWSERBASE_PROJECT_ID" in runbook
+    assert "OP_SERVICE_ACCOUNT_TOKEN" in runbook
     assert "search_backend: parallel" in runbook
     assert "extract_backend: firecrawl" in runbook
     assert "cloud_provider: browserbase" in runbook
@@ -123,6 +129,10 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "local browser runtime" in runbook
     assert "/var/lib/hermes/.agent-browser/browsers" in runbook
     assert "HOME=/var/lib/hermes" in runbook
+    assert "1Password" in runbook
+    assert "official/security/1password" in runbook
+    assert "op read" in runbook
+    assert "op run" in runbook
     assert "threshold: 0.85" in runbook
     assert "codex_gpt55_autoraise: false" in runbook
     assert "rebuild_hermes_lxc" not in runbook

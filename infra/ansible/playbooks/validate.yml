@@ -247,3 +247,25 @@
         cmd: >-
           python3 -c 'import os, sys; p = "{{ hermes_browser_browsers_path }}"; sys.exit(0 if os.path.isdir(p) and any(n.startswith("chrome-") for n in os.listdir(p)) else 1)'
       changed_when: false
+
+    - name: Check Hermes 1Password CLI
+      ansible.builtin.command:
+        cmd: op --version
+      changed_when: false
+
+    - name: Check Hermes 1Password skill
+      ansible.builtin.command:
+        cmd: test -f "{{ hermes_home }}/skills/security/1password/SKILL.md"
+      changed_when: false
+
+    - name: Check Hermes 1Password service account authentication
+      ansible.builtin.shell: |
+        set -euo pipefail
+        set -a
+        . "{{ hermes_env_path }}"
+        set +a
+        op whoami >/dev/null
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true

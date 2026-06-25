@@ -1,5 +1,5 @@
 ---
-- name: Require Hermes Discord gateway, web backend, and browser credentials
+- name: Require Hermes Discord gateway, web backend, browser, and 1Password credentials
   ansible.builtin.assert:
     that:
       - hermes_discord_bot_token is defined
@@ -14,7 +14,9 @@
       - hermes_browserbase_api_key | length > 0
       - hermes_browserbase_project_id is defined
       - hermes_browserbase_project_id | length > 0
-    fail_msg: Hermes Discord, web backend, and Browserbase credentials must be provided through secrets.
+      - hermes_1password_service_account_token is defined
+      - hermes_1password_service_account_token | length > 0
+    fail_msg: Hermes Discord, web backend, Browserbase, and 1Password credentials must be provided through secrets.
   no_log: true
 
 - name: Install Hermes runtime packages
@@ -31,6 +33,29 @@
       - python3
       - python3-pip
       - python3-venv
+    update_cache: true
+    state: present
+
+- name: Download 1Password apt signing key
+  ansible.builtin.get_url:
+    url: https://downloads.1password.com/linux/keys/1password.asc
+    dest: /usr/share/keyrings/1password-archive-keyring.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure 1Password apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/1password.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.asc] https://downloads.1password.com/linux/debian/amd64 stable main
+
+- name: Install 1Password CLI
+  ansible.builtin.apt:
+    name: 1password-cli
     update_cache: true
     state: present
 
@@ -124,6 +149,28 @@
     editable: true
     virtualenv: "{{ hermes_venv_path }}"
   notify: Restart hermes-gateway
+
+- name: Check Hermes 1Password skill
+  ansible.builtin.stat:
+    path: "{{ hermes_home }}/skills/security/1password/SKILL.md"
+  register: hermes_1password_skill
+
+- name: Install Hermes 1Password skill
+  ansible.builtin.command:
+    cmd: "{{ hermes_venv_path }}/bin/hermes skills install official/security/1password --yes"
+  environment:
+    HERMES_HOME: "{{ hermes_home }}"
+    HOME: "{{ hermes_home }}"
+  when: not hermes_1password_skill.stat.exists
+  notify: Restart hermes-gateway
+
+- name: Allow Hermes service to manage skills
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/skills"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    recurse: true
 
 - name: Check Hermes browser automation CLI
   ansible.builtin.stat:

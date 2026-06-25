@@ -12,8 +12,9 @@ Set these GitHub Actions secrets in the `prod` environment:
 - `FIRECRAWL_API_KEY`: Firecrawl API key used by Hermes `web_extract`.
 - `BROWSERBASE_API_KEY`: Browserbase API key used by Hermes browser automation.
 - `BROWSERBASE_PROJECT_ID`: Browserbase project ID used by Hermes browser automation.
+- `OP_SERVICE_ACCOUNT_TOKEN`: 1Password service account token used by the `op` CLI for non-interactive secret access.
 
-The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, and `hermes_browserbase_project_id`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
+The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, and `hermes_1password_service_account_token`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
@@ -24,6 +25,7 @@ The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_di
 - `BROWSERBASE_PROXIES`
 - `BROWSERBASE_ADVANCED_STEALTH`
 - `AGENT_BROWSER_ARGS` (set to `--no-sandbox,--disable-dev-shm-usage` for the local Chrome sidecar inside the unprivileged LXC)
+- `OP_SERVICE_ACCOUNT_TOKEN`
 - `HOME` (set to `/var/lib/hermes` for `agent-browser`'s local browser cache)
 
 ## Web search
@@ -54,6 +56,19 @@ platform_toolsets:
 
 The Ansible role installs Node.js/npm and the `agent-browser` package from the pinned Hermes Agent checkout. Browserbase hosts Chromium for public cloud sessions. Because `auto_local_for_private_urls: true` keeps LAN/localhost URLs out of Browserbase, the role also installs a local browser runtime under `/var/lib/hermes/.agent-browser/browsers` with `HOME=/var/lib/hermes` so Hermes' local sidecar can handle private targets.
 
+## 1Password secrets
+
+Hermes can use 1Password-managed secrets from Discord through its terminal tools. The Ansible role installs the official 1Password CLI (`op`) from the 1Password Debian apt repository, installs the Hermes optional skill `official/security/1password` into `/var/lib/hermes/skills/security/1password`, and exposes `OP_SERVICE_ACCOUNT_TOKEN` to the gateway service. Use the service-account flow rather than desktop-app sign-in for the headless LXC.
+
+Examples Hermes can run after deploy:
+
+```bash
+op read "op://Vault/Item/field"
+op run -- env | grep '^EXAMPLE_'
+```
+
+Do not ask Hermes to print raw secret values unless you explicitly need to reveal one; prefer `op run` and `op inject` for commands and templates. Scope the 1Password service account narrowly to the vaults/items Hermes is allowed to read, because allowed Discord users can ask Hermes to run terminal commands that use this token.
+
 ## Context compression
 
 The runtime config helper also enforces Hermes' global context-compression behavior:
@@ -78,7 +93,7 @@ With the default repo settings, DMs always receive responses. Server channels re
 
 ## Deploy and validate
 
-1. Confirm the Discord, web backend, and Browserbase secrets exist in the `prod` environment.
+1. Confirm the Discord, web backend, Browserbase, and 1Password secrets exist in the `prod` environment.
 2. Run `infra/ansible/playbooks/bootstrap.yml` through CD, or directly if doing a controlled maintenance deploy.
 3. Run `infra/ansible/playbooks/site.yml`.
 4. Run `infra/ansible/playbooks/validate.yml`.

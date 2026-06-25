@@ -26,6 +26,7 @@ def test_hermes_role_installs_native_gateway_without_webui_or_model_provider_key
     assert "hermes_firecrawl_api_key is defined" in tasks
     assert "hermes_browserbase_api_key is defined" in tasks
     assert "hermes_browserbase_project_id is defined" in tasks
+    assert "hermes_1password_service_account_token is defined" in tasks
     assert "- bash" in tasks
     assert "- nodejs" in tasks
     assert "- npm" in tasks
@@ -57,6 +58,61 @@ def test_hermes_role_installs_github_cli_for_workspace_tasks():
 
     package_task = find_task(tasks, "Install Hermes runtime packages")
     assert "gh" in package_task["ansible.builtin.apt"]["name"]
+
+
+def test_hermes_role_installs_1password_cli_and_skill_for_secret_access():
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+
+    key_task = find_task(tasks, "Download 1Password apt signing key")
+    assert key_task["ansible.builtin.get_url"]["url"] == (
+        "https://downloads.1password.com/linux/keys/1password.asc"
+    )
+    assert key_task["ansible.builtin.get_url"]["dest"] == (
+        "/usr/share/keyrings/1password-archive-keyring.asc"
+    )
+
+    repo_task = find_task(tasks, "Configure 1Password apt repository")
+    assert "downloads.1password.com/linux/debian/amd64" in repo_task["ansible.builtin.copy"]["content"]
+    assert repo_task["ansible.builtin.copy"]["dest"] == "/etc/apt/sources.list.d/1password.list"
+
+    op_task = find_task(tasks, "Install 1Password CLI")
+    assert op_task["ansible.builtin.apt"]["name"] == "1password-cli"
+    assert op_task["ansible.builtin.apt"]["update_cache"] is True
+
+    skill_check_task = find_task(tasks, "Check Hermes 1Password skill")
+    assert skill_check_task["ansible.builtin.stat"]["path"] == (
+        "{{ hermes_home }}/skills/security/1password/SKILL.md"
+    )
+    assert skill_check_task["register"] == "hermes_1password_skill"
+
+    skill_task = find_task(tasks, "Install Hermes 1Password skill")
+    assert skill_task["ansible.builtin.command"]["cmd"] == (
+        "{{ hermes_venv_path }}/bin/hermes skills install official/security/1password --yes"
+    )
+    assert skill_task["environment"] == {
+        "HERMES_HOME": "{{ hermes_home }}",
+        "HOME": "{{ hermes_home }}",
+    }
+    assert skill_task["when"] == "not hermes_1password_skill.stat.exists"
+    assert skill_task["notify"] == "Restart hermes-gateway"
+
+    ownership_task = find_task(tasks, "Allow Hermes service to manage skills")
+    assert ownership_task["ansible.builtin.file"]["path"] == "{{ hermes_home }}/skills"
+    assert ownership_task["ansible.builtin.file"]["owner"] == "{{ hermes_user }}"
+    assert ownership_task["ansible.builtin.file"]["group"] == "{{ hermes_group }}"
+    assert ownership_task["ansible.builtin.file"]["recurse"] is True
+
+    runtime_package_index = tasks.index(find_task(tasks, "Install Hermes runtime packages"))
+    key_index = tasks.index(key_task)
+    repo_index = tasks.index(repo_task)
+    op_index = tasks.index(op_task)
+    agent_pip_index = tasks.index(find_task(tasks, "Install Hermes Agent messaging extras into virtualenv"))
+    skill_check_index = tasks.index(skill_check_task)
+    skill_index = tasks.index(skill_task)
+    ownership_index = tasks.index(ownership_task)
+    service_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
+    assert runtime_package_index < key_index < repo_index < op_index
+    assert agent_pip_index < skill_check_index < skill_index < ownership_index < service_index
 
 
 def test_hermes_role_installs_agent_browser_node_dependencies():
@@ -328,6 +384,7 @@ def test_hermes_env_template_contains_discord_gateway_runtime_web_and_browser_cr
     assert "BROWSERBASE_PROXIES={{ hermes_browserbase_proxies | string | lower | quote }}" in env_template
     assert "BROWSERBASE_ADVANCED_STEALTH={{ hermes_browserbase_advanced_stealth | string | lower | quote }}" in env_template
     assert "AGENT_BROWSER_ARGS={{ hermes_browser_args | quote }}" in env_template
+    assert "OP_SERVICE_ACCOUNT_TOKEN={{ hermes_1password_service_account_token | quote }}" in env_template
     assert "HOME={{ hermes_home | quote }}" in env_template
     assert "HERMES_WEBUI" not in env_template
     assert "API_SERVER_KEY" not in env_template

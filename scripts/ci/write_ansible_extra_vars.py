@@ -24,6 +24,7 @@ REQUIRED_ENV = {
     "hermes_firecrawl_api_key": "FIRECRAWL_API_KEY",
     "hermes_browserbase_api_key": "BROWSERBASE_API_KEY",
     "hermes_browserbase_project_id": "BROWSERBASE_PROJECT_ID",
+    "hermes_1password_service_account_token": "OP_SERVICE_ACCOUNT_TOKEN",
 }
 
 

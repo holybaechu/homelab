@@ -17,6 +17,7 @@ Expected encrypted values:
 - `hermes_firecrawl_api_key`
 - `hermes_browserbase_api_key`
 - `hermes_browserbase_project_id`
+- `hermes_1password_service_account_token`
 - `copyparty_users`, as a list of account objects with `name` and `password`
 - `adguard_admin_password`, as plaintext; the AdGuard role hashes it before writing the service config
 
@@ -24,7 +25,7 @@ Non-secret deployment values:
 
 - `adguard_admin_username`, optional; defaults to `admin`
 
-GitHub Actions secret names for the Hermes web and browser backends are `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY`, and `BROWSERBASE_PROJECT_ID`; the CD helper maps them to `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, and `hermes_browserbase_project_id` for Ansible.
+GitHub Actions secret names for the Hermes web, browser, and 1Password backends are `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, and `OP_SERVICE_ACCOUNT_TOKEN`; the CD helper maps them to `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, and `hermes_1password_service_account_token` for Ansible.
 
 Do not commit decrypted secret files.
 
