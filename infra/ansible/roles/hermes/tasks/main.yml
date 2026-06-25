@@ -255,6 +255,27 @@
     group: "{{ hermes_group }}"
     mode: "0755"
 
+- name: Install Hermes bundled profile required skills
+  ansible.builtin.copy:
+    src: "{{ hermes_agent_dir }}/skills/{{ item.path }}/"
+    dest: "{{ hermes_home }}/skills/{{ item.path }}/"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: preserve
+    remote_src: true
+  loop: "{{ hermes_profile_bundled_skill_sources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Restart hermes-gateway
+
+- name: Allow Hermes service to manage required profile skills
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/skills"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    recurse: true
+
 - name: Check Hermes browser automation CLI
   ansible.builtin.stat:
     path: "{{ hermes_agent_dir }}/node_modules/.bin/agent-browser"
@@ -344,6 +365,13 @@
   changed_when: hermes_runtime_config.stdout == "changed"
   notify: Restart hermes-gateway
 
+- name: Allow Hermes service to manage Kanban state
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/kanban"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    recurse: true
 
 - name: Initialize Hermes Kanban board
   ansible.builtin.command:
@@ -357,6 +385,123 @@
   environment:
     HERMES_HOME: "{{ hermes_home }}"
     HOME: "{{ hermes_home }}"
+
+- name: Configure Hermes Kanban boards
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ hermes_venv_path }}/bin/python - <<'PY'
+    import json
+    from hermes_cli import kanban_db as kb
+
+    desired = json.loads({{ hermes_kanban_boards | to_json | to_json }})
+    changed = False
+    for board in desired:
+        slug = board["slug"]
+        before = kb.read_board_metadata(slug)
+        wanted = {
+            "name": board.get("name"),
+            "description": board.get("description"),
+            "icon": board.get("icon"),
+            "color": board.get("color"),
+            "default_workdir": board.get("default_workdir"),
+        }
+        if any(before.get(key) != value for key, value in wanted.items() if value is not None):
+            changed = True
+        if not kb.kanban_db_path(slug).exists():
+            changed = True
+        kb.create_board(
+            slug,
+            name=board.get("name"),
+            description=board.get("description"),
+            icon=board.get("icon"),
+            color=board.get("color"),
+            default_workdir=board.get("default_workdir"),
+        )
+    print("changed" if changed else "ok")
+    PY
+  args:
+    executable: /bin/bash
+  register: hermes_kanban_boards_config
+  changed_when: hermes_kanban_boards_config.stdout == "changed"
+  become: true
+  become_user: "{{ hermes_user }}"
+  environment:
+    HERMES_HOME: "{{ hermes_home }}"
+    HOME: "{{ hermes_home }}"
+    PYTHONPATH: "{{ hermes_agent_dir }}"
+
+- name: Create Hermes scripts directory
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/scripts"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0755"
+
+- name: Install Hermes Kanban diagnostics script
+  ansible.builtin.template:
+    src: hermes-kanban-diagnostics.sh.j2
+    dest: "{{ hermes_home }}/scripts/{{ hermes_kanban_diagnostics_cron.script }}"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0755"
+
+- name: Configure Hermes Kanban diagnostics cron
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ hermes_venv_path }}/bin/python - <<'PY'
+    from cron.jobs import create_job, parse_schedule, resolve_job_ref, update_job
+
+    name = "{{ hermes_kanban_diagnostics_cron.name }}"
+    schedule = "{{ hermes_kanban_diagnostics_cron.schedule }}"
+    script = "{{ hermes_kanban_diagnostics_cron.script }}"
+    deliver = "{{ hermes_kanban_diagnostics_cron.deliver }}"
+    desired_schedule = parse_schedule(schedule)
+    job = resolve_job_ref(name)
+    if job is None:
+        create_job(
+            prompt="",
+            schedule=schedule,
+            name=name,
+            deliver=deliver,
+            script=script,
+            no_agent=True,
+        )
+        print("changed")
+        raise SystemExit(0)
+
+    updates = {}
+    if job.get("schedule") != desired_schedule:
+        updates["schedule"] = schedule
+    if job.get("schedule_display") != desired_schedule.get("display", schedule):
+        updates["schedule_display"] = desired_schedule.get("display", schedule)
+    if job.get("prompt") != "":
+        updates["prompt"] = ""
+    if job.get("deliver") != deliver:
+        updates["deliver"] = deliver
+    if job.get("script") != script:
+        updates["script"] = script
+    if job.get("no_agent") is not True:
+        updates["no_agent"] = True
+    if job.get("skills") not in ([], None):
+        updates["skills"] = []
+        updates["skill"] = None
+    if updates:
+        update_job(job["id"], updates)
+        print("changed")
+    else:
+        print("ok")
+    PY
+  args:
+    executable: /bin/bash
+  register: hermes_kanban_cron_config
+  changed_when: hermes_kanban_cron_config.stdout == "changed"
+  become: true
+  become_user: "{{ hermes_user }}"
+  environment:
+    HERMES_HOME: "{{ hermes_home }}"
+    HOME: "{{ hermes_home }}"
+    PYTHONPATH: "{{ hermes_agent_dir }}"
 
 - name: Install Hermes gateway environment
   ansible.builtin.template:

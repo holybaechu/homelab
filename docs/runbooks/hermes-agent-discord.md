@@ -8,16 +8,18 @@ Set these GitHub Actions secrets in the `prod` environment:
 
 - `HERMES_DISCORD_BOT_TOKEN`: Discord bot token from the Discord Developer Portal.
 - `HERMES_DISCORD_ALLOWED_USERS`: comma-separated Discord user IDs allowed to use the bot.
+- `HERMES_DISCORD_HOME_CHANNEL`: optional Discord home channel/DM target for unattended cron delivery; if omitted, Ansible defaults it to the current allowed-user target.
 - `PARALLEL_API_KEY`: Parallel API key used by Hermes `web_search`.
 - `FIRECRAWL_API_KEY`: Firecrawl API key used by Hermes `web_extract`.
 - `BROWSERBASE_API_KEY`: Browserbase API key used by Hermes browser automation.
 - `BROWSERBASE_PROJECT_ID`: Browserbase project ID used by Hermes browser automation.
 - `OP_SERVICE_ACCOUNT_TOKEN`: 1Password service account token used by the `op` CLI for non-interactive secret access.
 
-The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, and `hermes_1password_service_account_token`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
+The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, optional `hermes_discord_home_channel`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, and `hermes_1password_service_account_token`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
+- `DISCORD_HOME_CHANNEL`
 - `PARALLEL_API_KEY`
 - `FIRECRAWL_API_KEY`
 - `BROWSERBASE_API_KEY`
@@ -110,11 +112,11 @@ This keeps the general compaction trigger at 85%, disables the Codex gpt-5.5 rou
 
 ## Multi-profile Kanban fleet
 
-The default `/var/lib/hermes` profile remains the Discord gateway and the single gateway-embedded Kanban dispatcher. IaC also creates a homelab-managed **5+1** profile fleet under `/var/lib/hermes/profiles`:
+The default `/var/lib/hermes` profile remains the Discord gateway, user-facing control plane, and the single gateway-embedded Kanban dispatcher. IaC also creates a homelab-managed **5+1** profile fleet under `/var/lib/hermes/profiles`:
 
 | Profile | Role |
 | --- | --- |
-| `orchestrator` | +1 Kanban intake/orchestration profile; decomposes broad goals, links cards, assigns specialist workers, and avoids implementation work. |
+| `orchestrator` | +1 Kanban intake/orchestration profile; decomposes broad goals, links cards, assigns specialist workers, attaches relevant required skills, and avoids implementation work. |
 | `homelab` | Production homelab IaC/ops: `holybaechu/homelab`, OpenTofu, Ansible, Proxmox LXC, GitHub Actions, deployment validation. |
 | `dev` | General coding, debugging, tests, refactors, docs, and PR work outside production homelab ops. |
 | `research` | Web/docs/paper discovery, source-backed summaries, technical comparisons, monitoring, written briefs. |
@@ -140,13 +142,54 @@ kanban:
 
 Every named profile gets `kanban.dispatch_in_gateway: false` so accidentally starting a per-profile gateway does not create a second dispatcher racing on the same board. Worker profiles receive task-scoped `kanban_*` tools when spawned by the dispatcher; the `orchestrator` profile also has the `kanban` toolset on CLI so it can create/link/comment cards. IaC runs `hermes kanban init`, creating `/var/lib/hermes/kanban.db` on the persistent home mount.
 
-Browserbase proxy policy is profile-scoped through each profile's `.env`: default/normal profiles keep `BROWSERBASE_PROXIES=false`, while `browser-protected` sets `BROWSERBASE_PROXIES=true` for sites that actually need residential proxy mode. API keys still come from the gateway service environment; profile `.env` files contain only non-secret runtime overrides.
+### Quality policy files
+
+The runtime helper renders the quality contracts under `/var/lib/hermes/kanban/policies/`:
+
+- `routing-matrix.md` — the routing matrix that maps each profile to its default board, handles/avoid lists, and required skills.
+- `card-template.md` — the Kanban card template with `Goal`, `Context`, `Acceptance criteria`, `Constraints`, and `Evidence required` sections.
+- `review-required.md` — the review gate policy for code/IaC/deployment/account-impacting browser/risky sandbox cards.
+
+The default profile's `SOUL.md` receives a managed control-plane block that keeps default focused on Discord/user intake and lightweight work. Complex or risky work should be routed to Kanban instead of being executed directly in default. Each worker profile's managed `SOUL.md` block includes its routing lane, required skills, completion contract, and review gate.
+
+### Boards
+
+IaC creates these Kanban boards for quality isolation:
+
+| Board | Name | Intended use |
+| --- | --- | --- |
+| `default` | Default Intake | General user-facing intake and cross-domain coordination. |
+| `homelab` | Homelab Ops | Production homelab IaC, operations, deployment, and incidents. |
+| `research` | Research Briefs | Source-backed web/docs/paper comparison and synthesis. |
+| `automation` | Automation | Recurring tasks, browser automation, Newrrow, and watchdogs. |
+
+Workers are still pinned to the board of the card they receive through `HERMES_KANBAN_BOARD`, so board separation is a hard queue boundary while profiles remain the role boundary.
+
+### Routing and completion contracts
+
+Use the card template for new cards. The orchestrator should choose the board/profile from the routing matrix and add a short routing rationale comment. Workers should leave enough evidence for the next reader to answer: what changed, what was verified, what can unblock/retry, and what risk remains.
+
+For code-changing, IaC-changing, deployment-changing, account-impacting browser, or risky sandbox cards, use the `review-required` pattern:
+
+1. Add a structured `kanban_comment` with `changed_files`, `verification`, `residual_risk`, and `handoff_notes`.
+2. Call `kanban_block(reason="review-required: ...")` instead of silently completing the card.
+3. A human/default/orchestrator follow-up can approve and unblock/complete after reading the evidence.
+
+Profile-required skills are seeded from the default skill store into each profile when the runtime helper runs. They are policy hints for the orchestrator to attach with `kanban_create(skills=[...])` when a card needs specialist procedures; model/provider routing is intentionally not split by profile in this PR.
+
+Browserbase proxy policy is profile-scoped through each profile's `.env`: default/normal profiles keep `BROWSERBASE_PROXIES=false`, while `browser-protected` sets `BROWSERBASE_PROXIES=true` for sites that actually need residential proxy mode. API keys still come from the gateway service environment; profile `.env` files contain only non-secret runtime overrides. Validation checks that each profile has a single effective `BROWSERBASE_PROXIES` line so duplicate env entries cannot mask a bad final value.
+
+### Diagnostics cron
+
+IaC installs `/var/lib/hermes/scripts/hermes-kanban-diagnostics.sh` and creates the no-agent cron job `homelab-kanban-daily-diagnostics` on `0 9 * * *` with Discord delivery. Cron platform delivery resolves through `DISCORD_HOME_CHANNEL`, rendered from `hermes_discord_home_channel` (defaulting to the current single-user allowed target unless overridden). The script reports board inventory, `hermes kanban --board <slug> diagnostics`, blocked/review-required cards, and running cards for every managed board.
 
 Useful checks after deploy:
 
 ```bash
 runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes profile list
-runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes kanban list
+runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes kanban boards list
+runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes kanban --board homelab diagnostics
+runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes cron list
 ```
 
 ## Discord setup

@@ -27,6 +27,10 @@ REQUIRED_ENV = {
     "hermes_1password_service_account_token": "OP_SERVICE_ACCOUNT_TOKEN",
 }
 
+OPTIONAL_ENV = {
+    "hermes_discord_home_channel": "HERMES_DISCORD_HOME_CHANNEL",
+}
+
 
 def require_env(name: str) -> str:
     value = os.environ.get(name)
@@ -65,6 +69,10 @@ def load_copyparty_users() -> list[dict[str, Any]]:
 
 def build_mapping() -> dict[str, Any]:
     mapping = {var_name: require_env(env_name) for var_name, env_name in REQUIRED_ENV.items()}
+    for var_name, env_name in OPTIONAL_ENV.items():
+        value = os.environ.get(env_name)
+        if value:
+            mapping[var_name] = value
     mapping["copyparty_users"] = load_copyparty_users()
 
     adguard_admin_username = os.environ.get("ADGUARD_ADMIN_USERNAME")

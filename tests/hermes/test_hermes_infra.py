@@ -115,10 +115,13 @@ def test_cd_workflow_passes_hermes_discord_web_browser_and_1password_secrets_to_
 
     assert "HERMES_DISCORD_BOT_TOKEN:" in workflow
     assert "HERMES_DISCORD_ALLOWED_USERS:" in workflow
+    assert "HERMES_DISCORD_HOME_CHANNEL:" in workflow
     assert "hermes_discord_bot_token" in writer
     assert "HERMES_DISCORD_BOT_TOKEN" in writer
     assert "hermes_discord_allowed_users" in writer
     assert "HERMES_DISCORD_ALLOWED_USERS" in writer
+    assert "hermes_discord_home_channel" in writer
+    assert "HERMES_DISCORD_HOME_CHANNEL" in writer
 
     assert "PARALLEL_API_KEY:" in workflow
     assert "FIRECRAWL_API_KEY:" in workflow
