@@ -235,7 +235,7 @@ def test_hermes_role_keeps_venv_writable_for_lazy_dependency_installs():
     assert agent_pip_index < ownership_index < service_index
 
 
-def test_hermes_role_routes_auxiliary_compression_to_main_provider():
+def test_hermes_role_routes_auxiliary_compression_to_main_provider_with_longer_timeout():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
     group_vars = read_yaml("infra/ansible/inventory/prod/group_vars/svc_hermes.yml")
     script_path = REPO_ROOT / "infra/ansible/roles/hermes/templates/hermes-configure-runtime.py.j2"
@@ -243,6 +243,7 @@ def test_hermes_role_routes_auxiliary_compression_to_main_provider():
     script = script_path.read_text(encoding="utf-8")
 
     assert group_vars["hermes_auxiliary_compression_provider"] == "main"
+    assert group_vars["hermes_auxiliary_compression_timeout"] == 300
     assert "hermes_auxiliary_compression_model" not in group_vars
 
     template_task = find_task(tasks, "Install Hermes runtime configuration helper")
@@ -264,9 +265,27 @@ def test_hermes_role_routes_auxiliary_compression_to_main_provider():
     assert ownership_index < configure_index < service_index
 
     assert "hermes_auxiliary_compression_provider" in script
+    assert "hermes_auxiliary_compression_timeout" in script
     assert 'compression["model"] = ""' in script
+    assert 'compression["timeout"] = DESIRED_COMPRESSION_TIMEOUT' in script
     assert "gpt-5.5" not in script
     assert "api_key" not in script
+
+
+def test_validate_playbook_asserts_hermes_compression_timeout():
+    validate = read_yaml("infra/ansible/playbooks/validate.yml")
+    hermes_play = next(
+        (play for play in validate if play.get("name") == "Validate hermes"),
+        None,
+    )
+
+    assert hermes_play is not None
+    hermes_tasks = yaml.safe_dump(hermes_play.get("tasks", []), sort_keys=True)
+    assert "Check Hermes compression timeout" in hermes_tasks
+    assert "auxiliary.compression.provider" in hermes_tasks
+    assert "auxiliary.compression.timeout" in hermes_tasks
+    assert "main" in hermes_tasks
+    assert "300" in hermes_tasks
 
 
 def test_hermes_role_configures_parallel_search_and_firecrawl_extract():
