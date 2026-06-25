@@ -82,6 +82,8 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     assert "op --version" in hermes_tasks
     assert "skills/security/1password/SKILL.md" in hermes_tasks
     assert "op whoami" in hermes_tasks
+    assert "runuser -u" in hermes_tasks
+    assert "OP_SERVICE_ACCOUNT_TOKEN" in hermes_tasks
     assert "chromium-" not in hermes_tasks
     assert "hermes-webui" not in hermes_tasks
     assert "hermes_webui_port" not in hermes_tasks
@@ -133,6 +135,7 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "official/security/1password" in runbook
     assert "op read" in runbook
     assert "op run" in runbook
+    assert ".config/op" in runbook
     assert "threshold: 0.85" in runbook
     assert "codex_gpt55_autoraise: false" in runbook
     assert "rebuild_hermes_lxc" not in runbook
