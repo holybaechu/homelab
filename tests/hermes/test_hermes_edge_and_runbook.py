@@ -110,6 +110,12 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     assert "readlink -f" in hermes_tasks
     assert "enabled plugins mismatch" in hermes_tasks
     assert "discord platform toolsets mismatch" in hermes_tasks
+    assert "newrrow-browser-login plugin is not enabled" in hermes_tasks
+    assert "Check Hermes 5+1 profiles and Kanban routing config" in hermes_tasks
+    assert "discord platform is missing kanban toolset" in hermes_tasks
+    assert "Check Hermes Kanban board is initialized" in hermes_tasks
+    assert "discord platform" in hermes_tasks
+    assert "browser toolset" in hermes_tasks
     assert "chromium-" not in hermes_tasks
     assert "hermes-webui" not in hermes_tasks
     assert "hermes_webui_port" not in hermes_tasks
@@ -172,6 +178,12 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "newrrow-points-automation" in runbook
     assert "newrrow-browser-login" in runbook
     assert "newrrow_browser_login" in runbook
+    assert "Multi-profile Kanban fleet" in runbook
+    assert "5+1" in runbook
+    assert "orchestrator_profile: orchestrator" in runbook
+    assert "browser-protected" in runbook
+    assert "BROWSERBASE_PROXIES=false" in runbook
+    assert "BROWSERBASE_PROXIES=true" in runbook
     assert "browser_navigate" in runbook
     assert "browser_*" in runbook
     assert "NEWRROW_USERNAME_REF" in runbook
