@@ -16,7 +16,7 @@ DESIRED_WEB_SEARCH_BACKEND = "{{ hermes_web_search_backend }}"
 DESIRED_WEB_EXTRACT_BACKEND = "{{ hermes_web_extract_backend }}"
 DESIRED_BROWSER_CLOUD_PROVIDER = "{{ hermes_browser_cloud_provider }}"
 DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS = {{ (hermes_browser_auto_local_for_private_urls | bool) | ternary('True', 'False') }}
-DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser"]
+DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser", "kanban"]
 DESIRED_PLUGINS = ["newrrow-browser-login"]
 SERVICE_USER = "{{ hermes_user }}"
 SERVICE_GROUP = "{{ hermes_group }}"
@@ -31,13 +31,11 @@ def ensure_dict(parent, key):
     return current
 
 
-def ensure_list(parent, key, default_items):
+def set_list(parent, key, desired_items):
     current = parent.get(key)
-    if isinstance(current, list):
-        return current
-    current = list(default_items)
-    parent[key] = current
-    return current
+    desired = list(desired_items)
+    parent[key] = desired
+    return current != desired
 
 
 def main():
@@ -100,27 +98,13 @@ def main():
         browser["auto_local_for_private_urls"] = DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS
         changed = True
 
-    discord_toolsets_existing = platform_toolsets.get("discord")
-    discord_toolsets = ensure_list(
+    changed |= set_list(
         platform_toolsets,
         "discord",
         DESIRED_DISCORD_TOOLSETS,
     )
-    if not isinstance(discord_toolsets_existing, list):
-        changed = True
-    for toolset in DESIRED_DISCORD_TOOLSETS:
-        if toolset not in discord_toolsets:
-            discord_toolsets.append(toolset)
-            changed = True
 
-    plugins_enabled_existing = plugins.get("enabled")
-    plugins_enabled = ensure_list(plugins, "enabled", DESIRED_PLUGINS)
-    if not isinstance(plugins_enabled_existing, list):
-        changed = True
-    for plugin in DESIRED_PLUGINS:
-        if plugin not in plugins_enabled:
-            plugins_enabled.append(plugin)
-            changed = True
+    changed |= set_list(plugins, "enabled", DESIRED_PLUGINS)
 
     if not changed:
         print("ok")

@@ -320,11 +320,12 @@
 
         config = yaml.safe_load(Path("{{ hermes_home }}/config.yaml").read_text(encoding="utf-8")) or {}
         enabled = ((config.get("plugins") or {}).get("enabled") or [])
-        if "newrrow-browser-login" not in enabled:
-            raise SystemExit("newrrow-browser-login plugin is not enabled")
+        if enabled != ["newrrow-browser-login"]:
+            raise SystemExit(f"enabled plugins mismatch: {enabled!r}")
         toolsets = ((config.get("platform_toolsets") or {}).get("discord") or [])
-        if "browser" not in toolsets:
-            raise SystemExit("discord platform is missing browser toolset")
+        expected_toolsets = ["hermes-discord", "browser", "kanban"]
+        if toolsets != expected_toolsets:
+            raise SystemExit(f"discord platform toolsets mismatch: {toolsets!r}")
         PY
       args:
         executable: /bin/bash
