@@ -25,6 +25,8 @@ fi
 : "${HERMES_VENV_PATH:={{ hermes_venv_path }}}"
 : "${HERMES_GATEWAY_SERVICE:=hermes-gateway.service}"
 : "${HERMES_CONFIG_RESTART_PATTERNS:=^config/|^profiles/|^plugins/|^rules/|^kanban/|^cron/}"
+: "${HERMES_CONFIG_COMMIT_USER_NAME:=holybaechu}"
+: "${HERMES_CONFIG_COMMIT_USER_EMAIL:=holybaechu@proton.me}"
 
 LOCK=/run/hermes-config-sync.lock
 mkdir -p /run
@@ -69,8 +71,8 @@ fi
 
 chown -R "$HERMES_USER:$HERMES_GROUP" "$HERMES_CONFIG_DIR"
 run_as_hermes git config --global --add safe.directory "$HERMES_CONFIG_DIR" >/dev/null 2>&1 || true
-git_cmd config user.name "Hermes Config Bot"
-git_cmd config user.email "hermes-config@hchu.me"
+git_cmd config user.name "$HERMES_CONFIG_COMMIT_USER_NAME"
+git_cmd config user.email "$HERMES_CONFIG_COMMIT_USER_EMAIL"
 
 git_cmd fetch origin "$HERMES_CONFIG_BRANCH"
 

@@ -175,6 +175,8 @@ def test_hermes_role_wires_live_hermes_config_git_sync_with_restart_handler():
     assert group_vars["hermes_config_branch"] == "main"
     assert group_vars["hermes_config_webhook_host"] == "0.0.0.0"
     assert group_vars["hermes_config_webhook_port"] == 8787
+    assert group_vars["hermes_config_commit_user_name"] == "holybaechu"
+    assert group_vars["hermes_config_commit_user_email"] == "holybaechu@proton.me"
     assert group_vars["hermes_config_dir"] == "{{ hermes_home }}/hermes-config"
     assert "^config/" in group_vars["hermes_config_restart_patterns"]
     assert "^profiles/" in group_vars["hermes_config_restart_patterns"]
@@ -213,12 +215,18 @@ def test_hermes_role_wires_live_hermes_config_git_sync_with_restart_handler():
 
     assert "HERMES_CONFIG_GIT_TOKEN={{ hermes_config_repo_token | quote }}" in sync_env_template
     assert "HERMES_CONFIG_WEBHOOK_SECRET={{ hermes_config_webhook_secret | quote }}" in sync_env_template
+    assert "HERMES_CONFIG_COMMIT_USER_NAME={{ hermes_config_commit_user_name | quote }}" in sync_env_template
+    assert "HERMES_CONFIG_COMMIT_USER_EMAIL={{ hermes_config_commit_user_email | quote }}" in sync_env_template
     assert "git reset --hard" not in sync_template
     assert "rebase" in sync_template
     assert "push origin" in sync_template
     assert "systemctl try-restart" in sync_template
     assert "restart_handler=try-restart" in sync_template
     assert "HERMES_CONFIG_RESTART_PATTERNS" in sync_template
+    assert "git_cmd config user.name \"$HERMES_CONFIG_COMMIT_USER_NAME\"" in sync_template
+    assert "git_cmd config user.email \"$HERMES_CONFIG_COMMIT_USER_EMAIL\"" in sync_template
+    assert "Hermes Config Bot" not in sync_template
+    assert "hermes-config@hchu.me" not in sync_template
     assert "migrate_to_symlink" in apply_template
     assert "config/default/config.yaml" in apply_template
     assert "plugins" in apply_template

@@ -25,6 +25,8 @@ hermes_config_webhook_host: 0.0.0.0
 hermes_config_webhook_port: 8787
 hermes_config_webhook_path_name: /github/hermes-config
 hermes_config_sync_timer_schedule: "*:0/15"
+hermes_config_commit_user_name: holybaechu
+hermes_config_commit_user_email: holybaechu@proton.me
 hermes_config_restart_patterns:
   - "^config/"
   - "^profiles/"
