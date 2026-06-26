@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import hmac
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import os
+import subprocess
+import sys
+
+HOST = "{{ hermes_config_webhook_host }}"
+PORT = {{ hermes_config_webhook_port | int }}
+PATH = "{{ hermes_config_webhook_path_name }}"
+SYNC = "{{ hermes_config_git_sync_path }}"
+BRANCH = "{{ hermes_config_branch }}"
+SECRET = os.environ.get("HERMES_CONFIG_WEBHOOK_SECRET", "")
+
+
+def verify_signature(body: bytes, header: str | None) -> bool:
+    if not SECRET:
+        return False
+    if not header or not header.startswith("sha256="):
+        return False
+    expected = "sha256=" + hmac.new(SECRET.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header)
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "hermes-config-webhook/1.0"
+
+    def log_message(self, fmt: str, *args) -> None:
+        sys.stderr.write("%s - - [%s] %s\n" % (self.client_address[0], self.log_date_time_string(), fmt % args))
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path != PATH:
+            self.send_response(404)
+            self.end_headers()
+            return
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        if not verify_signature(body, self.headers.get("X-Hub-Signature-256")):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(b"invalid signature\n")
+            return
+        event = self.headers.get("X-GitHub-Event", "")
+        if event == "ping":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"pong\n")
+            return
+        if event != "push":
+            self.send_response(202)
+            self.end_headers()
+            self.wfile.write(b"ignored event\n")
+            return
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(b"invalid json\n")
+            return
+        if payload.get("ref") != f"refs/heads/{BRANCH}":
+            self.send_response(202)
+            self.end_headers()
+            self.wfile.write(b"ignored ref\n")
+            return
+        result = subprocess.run([SYNC, "--source", "webhook"], text=True, capture_output=True, timeout=600)
+        status = 202 if result.returncode == 0 else 500
+        self.send_response(status)
+        self.end_headers()
+        self.wfile.write(result.stdout.encode("utf-8", errors="replace"))
+        if result.stderr:
+            self.wfile.write(b"\nSTDERR:\n")
+            self.wfile.write(result.stderr.encode("utf-8", errors="replace"))
+
+
+def main() -> int:
+    if not SECRET:
+        raise SystemExit("HERMES_CONFIG_WEBHOOK_SECRET is required")
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f"listening on http://{HOST}:{PORT}{PATH}", flush=True)
+    server.serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

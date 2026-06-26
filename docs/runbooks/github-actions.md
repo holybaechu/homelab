@@ -40,6 +40,13 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `QBITTORRENT_WEBUI_PASSWORD`
 - `HERMES_DISCORD_BOT_TOKEN`
 - `HERMES_DISCORD_ALLOWED_USERS`
+- `PARALLEL_API_KEY`
+- `FIRECRAWL_API_KEY`
+- `BROWSERBASE_API_KEY`
+- `BROWSERBASE_PROJECT_ID`
+- `OP_SERVICE_ACCOUNT_TOKEN`
+- `HERMES_CONFIG_REPO_TOKEN`, fine-scoped to read/write the private `holybaechu/hermes-config` repo
+- `HERMES_CONFIG_WEBHOOK_SECRET`, shared with the GitHub webhook for HMAC verification
 - `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and plaintext `password`
 
 Example `COPYPARTY_USERS_JSON`:

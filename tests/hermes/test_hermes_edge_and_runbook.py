@@ -31,6 +31,17 @@ def test_caddyfile_does_not_expose_hermes_gateway_route():
     assert caddy_site_block(caddyfile, "hermes.home.hchu.me") is None
 
 
+def test_caddyfile_exposes_only_hmac_hermes_config_webhook_route():
+    caddyfile = read("apps/edge/Caddyfile")
+    block = caddy_site_block(caddyfile, "hermes-config-webhook.hchu.me")
+
+    assert block is not None
+    assert "import secure_headers" in block
+    assert "reverse_proxy 192.168.0.9:8787" in block
+    assert "hermes-gateway" not in block
+    assert "private_only" not in block
+
+
 def test_site_playbook_applies_hermes_role():
     site = read_yaml("infra/ansible/playbooks/site.yml")
     hermes_play = next(
@@ -89,9 +100,14 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     assert "stat.S_IMODE(st.st_mode)" in hermes_tasks
     assert "0o600" in hermes_tasks
     assert "Check Hermes Newrrow points skill" in hermes_tasks
-    assert "skills/productivity/newrrow-points-automation/SKILL.md" in hermes_tasks
+    assert "skills/newrrow-points-automation/SKILL.md" in hermes_tasks
     assert "scripts/newrrow-login.sh" in hermes_tasks
     assert "plugins/newrrow-browser-login/plugin.yaml" in hermes_tasks
+    assert "Check Hermes config synchronization services" in hermes_tasks
+    assert "hermes-config-watch.service" in hermes_tasks
+    assert "hermes-config-webhook.service" in hermes_tasks
+    assert "hermes-config-sync.timer" in hermes_tasks
+    assert "readlink -f" in hermes_tasks
     assert "newrrow-browser-login plugin is not enabled" in hermes_tasks
     assert "discord platform" in hermes_tasks
     assert "browser toolset" in hermes_tasks
@@ -110,6 +126,8 @@ def test_secrets_readme_documents_hermes_discord_web_browser_and_1password_secre
     assert "hermes_browserbase_api_key" in secrets
     assert "hermes_browserbase_project_id" in secrets
     assert "hermes_1password_service_account_token" in secrets
+    assert "hermes_config_repo_token" in secrets
+    assert "hermes_config_webhook_secret" in secrets
     assert "PARALLEL_API_KEY" in secrets
     assert "FIRECRAWL_API_KEY" in secrets
     assert "BROWSERBASE_API_KEY" in secrets
@@ -134,6 +152,10 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "BROWSERBASE_API_KEY" in runbook
     assert "BROWSERBASE_PROJECT_ID" in runbook
     assert "OP_SERVICE_ACCOUNT_TOKEN" in runbook
+    assert "HERMES_CONFIG_REPO_TOKEN" in runbook
+    assert "HERMES_CONFIG_WEBHOOK_SECRET" in runbook
+    assert "hermes-config" in runbook
+    assert "restart handler" in runbook
     assert "search_backend: parallel" in runbook
     assert "extract_backend: firecrawl" in runbook
     assert "cloud_provider: browserbase" in runbook

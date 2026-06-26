@@ -85,6 +85,9 @@ def test_hermes_group_vars_are_non_secret_service_settings():
     assert "hermes_discord_allowed_users:" not in group_vars
     assert "hermes_browserbase_api_key:" not in group_vars
     assert "hermes_browserbase_project_id:" not in group_vars
+    assert "hermes_config_repo: https://github.com/holybaechu/hermes-config.git" in group_vars
+    assert "hermes_config_repo_token:" not in group_vars
+    assert "hermes_config_webhook_secret:" not in group_vars
     assert "hermes_discord_require_mention: true" in group_vars
     assert "hermes_discord_ignore_no_mention: true" in group_vars
     assert "API_SERVER_KEY" not in group_vars
@@ -137,6 +140,13 @@ def test_cd_workflow_passes_hermes_discord_web_browser_and_1password_secrets_to_
     assert "OP_SERVICE_ACCOUNT_TOKEN:" in workflow
     assert "hermes_1password_service_account_token" in writer
     assert "OP_SERVICE_ACCOUNT_TOKEN" in writer
+
+    assert "HERMES_CONFIG_REPO_TOKEN:" in workflow
+    assert "HERMES_CONFIG_WEBHOOK_SECRET:" in workflow
+    assert "hermes_config_repo_token" in writer
+    assert "hermes_config_webhook_secret" in writer
+    assert "HERMES_CONFIG_REPO_TOKEN" in writer
+    assert "HERMES_CONFIG_WEBHOOK_SECRET" in writer
 
     assert "HERMES_WEBUI_PASSWORD:" not in workflow
     assert "HERMES_API_KEY" not in workflow
