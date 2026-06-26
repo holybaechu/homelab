@@ -108,9 +108,8 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     assert "hermes-config-webhook.service" in hermes_tasks
     assert "hermes-config-sync.timer" in hermes_tasks
     assert "readlink -f" in hermes_tasks
-    assert "newrrow-browser-login plugin is not enabled" in hermes_tasks
-    assert "discord platform" in hermes_tasks
-    assert "browser toolset" in hermes_tasks
+    assert "enabled plugins mismatch" in hermes_tasks
+    assert "discord platform toolsets mismatch" in hermes_tasks
     assert "chromium-" not in hermes_tasks
     assert "hermes-webui" not in hermes_tasks
     assert "hermes_webui_port" not in hermes_tasks
@@ -165,7 +164,7 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "/var/lib/hermes/.agent-browser/browsers" in runbook
     assert "HOME=/var/lib/hermes" in runbook
     assert "1Password" in runbook
-    assert "official/security/1password" in runbook
+    assert "skills/security/1password" in runbook
     assert "op read" in runbook
     assert "op run" in runbook
     assert ".config/op" in runbook

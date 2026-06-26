@@ -254,20 +254,6 @@
     'apply_changed=true' in hermes_config_sync.stdout
   no_log: true
 
-- name: Check Hermes 1Password skill
-  ansible.builtin.stat:
-    path: "{{ hermes_home }}/skills/security/1password/SKILL.md"
-  register: hermes_1password_skill
-
-- name: Install Hermes 1Password skill
-  ansible.builtin.command:
-    cmd: "{{ hermes_venv_path }}/bin/hermes skills install official/security/1password --yes"
-  environment:
-    HERMES_HOME: "{{ hermes_home }}"
-    HOME: "{{ hermes_home }}"
-  when: not hermes_1password_skill.stat.exists
-  notify: Restart hermes-gateway
-
 - name: Allow Hermes service to manage skills
   ansible.builtin.file:
     path: "{{ hermes_config_dir }}/skills"
@@ -300,9 +286,10 @@
     follow: false
   when: hermes_op_config_file.stat.exists
 
-- name: Check Hermes config Newrrow skill and plugin
+- name: Check Hermes config required skills and plugins
   ansible.builtin.shell: |
     set -euo pipefail
+    test -f "{{ hermes_home }}/skills/security/1password/SKILL.md"
     test -f "{{ hermes_home }}/skills/newrrow-points-automation/SKILL.md"
     test -f "{{ hermes_home }}/skills/newrrow-points-automation/references/ui-flow.md"
     test -f "{{ hermes_home }}/plugins/newrrow-browser-login/plugin.yaml"

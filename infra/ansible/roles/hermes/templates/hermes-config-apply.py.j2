@@ -22,6 +22,14 @@ SERVICE_GROUP = os.environ.get("HERMES_GROUP", "{{ hermes_group }}")
 VENV_PATH = Path(os.environ.get("HERMES_VENV_PATH", "{{ hermes_venv_path }}"))
 
 RESTART_PREFIXES = ("config/", "profiles/", "plugins/", "rules/", "kanban/", "cron/")
+HOMELAB_OWNED_DEFAULT_CONFIG_PATHS = (
+    ("auxiliary", "compression"),
+    ("browser",),
+    ("compression",),
+    ("platform_toolsets", "discord"),
+    ("plugins", "enabled"),
+    ("web",),
+)
 
 
 def uid_gid() -> tuple[int, int]:
@@ -53,6 +61,27 @@ def load_yaml(path: Path, fallback: Any = None) -> Any:
         return fallback
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return fallback if data is None else data
+
+
+def path_exists(mapping: Any, path: tuple[str, ...]) -> bool:
+    current = mapping
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return False
+        current = current[key]
+    return True
+
+
+def reject_homelab_owned_default_config(desired: Any) -> None:
+    if not isinstance(desired, dict):
+        return
+    found = [".".join(path) for path in HOMELAB_OWNED_DEFAULT_CONFIG_PATHS if path_exists(desired, path)]
+    if found:
+        raise SystemExit(
+            "config/default/config.yaml contains homelab-owned runtime keys: "
+            + ", ".join(sorted(found))
+            + "; change these in holybaechu/homelab inventory/configure-runtime instead"
+        )
 
 
 def deep_merge(base: Any, desired: Any) -> Any:
@@ -154,6 +183,7 @@ def apply_default_config() -> tuple[bool, bool]:
     config_path = HERMES_HOME / "config.yaml"
     current = load_yaml(config_path, {})
     desired = load_yaml(desired_path, {})
+    reject_homelab_owned_default_config(desired)
     if not isinstance(current, dict) or not isinstance(desired, dict):
         raise SystemExit("Hermes config/default/config.yaml and live config.yaml must be YAML mappings")
     merged = deep_merge(current, desired)

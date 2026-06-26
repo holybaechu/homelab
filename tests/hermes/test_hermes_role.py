@@ -66,7 +66,7 @@ def test_hermes_role_installs_github_cli_for_workspace_tasks():
     assert "gh" in package_task["ansible.builtin.apt"]["name"]
 
 
-def test_hermes_role_installs_1password_cli_and_skill_for_secret_access():
+def test_hermes_role_installs_1password_cli_and_validates_live_config_skill_for_secret_access():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
 
     key_task = find_task(tasks, "Download 1Password apt signing key")
@@ -85,22 +85,14 @@ def test_hermes_role_installs_1password_cli_and_skill_for_secret_access():
     assert op_task["ansible.builtin.apt"]["name"] == "1password-cli"
     assert op_task["ansible.builtin.apt"]["update_cache"] is True
 
-    skill_check_task = find_task(tasks, "Check Hermes 1Password skill")
-    assert skill_check_task["ansible.builtin.stat"]["path"] == (
-        "{{ hermes_home }}/skills/security/1password/SKILL.md"
+    required_artifacts_task = find_task(tasks, "Check Hermes config required skills and plugins")
+    required_artifacts_shell = required_artifacts_task["ansible.builtin.shell"]
+    assert "{{ hermes_home }}/skills/security/1password/SKILL.md" in required_artifacts_shell
+    assert "{{ hermes_home }}/skills/newrrow-points-automation/SKILL.md" in required_artifacts_shell
+    assert "{{ hermes_home }}/plugins/newrrow-browser-login/plugin.yaml" in required_artifacts_shell
+    assert "hermes skills install official/security/1password" not in read(
+        "infra/ansible/roles/hermes/tasks/main.yml"
     )
-    assert skill_check_task["register"] == "hermes_1password_skill"
-
-    skill_task = find_task(tasks, "Install Hermes 1Password skill")
-    assert skill_task["ansible.builtin.command"]["cmd"] == (
-        "{{ hermes_venv_path }}/bin/hermes skills install official/security/1password --yes"
-    )
-    assert skill_task["environment"] == {
-        "HERMES_HOME": "{{ hermes_home }}",
-        "HOME": "{{ hermes_home }}",
-    }
-    assert skill_task["when"] == "not hermes_1password_skill.stat.exists"
-    assert skill_task["notify"] == "Restart hermes-gateway"
 
     ownership_task = find_task(tasks, "Allow Hermes service to manage skills")
     assert ownership_task["ansible.builtin.file"]["path"] == "{{ hermes_config_dir }}/skills"
@@ -139,8 +131,7 @@ def test_hermes_role_installs_1password_cli_and_skill_for_secret_access():
     repo_index = tasks.index(repo_task)
     op_index = tasks.index(op_task)
     agent_pip_index = tasks.index(find_task(tasks, "Install Hermes Agent messaging extras into virtualenv"))
-    skill_check_index = tasks.index(skill_check_task)
-    skill_index = tasks.index(skill_task)
+    required_artifacts_index = tasks.index(required_artifacts_task)
     ownership_index = tasks.index(ownership_task)
     op_config_index = tasks.index(op_config_task)
     op_config_file_check_index = tasks.index(op_config_file_check_task)
@@ -149,12 +140,11 @@ def test_hermes_role_installs_1password_cli_and_skill_for_secret_access():
     assert runtime_package_index < key_index < repo_index < op_index
     assert (
         agent_pip_index
-        < skill_check_index
-        < skill_index
         < ownership_index
         < op_config_index
         < op_config_file_check_index
         < op_config_file_index
+        < required_artifacts_index
         < service_index
     )
 
@@ -227,9 +217,10 @@ def test_hermes_role_wires_live_hermes_config_git_sync_with_restart_handler():
     assert "git_cmd config user.email \"$HERMES_CONFIG_COMMIT_USER_EMAIL\"" in sync_template
     assert "Hermes Config Bot" not in sync_template
     assert "hermes-config@hchu.me" not in sync_template
-    assert "migrate_to_symlink" in apply_template
-    assert "config/default/config.yaml" in apply_template
-    assert "plugins" in apply_template
+    assert "HOMELAB_OWNED_DEFAULT_CONFIG_PATHS" in apply_template
+    assert "reject_homelab_owned_default_config(desired)" in apply_template
+    assert '("platform_toolsets", "discord")' in apply_template
+    assert '("plugins", "enabled")' in apply_template
     assert "X-Hub-Signature-256" in webhook_template
     assert "hmac.compare_digest" in webhook_template
     assert "inotifywait" in watch_service
@@ -238,10 +229,10 @@ def test_hermes_role_wires_live_hermes_config_git_sync_with_restart_handler():
     assert "OnCalendar={{ hermes_config_sync_timer_schedule }}" in sync_timer
 
     sync_index = tasks.index(sync_task)
-    skill_check_index = tasks.index(find_task(tasks, "Check Hermes 1Password skill"))
+    required_artifacts_index = tasks.index(find_task(tasks, "Check Hermes config required skills and plugins"))
     service_index = tasks.index(find_task(tasks, "Enable Hermes config synchronization services"))
     gateway_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
-    assert sync_index < skill_check_index < service_index < gateway_index
+    assert sync_index < required_artifacts_index < service_index < gateway_index
 
 
 def test_hermes_role_uses_hermes_config_for_newrrow_skill_and_plugin():
@@ -265,7 +256,7 @@ def test_hermes_role_uses_hermes_config_for_newrrow_skill_and_plugin():
 
     assert "src: skills/newrrow-points-automation/" not in tasks_text
     assert "src: plugins/newrrow-browser-login/" not in tasks_text
-    assert "Check Hermes config Newrrow skill and plugin" in tasks_text
+    assert "Check Hermes config required skills and plugins" in tasks_text
     assert "{{ hermes_home }}/skills/newrrow-points-automation/SKILL.md" in tasks_text
     assert "{{ hermes_home }}/plugins/newrrow-browser-login/plugin.yaml" in tasks_text
 
@@ -276,7 +267,7 @@ def test_hermes_role_uses_hermes_config_for_newrrow_skill_and_plugin():
     assert login_helper_task["ansible.builtin.file"]["mode"] == "0755"
 
     sync_index = tasks.index(find_task(tasks, "Synchronize live Hermes config repository"))
-    check_index = tasks.index(find_task(tasks, "Check Hermes config Newrrow skill and plugin"))
+    check_index = tasks.index(find_task(tasks, "Check Hermes config required skills and plugins"))
     helper_index = tasks.index(login_helper_task)
     service_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
     assert sync_index < check_index < helper_index < service_index
@@ -484,10 +475,9 @@ def test_hermes_role_configures_browserbase_browser_automation():
     ) in script
     assert 'platform_toolsets = ensure_dict(config, "platform_toolsets")' in script
     assert 'plugins = ensure_dict(config, "plugins")' in script
-    assert 'DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser"]' in script
+    assert 'DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser", "kanban"]' in script
     assert 'DESIRED_PLUGINS = ["newrrow-browser-login"]' in script
-    assert "discord_toolsets = ensure_list" in script
-    assert "plugins_enabled = ensure_list" in script
+    assert "changed |= set_list" in script
     assert '"discord"' in script
 
     configure_task = find_task(tasks, "Configure Hermes runtime settings")
