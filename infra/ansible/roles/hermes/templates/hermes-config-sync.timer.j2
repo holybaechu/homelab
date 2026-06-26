@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic reconciliation for live Hermes config repository
+
+[Timer]
+OnCalendar={{ hermes_config_sync_timer_schedule }}
+Persistent=true
+RandomizedDelaySec=60
+Unit=hermes-config-sync.service
+
+[Install]
+WantedBy=timers.target

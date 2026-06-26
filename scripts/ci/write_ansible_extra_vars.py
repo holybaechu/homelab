@@ -25,6 +25,8 @@ REQUIRED_ENV = {
     "hermes_browserbase_api_key": "BROWSERBASE_API_KEY",
     "hermes_browserbase_project_id": "BROWSERBASE_PROJECT_ID",
     "hermes_1password_service_account_token": "OP_SERVICE_ACCOUNT_TOKEN",
+    "hermes_config_repo_token": "HERMES_CONFIG_REPO_TOKEN",
+    "hermes_config_webhook_secret": "HERMES_CONFIG_WEBHOOK_SECRET",
 }
 
 

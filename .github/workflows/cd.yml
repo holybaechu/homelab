@@ -111,6 +111,8 @@ jobs:
           BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
           BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          HERMES_CONFIG_REPO_TOKEN: ${{ secrets.HERMES_CONFIG_REPO_TOKEN }}
+          HERMES_CONFIG_WEBHOOK_SECRET: ${{ secrets.HERMES_CONFIG_WEBHOOK_SECRET }}
           COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
         run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
 

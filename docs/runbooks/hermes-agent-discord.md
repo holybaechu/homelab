@@ -14,7 +14,10 @@ Set these GitHub Actions secrets in the `prod` environment:
 - `BROWSERBASE_PROJECT_ID`: Browserbase project ID used by Hermes browser automation.
 - `OP_SERVICE_ACCOUNT_TOKEN`: 1Password service account token used by the `op` CLI for non-interactive secret access.
 
-The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, and `hermes_1password_service_account_token`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
+- `HERMES_CONFIG_REPO_TOKEN`: fine-scoped GitHub token that can read and push the private `holybaechu/hermes-config` repo.
+- `HERMES_CONFIG_WEBHOOK_SECRET`: shared HMAC secret for the hermes-config GitHub push webhook receiver.
+
+The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, `hermes_1password_service_account_token`, `hermes_config_repo_token`, and `hermes_config_webhook_secret`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
@@ -71,7 +74,18 @@ Do not ask Hermes to print raw secret values unless you explicitly need to revea
 
 ## Newrrow points automation
 
-The role installs a local Hermes skill at `/var/lib/hermes/skills/productivity/newrrow-points-automation` and a trusted Hermes plugin at `/var/lib/hermes/plugins/newrrow-browser-login`. It migrates the packaged Newrrow point checklist workflow to Hermes `browser_*` tools so public Newrrow URLs use the configured Browserbase browser path, while the local browser runtime remains only for private/LAN auto-local routing. The detailed UI route/checklist reference lives under the skill's `references/ui-flow.md`.
+The Hermes behavior artifacts now come from the private `holybaechu/hermes-config` repository instead of being copied from homelab role files. The live deployment keeps:
+
+```text
+/var/lib/hermes/hermes-config   # git checkout of holybaechu/hermes-config main
+/var/lib/hermes/skills          -> /var/lib/hermes/hermes-config/skills
+/var/lib/hermes/memories        -> /var/lib/hermes/hermes-config/memories
+/var/lib/hermes/plugins         -> /var/lib/hermes/hermes-config/plugins
+```
+
+The Ansible role installs `/opt/hermes/hermes-config-git-sync`, `/opt/hermes/hermes-config-apply`, a local inotify watch service, a GitHub webhook receiver, and a reconciliation timer. The sync script never uses `git reset --hard`; it commits local Hermes auto-improvements first, fetches/rebases or fast-forwards `main`, pushes local-only changes, and then runs the apply helper. If changed files match runtime-impacting prefixes such as `config/`, `profiles/`, `plugins/`, `rules/`, `kanban/`, or `cron/`, the sync script's restart handler runs `systemctl try-restart hermes-gateway.service`. Skills and memories sync immediately on disk, while current conversations may still need `/reload-skills`, `/reset`, or a new session to see them.
+
+The Newrrow skill lives at `/var/lib/hermes/skills/newrrow-points-automation` through that symlinked checkout, and the trusted plugin lives at `/var/lib/hermes/plugins/newrrow-browser-login`. It migrates the packaged Newrrow point checklist workflow to Hermes `browser_*` tools so public Newrrow URLs use the configured Browserbase browser path, while the local browser runtime remains only for private/LAN auto-local routing. The detailed UI route/checklist reference lives under the skill's `references/ui-flow.md`.
 
 Newrrow login uses 1Password secret references instead of live browser password-manager state. The tracked inventory configures:
 
@@ -123,8 +137,9 @@ With the default repo settings, DMs always receive responses. Server channels re
 2. Run `infra/ansible/playbooks/bootstrap.yml` through CD, or directly if doing a controlled maintenance deploy.
 3. Run `infra/ansible/playbooks/site.yml`.
 4. Run `infra/ansible/playbooks/validate.yml`.
-5. Confirm `systemctl is-active hermes-gateway` returns `active` on the Hermes LXC.
-6. DM the bot or mention it in an allowed server channel.
+5. Confirm `systemctl is-active hermes-gateway`, `systemctl is-active hermes-config-watch`, `systemctl is-active hermes-config-webhook`, and `systemctl is-active hermes-config-sync.timer` return active on the Hermes LXC.
+6. Confirm `/var/lib/hermes/skills`, `/var/lib/hermes/memories`, and `/var/lib/hermes/plugins` resolve into `/var/lib/hermes/hermes-config`.
+7. DM the bot or mention it in an allowed server channel.
 
 ## Persistent paths
 

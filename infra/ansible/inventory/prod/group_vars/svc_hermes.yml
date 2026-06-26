@@ -13,6 +13,26 @@ hermes_env_path: /etc/hermes-gateway.env
 hermes_agent_repo: https://github.com/NousResearch/hermes-agent.git
 hermes_agent_ref: 36ae958473b8530ffb1a395c4944b8cdbcae82fe
 
+hermes_config_repo: https://github.com/holybaechu/hermes-config.git
+hermes_config_branch: main
+hermes_config_dir: "{{ hermes_home }}/hermes-config"
+hermes_config_sync_env_path: /etc/hermes-config-sync.env
+hermes_config_git_sync_path: "{{ hermes_install_dir }}/hermes-config-git-sync"
+hermes_config_apply_path: "{{ hermes_install_dir }}/hermes-config-apply"
+hermes_config_webhook_path: "{{ hermes_install_dir }}/hermes-config-webhook"
+hermes_config_askpass_path: "{{ hermes_install_dir }}/hermes-config-git-askpass"
+hermes_config_webhook_host: 0.0.0.0
+hermes_config_webhook_port: 8787
+hermes_config_webhook_path_name: /github/hermes-config
+hermes_config_sync_timer_schedule: "*:0/15"
+hermes_config_restart_patterns:
+  - "^config/"
+  - "^profiles/"
+  - "^plugins/"
+  - "^rules/"
+  - "^kanban/"
+  - "^cron/"
+
 hermes_auxiliary_compression_provider: main
 hermes_auxiliary_compression_timeout: 300
 hermes_compression_threshold: 0.85

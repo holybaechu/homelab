@@ -4,3 +4,21 @@
     name: hermes-gateway.service
     state: restarted
     daemon_reload: true
+
+- name: Restart hermes-config-watch
+  ansible.builtin.systemd:
+    name: hermes-config-watch.service
+    state: restarted
+    daemon_reload: true
+
+- name: Restart hermes-config-webhook
+  ansible.builtin.systemd:
+    name: hermes-config-webhook.service
+    state: restarted
+    daemon_reload: true
+
+- name: Restart hermes-config-sync timer
+  ansible.builtin.systemd:
+    name: hermes-config-sync.timer
+    state: restarted
+    daemon_reload: true

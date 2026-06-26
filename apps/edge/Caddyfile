@@ -43,6 +43,11 @@ copyparty.hchu.me {
 	reverse_proxy 192.168.0.7:3923
 }
 
+hermes-config-webhook.hchu.me {
+	import secure_headers
+	reverse_proxy 192.168.0.9:8787
+}
+
 adguard.home.hchu.me {
 	import private_only
 	import secure_headers

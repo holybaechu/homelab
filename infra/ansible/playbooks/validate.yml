@@ -273,6 +273,23 @@
         executable: /bin/bash
       changed_when: false
 
+    - name: Check Hermes config synchronization services
+      ansible.builtin.shell: |
+        set -euo pipefail
+        systemctl is-active hermes-config-watch.service
+        systemctl is-active hermes-config-webhook.service
+        systemctl is-active hermes-config-sync.timer
+        test -x "{{ hermes_config_git_sync_path }}"
+        test -x "{{ hermes_config_apply_path }}"
+        test -x "{{ hermes_config_webhook_path }}"
+        test -d "{{ hermes_config_dir }}/.git"
+        test "$(readlink -f "{{ hermes_home }}/skills")" = "$(readlink -f "{{ hermes_config_dir }}/skills")"
+        test "$(readlink -f "{{ hermes_home }}/memories")" = "$(readlink -f "{{ hermes_config_dir }}/memories")"
+        test "$(readlink -f "{{ hermes_home }}/plugins")" = "$(readlink -f "{{ hermes_config_dir }}/plugins")"
+      args:
+        executable: /bin/bash
+      changed_when: false
+
     - name: Check Hermes 1Password CLI
       ansible.builtin.command:
         cmd: op --version
@@ -286,9 +303,9 @@
     - name: Check Hermes Newrrow points skill
       ansible.builtin.shell: |
         set -euo pipefail
-        test -f "{{ hermes_home }}/skills/productivity/newrrow-points-automation/SKILL.md"
-        test -f "{{ hermes_home }}/skills/productivity/newrrow-points-automation/references/ui-flow.md"
-        test -x "{{ hermes_home }}/skills/productivity/newrrow-points-automation/scripts/newrrow-login.sh"
+        test -f "{{ hermes_home }}/skills/newrrow-points-automation/SKILL.md"
+        test -f "{{ hermes_home }}/skills/newrrow-points-automation/references/ui-flow.md"
+        test -x "{{ hermes_home }}/skills/newrrow-points-automation/scripts/newrrow-login.sh"
         test -f "{{ hermes_home }}/plugins/newrrow-browser-login/plugin.yaml"
         test -f "{{ hermes_home }}/plugins/newrrow-browser-login/__init__.py"
       args:
