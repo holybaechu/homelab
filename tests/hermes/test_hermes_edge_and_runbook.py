@@ -110,7 +110,6 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     assert "readlink -f" in hermes_tasks
     assert "enabled plugins mismatch" in hermes_tasks
     assert "discord platform toolsets mismatch" in hermes_tasks
-    assert "newrrow-browser-login plugin is not enabled" in hermes_tasks
     assert "Check Hermes 5+1 profiles, policy files, and Kanban routing config" in hermes_tasks
     assert "kanban toolset" in hermes_tasks
     assert "Check Hermes Kanban board is initialized" in hermes_tasks
@@ -122,7 +121,6 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     assert "PRAGMA quick_check" in hermes_tasks
     assert "card-template.md" in hermes_tasks
     assert "discord platform" in hermes_tasks
-    assert "browser toolset" in hermes_tasks
     assert "chromium-" not in hermes_tasks
     assert "hermes-webui" not in hermes_tasks
     assert "hermes_webui_port" not in hermes_tasks

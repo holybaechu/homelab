@@ -90,7 +90,7 @@ The Hermes behavior artifacts now come from the private `holybaechu/hermes-confi
 
 The Ansible role installs `/opt/hermes/hermes-config-git-sync`, `/opt/hermes/hermes-config-apply`, a local inotify watch service, a GitHub webhook receiver, and a reconciliation timer. The sync script never uses `git reset --hard`; it commits local Hermes auto-improvements first, fetches/rebases or fast-forwards `main`, pushes local-only changes, and then runs the apply helper. Sync commits are authored as `holybaechu <holybaechu@proton.me>` so the live learned-state history stays under the maintainer account. If changed files match runtime-impacting prefixes such as `config/`, `profiles/`, `plugins/`, `rules/`, `kanban/`, or `cron/`, the sync script's restart handler runs `systemctl try-restart hermes-gateway.service`. Skills and memories sync immediately on disk, while current conversations may still need `/reload-skills`, `/reset`, or a new session to see them.
 
-The Newrrow skill lives at `/var/lib/hermes/skills/newrrow-points-automation` through that symlinked checkout, and the trusted plugin lives at `/var/lib/hermes/plugins/newrrow-browser-login`. It migrates the packaged Newrrow point checklist workflow to Hermes `browser_*` tools so public Newrrow URLs use the configured Browserbase browser path, while the local browser runtime remains only for private/LAN auto-local routing. The detailed UI route/checklist reference lives under the skill's `references/ui-flow.md`.
+The Newrrow skill lives at `/var/lib/hermes/skills/newrrow-points-automation` through that symlinked checkout, and the trusted plugin lives at `/var/lib/hermes/plugins/newrrow-browser-login`. Homelab validates those paths and fails if the duplicate categorized path `/var/lib/hermes/skills/productivity/newrrow-points-automation` reappears; it does not vendor or copy Newrrow skill/plugin files. The workflow uses Hermes `browser_*` tools so public Newrrow URLs use the configured Browserbase browser path, while the local browser runtime remains only for private/LAN auto-local routing. The detailed UI route/checklist reference lives under the skill's `references/ui-flow.md`.
 
 Newrrow login uses 1Password secret references instead of live browser password-manager state. The tracked inventory configures:
 
@@ -103,8 +103,8 @@ Ansible renders those into `/etc/hermes-gateway.env` as `NEWRROW_USERNAME_REF` a
 
 The runtime flow is:
 
-1. Use `browser_navigate` on the public Newrrow home URL.
-2. If the snapshot shows a login page, call the plugin tool `newrrow_browser_login`. The plugin reads the configured `op://` refs with `op read` inside the Hermes process, injects credentials into the active Browserbase/CDP-backed browser-tool session, and returns only non-secret status.
+1. Call the plugin tool `newrrow_browser_login` first. It owns the initial navigation to the public Newrrow home URL, forces Browserbase residential proxies off for that Newrrow session, reads the configured `op://` refs with `op read` inside the Hermes process when login is required, injects credentials into the active Browserbase/CDP-backed browser-tool session, and returns only non-secret status. Internally the helper forces `BROWSERBASE_PROXIES=false` for the session and restores the previous gateway env after session creation.
+2. Do not call `browser_navigate` before `newrrow_browser_login` for Newrrow; starting with a generic navigation can create a proxied Browserbase session when the gateway/profile env has proxies enabled.
 3. Continue all Newrrow UI work with Hermes `browser_*` tools (`browser_click`, `browser_type`, `browser_scroll`, `browser_press`, `browser_snapshot`).
 
 Do not type raw Newrrow passwords through `browser_type`, because its arguments/results are model-visible. Do not use bare `agent-browser open`, `agent-browser auth save`, or `agent-browser auth login` for Newrrow runtime operation; that bypasses Hermes browser routing and can silently use local Chromium for this public URL. `scripts/newrrow-login.sh` is retained only as a deployment/debugging credential preflight that verifies the 1Password refs and prints `newrrow_1password_refs_ready`.
@@ -125,6 +125,8 @@ auxiliary:
 ```
 
 This keeps the general compaction trigger at 85%, disables the Codex gpt-5.5 route-specific autoraise override, and raises the compression-summary call timeout to 6 minutes, above the previous 120s live setting that produced `Codex auxiliary Responses stream exceeded 120.0s total timeout`. The summary provider remains `main`, so compression continues to use the configured main Hermes model route with a longer budget instead of an operator-only live edit.
+
+Iteration budget pressure is effectively disabled in `hermes-config/config/default/config.yaml` by setting both `agent.max_turns` and `delegation.max_iterations` to `1000000`. Hermes does not expose a separate boolean kill switch in current docs; using a very high cap avoids the 70%/90% budget-pressure warnings and hard-stop behavior during long homelab/default turns while remaining explicit and versioned.
 
 
 ## Multi-profile Kanban fleet

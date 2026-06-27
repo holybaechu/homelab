@@ -262,6 +262,16 @@
     group: "{{ hermes_group }}"
     recurse: true
 
+- name: Validate Hermes behavior state symlinks
+  ansible.builtin.shell: |
+    set -euo pipefail
+    test "$(readlink -f "{{ hermes_home }}/skills")" = "$(readlink -f "{{ hermes_config_dir }}/skills")"
+    test "$(readlink -f "{{ hermes_home }}/plugins")" = "$(readlink -f "{{ hermes_config_dir }}/plugins")"
+    test "$(readlink -f "{{ hermes_home }}/memories")" = "$(readlink -f "{{ hermes_config_dir }}/memories")"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
 - name: Allow Hermes service to manage 1Password CLI config
   ansible.builtin.file:
     path: "{{ hermes_home }}/.config/op"
@@ -292,11 +302,30 @@
     test -f "{{ hermes_home }}/skills/security/1password/SKILL.md"
     test -f "{{ hermes_home }}/skills/newrrow-points-automation/SKILL.md"
     test -f "{{ hermes_home }}/skills/newrrow-points-automation/references/ui-flow.md"
+    test -f "{{ hermes_home }}/skills/newrrow-points-automation/scripts/newrrow-login.sh"
+    test ! -e "{{ hermes_home }}/skills/productivity/newrrow-points-automation"
     test -f "{{ hermes_home }}/plugins/newrrow-browser-login/plugin.yaml"
     test -f "{{ hermes_home }}/plugins/newrrow-browser-login/__init__.py"
   args:
     executable: /bin/bash
   changed_when: false
+
+- name: Check Hermes profile required skills from live config
+  ansible.builtin.stat:
+    path: "{{ hermes_home }}/skills/{{ item.path }}/SKILL.md"
+  loop: "{{ hermes_profile_bundled_skill_sources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: hermes_profile_required_skills
+
+- name: Require Hermes profile required skills from live config
+  ansible.builtin.assert:
+    that:
+      - hermes_profile_required_skills.results | selectattr('stat.exists', 'equalto', false) | list | length == 0
+    fail_msg: >-
+      One or more profile-required skills are missing from the live hermes-config skills tree.
+      Add them to holybaechu/hermes-config instead of copying bundled skills into
+      {{ hermes_home }}/skills from homelab deploy.
 
 - name: Make Hermes config Newrrow login helper executable
   ansible.builtin.file:
@@ -479,9 +508,10 @@
     mode: "0755"
 
 - name: Install Hermes Kanban diagnostics script
-  ansible.builtin.template:
-    src: hermes-kanban-diagnostics.sh.j2
+  ansible.builtin.copy:
+    src: "{{ hermes_config_dir }}/scripts/{{ hermes_kanban_diagnostics_cron.script }}"
     dest: "{{ hermes_home }}/scripts/{{ hermes_kanban_diagnostics_cron.script }}"
+    remote_src: true
     owner: "{{ hermes_user }}"
     group: "{{ hermes_group }}"
     mode: "0755"

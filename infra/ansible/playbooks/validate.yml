@@ -306,6 +306,7 @@
         test -f "{{ hermes_home }}/skills/newrrow-points-automation/SKILL.md"
         test -f "{{ hermes_home }}/skills/newrrow-points-automation/references/ui-flow.md"
         test -x "{{ hermes_home }}/skills/newrrow-points-automation/scripts/newrrow-login.sh"
+        test ! -e "{{ hermes_home }}/skills/productivity/newrrow-points-automation"
         test -f "{{ hermes_home }}/plugins/newrrow-browser-login/plugin.yaml"
         test -f "{{ hermes_home }}/plugins/newrrow-browser-login/__init__.py"
       args:

@@ -513,14 +513,14 @@ def test_hermes_role_configures_5_plus_1_profiles_and_kanban_dispatcher():
         "dispatch_stale_timeout_seconds": 14400,
     }
 
-    required_skill_task = find_task(tasks, "Install Hermes bundled profile required skills")
-    assert required_skill_task["ansible.builtin.copy"]["src"] == "{{ hermes_agent_dir }}/skills/{{ item.path }}/"
-    assert required_skill_task["ansible.builtin.copy"]["dest"] == "{{ hermes_home }}/skills/{{ item.path }}/"
-    assert required_skill_task["ansible.builtin.copy"]["remote_src"] is True
-    assert required_skill_task["loop"] == "{{ hermes_profile_bundled_skill_sources }}"
-    manage_required_skills_task = find_task(tasks, "Allow Hermes service to manage required profile skills")
-    assert manage_required_skills_task["ansible.builtin.file"]["path"] == "{{ hermes_home }}/skills"
-    assert manage_required_skills_task["ansible.builtin.file"]["recurse"] is True
+    required_skill_check_task = find_task(tasks, "Check Hermes profile required skills from live config")
+    assert required_skill_check_task["ansible.builtin.stat"]["path"] == (
+        "{{ hermes_home }}/skills/{{ item.path }}/SKILL.md"
+    )
+    assert required_skill_check_task["loop"] == "{{ hermes_profile_bundled_skill_sources }}"
+    required_skill_assert_task = find_task(tasks, "Require Hermes profile required skills from live config")
+    assert "hermes_profile_required_skills.results" in required_skill_assert_task["ansible.builtin.assert"]["that"][0]
+    assert "holybaechu/hermes-config" in required_skill_assert_task["ansible.builtin.assert"]["fail_msg"]
 
     create_task = find_task(tasks, "Create Hermes 5+1 profile directories")
     assert create_task["ansible.builtin.command"]["argv"] == [
@@ -603,22 +603,24 @@ def test_hermes_role_configures_5_plus_1_profiles_and_kanban_dispatcher():
     script_dir_task = find_task(tasks, "Create Hermes scripts directory")
     assert script_dir_task["ansible.builtin.file"]["path"] == "{{ hermes_home }}/scripts"
     diagnostics_script_task = find_task(tasks, "Install Hermes Kanban diagnostics script")
-    assert diagnostics_script_task["ansible.builtin.template"]["src"] == "hermes-kanban-diagnostics.sh.j2"
+    assert diagnostics_script_task["ansible.builtin.copy"]["src"] == (
+        "{{ hermes_config_dir }}/scripts/{{ hermes_kanban_diagnostics_cron.script }}"
+    )
+    assert diagnostics_script_task["ansible.builtin.copy"]["dest"] == (
+        "{{ hermes_home }}/scripts/{{ hermes_kanban_diagnostics_cron.script }}"
+    )
+    assert diagnostics_script_task["ansible.builtin.copy"]["remote_src"] is True
     cron_task = find_task(tasks, "Configure Hermes Kanban diagnostics cron")
     assert "create_job" in cron_task["ansible.builtin.shell"]
     assert "no_agent=True" in cron_task["ansible.builtin.shell"]
-    diagnostics_template = read("infra/ansible/roles/hermes/templates/hermes-kanban-diagnostics.sh.j2")
-    assert "kanban boards list" in diagnostics_template
-    assert "kanban --board" in diagnostics_template
-    assert "diagnostics" in diagnostics_template
 
     kanban_state_task = find_task(tasks, "Allow Hermes service to manage Kanban state")
     assert kanban_state_task["ansible.builtin.file"]["path"] == "{{ hermes_home }}/kanban"
     assert kanban_state_task["ansible.builtin.file"]["recurse"] is True
 
     configure_index = tasks.index(find_task(tasks, "Configure Hermes runtime settings"))
-    required_skill_index = tasks.index(required_skill_task)
-    manage_required_skill_index = tasks.index(manage_required_skills_task)
+    required_skill_check_index = tasks.index(required_skill_check_task)
+    required_skill_assert_index = tasks.index(required_skill_assert_task)
     create_index = tasks.index(create_task)
     kanban_state_index = tasks.index(kanban_state_task)
     init_index = tasks.index(kanban_init_task)
@@ -626,7 +628,7 @@ def test_hermes_role_configures_5_plus_1_profiles_and_kanban_dispatcher():
     script_index = tasks.index(diagnostics_script_task)
     cron_index = tasks.index(cron_task)
     service_index = tasks.index(find_task(tasks, "Enable Hermes gateway"))
-    assert required_skill_index < manage_required_skill_index < create_index < configure_index < kanban_state_index < init_index < boards_index < script_index < cron_index < service_index
+    assert required_skill_check_index < required_skill_assert_index < create_index < configure_index < kanban_state_index < init_index < boards_index < script_index < cron_index < service_index
 
 def test_hermes_role_configures_browserbase_browser_automation():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
