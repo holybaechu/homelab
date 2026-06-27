@@ -259,7 +259,7 @@
         checks = [
             ("auxiliary.compression.provider", compression.get("provider"), "main"),
             ("auxiliary.compression.model", compression.get("model"), ""),
-            ("auxiliary.compression.timeout", compression.get("timeout"), 300),
+            ("auxiliary.compression.timeout", compression.get("timeout"), 360),
         ]
         mismatches = [
             f"{label}={actual!r} expected {expected!r}"

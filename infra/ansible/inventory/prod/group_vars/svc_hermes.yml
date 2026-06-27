@@ -36,7 +36,7 @@ hermes_config_restart_patterns:
   - "^cron/"
 
 hermes_auxiliary_compression_provider: main
-hermes_auxiliary_compression_timeout: 300
+hermes_auxiliary_compression_timeout: 360
 hermes_compression_threshold: 0.85
 hermes_compression_codex_gpt55_autoraise: false
 hermes_web_search_backend: parallel

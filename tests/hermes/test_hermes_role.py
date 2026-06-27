@@ -391,7 +391,7 @@ def test_hermes_role_routes_auxiliary_compression_to_main_provider_with_longer_t
     script = script_path.read_text(encoding="utf-8")
 
     assert group_vars["hermes_auxiliary_compression_provider"] == "main"
-    assert group_vars["hermes_auxiliary_compression_timeout"] == 300
+    assert group_vars["hermes_auxiliary_compression_timeout"] == 360
     assert "hermes_auxiliary_compression_model" not in group_vars
 
     template_task = find_task(tasks, "Install Hermes runtime configuration helper")
@@ -433,7 +433,7 @@ def test_validate_playbook_asserts_hermes_compression_timeout():
     assert "auxiliary.compression.provider" in hermes_tasks
     assert "auxiliary.compression.timeout" in hermes_tasks
     assert "main" in hermes_tasks
-    assert "300" in hermes_tasks
+    assert "360" in hermes_tasks
 
 
 def test_hermes_role_configures_parallel_search_and_firecrawl_extract():
