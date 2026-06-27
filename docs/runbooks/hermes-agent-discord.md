@@ -138,7 +138,7 @@ The default `/var/lib/hermes` profile remains the Discord gateway, user-facing c
 | `dev` | General coding, debugging, tests, refactors, docs, and PR work outside production homelab ops. |
 | `research` | Web/docs/paper discovery, source-backed summaries, technical comparisons, monitoring, written briefs. |
 | `sandbox` | Low-trust experiments, unfamiliar repos, dependency spikes, build trials, and throwaway scripts. |
-| `browser-protected` | Protected public web automation that should use Browserbase residential proxy mode. |
+| `browser-protected` | Protected public web automation that should use Browserbase residential proxy mode when the target needs it; Newrrow is handled by the dedicated no-proxy login helper. |
 
 Kanban is the communication layer between profiles. The default gateway config owns dispatching:
 
@@ -194,7 +194,7 @@ For code-changing, IaC-changing, deployment-changing, account-impacting browser,
 
 Profile-required skills are seeded from the default skill store into each profile when the runtime helper runs. They are policy hints for the orchestrator to attach with `kanban_create(skills=[...])` when a card needs specialist procedures; model/provider routing is intentionally not split by profile in this PR.
 
-Browserbase proxy policy is profile-scoped through each profile's `.env`: default/normal profiles keep `BROWSERBASE_PROXIES=false`, while `browser-protected` sets `BROWSERBASE_PROXIES=true` for sites that actually need residential proxy mode. API keys still come from the gateway service environment; profile `.env` files contain only non-secret runtime overrides. Validation checks that each profile has a single effective `BROWSERBASE_PROXIES` line so duplicate env entries cannot mask a bad final value.
+Browserbase proxy policy is profile-scoped through each profile's `.env`: default/normal profiles keep `BROWSERBASE_PROXIES=false`, while `browser-protected` sets `BROWSERBASE_PROXIES=true` for sites that actually need residential proxy mode. API keys still come from the gateway service environment; profile `.env` files contain only non-secret runtime overrides. The Newrrow login helper is the explicit exception: it forces `BROWSERBASE_PROXIES=false` before creating the Newrrow Browserbase session and then restores the previous gateway env so unrelated protected-browser work keeps its profile proxy policy. Validation checks that each profile has a single effective `BROWSERBASE_PROXIES` line so duplicate env entries cannot mask a bad final value.
 
 ### Diagnostics cron
 

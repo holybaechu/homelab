@@ -201,6 +201,9 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "browser-protected" in runbook
     assert "BROWSERBASE_PROXIES=false" in runbook
     assert "BROWSERBASE_PROXIES=true" in runbook
+    assert "dedicated no-proxy login helper" in runbook
+    assert "forces `BROWSERBASE_PROXIES=false`" in runbook
+    assert "restores the previous gateway env" in runbook
     assert "browser_navigate" in runbook
     assert "browser_*" in runbook
     assert "NEWRROW_USERNAME_REF" in runbook
