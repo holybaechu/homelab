@@ -8,6 +8,7 @@ Set these GitHub Actions secrets in the `prod` environment:
 
 - `HERMES_DISCORD_BOT_TOKEN`: Discord bot token from the Discord Developer Portal.
 - `HERMES_DISCORD_ALLOWED_USERS`: comma-separated Discord user IDs allowed to use the bot.
+- `HERMES_DISCORD_HOME_CHANNEL`: optional Discord home channel/DM target for unattended cron delivery; if omitted, Ansible defaults it to the current allowed-user target.
 - `PARALLEL_API_KEY`: Parallel API key used by Hermes `web_search`.
 - `FIRECRAWL_API_KEY`: Firecrawl API key used by Hermes `web_extract`.
 - `BROWSERBASE_API_KEY`: Browserbase API key used by Hermes browser automation.
@@ -17,10 +18,11 @@ Set these GitHub Actions secrets in the `prod` environment:
 - `HERMES_CONFIG_REPO_TOKEN`: fine-scoped GitHub token that can read and push the private `holybaechu/hermes-config` repo.
 - `HERMES_CONFIG_WEBHOOK_SECRET`: shared HMAC secret for the hermes-config GitHub push webhook receiver.
 
-The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, `hermes_1password_service_account_token`, `hermes_config_repo_token`, and `hermes_config_webhook_secret`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
+The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, optional `hermes_discord_home_channel`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, `hermes_1password_service_account_token`, `hermes_config_repo_token`, and `hermes_config_webhook_secret`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
+- `DISCORD_HOME_CHANNEL`
 - `PARALLEL_API_KEY`
 - `FIRECRAWL_API_KEY`
 - `BROWSERBASE_API_KEY`
@@ -88,7 +90,7 @@ The Hermes behavior artifacts now come from the private `holybaechu/hermes-confi
 
 The Ansible role installs `/opt/hermes/hermes-config-git-sync`, `/opt/hermes/hermes-config-apply`, a local inotify watch service, a GitHub webhook receiver, and a reconciliation timer. The sync script never uses `git reset --hard`; it commits local Hermes auto-improvements first, fetches/rebases or fast-forwards `main`, pushes local-only changes, and then runs the apply helper. Sync commits are authored as `holybaechu <holybaechu@proton.me>` so the live learned-state history stays under the maintainer account. If changed files match runtime-impacting prefixes such as `config/`, `profiles/`, `plugins/`, `rules/`, `kanban/`, or `cron/`, the sync script's restart handler runs `systemctl try-restart hermes-gateway.service`. Skills and memories sync immediately on disk, while current conversations may still need `/reload-skills`, `/reset`, or a new session to see them.
 
-The Newrrow skill lives at `/var/lib/hermes/skills/newrrow-points-automation` through that symlinked checkout, and the trusted plugin lives at `/var/lib/hermes/plugins/newrrow-browser-login`. It migrates the packaged Newrrow point checklist workflow to Hermes `browser_*` tools so public Newrrow URLs use the configured Browserbase browser path, while the local browser runtime remains only for private/LAN auto-local routing. The detailed UI route/checklist reference lives under the skill's `references/ui-flow.md`.
+The Newrrow skill lives at `/var/lib/hermes/skills/newrrow-points-automation` through that symlinked checkout, and the trusted plugin lives at `/var/lib/hermes/plugins/newrrow-browser-login`. Homelab validates those paths and fails if the duplicate categorized path `/var/lib/hermes/skills/productivity/newrrow-points-automation` reappears; it does not vendor or copy Newrrow skill/plugin files. The workflow uses Hermes `browser_*` tools so public Newrrow URLs use the configured Browserbase browser path, while the local browser runtime remains only for private/LAN auto-local routing. The detailed UI route/checklist reference lives under the skill's `references/ui-flow.md`.
 
 Newrrow login uses 1Password secret references instead of live browser password-manager state. The tracked inventory configures:
 
@@ -101,8 +103,8 @@ Ansible renders those into `/etc/hermes-gateway.env` as `NEWRROW_USERNAME_REF` a
 
 The runtime flow is:
 
-1. Use `browser_navigate` on the public Newrrow home URL.
-2. If the snapshot shows a login page, call the plugin tool `newrrow_browser_login`. The plugin reads the configured `op://` refs with `op read` inside the Hermes process, injects credentials into the active Browserbase/CDP-backed browser-tool session, and returns only non-secret status.
+1. Call the plugin tool `newrrow_browser_login` first. It owns the initial navigation to the public Newrrow home URL, forces Browserbase residential proxies off for that Newrrow session, reads the configured `op://` refs with `op read` inside the Hermes process when login is required, injects credentials into the active Browserbase/CDP-backed browser-tool session, and returns only non-secret status. Internally the helper forces `BROWSERBASE_PROXIES=false` for the session and restores the previous gateway env after session creation.
+2. Do not call `browser_navigate` before `newrrow_browser_login` for Newrrow; starting with a generic navigation can create a proxied Browserbase session when the gateway/profile env has proxies enabled.
 3. Continue all Newrrow UI work with Hermes `browser_*` tools (`browser_click`, `browser_type`, `browser_scroll`, `browser_press`, `browser_snapshot`).
 
 Do not type raw Newrrow passwords through `browser_type`, because its arguments/results are model-visible. Do not use bare `agent-browser open`, `agent-browser auth save`, or `agent-browser auth login` for Newrrow runtime operation; that bypasses Hermes browser routing and can silently use local Chromium for this public URL. `scripts/newrrow-login.sh` is retained only as a deployment/debugging credential preflight that verifies the 1Password refs and prints `newrrow_1password_refs_ready`.
@@ -119,10 +121,95 @@ auxiliary:
   compression:
     provider: main
     model: ""
-    timeout: 300
+    timeout: 360
 ```
 
-This keeps the general compaction trigger at 85%, disables the Codex gpt-5.5 route-specific autoraise override, and raises the compression-summary call timeout above the previous 120s live setting that produced `Codex auxiliary Responses stream exceeded 120.0s total timeout`. The summary provider remains `main`, so compression continues to use the configured main Hermes model route with a longer budget instead of an operator-only live edit.
+This keeps the general compaction trigger at 85%, disables the Codex gpt-5.5 route-specific autoraise override, and raises the compression-summary call timeout to 6 minutes, above the previous 120s live setting that produced `Codex auxiliary Responses stream exceeded 120.0s total timeout`. The summary provider remains `main`, so compression continues to use the configured main Hermes model route with a longer budget instead of an operator-only live edit.
+
+Iteration budget pressure is effectively disabled in `hermes-config/config/default/config.yaml` by setting both `agent.max_turns` and `delegation.max_iterations` to `1000000`. Hermes does not expose a separate boolean kill switch in current docs; using a very high cap avoids the 70%/90% budget-pressure warnings and hard-stop behavior during long homelab/default turns while remaining explicit and versioned.
+
+
+## Multi-profile Kanban fleet
+
+The default `/var/lib/hermes` profile remains the Discord gateway, user-facing control plane, and the single gateway-embedded Kanban dispatcher. IaC also creates a homelab-managed **5+1** profile fleet under `/var/lib/hermes/profiles`:
+
+| Profile | Role |
+| --- | --- |
+| `orchestrator` | +1 Kanban intake/orchestration profile; decomposes broad goals, links cards, assigns specialist workers, attaches relevant required skills, and avoids implementation work. |
+| `homelab` | Production homelab IaC/ops: `holybaechu/homelab`, OpenTofu, Ansible, Proxmox LXC, GitHub Actions, deployment validation. |
+| `dev` | General coding, debugging, tests, refactors, docs, and PR work outside production homelab ops. |
+| `research` | Web/docs/paper discovery, source-backed summaries, technical comparisons, monitoring, written briefs. |
+| `sandbox` | Low-trust experiments, unfamiliar repos, dependency spikes, build trials, and throwaway scripts. |
+| `browser-protected` | Protected public web automation that should use Browserbase residential proxy mode when the target needs it; Newrrow is handled by the dedicated no-proxy login helper. |
+
+Kanban is the communication layer between profiles. The default gateway config owns dispatching:
+
+```yaml
+platform_toolsets:
+  discord:
+    - hermes-discord
+    - browser
+    - kanban
+kanban:
+  dispatch_in_gateway: true
+  orchestrator_profile: orchestrator
+  default_assignee: orchestrator
+  max_spawn: 3
+  max_in_progress: 3
+  max_in_progress_per_profile: 1
+```
+
+Every named profile gets `kanban.dispatch_in_gateway: false` so accidentally starting a per-profile gateway does not create a second dispatcher racing on the same board. Worker profiles receive task-scoped `kanban_*` tools when spawned by the dispatcher; the `orchestrator` profile also has the `kanban` toolset on CLI so it can create/link/comment cards. IaC runs `hermes kanban init`, creating `/var/lib/hermes/kanban.db` on the persistent home mount.
+
+### Quality policy files
+
+The runtime helper renders the quality contracts under `/var/lib/hermes/kanban/policies/`:
+
+- `routing-matrix.md` — the routing matrix that maps each profile to its default board, handles/avoid lists, and required skills.
+- `card-template.md` — the Kanban card template with `Goal`, `Context`, `Acceptance criteria`, `Constraints`, and `Evidence required` sections.
+- `review-required.md` — the review gate policy for code/IaC/deployment/account-impacting browser/risky sandbox cards.
+
+The default profile's `SOUL.md` receives a managed control-plane block that keeps default focused on Discord/user intake and lightweight work. Complex or risky work should be routed to Kanban instead of being executed directly in default. Each worker profile's managed `SOUL.md` block includes its routing lane, required skills, completion contract, and review gate.
+
+### Boards
+
+IaC creates these Kanban boards for quality isolation:
+
+| Board | Name | Intended use |
+| --- | --- | --- |
+| `default` | Default Intake | General user-facing intake and cross-domain coordination. |
+| `homelab` | Homelab Ops | Production homelab IaC, operations, deployment, and incidents. |
+| `research` | Research Briefs | Source-backed web/docs/paper comparison and synthesis. |
+| `automation` | Automation | Recurring tasks, browser automation, Newrrow, and watchdogs. |
+
+Workers are still pinned to the board of the card they receive through `HERMES_KANBAN_BOARD`, so board separation is a hard queue boundary while profiles remain the role boundary.
+
+### Routing and completion contracts
+
+Use the card template for new cards. The orchestrator should choose the board/profile from the routing matrix and add a short routing rationale comment. Workers should leave enough evidence for the next reader to answer: what changed, what was verified, what can unblock/retry, and what risk remains.
+
+For code-changing, IaC-changing, deployment-changing, account-impacting browser, or risky sandbox cards, use the `review-required` pattern:
+
+1. Add a structured `kanban_comment` with `changed_files`, `verification`, `residual_risk`, and `handoff_notes`.
+2. Call `kanban_block(reason="review-required: ...")` instead of silently completing the card.
+3. A human/default/orchestrator follow-up can approve and unblock/complete after reading the evidence.
+
+Profile-required skills are seeded from the default skill store into each profile when the runtime helper runs. They are policy hints for the orchestrator to attach with `kanban_create(skills=[...])` when a card needs specialist procedures; model/provider routing is intentionally not split by profile in this PR.
+
+Browserbase proxy policy is profile-scoped through each profile's `.env`: default/normal profiles keep `BROWSERBASE_PROXIES=false`, while `browser-protected` sets `BROWSERBASE_PROXIES=true` for sites that actually need residential proxy mode. API keys still come from the gateway service environment; profile `.env` files contain only non-secret runtime overrides. The Newrrow login helper is the explicit exception: it forces `BROWSERBASE_PROXIES=false` before creating the Newrrow Browserbase session and then restores the previous gateway env so unrelated protected-browser work keeps its profile proxy policy. Validation checks that each profile has a single effective `BROWSERBASE_PROXIES` line so duplicate env entries cannot mask a bad final value.
+
+### Diagnostics cron
+
+IaC installs `/var/lib/hermes/scripts/hermes-kanban-diagnostics.sh` and creates the no-agent cron job `homelab-kanban-daily-diagnostics` on `0 9 * * *` with Discord delivery. Cron platform delivery resolves through `DISCORD_HOME_CHANNEL`, rendered from `hermes_discord_home_channel` (defaulting to the current single-user allowed target unless overridden). The script reports board inventory, `hermes kanban --board <slug> diagnostics`, blocked/review-required cards, and running cards for every managed board.
+
+Useful checks after deploy:
+
+```bash
+runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes profile list
+runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes kanban boards list
+runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes kanban --board homelab diagnostics
+runuser -u hermes -- env HERMES_HOME=/var/lib/hermes HOME=/var/lib/hermes /opt/hermes/venv/bin/hermes cron list
+```
 
 ## Discord setup
 

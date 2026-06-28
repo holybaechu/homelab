@@ -13,6 +13,7 @@ Expected encrypted values:
 - `qbittorrent_webui_password`
 - `hermes_discord_bot_token`
 - `hermes_discord_allowed_users`
+- `hermes_discord_home_channel`, optional but recommended for cron/home delivery; defaults to the allowed user target in the current single-user deployment
 - `hermes_parallel_api_key`
 - `hermes_firecrawl_api_key`
 - `hermes_browserbase_api_key`

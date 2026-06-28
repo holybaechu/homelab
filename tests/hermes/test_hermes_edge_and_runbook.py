@@ -110,6 +110,17 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
     assert "readlink -f" in hermes_tasks
     assert "enabled plugins mismatch" in hermes_tasks
     assert "discord platform toolsets mismatch" in hermes_tasks
+    assert "Check Hermes 5+1 profiles, policy files, and Kanban routing config" in hermes_tasks
+    assert "kanban toolset" in hermes_tasks
+    assert "Check Hermes Kanban board is initialized" in hermes_tasks
+    assert "Check Hermes Kanban diagnostics cron" in hermes_tasks
+    assert "DISCORD_HOME_CHANNEL must be set" in hermes_tasks
+    assert "required skill not seeded" in hermes_tasks
+    assert "expected_required_skills" in hermes_tasks
+    assert "effective override mismatch" in hermes_tasks
+    assert "PRAGMA quick_check" in hermes_tasks
+    assert "card-template.md" in hermes_tasks
+    assert "discord platform" in hermes_tasks
     assert "chromium-" not in hermes_tasks
     assert "hermes-webui" not in hermes_tasks
     assert "hermes_webui_port" not in hermes_tasks
@@ -120,6 +131,7 @@ def test_secrets_readme_documents_hermes_discord_web_browser_and_1password_secre
 
     assert "hermes_discord_bot_token" in secrets
     assert "hermes_discord_allowed_users" in secrets
+    assert "hermes_discord_home_channel" in secrets
     assert "hermes_parallel_api_key" in secrets
     assert "hermes_firecrawl_api_key" in secrets
     assert "hermes_browserbase_api_key" in secrets
@@ -146,6 +158,7 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "infra/ansible/playbooks/validate.yml" in runbook
     assert "HERMES_DISCORD_BOT_TOKEN" in runbook
     assert "HERMES_DISCORD_ALLOWED_USERS" in runbook
+    assert "DISCORD_HOME_CHANNEL" in runbook
     assert "PARALLEL_API_KEY" in runbook
     assert "FIRECRAWL_API_KEY" in runbook
     assert "BROWSERBASE_API_KEY" in runbook
@@ -172,6 +185,23 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "newrrow-points-automation" in runbook
     assert "newrrow-browser-login" in runbook
     assert "newrrow_browser_login" in runbook
+    assert "Multi-profile Kanban fleet" in runbook
+    assert "5+1" in runbook
+    assert "orchestrator_profile: orchestrator" in runbook
+    assert "routing matrix" in runbook
+    assert "card template" in runbook
+    assert "review-required" in runbook
+    assert "homelab-kanban-daily-diagnostics" in runbook
+    assert "Default Intake" in runbook
+    assert "Homelab Ops" in runbook
+    assert "Research Briefs" in runbook
+    assert "Automation" in runbook
+    assert "browser-protected" in runbook
+    assert "BROWSERBASE_PROXIES=false" in runbook
+    assert "BROWSERBASE_PROXIES=true" in runbook
+    assert "dedicated no-proxy login helper" in runbook
+    assert "forces `BROWSERBASE_PROXIES=false`" in runbook
+    assert "restores the previous gateway env" in runbook
     assert "browser_navigate" in runbook
     assert "browser_*" in runbook
     assert "NEWRROW_USERNAME_REF" in runbook
@@ -186,7 +216,7 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "codex_gpt55_autoraise: false" in runbook
     assert "auxiliary:" in runbook
     assert "provider: main" in runbook
-    assert "timeout: 300" in runbook
+    assert "timeout: 360" in runbook
     assert "Codex auxiliary Responses stream exceeded 120.0s" in runbook
     assert "rebuild_hermes_lxc" not in runbook
     assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' not in runbook

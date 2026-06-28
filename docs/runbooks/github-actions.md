@@ -47,6 +47,7 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `OP_SERVICE_ACCOUNT_TOKEN`
 - `HERMES_CONFIG_REPO_TOKEN`, fine-scoped to read/write the private `holybaechu/hermes-config` repo
 - `HERMES_CONFIG_WEBHOOK_SECRET`, shared with the GitHub webhook for HMAC verification
+- `HERMES_DISCORD_HOME_CHANNEL`, optional; overrides the default cron/home delivery target for Hermes Discord notifications
 - `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and plaintext `password`
 
 Example `COPYPARTY_USERS_JSON`:

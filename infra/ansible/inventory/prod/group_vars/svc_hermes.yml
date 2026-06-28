@@ -36,7 +36,7 @@ hermes_config_restart_patterns:
   - "^cron/"
 
 hermes_auxiliary_compression_provider: main
-hermes_auxiliary_compression_timeout: 300
+hermes_auxiliary_compression_timeout: 360
 hermes_compression_threshold: 0.85
 hermes_compression_codex_gpt55_autoraise: false
 hermes_web_search_backend: parallel
@@ -45,7 +45,7 @@ hermes_browser_cloud_provider: browserbase
 hermes_browser_auto_local_for_private_urls: true
 hermes_browser_browsers_path: "{{ hermes_home }}/.agent-browser/browsers"
 hermes_browser_args: --no-sandbox,--disable-dev-shm-usage
-hermes_browserbase_proxies: true
+hermes_browserbase_proxies: false
 hermes_browserbase_advanced_stealth: false
 
 hermes_newrrow_username_ref: op://Hermes/Newrrow/username
@@ -53,3 +53,303 @@ hermes_newrrow_password_ref: op://Hermes/Newrrow/password
 
 hermes_discord_require_mention: true
 hermes_discord_ignore_no_mention: true
+# Cron delivery uses DISCORD_HOME_CHANNEL for platform-only deliver=discord.
+# Default to the allowed user target for the current single-user DM deployment;
+# override with a specific Discord channel/thread target if the bot moves to a server channel.
+hermes_discord_home_channel: "{{ hermes_discord_allowed_users }}"
+
+# Hermes multi-profile Kanban fleet
+# 5 workers + 1 orchestrator. The default profile remains the Discord gateway,
+# user-facing control plane, and single gateway-embedded Kanban dispatcher.
+hermes_kanban:
+  dispatch_in_gateway: true
+  dispatch_interval_seconds: 60
+  failure_limit: 2
+  max_spawn: 3
+  max_in_progress: 3
+  max_in_progress_per_profile: 1
+  auto_decompose: true
+  auto_decompose_per_tick: 2
+  orchestrator_profile: orchestrator
+  default_assignee: orchestrator
+  dispatch_stale_timeout_seconds: 14400
+
+hermes_kanban_boards:
+  - slug: default
+    name: Default Intake
+    description: General user-facing intake and cross-domain coordination.
+    icon: 📥
+    color: "#64748b"
+  - slug: homelab
+    name: Homelab Ops
+    description: Production homelab IaC, operations, deployment, and incident work.
+    icon: 🏠
+    color: "#0ea5e9"
+  - slug: research
+    name: Research Briefs
+    description: Source-backed web, docs, paper, comparison, and synthesis work.
+    icon: 🔎
+    color: "#8b5cf6"
+  - slug: automation
+    name: Automation
+    description: Recurring tasks, browser automation, Newrrow, and operational watchdogs.
+    icon: 🤖
+    color: "#10b981"
+
+hermes_kanban_diagnostics_cron:
+  name: homelab-kanban-daily-diagnostics
+  schedule: "0 9 * * *"
+  deliver: discord
+  script: hermes-kanban-diagnostics.sh
+
+hermes_profile_bundled_skill_sources:
+  - name: plan
+    path: software-development/plan
+  - name: hermes-agent
+    path: autonomous-ai-agents/hermes-agent
+  - name: github-pr-workflow
+    path: github/github-pr-workflow
+  - name: requesting-code-review
+    path: software-development/requesting-code-review
+  - name: systematic-debugging
+    path: software-development/systematic-debugging
+  - name: test-driven-development
+    path: software-development/test-driven-development
+  - name: arxiv
+    path: research/arxiv
+  - name: youtube-content
+    path: media/youtube-content
+  - name: spike
+    path: software-development/spike
+
+hermes_default_control_plane_guidance: >-
+  You are the default Hermes Discord gateway and user-facing control plane.
+  Keep direct work limited to short questions, lightweight checks, Newrrow,
+  and simple automation. For complex, long-running, specialized, risky, or
+  parallel work, create or route Kanban cards instead of doing the work in the
+  default profile. Preserve the default profile as the stable conversation hub;
+  let the orchestrator and specialist profiles own execution details.
+
+hermes_kanban_card_template: |
+  ## Goal
+  State the exact outcome the assignee must produce.
+
+  ## Context
+  Include paths, repositories, user constraints, prior decisions, and any relevant board or parent-card context.
+
+  ## Acceptance criteria
+  - [ ] Each required outcome is explicit and testable.
+  - [ ] The assignee knows whether file/code/IaC changes are allowed.
+  - [ ] Secrets, tokens, credentials, and raw private data must not be printed.
+
+  ## Constraints
+  - Preserve service continuity unless the card explicitly allows disruption.
+  - Use the profile's role boundaries and avoid unrelated refactors.
+  - If user input, CAPTCHA, 2FA, credentials, or production risk blocks progress, call `kanban_block` with a precise reason.
+
+  ## Evidence required
+  - Files changed, URLs consulted, or commands run.
+  - Actual verification output, not invented or paraphrased success.
+  - Remaining risks and follow-up work.
+  - For code/IaC changes: leave a structured `kanban_comment` and block with `review-required: ...` unless the card explicitly says no review is needed.
+
+hermes_kanban_review_required_policy: |
+  Code-changing, IaC-changing, deployment-changing, browser account-action, and risky sandbox cards should not silently mark themselves done.
+  The worker should first add a structured comment with changed_files, verification, residual_risk, and handoff_notes, then call `kanban_block(reason="review-required: ...")`.
+  A human reviewer, default control plane, or follow-up reviewer card can approve and unblock/complete after reading the evidence.
+
+hermes_profiles:
+  - name: orchestrator
+    description: >-
+      Kanban intake and orchestration profile. Decomposes broad goals into
+      linked cards, assigns work to the five specialist profiles, comments on
+      handoffs, and avoids implementation work.
+    cli_toolsets:
+      - kanban
+      - skills
+      - session_search
+      - todo
+      - memory
+    browserbase_proxies: false
+    required_skills:
+      - plan
+      - hermes-agent
+    routing:
+      default_board: default
+      handles:
+        - Break broad user requests into linked, acceptance-criteria-driven cards.
+        - Pick assignees from homelab, dev, research, sandbox, and browser-protected.
+        - Attach the profile's required skills to cards when the task type needs them.
+        - Keep dependencies explicit with parent/child links.
+      avoid:
+        - Do not edit files, run builds, browse protected sites, or perform implementation work directly.
+        - Do not route uncertain or risky work to a worker without constraints and evidence requirements.
+    completion_contract:
+      - Each child card uses the managed Kanban card template.
+      - Each routing comment explains why the selected profile and board fit.
+      - Ambiguous or unsafe requests are blocked for user input instead of guessed.
+    review_required_for_changes: false
+  - name: homelab
+    description: >-
+      Homelab operations profile for holybaechu/homelab IaC, OpenTofu,
+      Ansible, Proxmox LXC, GitHub Actions, deployment validation, and
+      production incident triage.
+    cli_toolsets:
+      - terminal
+      - file
+      - web
+      - browser
+      - skills
+      - todo
+      - memory
+      - session_search
+      - code_execution
+      - delegation
+      - kanban
+    browserbase_proxies: false
+    required_skills:
+      - hermes-agent
+      - github-pr-workflow
+      - requesting-code-review
+      - systematic-debugging
+    routing:
+      default_board: homelab
+      handles:
+        - holybaechu/homelab repository changes.
+        - OpenTofu, Ansible, Proxmox LXC, GitHub Actions, Caddy, Tailscale, and deployment validation.
+        - Production incident triage and service-continuity-sensitive operations.
+      avoid:
+        - Generic coding work outside homelab production context.
+        - Untrusted dependency experiments better suited for sandbox.
+    completion_contract:
+      - Report changed files, concrete local verification, CI/deploy impact, and service continuity risk.
+      - Keep secrets redacted and never preserve raw credentials in comments or metadata.
+      - For code/IaC changes, leave evidence and block with `review-required: ...` unless explicitly told to complete directly.
+    review_required_for_changes: true
+  - name: dev
+    description: >-
+      General software development profile for coding, debugging, tests,
+      refactors, documentation, local builds, and GitHub pull-request work
+      outside production homelab operations.
+    cli_toolsets:
+      - terminal
+      - file
+      - web
+      - browser
+      - skills
+      - todo
+      - memory
+      - session_search
+      - code_execution
+      - delegation
+      - kanban
+    browserbase_proxies: false
+    required_skills:
+      - github-pr-workflow
+      - requesting-code-review
+      - systematic-debugging
+      - test-driven-development
+    routing:
+      default_board: default
+      handles:
+        - Non-production coding, tests, refactors, docs, bug fixes, and PR preparation.
+        - Repo work that does not need homelab production secrets or ops context.
+      avoid:
+        - Production homelab deployment changes.
+        - Risky unknown dependency execution without sandbox first.
+    completion_contract:
+      - Include changed files, tests run with real output, interface changes, and residual risks.
+      - For code changes, leave evidence and block with `review-required: ...` unless explicitly told to complete directly.
+    review_required_for_changes: true
+  - name: research
+    description: >-
+      Research and synthesis profile for web/docs/paper discovery,
+      source-backed summaries, technical comparisons, monitoring, and written
+      briefs with citations.
+    cli_toolsets:
+      - web
+      - browser
+      - file
+      - skills
+      - todo
+      - memory
+      - session_search
+      - kanban
+    browserbase_proxies: false
+    required_skills:
+      - arxiv
+      - youtube-content
+    routing:
+      default_board: research
+      handles:
+        - Web, docs, papers, source-backed comparisons, market/technical reconnaissance, and written briefs.
+        - Evidence gathering before code or ops work begins.
+      avoid:
+        - File/code/IaC changes unless the card is explicitly a writing artifact.
+        - Protected login/browser tasks better suited for browser-protected.
+    completion_contract:
+      - Cite source URLs, separate facts from interpretation, state uncertainty, and provide a concise recommendation.
+      - Complete only after sources are checked or block with the missing-source reason.
+    review_required_for_changes: false
+  - name: sandbox
+    description: >-
+      Low-trust experiment profile for unfamiliar repositories, dependency
+      spikes, build trials, throwaway scripts, and risky commands that should
+      stay out of the main/default long-term context.
+    cli_toolsets:
+      - terminal
+      - file
+      - web
+      - skills
+      - todo
+      - memory
+      - session_search
+      - code_execution
+      - kanban
+    browserbase_proxies: false
+    required_skills:
+      - spike
+      - systematic-debugging
+    routing:
+      default_board: default
+      handles:
+        - Unknown repositories, dependency installs, throwaway experiments, build spikes, and risky local execution.
+        - Proving feasibility before work moves to dev or homelab.
+      avoid:
+        - Production deploys and secret-bearing homelab operations.
+        - Account actions in protected browsers.
+    completion_contract:
+      - List commands/installations, generated files/processes, reproducibility notes, and what should be discarded.
+      - Block with `review-required: ...` before anything is promoted back to a trusted workspace.
+    review_required_for_changes: true
+  - name: browser-protected
+    description: >-
+      Protected-web profile for public sites that need Browserbase residential
+      proxy mode, stronger browser continuity, CAPTCHA/security-prompt
+      recovery, or datacenter-IP avoidance.
+    cli_toolsets:
+      - browser
+      - web
+      - file
+      - skills
+      - todo
+      - memory
+      - session_search
+      - kanban
+    browserbase_proxies: true
+    required_skills:
+      - hermes-agent
+      - newrrow-points-automation
+    routing:
+      default_board: automation
+      handles:
+        - Protected public web automation requiring residential proxy mode or consistent browser/IP posture.
+        - Login flows with visible UI confirmation and explicit user-approved scope.
+      avoid:
+        - Ordinary public docs, blogs, GitHub, and SaaS pages that work without residential proxy.
+        - CAPTCHA, 2FA, or security prompts that require user action; block instead.
+    completion_contract:
+      - Report visited sites, visible UI actions, CAPTCHA/2FA/security-prompt status, proxy usage, and account/IP continuity risks.
+      - Do not inspect cookies, local storage, hidden credential state, or password stores.
+      - Block with `review-required: ...` after account-impacting actions unless the user explicitly preapproved completion.
+    review_required_for_changes: true
