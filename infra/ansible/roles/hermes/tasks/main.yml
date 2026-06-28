@@ -27,6 +27,24 @@
     fail_msg: Hermes Discord, web backend, Browserbase, 1Password, Newrrow 1Password refs, and hermes-config Git/webhook secrets must be provided.
   no_log: true
 
+- name: Validate Hermes memory provider selection
+  ansible.builtin.assert:
+    that:
+      - hermes_memory_provider is defined
+      - hermes_memory_provider in ['', 'honcho']
+      - hermes_honcho_environment is defined
+      - hermes_honcho_environment | length > 0
+    fail_msg: Hermes memory provider must be empty for built-in memory or "honcho" for Honcho-backed memory.
+
+- name: Require Honcho API key when Honcho memory is enabled
+  ansible.builtin.assert:
+    that:
+      - hermes_honcho_api_key is defined
+      - hermes_honcho_api_key | length > 0
+    fail_msg: hermes_honcho_api_key / HONCHO_API_KEY must be provided before enabling memory.provider=honcho.
+  when: hermes_memory_provider == "honcho"
+  no_log: true
+
 - name: Install Hermes runtime packages
   ansible.builtin.apt:
     name:

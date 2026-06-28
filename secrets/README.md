@@ -18,6 +18,7 @@ Expected encrypted values:
 - `hermes_firecrawl_api_key`
 - `hermes_browserbase_api_key`
 - `hermes_browserbase_project_id`
+- `hermes_honcho_api_key`, optional Honcho Cloud API key; required only when `hermes_memory_provider` is explicitly set to `honcho`
 - `hermes_1password_service_account_token`
 - `hermes_config_repo_token`, a fine-scoped GitHub token that can read and push `holybaechu/hermes-config`
 - `hermes_config_webhook_secret`, the shared HMAC secret for GitHub push webhooks into the Hermes config sync receiver
@@ -28,8 +29,10 @@ Non-secret deployment values:
 
 - `adguard_admin_username`, optional; defaults to `admin`
 - `hermes_newrrow_username_ref` and `hermes_newrrow_password_ref`, as 1Password secret references (for example `op://Hermes/Newrrow/username` and `op://Hermes/Newrrow/password`) read by the Hermes Newrrow browser-login plugin at runtime; these are references, not secret values
+- `hermes_memory_provider`, empty by default for built-in memory; set to `honcho` only when intentionally enabling Honcho-backed memory
+- `hermes_honcho_environment`, defaults to `production` and is rendered as `HONCHO_ENVIRONMENT`
 
-GitHub Actions secret names for the Hermes web, browser, 1Password, and hermes-config GitOps backends are `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `OP_SERVICE_ACCOUNT_TOKEN`, `HERMES_CONFIG_REPO_TOKEN`, and `HERMES_CONFIG_WEBHOOK_SECRET`; the CD helper maps them to `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, `hermes_1password_service_account_token`, `hermes_config_repo_token`, and `hermes_config_webhook_secret` for Ansible.
+GitHub Actions secret names for the Hermes web, browser, Honcho, 1Password, and hermes-config GitOps backends are `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, optional `HONCHO_API_KEY`, `OP_SERVICE_ACCOUNT_TOKEN`, `HERMES_CONFIG_REPO_TOKEN`, and `HERMES_CONFIG_WEBHOOK_SECRET`; the CD helper maps them to `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, optional `hermes_honcho_api_key`, `hermes_1password_service_account_token`, `hermes_config_repo_token`, and `hermes_config_webhook_secret` for Ansible.
 
 Do not commit decrypted secret files.
 

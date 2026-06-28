@@ -277,6 +277,32 @@
         executable: /bin/bash
       changed_when: false
 
+    - name: Check Hermes memory provider and Honcho runtime secret gate
+      ansible.builtin.shell: |
+        set -euo pipefail
+        {{ hermes_venv_path }}/bin/python - <<'PY'
+        from pathlib import Path
+        import yaml
+
+        config = yaml.safe_load(Path("{{ hermes_home }}/config.yaml").read_text(encoding="utf-8")) or {}
+        provider = (config.get("memory") or {}).get("provider", "") or ""
+        expected = "{{ hermes_memory_provider }}"
+        if provider != expected:
+            raise SystemExit(f"memory.provider={provider!r} expected {expected!r}")
+
+        env_lines = Path("{{ hermes_env_path }}").read_text(encoding="utf-8").splitlines()
+        has_honcho_key = any(
+            line.startswith("HONCHO_API_KEY=") and line.split("=", 1)[1].strip().strip('"\'')
+            for line in env_lines
+        )
+        if expected == "honcho" and not has_honcho_key:
+            raise SystemExit("HONCHO_API_KEY must be present in the gateway env when memory.provider=honcho")
+        PY
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
     - name: Check Hermes config synchronization services
       ansible.builtin.shell: |
         set -euo pipefail
