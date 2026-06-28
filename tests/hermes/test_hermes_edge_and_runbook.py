@@ -85,45 +85,55 @@ def test_validate_playbook_checks_hermes_gateway_service_and_browser_cli():
 
     assert hermes_play is not None
     assert hermes_play.get("hosts") == "svc_hermes"
-    hermes_tasks = yaml.safe_dump(hermes_play.get("tasks", []), sort_keys=True)
-    assert "systemctl is-active hermes-gateway" in hermes_tasks
-    assert "node_modules/.bin/agent-browser" in hermes_tasks
-    assert "hermes_browser_browsers_path" in hermes_tasks
-    assert "chrome-" in hermes_tasks
-    assert "op --version" in hermes_tasks
-    assert "skills/security/1password/SKILL.md" in hermes_tasks
-    assert "op whoami" in hermes_tasks
-    assert "runuser -u" in hermes_tasks
-    assert "OP_SERVICE_ACCOUNT_TOKEN" in hermes_tasks
-    assert "Check Hermes 1Password CLI config file mode" in hermes_tasks
-    assert "path.is_symlink()" in hermes_tasks
-    assert "stat.S_IMODE(st.st_mode)" in hermes_tasks
-    assert "0o600" in hermes_tasks
-    assert "Check Hermes Newrrow points skill" in hermes_tasks
-    assert "skills/newrrow-points-automation/SKILL.md" in hermes_tasks
-    assert "scripts/newrrow-login.sh" in hermes_tasks
-    assert "plugins/newrrow-browser-login/plugin.yaml" in hermes_tasks
-    assert "Check Hermes config synchronization services" in hermes_tasks
-    assert "hermes-config-watch.service" in hermes_tasks
-    assert "hermes-config-webhook.service" in hermes_tasks
-    assert "hermes-config-sync.timer" in hermes_tasks
-    assert "readlink -f" in hermes_tasks
-    assert "enabled plugins mismatch" in hermes_tasks
-    assert "discord platform toolsets mismatch" in hermes_tasks
-    assert "Check Hermes 5+1 profiles, policy files, and Kanban routing config" in hermes_tasks
-    assert "kanban toolset" in hermes_tasks
-    assert "Check Hermes Kanban board is initialized" in hermes_tasks
-    assert "Check Hermes Kanban diagnostics cron" in hermes_tasks
-    assert "DISCORD_HOME_CHANNEL must be set" in hermes_tasks
-    assert "required skill not seeded" in hermes_tasks
-    assert "expected_required_skills" in hermes_tasks
-    assert "effective override mismatch" in hermes_tasks
-    assert "PRAGMA quick_check" in hermes_tasks
-    assert "card-template.md" in hermes_tasks
-    assert "discord platform" in hermes_tasks
-    assert "chromium-" not in hermes_tasks
-    assert "hermes-webui" not in hermes_tasks
-    assert "hermes_webui_port" not in hermes_tasks
+    hermes_tasks = hermes_play.get("tasks", [])
+    hermes_tasks_text = yaml.safe_dump(hermes_tasks, sort_keys=True)
+    gateway_task = next(
+        (task for task in hermes_tasks if task.get("name") == "Check Hermes gateway service"),
+        None,
+    )
+    assert gateway_task is not None
+    assert gateway_task["ansible.builtin.command"]["cmd"] == "systemctl is-active hermes-gateway"
+    assert gateway_task["register"] == "hermes_gateway_active"
+    assert gateway_task["until"] == "hermes_gateway_active.rc == 0"
+    assert gateway_task["retries"] == 24
+    assert gateway_task["delay"] == 5
+    assert "node_modules/.bin/agent-browser" in hermes_tasks_text
+    assert "hermes_browser_browsers_path" in hermes_tasks_text
+    assert "chrome-" in hermes_tasks_text
+    assert "op --version" in hermes_tasks_text
+    assert "skills/security/1password/SKILL.md" in hermes_tasks_text
+    assert "op whoami" in hermes_tasks_text
+    assert "runuser -u" in hermes_tasks_text
+    assert "OP_SERVICE_ACCOUNT_TOKEN" in hermes_tasks_text
+    assert "Check Hermes 1Password CLI config file mode" in hermes_tasks_text
+    assert "path.is_symlink()" in hermes_tasks_text
+    assert "stat.S_IMODE(st.st_mode)" in hermes_tasks_text
+    assert "0o600" in hermes_tasks_text
+    assert "Check Hermes Newrrow points skill" in hermes_tasks_text
+    assert "skills/newrrow-points-automation/SKILL.md" in hermes_tasks_text
+    assert "scripts/newrrow-login.sh" in hermes_tasks_text
+    assert "plugins/newrrow-browser-login/plugin.yaml" in hermes_tasks_text
+    assert "Check Hermes config synchronization services" in hermes_tasks_text
+    assert "hermes-config-watch.service" in hermes_tasks_text
+    assert "hermes-config-webhook.service" in hermes_tasks_text
+    assert "hermes-config-sync.timer" in hermes_tasks_text
+    assert "readlink -f" in hermes_tasks_text
+    assert "enabled plugins mismatch" in hermes_tasks_text
+    assert "discord platform toolsets mismatch" in hermes_tasks_text
+    assert "Check Hermes 5+1 profiles, policy files, and Kanban routing config" in hermes_tasks_text
+    assert "kanban toolset" in hermes_tasks_text
+    assert "Check Hermes Kanban board is initialized" in hermes_tasks_text
+    assert "Check Hermes Kanban diagnostics cron" in hermes_tasks_text
+    assert "DISCORD_HOME_CHANNEL must be set" in hermes_tasks_text
+    assert "required skill not seeded" in hermes_tasks_text
+    assert "expected_required_skills" in hermes_tasks_text
+    assert "effective override mismatch" in hermes_tasks_text
+    assert "PRAGMA quick_check" in hermes_tasks_text
+    assert "card-template.md" in hermes_tasks_text
+    assert "discord platform" in hermes_tasks_text
+    assert "chromium-" not in hermes_tasks_text
+    assert "hermes-webui" not in hermes_tasks_text
+    assert "hermes_webui_port" not in hermes_tasks_text
 
 
 def test_secrets_readme_documents_hermes_discord_web_browser_and_1password_secrets():

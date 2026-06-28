@@ -235,7 +235,11 @@
     - name: Check Hermes gateway service
       ansible.builtin.command:
         cmd: systemctl is-active hermes-gateway
+      register: hermes_gateway_active
       changed_when: false
+      until: hermes_gateway_active.rc == 0
+      retries: 24
+      delay: 5
 
     - name: Check Hermes browser automation CLI
       ansible.builtin.command:
