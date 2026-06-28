@@ -20,6 +20,7 @@ DESIRED_WEB_SEARCH_BACKEND = "{{ hermes_web_search_backend }}"
 DESIRED_WEB_EXTRACT_BACKEND = "{{ hermes_web_extract_backend }}"
 DESIRED_BROWSER_CLOUD_PROVIDER = "{{ hermes_browser_cloud_provider }}"
 DESIRED_BROWSER_AUTO_LOCAL_FOR_PRIVATE_URLS = {{ (hermes_browser_auto_local_for_private_urls | bool) | ternary('True', 'False') }}
+DESIRED_MEMORY_PROVIDER = "{{ hermes_memory_provider | default('') }}".strip()
 DESIRED_DISCORD_TOOLSETS = ["hermes-discord", "browser", "kanban"]
 DESIRED_PLUGINS = ["newrrow-browser-login"]
 DESIRED_KANBAN = json.loads({{ hermes_kanban | default({}) | to_json | to_json }})
@@ -147,6 +148,7 @@ def apply_default_runtime(config):
     plugins = ensure_dict(config, "plugins")
     platform_toolsets = ensure_dict(config, "platform_toolsets")
     kanban = ensure_dict(config, "kanban")
+    memory = ensure_dict(config, "memory")
 
     for key, value in DESIRED_KANBAN.items():
         changed |= set_value(kanban, key, value)
@@ -158,6 +160,7 @@ def apply_default_runtime(config):
     )
 
     changed |= set_list(plugins, "enabled", DESIRED_PLUGINS)
+    changed |= set_value(memory, "provider", DESIRED_MEMORY_PROVIDER)
     return changed
 
 

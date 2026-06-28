@@ -31,6 +31,7 @@ REQUIRED_ENV = {
 
 OPTIONAL_ENV = {
     "hermes_discord_home_channel": "HERMES_DISCORD_HOME_CHANNEL",
+    "hermes_honcho_api_key": "HONCHO_API_KEY",
 }
 
 

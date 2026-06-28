@@ -48,6 +48,12 @@ hermes_browser_args: --no-sandbox,--disable-dev-shm-usage
 hermes_browserbase_proxies: false
 hermes_browserbase_advanced_stealth: false
 
+# Honcho memory stays disabled unless this is explicitly set to "honcho".
+# HONCHO_API_KEY is a runtime secret supplied through CI/Ansible extra-vars and
+# rendered only into /etc/hermes-gateway.env, never into hermes-config.
+hermes_memory_provider: ""
+hermes_honcho_environment: production
+
 hermes_newrrow_username_ref: op://Hermes/Newrrow/username
 hermes_newrrow_password_ref: op://Hermes/Newrrow/password
 

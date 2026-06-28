@@ -13,12 +13,13 @@ Set these GitHub Actions secrets in the `prod` environment:
 - `FIRECRAWL_API_KEY`: Firecrawl API key used by Hermes `web_extract`.
 - `BROWSERBASE_API_KEY`: Browserbase API key used by Hermes browser automation.
 - `BROWSERBASE_PROJECT_ID`: Browserbase project ID used by Hermes browser automation.
+- `HONCHO_API_KEY`: optional Honcho Cloud API key; required only if `hermes_memory_provider` is changed from the default empty built-in provider to `honcho`.
 - `OP_SERVICE_ACCOUNT_TOKEN`: 1Password service account token used by the `op` CLI for non-interactive secret access.
 
 - `HERMES_CONFIG_REPO_TOKEN`: fine-scoped GitHub token that can read and push the private `holybaechu/hermes-config` repo.
 - `HERMES_CONFIG_WEBHOOK_SECRET`: shared HMAC secret for the hermes-config GitHub push webhook receiver.
 
-The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, optional `hermes_discord_home_channel`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, `hermes_1password_service_account_token`, `hermes_config_repo_token`, and `hermes_config_webhook_secret`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
+The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_discord_allowed_users`, optional `hermes_discord_home_channel`, `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, optional `hermes_honcho_api_key`, `hermes_1password_service_account_token`, `hermes_config_repo_token`, and `hermes_config_webhook_secret`. Ansible renders Hermes' expected runtime names into `/etc/hermes-gateway.env`:
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
@@ -30,6 +31,8 @@ The CD workflow writes them to Ansible as `hermes_discord_bot_token`, `hermes_di
 - `BROWSERBASE_PROXIES`
 - `BROWSERBASE_ADVANCED_STEALTH`
 - `AGENT_BROWSER_ARGS` (set to `--no-sandbox,--disable-dev-shm-usage` for the local Chrome sidecar inside the unprivileged LXC)
+- `HONCHO_ENVIRONMENT`
+- `HONCHO_API_KEY`, only when the optional GitHub secret is present
 - `OP_SERVICE_ACCOUNT_TOKEN`
 - `HOME` (set to `/var/lib/hermes` for `agent-browser`'s local browser cache)
 
@@ -46,6 +49,14 @@ web:
 That gives Hermes Parallel-backed search results and Firecrawl-backed page extraction/scraping. The runtime config helper preserves the existing model/provider settings while enforcing these web backend settings.
 
 `homelab` is the canonical owner for runtime/environment-derived config keys: `web.*`, `browser.*`, `compression.*`, `auxiliary.compression.*`, `plugins.enabled`, and `platform_toolsets.discord`. The live `hermes-config/config/default/config.yaml` must not set those keys; the apply helper rejects them so a remote live-config push cannot silently override IaC-owned runtime values. To change one of those values, update homelab inventory/templates and redeploy.
+
+## Honcho memory
+
+Honcho behavior policy is split from Honcho credentials. The non-secret reasoning policy lives in `holybaechu/hermes-config` at `config/honcho.json` and is merged into the live `/var/lib/hermes/honcho.json`. The live file may later contain credentials and must remain a real `0600` file, not a symlink into git.
+
+The Honcho Cloud API key belongs in the homelab runtime secret layer. Add `HONCHO_API_KEY` as a GitHub Actions `prod` secret when ready; CD maps it to `hermes_honcho_api_key` and Ansible renders it only into `/etc/hermes-gateway.env`. The default tracked inventory keeps `hermes_memory_provider: ""`, so the key alone does not enable Honcho. To enable Honcho deliberately, set `hermes_memory_provider: honcho`; the role then requires the key and sets `memory.provider: honcho` in `/var/lib/hermes/config.yaml`.
+
+Do not put Honcho API keys in `holybaechu/hermes-config`, `config/honcho.json`, `configure-runtime.py`, or any committed homelab file.
 
 ## Browser automation
 
@@ -223,7 +234,7 @@ With the default repo settings, DMs always receive responses. Server channels re
 
 ## Deploy and validate
 
-1. Confirm the Discord, web backend, Browserbase, and 1Password secrets exist in the `prod` environment.
+1. Confirm the Discord, web backend, Browserbase, optional Honcho, and 1Password secrets exist in the `prod` environment; if `hermes_memory_provider` is `honcho`, `HONCHO_API_KEY` must be present.
 2. Run `infra/ansible/playbooks/bootstrap.yml` through CD, or directly if doing a controlled maintenance deploy.
 3. Run `infra/ansible/playbooks/site.yml`.
 4. Run `infra/ansible/playbooks/validate.yml`.

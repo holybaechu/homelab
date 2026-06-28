@@ -146,6 +146,9 @@ def test_secrets_readme_documents_hermes_discord_web_browser_and_1password_secre
     assert "hermes_firecrawl_api_key" in secrets
     assert "hermes_browserbase_api_key" in secrets
     assert "hermes_browserbase_project_id" in secrets
+    assert "hermes_honcho_api_key" in secrets
+    assert "hermes_memory_provider" in secrets
+    assert "hermes_honcho_environment" in secrets
     assert "hermes_1password_service_account_token" in secrets
     assert "hermes_config_repo_token" in secrets
     assert "hermes_config_webhook_secret" in secrets
@@ -153,6 +156,7 @@ def test_secrets_readme_documents_hermes_discord_web_browser_and_1password_secre
     assert "FIRECRAWL_API_KEY" in secrets
     assert "BROWSERBASE_API_KEY" in secrets
     assert "BROWSERBASE_PROJECT_ID" in secrets
+    assert "HONCHO_API_KEY" in secrets
     assert "OP_SERVICE_ACCOUNT_TOKEN" in secrets
     assert "hermes_webui_password" not in secrets
     for forbidden_key in ("HERMES_API_KEY", "API_SERVER_KEY", "OPENAI_API_KEY"):
@@ -173,6 +177,10 @@ def test_hermes_runbook_documents_discord_gateway_web_search_browser_automation_
     assert "FIRECRAWL_API_KEY" in runbook
     assert "BROWSERBASE_API_KEY" in runbook
     assert "BROWSERBASE_PROJECT_ID" in runbook
+    assert "HONCHO_API_KEY" in runbook
+    assert "HONCHO_ENVIRONMENT" in runbook
+    assert "hermes_memory_provider" in runbook
+    assert "memory.provider: honcho" in runbook
     assert "OP_SERVICE_ACCOUNT_TOKEN" in runbook
     assert "HERMES_CONFIG_REPO_TOKEN" in runbook
     assert "HERMES_CONFIG_WEBHOOK_SECRET" in runbook

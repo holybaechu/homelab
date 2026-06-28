@@ -26,6 +26,9 @@ def test_hermes_role_installs_native_gateway_without_webui_or_model_provider_key
     assert "hermes_firecrawl_api_key is defined" in tasks
     assert "hermes_browserbase_api_key is defined" in tasks
     assert "hermes_browserbase_project_id is defined" in tasks
+    assert "hermes_memory_provider in ['', 'honcho']" in tasks
+    assert "hermes_honcho_api_key is defined" in tasks
+    assert 'when: hermes_memory_provider == "honcho"' in tasks
     assert "hermes_1password_service_account_token is defined" in tasks
     assert "hermes_config_repo_token is defined" in tasks
     assert "hermes_config_webhook_secret is defined" in tasks
@@ -432,6 +435,9 @@ def test_validate_playbook_asserts_hermes_compression_timeout():
     assert "Check Hermes compression timeout" in hermes_tasks
     assert "auxiliary.compression.provider" in hermes_tasks
     assert "auxiliary.compression.timeout" in hermes_tasks
+    assert "Check Hermes memory provider and Honcho runtime secret gate" in hermes_tasks
+    assert "memory.provider" in hermes_tasks
+    assert "HONCHO_API_KEY must be present" in hermes_tasks
     assert "main" in hermes_tasks
     assert "360" in hermes_tasks
 
@@ -453,6 +459,33 @@ def test_hermes_role_configures_parallel_search_and_firecrawl_extract():
     assert configure_task["notify"] == "Restart hermes-gateway"
 
 
+def test_hermes_role_gates_honcho_runtime_secret_and_memory_provider():
+    group_vars = read_yaml("infra/ansible/inventory/prod/group_vars/svc_hermes.yml")
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+    script = read("infra/ansible/roles/hermes/templates/hermes-configure-runtime.py.j2")
+    env_template = read("infra/ansible/roles/hermes/templates/hermes-gateway.env.j2")
+
+    assert group_vars["hermes_memory_provider"] == ""
+    assert group_vars["hermes_honcho_environment"] == "production"
+    assert "hermes_honcho_api_key" not in group_vars
+
+    provider_task = find_task(tasks, "Validate Hermes memory provider selection")
+    assert "hermes_memory_provider in ['', 'honcho']" in provider_task["ansible.builtin.assert"]["that"]
+
+    key_task = find_task(tasks, "Require Honcho API key when Honcho memory is enabled")
+    assert key_task["when"] == 'hermes_memory_provider == "honcho"'
+    assert key_task["no_log"] is True
+    assert "hermes_honcho_api_key is defined" in key_task["ansible.builtin.assert"]["that"]
+
+    assert "DESIRED_MEMORY_PROVIDER" in script
+    assert 'memory = ensure_dict(config, "memory")' in script
+    assert 'set_value(memory, "provider", DESIRED_MEMORY_PROVIDER)' in script
+    assert "api_key" not in script
+    assert "HONCHO_API_KEY" not in script
+
+    assert "HONCHO_ENVIRONMENT={{ hermes_honcho_environment | quote }}" in env_template
+    assert "HONCHO_API_KEY={{ hermes_honcho_api_key | quote }}" in env_template
+    assert "hermes_honcho_api_key is defined" in env_template
 
 
 
@@ -740,6 +773,9 @@ def test_hermes_env_template_contains_discord_gateway_runtime_web_and_browser_cr
     assert "BROWSERBASE_PROXIES={{ hermes_browserbase_proxies | string | lower | quote }}" in env_template
     assert "BROWSERBASE_ADVANCED_STEALTH={{ hermes_browserbase_advanced_stealth | string | lower | quote }}" in env_template
     assert "AGENT_BROWSER_ARGS={{ hermes_browser_args | quote }}" in env_template
+    assert "HONCHO_ENVIRONMENT={{ hermes_honcho_environment | quote }}" in env_template
+    assert "HONCHO_API_KEY=" in env_template
+    assert "hermes_honcho_api_key | quote" in env_template
     assert "OP_SERVICE_ACCOUNT_TOKEN={{ hermes_1password_service_account_token | quote }}" in env_template
     assert "HOME={{ hermes_home | quote }}" in env_template
     assert "HERMES_WEBUI" not in env_template
