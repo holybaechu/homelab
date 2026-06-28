@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import yaml
 
@@ -36,6 +38,12 @@ def test_homelab_hermes_config_declarative_state_has_no_local_drift():
     assert default_config["agent"]["max_turns"] == 1_000_000
     assert default_config["delegation"]["max_iterations"] == 1_000_000
 
+    honcho_policy = json.loads((HERMES_CONFIG_ROOT / "config/honcho.json").read_text(encoding="utf-8"))
+    assert honcho_policy["dialecticReasoningLevel"] == "medium"
+    assert honcho_policy["dialecticDynamic"] is True
+    assert honcho_policy["reasoningLevelCap"] == "high"
+    assert honcho_policy["hosts"]["hermes_research"]["reasoningLevelCap"] == "max"
+
     cron_defs = {
         path.name: read_yaml(path)
         for path in (HERMES_CONFIG_ROOT / "cron").glob("*.yaml")
@@ -46,6 +54,20 @@ def test_homelab_hermes_config_declarative_state_has_no_local_drift():
     assert newrrow_cron["skills"] == ["newrrow-points-automation"]
     assert newrrow_cron["enabled_toolsets"] == ["browser", "todo", "skills"]
     assert newrrow_cron.get("no_agent") in (None, False)
+
+
+def test_hermes_config_apply_merges_non_secret_honcho_policy():
+    apply_template = (REPO_ROOT / "infra/ansible/roles/hermes/templates/hermes-config-apply.py.j2").read_text(encoding="utf-8")
+
+    assert "def apply_honcho_config()" in apply_template
+    assert 'CONFIG_DIR / "config/honcho.json"' in apply_template
+    assert 'HERMES_HOME / "honcho.json"' in apply_template
+    assert "contains_secret_key(desired)" in apply_template
+    assert "deep_merge(current, desired)" in apply_template
+    assert "live_path.is_symlink()" in apply_template
+    assert "Never keep Honcho credentials on a symlink into git-managed state" in apply_template
+    assert "apply_honcho_config," in apply_template
+    assert "live_path.symlink_to" not in apply_template
 
 
 def test_hermes_config_apply_preserves_agent_cron_shape():

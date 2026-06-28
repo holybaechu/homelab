@@ -93,6 +93,15 @@ def deep_merge(base: Any, desired: Any) -> Any:
     return desired
 
 
+def contains_secret_key(value: Any) -> bool:
+    forbidden = {"apikey", "api_key", "token", "password", "secret"}
+    if isinstance(value, dict):
+        return any(str(key).lower() in forbidden or contains_secret_key(child) for key, child in value.items())
+    if isinstance(value, list):
+        return any(contains_secret_key(item) for item in value)
+    return False
+
+
 def atomic_write_text(path: Path, content: str, mode: int = 0o644) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     current = path.read_text(encoding="utf-8") if path.exists() else None
@@ -189,6 +198,32 @@ def apply_default_config() -> tuple[bool, bool]:
     merged = deep_merge(current, desired)
     rendered = yaml.safe_dump(merged, sort_keys=False, allow_unicode=True)
     changed = atomic_write_text(config_path, rendered, 0o600)
+    return changed, changed
+
+
+def apply_honcho_config() -> tuple[bool, bool]:
+    desired_path = CONFIG_DIR / "config/honcho.json"
+    if not desired_path.exists():
+        return False, False
+    live_path = HERMES_HOME / "honcho.json"
+    desired = json.loads(desired_path.read_text(encoding="utf-8"))
+    if not isinstance(desired, dict):
+        raise SystemExit("config/honcho.json must be a JSON object")
+    if contains_secret_key(desired):
+        raise SystemExit("config/honcho.json must contain only non-secret Honcho policy keys")
+    current = {}
+    if live_path.exists():
+        if live_path.is_symlink():
+            # Never keep Honcho credentials on a symlink into git-managed state.
+            current = json.loads(live_path.read_text(encoding="utf-8"))
+            live_path.unlink()
+        else:
+            current = json.loads(live_path.read_text(encoding="utf-8"))
+    if not isinstance(current, dict):
+        raise SystemExit("live honcho.json must be a JSON object")
+    merged = deep_merge(current, desired)
+    rendered = json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
+    changed = atomic_write_text(live_path, rendered, 0o600)
     return changed, changed
 
 
@@ -354,6 +389,7 @@ def main() -> int:
 
     for func in (
         apply_default_config,
+        apply_honcho_config,
         apply_rules,
         apply_profiles,
         apply_kanban_policies,
