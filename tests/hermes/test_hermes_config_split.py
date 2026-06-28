@@ -36,9 +36,25 @@ def test_homelab_hermes_config_declarative_state_has_no_local_drift():
     assert default_config["agent"]["max_turns"] == 1_000_000
     assert default_config["delegation"]["max_iterations"] == 1_000_000
 
-    cron_names = {
-        path.name: read_yaml(path).get("name")
+    cron_defs = {
+        path.name: read_yaml(path)
         for path in (HERMES_CONFIG_ROOT / "cron").glob("*.yaml")
     }
-    assert cron_names["homelab-kanban-daily-diagnostics.yaml"] == "homelab-kanban-daily-diagnostics"
-    assert cron_names["newrrow-daily-points.yaml"] == "Daily Newrrow points automation at 12:00 AM PDT"
+    assert cron_defs["homelab-kanban-daily-diagnostics.yaml"]["name"] == "homelab-kanban-daily-diagnostics"
+    newrrow_cron = cron_defs["newrrow-daily-points.yaml"]
+    assert newrrow_cron["name"] == "Daily Newrrow points automation at 12:00 AM PDT"
+    assert newrrow_cron["skills"] == ["newrrow-points-automation"]
+    assert newrrow_cron["enabled_toolsets"] == ["browser", "todo", "skills"]
+    assert newrrow_cron.get("no_agent") in (None, False)
+
+
+def test_hermes_config_apply_preserves_agent_cron_shape():
+    apply_template = (REPO_ROOT / "infra/ansible/roles/hermes/templates/hermes-config-apply.py.j2").read_text(encoding="utf-8")
+
+    assert 'desired_no_agent = bool(job.get("no_agent", False))' in apply_template
+    assert 'skills=desired_skills' in apply_template
+    assert 'enabled_toolsets=desired_toolsets' in apply_template
+    assert '"skills": desired_skills' in apply_template
+    assert '"enabled_toolsets": desired_toolsets' in apply_template
+    assert 'existing.get("skills") not in ([], None)' not in apply_template
+    assert 'job.get("no_agent", True)' not in apply_template
