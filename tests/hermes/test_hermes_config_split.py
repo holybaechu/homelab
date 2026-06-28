@@ -42,7 +42,7 @@ def test_homelab_hermes_config_declarative_state_has_no_local_drift():
     assert honcho_policy["dialecticReasoningLevel"] == "medium"
     assert honcho_policy["dialecticDynamic"] is True
     assert honcho_policy["reasoningLevelCap"] == "high"
-    assert honcho_policy["hosts"]["hermes_research"]["reasoningLevelCap"] == "max"
+    assert honcho_policy["hosts"]["hermes_research"]["reasoningLevelCap"] == "high"
 
     cron_defs = {
         path.name: read_yaml(path)
