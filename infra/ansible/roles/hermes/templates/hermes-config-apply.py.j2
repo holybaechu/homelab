@@ -295,21 +295,42 @@ def apply_cron_definitions() -> tuple[bool, bool]:
         deliver = job.get("deliver", "discord")
         desired_schedule = parse_schedule(schedule)
         existing = resolve_job_ref(name)
+        desired_skills = [str(item).strip() for item in (job.get("skills") or []) if str(item).strip()]
+        if not desired_skills and job.get("skill"):
+            desired_skills = [str(job["skill"]).strip()]
+        desired_toolsets = job.get("enabled_toolsets")
+        if desired_toolsets is not None:
+            desired_toolsets = [str(item).strip() for item in desired_toolsets if str(item).strip()]
+        desired_no_agent = bool(job.get("no_agent", False))
         if existing is None:
-            create_job(prompt=job.get("prompt", ""), schedule=schedule, name=name, deliver=deliver, script=script, no_agent=job.get("no_agent", True))
+            create_job(
+                prompt=job.get("prompt", ""),
+                schedule=schedule,
+                name=name,
+                deliver=deliver,
+                script=script,
+                no_agent=desired_no_agent,
+                skills=desired_skills,
+                enabled_toolsets=desired_toolsets,
+            )
             continue
         updates = {}
         if existing.get("schedule") != desired_schedule:
             updates["schedule"] = schedule
         if existing.get("schedule_display") != desired_schedule.get("display", schedule):
             updates["schedule_display"] = desired_schedule.get("display", schedule)
-        for key in ("prompt", "deliver", "script", "no_agent"):
-            desired = job.get(key, "" if key == "prompt" else True if key == "no_agent" else None)
-            if desired is not None and existing.get(key) != desired:
+        desired_fields = {
+            "prompt": job.get("prompt", ""),
+            "deliver": deliver,
+            "script": script,
+            "no_agent": desired_no_agent,
+            "skills": desired_skills,
+            "skill": desired_skills[0] if desired_skills else None,
+            "enabled_toolsets": desired_toolsets,
+        }
+        for key, desired in desired_fields.items():
+            if existing.get(key) != desired:
                 updates[key] = desired
-        if existing.get("skills") not in ([], None):
-            updates["skills"] = []
-            updates["skill"] = None
         if updates:
             update_job(existing["id"], updates)
     after = jobs_path.read_text(encoding="utf-8") if jobs_path.exists() else ""
