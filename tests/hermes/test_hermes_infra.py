@@ -86,7 +86,7 @@ def test_hermes_group_vars_are_non_secret_service_settings():
     assert "hermes_browserbase_api_key:" not in group_vars
     assert "hermes_browserbase_project_id:" not in group_vars
     assert "hermes_honcho_api_key:" not in group_vars
-    assert "hermes_memory_provider: \"\"" in group_vars
+    assert "hermes_memory_provider: \"honcho\"" in group_vars
     assert "hermes_honcho_environment: production" in group_vars
     assert "hermes_config_repo: https://github.com/holybaechu/hermes-config.git" in group_vars
     assert "hermes_config_repo_token:" not in group_vars

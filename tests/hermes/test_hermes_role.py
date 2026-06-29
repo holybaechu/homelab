@@ -465,7 +465,7 @@ def test_hermes_role_gates_honcho_runtime_secret_and_memory_provider():
     script = read("infra/ansible/roles/hermes/templates/hermes-configure-runtime.py.j2")
     env_template = read("infra/ansible/roles/hermes/templates/hermes-gateway.env.j2")
 
-    assert group_vars["hermes_memory_provider"] == ""
+    assert group_vars["hermes_memory_provider"] == "honcho"
     assert group_vars["hermes_honcho_environment"] == "production"
     assert "hermes_honcho_api_key" not in group_vars
 
