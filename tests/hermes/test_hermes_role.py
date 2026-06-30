@@ -69,6 +69,21 @@ def test_hermes_role_installs_github_cli_for_workspace_tasks():
     assert "gh" in package_task["ansible.builtin.apt"]["name"]
 
 
+def test_hermes_role_installs_media_and_native_build_dependencies():
+    tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
+
+    package_task = find_task(tasks, "Install Hermes runtime packages")
+    packages = set(package_task["ansible.builtin.apt"]["name"])
+    assert {
+        "pkg-config",
+        "ffmpeg",
+        "libva-dev",
+        "libdrm-dev",
+        "cmake",
+        "ninja-build",
+    }.issubset(packages)
+
+
 def test_hermes_role_installs_1password_cli_and_validates_live_config_skill_for_secret_access():
     tasks = read_yaml("infra/ansible/roles/hermes/tasks/main.yml")
 
