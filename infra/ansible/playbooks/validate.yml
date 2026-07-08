@@ -228,6 +228,62 @@
         fail_msg: "Missing or empty Minecraft plugin jar at {{ item.item }}"
       loop: "{{ minecraft_plugin_stats.results }}"
 
+- name: Validate Docker apps
+  hosts: svc_docker_apps
+  gather_facts: false
+  tasks:
+    - name: Check Docker service
+      ansible.builtin.command:
+        cmd: systemctl is-active docker
+      register: docker_service_active
+      changed_when: false
+      until: docker_service_active.rc == 0
+      retries: 12
+      delay: 5
+
+    - name: Check shared Traefik proxy network exists
+      ansible.builtin.command:
+        cmd: docker network inspect {{ traefik_proxy_network }}
+      changed_when: false
+
+    - name: Validate Compose project configs
+      ansible.builtin.command:
+        cmd: docker compose config
+        chdir: "{{ item.dest }}"
+      loop: "{{ docker_compose_projects }}"
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: false
+
+    - name: Check Compose project services exist
+      ansible.builtin.shell: |
+        set -eu
+        services="$(docker compose ps --services)"
+        case "{{ item.name }}" in
+          traefik)
+            expected="traefik"
+            ;;
+          media)
+            expected="gluetun qbittorrent copyparty"
+            ;;
+          game)
+            expected="paper velocity"
+            ;;
+          *)
+            expected=""
+            ;;
+        esac
+        for service in ${expected}; do
+          printf '%s\n' "${services}" | grep -Fx "${service}"
+        done
+      args:
+        chdir: "{{ item.dest }}"
+        executable: /bin/sh
+      loop: "{{ docker_compose_projects }}"
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: false
+
 - name: Validate hermes
   hosts: svc_hermes
   gather_facts: false
