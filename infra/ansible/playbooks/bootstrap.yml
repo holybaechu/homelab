@@ -55,6 +55,19 @@
       loop_control:
         label: "{{ item.item.name }}"
 
+    - name: Wait for LXC SSH ports to accept connections
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[item.name].ansible_host }}"
+        port: 22
+        state: started
+        connect_timeout: 5
+        delay: 2
+        timeout: 180
+      delegate_to: localhost
+      loop: "{{ pve_lxc_access_bootstrap }}"
+      loop_control:
+        label: "{{ item.name }}"
+
 - name: Bootstrap Alpine LXCs
   hosts: alpine
   gather_facts: false

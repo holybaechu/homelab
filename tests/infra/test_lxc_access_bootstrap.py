@@ -45,6 +45,17 @@ def test_bootstrap_collects_lxc_host_keys_from_proxmox_instead_of_keyscan():
     assert "ansible.builtin.known_hosts" in playbook
 
 
+def test_bootstrap_waits_for_lxc_ssh_before_using_inventory_connections():
+    playbook = (REPO_ROOT / "infra" / "ansible" / "playbooks" / "bootstrap.yml").read_text(encoding="utf-8")
+
+    assert "Wait for LXC SSH ports to accept connections" in playbook
+    assert "ansible.builtin.wait_for" in playbook
+    assert 'host: "{{ hostvars[item.name].ansible_host }}"' in playbook
+    assert "port: 22" in playbook
+    assert "timeout: 180" in playbook
+    assert "delegate_to: localhost" in playbook
+
+
 def test_debian_lxc_bootstrap_checks_each_required_package():
     tasks = (
         REPO_ROOT
