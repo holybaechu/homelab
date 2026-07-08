@@ -1,0 +1,110 @@
+schema_version: 34
+users:
+  - name: "{{ adguard_admin_username }}"
+    password: "{{ adguard_admin_password_hash }}"
+auth_attempts: 5
+block_auth_min: 15
+http:
+  address: 0.0.0.0:{{ adguard_admin_port }}
+  pprof:
+    enabled: false
+    port: 6060
+  session_ttl: 720h
+  doh:
+    routes:
+      - GET /dns-query
+      - POST /dns-query
+      - GET /dns-query/{ClientID}
+      - POST /dns-query/{ClientID}
+http_proxy: ""
+language: en
+theme: auto
+clients:
+  runtime_sources:
+    whois: true
+    arp: true
+    rdns: false
+    dhcp: true
+    hosts: true
+  persistent: []
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: {{ adguard_dns_port }}
+  anonymize_client_ip: false
+  ratelimit: 20
+  upstream_dns:
+{% for upstream in adguard_upstream_dns %}
+    - {{ upstream }}
+{% endfor %}
+  bootstrap_dns:
+{% for bootstrap in adguard_bootstrap_dns %}
+    - {{ bootstrap }}
+{% endfor %}
+  fallback_dns:
+{% for fallback in adguard_fallback_dns %}
+    - {{ fallback }}
+{% endfor %}
+  upstream_mode: load_balance
+  cache_optimistic_answer_ttl: 30s
+  cache_optimistic_max_age: 12h
+  edns_client_subnet:
+    custom_ip: ""
+    enabled: false
+    use_custom: false
+  trusted_proxies:
+{% for proxy in adguard_trusted_proxies %}
+    - {{ proxy }}
+{% endfor %}
+filtering:
+  protection_enabled: true
+  rewrites_enabled: true
+  rewrites:
+    - domain: '*.{{ homelab_private_domain }}'
+      answer: {{ docker_apps_ip }}
+      enabled: true
+  blocked_services:
+    schedule:
+      time_zone: Local
+  safe_fs_patterns:
+    - /opt/adguardhome/work/data/userfilters/*
+  safe_search:
+    bing: true
+    duckduckgo: true
+    enabled: true
+    google: true
+    pixabay: true
+    yandex: true
+    youtube: true
+querylog:
+  enabled: true
+  file_enabled: true
+  ignored: []
+  ignored_enabled: false
+  interval: 90d
+  size_memory: 1000
+statistics:
+  enabled: true
+  ignored: []
+  ignored_enabled: false
+  interval: 1d
+tls:
+  enabled: true
+  server_name: {{ adguard_cert_domain }}
+  force_https: false
+  port_https: {{ adguard_https_port }}
+  port_dns_over_tls: {{ adguard_dot_port }}
+  port_dns_over_quic: {{ adguard_dot_port }}
+  certificate_path: {{ adguard_container_tls_dir }}/fullchain.pem
+  private_key_path: {{ adguard_container_tls_dir }}/privkey.pem
+filters:
+{% for dns_filter in adguard_dns_filters %}
+  - enabled: {{ dns_filter.enabled | lower }}
+    url: {{ dns_filter.url }}
+    name: "{{ dns_filter.name }}"
+    id: {{ dns_filter.id }}
+{% endfor %}
+os:
+  group: ""
+  rlimit_nofile: 0
+  user: ""

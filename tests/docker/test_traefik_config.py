@@ -20,8 +20,8 @@ def test_traefik_private_only_and_header_policies_match_caddy_contracts():
     assert "private-only" in dynamic
     assert "192.168.0.0/24" in dynamic
     assert "100.64.0.0/10" in dynamic
-    assert "adguard.home.hchu.me" in dynamic
-    assert "serverName: adguard.home.hchu.me" in dynamic
+    assert "adguard.home.hchu.me" not in dynamic
+    assert "https://192.168.0.3:443" not in dynamic
     assert "pve.home.hchu.me" in dynamic
     assert "customFrameOptionsValue: SAMEORIGIN" in dynamic
 

@@ -18,6 +18,121 @@
   loop_control:
     label: "{{ item.name }}"
 
+- name: Install Compose project helper packages
+  ansible.builtin.apt:
+    name:
+      - apache2-utils
+      - dnsutils
+      - lego
+      - openssl
+    state: present
+    update_cache: true
+
+- name: Create AdGuard host state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - path: /etc/homelab
+      mode: "0700"
+    - path: "{{ adguard_host_work_dir }}"
+      mode: "0750"
+    - path: "{{ adguard_host_conf_dir }}"
+      mode: "0750"
+    - path: "{{ adguard_host_tls_dir }}"
+      mode: "0750"
+    - path: "{{ adguard_host_lego_path }}"
+      mode: "0700"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Require Docker AdGuard admin credentials
+  ansible.builtin.assert:
+    that:
+      - adguard_admin_username is defined
+      - adguard_admin_username | length > 0
+      - adguard_admin_username is match('^[A-Za-z0-9_.-]+$')
+      - adguard_admin_password is defined
+      - adguard_admin_password | length > 0
+    fail_msg: adguard_admin_username and adguard_admin_password must be provided for Docker AdGuard config rendering.
+  no_log: true
+
+- name: Read existing Docker AdGuard admin password hash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        from pathlib import Path
+        import sys
+
+        path = Path(sys.argv[1])
+        username = sys.argv[2]
+        if not path.exists():
+            print("")
+            raise SystemExit(0)
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            if line.strip() == f'- name: "{username}"':
+                for candidate in lines[index + 1 : index + 4]:
+                    stripped = candidate.strip()
+                    if stripped.startswith("password:"):
+                        print(stripped.split(":", 1)[1].strip().strip('"'))
+                        raise SystemExit(0)
+        print("")
+      - "{{ adguard_host_conf_dir }}/AdGuardHome.yaml"
+      - "{{ adguard_admin_username }}"
+  register: docker_adguard_existing_admin_hash
+  changed_when: false
+  no_log: true
+
+- name: Verify existing Docker AdGuard admin password hash
+  ansible.builtin.shell: |
+    set -eu
+    tmp="$(mktemp)"
+    trap 'rm -f "${tmp}"' EXIT
+    printf '%s:%s\n' "${ADGUARD_ADMIN_USERNAME}" "${ADGUARD_ADMIN_HASH}" > "${tmp}"
+    htpasswd -vb "${tmp}" "${ADGUARD_ADMIN_USERNAME}" "${ADGUARD_ADMIN_PASSWORD}" >/dev/null
+  args:
+    executable: /bin/sh
+  environment:
+    ADGUARD_ADMIN_USERNAME: "{{ adguard_admin_username }}"
+    ADGUARD_ADMIN_HASH: "{{ docker_adguard_existing_admin_hash.stdout }}"
+    ADGUARD_ADMIN_PASSWORD: "{{ adguard_admin_password }}"
+  register: docker_adguard_existing_admin_hash_verify
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: docker_adguard_existing_admin_hash.stdout | length > 0
+
+- name: Hash Docker AdGuard admin password when rotation is required
+  ansible.builtin.command:
+    argv:
+      - htpasswd
+      - -B
+      - -C
+      - "10"
+      - -n
+      - -b
+      - "{{ adguard_admin_username }}"
+      - "{{ adguard_admin_password }}"
+  register: docker_adguard_admin_htpasswd
+  changed_when: false
+  no_log: true
+  when: docker_adguard_existing_admin_hash_verify.rc | default(1) != 0
+
+- name: Set Docker AdGuard admin password hash
+  ansible.builtin.set_fact:
+    adguard_admin_password_hash: >-
+      {{ docker_adguard_existing_admin_hash.stdout
+      if (docker_adguard_existing_admin_hash_verify.rc | default(1)) == 0
+      else docker_adguard_admin_htpasswd.stdout.split(':', 1)[1] }}
+  no_log: true
+
 - name: Copy tracked Compose project files
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../../../{{ item.src }}/"
@@ -57,6 +172,87 @@
   when: item.copyparty_config_template is defined
   no_log: true
   notify: Restart Compose project
+
+- name: Render Docker AdGuard config
+  ansible.builtin.template:
+    src: "{{ item.adguard_config_template }}"
+    dest: "{{ adguard_host_conf_dir }}/AdGuardHome.yaml"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.adguard_config_template is defined
+  no_log: true
+  notify: Restart Compose project
+
+- name: Install AdGuard ACME renewal script for Docker DNS
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../apps/dns/acme/renew-adguard-cert.sh"
+    dest: /usr/local/bin/renew-adguard-cert
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Render AdGuard ACME environment file
+  ansible.builtin.copy:
+    dest: "{{ adguard_acme_env_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      CLOUDFLARE_ADGUARD_ACME_TOKEN={{ cloudflare_adguard_acme_token | quote }}
+      ADGUARD_CERT_DOMAIN={{ adguard_cert_domain | quote }}
+      ADGUARD_TLS_DIR={{ adguard_host_tls_dir | quote }}
+      ADGUARD_TLS_GROUP=root
+      LEGO_PATH={{ adguard_host_lego_path | quote }}
+      ACME_EMAIL={{ traefik_acme_email | quote }}
+      ADGUARD_RESTART_COMMAND={{ ('cd ' ~ docker_apps_compose_root ~ '/dns && docker compose restart adguard') | quote }}
+  no_log: true
+
+- name: Install AdGuard ACME systemd unit
+  ansible.builtin.template:
+    src: adguard-acme.service.j2
+    dest: /etc/systemd/system/adguard-acme.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install AdGuard ACME systemd timer
+  ansible.builtin.template:
+    src: adguard-acme.timer.j2
+    dest: /etc/systemd/system/adguard-acme.timer
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Stat Docker AdGuard TLS files
+  ansible.builtin.stat:
+    path: "{{ adguard_host_tls_dir }}/{{ item }}"
+  loop:
+    - fullchain.pem
+    - privkey.pem
+  register: docker_adguard_tls_files
+
+- name: Issue initial Docker AdGuard certificate when missing
+  ansible.builtin.shell: |
+    set -eu
+    set -a
+    . "{{ adguard_acme_env_path }}"
+    set +a
+    /usr/local/bin/renew-adguard-cert
+  args:
+    executable: /bin/sh
+  no_log: true
+  when: docker_adguard_tls_files.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
+
+- name: Enable AdGuard ACME timer
+  ansible.builtin.systemd:
+    name: adguard-acme.timer
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Pull Compose project images
   ansible.builtin.command:

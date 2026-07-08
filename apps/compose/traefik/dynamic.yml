@@ -36,13 +36,6 @@ http:
         certResolver: cloudflare
       middlewares: [secure-headers]
       service: hermes-config-webhook
-    adguard:
-      rule: Host(`adguard.home.hchu.me`)
-      entryPoints: [websecure]
-      tls:
-        certResolver: cloudflare
-      middlewares: [private-only, secure-headers]
-      service: adguard
     pve:
       rule: Host(`pve.home.hchu.me`)
       entryPoints: [websecure]
@@ -63,11 +56,6 @@ http:
       loadBalancer:
         servers:
           - url: http://192.168.0.9:8787
-    adguard:
-      loadBalancer:
-        serversTransport: adguard-transport
-        servers:
-          - url: https://192.168.0.3:443
     pve:
       loadBalancer:
         serversTransport: pve-transport
@@ -79,8 +67,6 @@ http:
           - url: http://192.168.0.1
 
   serversTransports:
-    adguard-transport:
-      serverName: adguard.home.hchu.me
     pve-transport:
       serverName: pve.home.hchu.me
       rootCAs:

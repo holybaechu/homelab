@@ -34,7 +34,9 @@ chown root:"${TLS_GROUP}" "${CERT_DIR}" "${CERT_DIR}/fullchain.pem" "${CERT_DIR}
 chmod 0750 "${CERT_DIR}"
 chmod 0640 "${CERT_DIR}/fullchain.pem" "${CERT_DIR}/privkey.pem"
 
-if [ -x /etc/init.d/adguardhome ]; then
+if [ -n "${ADGUARD_RESTART_COMMAND:-}" ]; then
+  sh -c "${ADGUARD_RESTART_COMMAND}" || echo "AdGuard restart command failed; certificate staged"
+elif [ -x /etc/init.d/adguardhome ]; then
   rc-service adguardhome restart
   rc-service adguardhome status
 else

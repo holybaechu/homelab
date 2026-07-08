@@ -13,6 +13,15 @@ def test_compose_project_role_renders_secret_envs_and_uses_remove_orphans():
     assert "docker compose up -d --remove-orphans" in tasks
     assert "copyparty_config_template" in tasks
     assert "Render media Copyparty config with plaintext password accounts" in tasks
+    assert "adguard_config_template" in tasks
+    assert "Render Docker AdGuard config" in tasks
+    assert "Hash Docker AdGuard admin password" in tasks
+    assert "apache2-utils" in tasks
+    assert "dnsutils" in tasks
+    assert "lego" in tasks
+    assert "openssl" in tasks
+    assert "adguard-acme.timer" in tasks
+    assert "renew-adguard-cert" in tasks
     assert "role: docker_engine" in site
     assert "tags: [docker_apps, docker_engine]" in site
     assert "role: docker_compose_project" in site

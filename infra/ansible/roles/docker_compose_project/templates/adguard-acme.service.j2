@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew AdGuard Home certificate for Docker Compose DNS
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile={{ adguard_acme_env_path }}
+ExecStart=/usr/local/bin/renew-adguard-cert
