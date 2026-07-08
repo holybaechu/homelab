@@ -1,0 +1,42 @@
+name: game
+
+services:
+  paper:
+    image: itzg/minecraft-server:java21
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      EULA: "TRUE"
+      TYPE: PAPER
+      MEMORY: "${MINECRAFT_MEMORY:-3G}"
+      MOTD: "${MINECRAFT_MOTD:-hchu.me Minecraft}"
+      MAX_PLAYERS: "${MINECRAFT_MAX_PLAYERS:-10}"
+      ONLINE_MODE: "FALSE"
+    volumes:
+      - /minecraft/paper:/data:rw
+    networks:
+      - minecraft
+    labels:
+      - homelab.optional=true
+
+  velocity:
+    image: itzg/mc-proxy:java21
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TYPE: VELOCITY
+      MEMORY: 512M
+    depends_on:
+      - paper
+    ports:
+      - "25565:25565/tcp"
+      - "19132:19132/udp"
+    volumes:
+      - /minecraft/velocity:/server:rw
+    networks:
+      - minecraft
+    labels:
+      - homelab.optional=true
+
+networks:
+  minecraft:

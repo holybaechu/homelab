@@ -117,4 +117,21 @@ containers = {
     swap_mb          = 1024
     startup_order    = 7
   }
+
+  docker_apps = {
+    vmid             = 117
+    hostname         = "docker-apps"
+    description      = "Docker Compose app host for Traefik, media, and Minecraft managed by OpenTofu and Ansible"
+    tags             = ["homelab", "managed-by-opentofu", "role-docker-apps"]
+    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+    os_type          = "debian"
+    ip_address       = "192.168.0.10/24"
+    mac_address      = "02:00:00:BA:EC:0A"
+    gateway          = "192.168.0.1"
+    root_disk_gb     = 24
+    cores            = 4
+    memory_mb        = 5120
+    swap_mb          = 1024
+    startup_order    = 8
+  }
 }

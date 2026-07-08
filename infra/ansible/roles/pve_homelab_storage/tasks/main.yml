@@ -13,6 +13,7 @@
     tmp_mount="/mnt/{{ homelab_data_lv_name }}-init"
     permissions_marker="${mount_path}/.homelab-permissions-initialized"
     public_qbt_acl_marker="${mount_path}/.homelab-public-qbittorrent-acl-v1"
+    docker_apps_acl_marker="${mount_path}/.homelab-docker-apps-acl-v1"
 
     if [ ! -e "${lv_path}" ]; then
       lvcreate -V "{{ homelab_data_lv_size }}" -T pve/data -n "{{ homelab_data_lv_name }}"
@@ -52,6 +53,11 @@
       "${mount_path}/copyparty/public" \
       "${mount_path}/copyparty/shared-readonly" \
       "${mount_path}/copyparty/downloads" \
+      "${mount_path}/docker-apps/traefik" \
+      "${mount_path}/docker-apps/qbittorrent" \
+      "${mount_path}/docker-apps/gluetun" \
+      "${mount_path}/docker-apps/copyparty" \
+      "${mount_path}/minecraft" \
       "${mount_path}/hermes/home" \
       "${mount_path}/hermes/workspace"
 
@@ -59,8 +65,10 @@
       chown -R {{ homelab_container_uid_offset + downloads_service_uid }}:{{ homelab_container_uid_offset + downloads_service_gid }} "${mount_path}/downloads"
       chown -R {{ homelab_container_uid_offset + service_uid }}:{{ homelab_container_uid_offset + service_gid }} "${mount_path}/copyparty"
       chown -R {{ homelab_container_uid_offset + hermes_service_uid }}:{{ homelab_container_uid_offset + hermes_service_gid }} "${mount_path}/hermes"
+      chown -R {{ homelab_container_uid_offset + docker_apps_service_uid }}:{{ homelab_container_uid_offset + docker_apps_service_gid }} "${mount_path}/docker-apps" "${mount_path}/minecraft"
       chmod 0755 "${mount_path}" "${mount_path}/downloads" "${mount_path}/downloads/complete" "${mount_path}/downloads/incomplete" "${mount_path}/copyparty"
       chmod 0755 "${mount_path}/copyparty/public" "${mount_path}/copyparty/shared-readonly" "${mount_path}/copyparty/downloads"
+      chmod 0755 "${mount_path}/docker-apps" "${mount_path}/docker-apps/traefik" "${mount_path}/docker-apps/qbittorrent" "${mount_path}/docker-apps/gluetun" "${mount_path}/docker-apps/copyparty" "${mount_path}/minecraft"
       chmod 0755 "${mount_path}/hermes" "${mount_path}/hermes/home" "${mount_path}/hermes/workspace"
       find "${mount_path}/copyparty/public" -type d -exec chmod 0755 {} +
       find "${mount_path}/copyparty/public" -type f -exec chmod 0644 {} +
@@ -79,6 +87,19 @@
       changed=1
     else
       echo "public_qbittorrent_acl_changed=0"
+    fi
+
+
+    if [ ! -e "${docker_apps_acl_marker}" ] || [ "{{ homelab_data_reconcile_permissions | default(false) | lower }}" = "true" ]; then
+      setfacl -R -m "u:{{ homelab_container_uid_offset + docker_apps_service_uid }}:rwX" "${mount_path}/downloads" "${mount_path}/copyparty/public" "${mount_path}/minecraft"
+      setfacl -R -m "u:{{ homelab_container_uid_offset + docker_apps_service_uid }}:rX" "${mount_path}/copyparty/shared-readonly"
+      find "${mount_path}/downloads" "${mount_path}/copyparty/public" "${mount_path}/minecraft" -type d -exec setfacl -m "d:u:{{ homelab_container_uid_offset + docker_apps_service_uid }}:rwx" {} +
+      find "${mount_path}/copyparty/shared-readonly" -type d -exec setfacl -m "d:u:{{ homelab_container_uid_offset + docker_apps_service_uid }}:rx" {} +
+      touch "${docker_apps_acl_marker}"
+      echo "docker_apps_acl_changed=1"
+      changed=1
+    else
+      echo "docker_apps_acl_changed=0"
     fi
 
     if [ "${changed}" -eq 1 ]; then

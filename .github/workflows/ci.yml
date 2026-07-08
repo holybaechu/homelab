@@ -57,3 +57,6 @@ jobs:
 
       - name: Check Ansible validation syntax
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/validate.yml --syntax-check
+
+      - name: Validate Docker Compose migration manifests
+        run: ./scripts/ci/validate-compose.sh

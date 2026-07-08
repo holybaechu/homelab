@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from tests.helpers import REPO_ROOT
+from scripts.ci.homelab_topology import expected_lxc_count
 GUARD = REPO_ROOT / "scripts" / "ci" / "check_tofu_plan_safe.py"
 
 
@@ -81,7 +82,7 @@ def test_tofu_plan_guard_rejects_create_only_lxc_plan_by_default():
                     "address": f"module.lxc[\"svc{i}\"].proxmox_virtual_environment_container.this",
                     "change": {"actions": ["create"]},
                 }
-                for i in range(7)
+                for i in range(expected_lxc_count())
             ]
         }
     )
@@ -103,7 +104,7 @@ def test_tofu_plan_guard_allows_create_only_lxc_plan_for_explicit_bootstrap():
                         "address": f"module.lxc[\"svc{i}\"].proxmox_virtual_environment_container.this",
                         "change": {"actions": ["create"]},
                     }
-                    for i in range(7)
+                    for i in range(expected_lxc_count())
                 ]
             }
         ),
