@@ -24,7 +24,7 @@ services:
       - traefik.http.services.qbt.loadbalancer.server.port=8080
 
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:5.2.3
+    image: lscr.io/linuxserver/qbittorrent:20.04.1
     restart: unless-stopped
     network_mode: service:gluetun
     depends_on:
