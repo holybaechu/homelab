@@ -1,0 +1,79 @@
+---
+- name: Create Compose root directory
+  ansible.builtin.file:
+    path: "{{ docker_apps_compose_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create Compose project directories
+  ansible.builtin.file:
+    path: "{{ item.dest }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Copy tracked Compose project files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../{{ item.src }}/"
+    dest: "{{ item.dest }}/"
+    owner: root
+    group: root
+    mode: preserve
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Restart Compose project
+
+- name: Render Compose project environment files
+  ansible.builtin.template:
+    src: "{{ item.env_template }}"
+    dest: "{{ item.dest }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.env_template is defined
+  no_log: true
+  notify: Restart Compose project
+
+- name: Render media Copyparty config with plaintext password accounts
+  ansible.builtin.template:
+    src: "{{ item.copyparty_config_template }}"
+    dest: "{{ item.dest }}/copyparty.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.copyparty_config_template is defined
+  no_log: true
+  notify: Restart Compose project
+
+- name: Pull Compose project images
+  ansible.builtin.command:
+    cmd: docker compose pull
+    chdir: "{{ item.dest }}"
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: "'Downloaded newer image' in docker_compose_pull.stdout or 'Pull complete' in docker_compose_pull.stdout"
+  register: docker_compose_pull
+
+- name: Start Compose projects
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ item.dest }}"
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: docker_compose_up
+  changed_when: "'Creating' in docker_compose_up.stdout or 'Recreating' in docker_compose_up.stdout or 'Started' in docker_compose_up.stdout or 'Removed orphan' in docker_compose_up.stdout"

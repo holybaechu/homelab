@@ -31,6 +31,15 @@
   roles:
     - tailscale_gateway
 
+- name: Configure Docker apps LXC
+  hosts: svc_docker_apps
+  gather_facts: true
+  roles:
+    - role: docker_engine
+      tags: [docker_apps, docker_engine]
+    - role: docker_compose_project
+      tags: [docker_apps, compose]
+
 - name: Configure downloads LXC
   hosts: svc_downloads
   gather_facts: true

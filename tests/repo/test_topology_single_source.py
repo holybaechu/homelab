@@ -4,7 +4,7 @@ from tests.helpers import REPO_ROOT
 def test_ansible_ip_variables_are_derived_from_inventory_hostvars():
     all_vars = (REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "all.yml").read_text(encoding="utf-8")
 
-    for service in ("edge", "dns", "tailnet", "downloads", "files", "minecraft", "hermes"):
+    for service in ("edge", "dns", "tailnet", "downloads", "files", "minecraft", "hermes", "docker_apps"):
         assert f"{service}_ip: \"{{{{ hostvars['{service}'].ansible_host }}}}\"" in all_vars
 
     assert "edge_ip: 192.168.0.4" not in all_vars

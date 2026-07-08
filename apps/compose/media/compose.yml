@@ -1,0 +1,63 @@
+name: media
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:v3.40.0
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file: .env
+    volumes:
+      - /srv/docker-apps/gluetun:/gluetun:rw
+    networks:
+      - default
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.qbt.rule=Host(`qbt.home.hchu.me`)
+      - traefik.http.routers.qbt.entrypoints=websecure
+      - traefik.http.routers.qbt.tls.certresolver=cloudflare
+      - traefik.http.routers.qbt.middlewares=private-only@file,secure-headers@file
+      - traefik.http.services.qbt.loadbalancer.server.port=8080
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:5.1.2
+    restart: unless-stopped
+    network_mode: service:gluetun
+    depends_on:
+      - gluetun
+    env_file: .env
+    volumes:
+      - /srv/docker-apps/qbittorrent:/config:rw
+      - /downloads:/downloads:rw
+      - /public:/public:rw
+
+  copyparty:
+    image: copyparty/ac:1.20.17
+    restart: unless-stopped
+    env_file: .env
+    command: ["-c", "/config/copyparty.conf"]
+    volumes:
+      - ./copyparty.conf:/config/copyparty.conf:ro
+      - /srv/docker-apps/copyparty:/config/state:rw
+      - /public:/srv/public:rw
+      - /shared-readonly:/srv/shared-readonly:ro
+      - /downloads/complete:/srv/downloads:ro
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.copyparty.rule=Host(`copyparty.hchu.me`)
+      - traefik.http.routers.copyparty.entrypoints=websecure
+      - traefik.http.routers.copyparty.tls.certresolver=cloudflare
+      - traefik.http.routers.copyparty.middlewares=secure-headers@file
+      - traefik.http.services.copyparty.loadbalancer.server.port=3923
+
+networks:
+  proxy:
+    external: true
+    name: homelab_proxy
