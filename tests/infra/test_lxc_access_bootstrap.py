@@ -52,7 +52,7 @@ def test_bootstrap_waits_for_lxc_ssh_before_using_inventory_connections():
     assert "ansible.builtin.wait_for" in playbook
     assert 'host: "{{ hostvars[item.name].ansible_host }}"' in playbook
     assert "port: 22" in playbook
-    assert "timeout: 180" in playbook
+    assert "timeout: 600" in playbook
     assert "delegate_to: localhost" in playbook
 
 

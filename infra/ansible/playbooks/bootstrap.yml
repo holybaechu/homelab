@@ -62,7 +62,7 @@
         state: started
         connect_timeout: 5
         delay: 2
-        timeout: 180
+        timeout: 600
       delegate_to: localhost
       loop: "{{ pve_lxc_access_bootstrap }}"
       loop_control:
