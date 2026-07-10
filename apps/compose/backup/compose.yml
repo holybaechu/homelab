@@ -2,7 +2,7 @@ name: backup
 
 services:
   restic-backup:
-    image: restic/restic:0.18.1
+    image: restic/restic:0.19.1
     restart: unless-stopped
     env_file: .env
     entrypoint: ["/bin/sh", "/scripts/backup-loop.sh"]
