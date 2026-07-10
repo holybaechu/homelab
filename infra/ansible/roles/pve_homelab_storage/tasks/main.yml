@@ -63,12 +63,9 @@
       if ! pct status "${vmid}" >/dev/null 2>&1; then
         return 0
       fi
-      mount_output="$(pct mount "${vmid}")"
+      pct mount "${vmid}" >/dev/null
       mounted_vmid="${vmid}"
-      rootfs="$(printf '%s\n' "${mount_output}" | sed -n "s/.* in '\([^']*\)'.*/\1/p" | tail -n 1)"
-      if [ -z "${rootfs}" ]; then
-        rootfs="/var/lib/lxc/${vmid}/rootfs"
-      fi
+      rootfs="/var/lib/lxc/${vmid}/rootfs"
       if [ -d "${rootfs}${source_path}" ]; then
         mkdir -p "${target_path}"
         rsync -a --ignore-existing "${rootfs}${source_path}/" "${target_path}/"
