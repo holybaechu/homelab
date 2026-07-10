@@ -2,7 +2,7 @@ name: game
 
 services:
   paper:
-    image: itzg/minecraft-server:2026.5.4-java25
+    image: itzg/minecraft-server:2026.7.0-java25
     restart: unless-stopped
     env_file: .env
     environment:
