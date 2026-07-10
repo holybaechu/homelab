@@ -1,0 +1,69 @@
+http:
+  middlewares:
+    private-only:
+      ipAllowList:
+        sourceRange:
+          - 192.168.0.0/24
+          - 100.64.0.0/10
+          - 172.16.0.0/12
+    secure-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        referrerPolicy: no-referrer-when-downgrade
+        contentTypeNosniff: true
+        customFrameOptionsValue: DENY
+    pve-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        referrerPolicy: no-referrer-when-downgrade
+        contentTypeNosniff: true
+        customFrameOptionsValue: SAMEORIGIN
+    router-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        referrerPolicy: no-referrer-when-downgrade
+        customFrameOptionsValue: DENY
+
+  routers:
+    adguard:
+      rule: Host(`adguard.home.hchu.me`)
+      entryPoints: [websecure]
+      middlewares: [private-only, secure-headers]
+      service: adguard
+    pve:
+      rule: Host(`pve.home.hchu.me`)
+      entryPoints: [websecure]
+      middlewares: [private-only, pve-headers]
+      service: pve
+    router:
+      rule: Host(`router.home.hchu.me`)
+      entryPoints: [websecure]
+      middlewares: [private-only, router-headers]
+      service: router
+
+  services:
+    adguard:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:3000
+    pve:
+      loadBalancer:
+        serversTransport: pve-transport
+        servers:
+          - url: https://192.168.0.2:8006
+    router:
+      loadBalancer:
+        servers:
+          - url: http://192.168.0.1
+
+  serversTransports:
+    pve-transport:
+      serverName: pve.home.hchu.me
+      rootCAs:
+        - /etc/ssl/certs/homelab-pve-root-ca.pem

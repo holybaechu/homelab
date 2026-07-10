@@ -1,0 +1,28 @@
+name: hermes
+
+services:
+  hermes:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: homelab/hermes-agent:0.18.2
+    container_name: hermes
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    env_file: .env
+    shm_size: 1gb
+    volumes:
+      - /srv/homelab/hermes/home:/opt/data:rw
+      - /srv/homelab/hermes/workspace:/workspace:rw
+    healthcheck:
+      test: ["CMD", "hermes", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+

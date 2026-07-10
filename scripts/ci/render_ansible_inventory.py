@@ -24,7 +24,12 @@ def render_inventory(containers: dict[str, dict[str, object]]) -> str:
         "        pve:",
         "          ansible_host: 192.168.0.2",
     ]
-    for os_type in ("alpine", "debian"):
+    os_types = [
+        os_type
+        for os_type in ("alpine", "debian")
+        if any(containers[name]["os_type"] == os_type for name in names)
+    ]
+    for os_type in os_types:
         lines += [f"    {os_type}:", "      hosts:"]
         for name in names:
             if containers[name]["os_type"] == os_type:

@@ -1,5 +1,0 @@
----
-- name: Restart Alpine sshd
-  ansible.builtin.service:
-    name: sshd
-    state: restarted

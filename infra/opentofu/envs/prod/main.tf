@@ -1,4 +1,4 @@
-module "lxc" {
+module "active_lxc" {
   for_each = var.containers
 
   source = "../../modules/pve-lxc"
@@ -22,4 +22,24 @@ module "lxc" {
   memory_mb        = each.value.memory_mb
   swap_mb          = each.value.swap_mb
   startup_order    = each.value.startup_order
+}
+
+moved {
+  from = module.lxc["tailnet"]
+  to   = module.active_lxc["tailnet"]
+}
+
+moved {
+  from = module.lxc["docker_apps"]
+  to   = module.active_lxc["docker_apps"]
+}
+
+# After the retained instances move to active_lxc, forget every legacy
+# instance left at the old module address without destroying its container.
+removed {
+  from = module.lxc
+
+  lifecycle {
+    destroy = false
+  }
 }

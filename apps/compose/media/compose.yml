@@ -2,15 +2,28 @@ name: media
 
 services:
   gluetun:
-    image: qmcgaw/gluetun:v3.40.0
+    image: qmcgaw/gluetun:v3.41.1
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
     env_file: .env
+    environment:
+      VPN_PORT_FORWARDING: "on"
+      PORT_FORWARD_ONLY: "on"
+      FIREWALL_INPUT_PORTS: "8080"
+      FIREWALL_OUTBOUND_SUBNETS: "192.168.0.0/24,100.64.0.0/10"
+      VPN_PORT_FORWARDING_UP_COMMAND: >-
+        /bin/sh -c 'wget -O- -nv --retry-connrefused --post-data
+        "json={\"listen_port\":{{PORT}},\"current_network_interface\":\"{{VPN_INTERFACE}}\",\"random_port\":false,\"upnp\":false}"
+        http://127.0.0.1:8080/api/v2/app/setPreferences'
+      VPN_PORT_FORWARDING_DOWN_COMMAND: >-
+        /bin/sh -c 'wget -O- -nv --retry-connrefused --post-data
+        "json={\"listen_port\":0,\"current_network_interface\":\"lo\"}"
+        http://127.0.0.1:8080/api/v2/app/setPreferences'
     volumes:
-      - /srv/docker-apps/gluetun:/gluetun:rw
+      - gluetun_data:/gluetun
     networks:
       - default
       - proxy
@@ -19,7 +32,6 @@ services:
       - traefik.docker.network=homelab_proxy
       - traefik.http.routers.qbt.rule=Host(`qbt.home.hchu.me`)
       - traefik.http.routers.qbt.entrypoints=websecure
-      - traefik.http.routers.qbt.tls.certresolver=cloudflare
       - traefik.http.routers.qbt.middlewares=private-only@file,secure-headers@file
       - traefik.http.services.qbt.loadbalancer.server.port=8080
 
@@ -28,12 +40,15 @@ services:
     restart: unless-stopped
     network_mode: service:gluetun
     depends_on:
-      - gluetun
+      gluetun:
+        condition: service_healthy
     env_file: .env
+    environment:
+      WEBUI_PORT: "8080"
     volumes:
-      - /srv/docker-apps/qbittorrent:/config:rw
-      - /downloads:/downloads:rw
-      - /public:/public:rw
+      - /srv/homelab/docker-apps/qbittorrent:/config:rw
+      - /srv/homelab/downloads:/downloads:rw
+      - /srv/homelab/copyparty/public:/public:rw
 
   copyparty:
     image: copyparty/ac:1.20.18
@@ -42,10 +57,10 @@ services:
     command: ["-c", "/config/copyparty.conf"]
     volumes:
       - ./copyparty.conf:/config/copyparty.conf:ro
-      - /srv/docker-apps/copyparty:/config/state:rw
-      - /public:/srv/public:rw
-      - /shared-readonly:/srv/shared-readonly:ro
-      - /downloads/complete:/srv/downloads:ro
+      - /srv/homelab/docker-apps/copyparty:/config/state:rw
+      - /srv/homelab/copyparty/public:/srv/public:rw
+      - /srv/homelab/copyparty/shared-readonly:/srv/shared-readonly:ro
+      - /srv/homelab/downloads/complete:/srv/downloads:ro
     networks:
       - proxy
     labels:
@@ -53,7 +68,6 @@ services:
       - traefik.docker.network=homelab_proxy
       - traefik.http.routers.copyparty.rule=Host(`copyparty.hchu.me`)
       - traefik.http.routers.copyparty.entrypoints=websecure
-      - traefik.http.routers.copyparty.tls.certresolver=cloudflare
       - traefik.http.routers.copyparty.middlewares=secure-headers@file
       - traefik.http.services.copyparty.loadbalancer.server.port=3923
 
@@ -61,3 +75,7 @@ networks:
   proxy:
     external: true
     name: homelab_proxy
+
+volumes:
+  gluetun_data:
+    name: homelab_gluetun_data

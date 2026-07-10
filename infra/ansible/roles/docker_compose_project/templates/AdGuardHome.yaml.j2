@@ -1,0 +1,93 @@
+schema_version: 34
+users:
+  - name: "{{ adguard_admin_username }}"
+    password: "{{ adguard_admin_password_hash }}"
+auth_attempts: 5
+block_auth_min: 15
+http:
+  address: 0.0.0.0:{{ adguard_admin_port }}
+  pprof:
+    enabled: false
+    port: 6060
+  session_ttl: 720h
+http_proxy: ""
+language: en
+theme: auto
+clients:
+  runtime_sources:
+    whois: true
+    arp: true
+    rdns: false
+    dhcp: true
+    hosts: true
+  persistent: []
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: {{ adguard_dns_port }}
+  anonymize_client_ip: false
+  ratelimit: 20
+  upstream_dns:
+{% for upstream in adguard_upstream_dns %}
+    - {{ upstream }}
+{% endfor %}
+  bootstrap_dns:
+{% for bootstrap in adguard_bootstrap_dns %}
+    - {{ bootstrap }}
+{% endfor %}
+  fallback_dns:
+{% for fallback in adguard_fallback_dns %}
+    - {{ fallback }}
+{% endfor %}
+  upstream_mode: load_balance
+  cache_optimistic_answer_ttl: 30s
+  cache_optimistic_max_age: 12h
+  trusted_proxies:
+    - 127.0.0.0/8
+    - ::1/128
+    - 172.16.0.0/12
+filtering:
+  protection_enabled: true
+  rewrites_enabled: true
+  rewrites:
+    - domain: '*.{{ homelab_private_domain }}'
+      answer: {{ docker_apps_ip }}
+      enabled: true
+  blocked_services:
+    schedule:
+      time_zone: Local
+  safe_fs_patterns:
+    - /opt/adguardhome/work/data/userfilters/*
+  safe_search:
+    bing: true
+    duckduckgo: true
+    enabled: true
+    google: true
+    pixabay: true
+    yandex: true
+    youtube: true
+querylog:
+  enabled: true
+  file_enabled: true
+  ignored: []
+  ignored_enabled: false
+  interval: 90d
+  size_memory: 1000
+statistics:
+  enabled: true
+  ignored: []
+  ignored_enabled: false
+  interval: 1d
+tls:
+  enabled: false
+filters:
+{% for dns_filter in adguard_dns_filters %}
+  - enabled: {{ dns_filter.enabled | lower }}
+    url: {{ dns_filter.url }}
+    name: "{{ dns_filter.name }}"
+    id: {{ dns_filter.id }}
+{% endfor %}
+os:
+  group: ""
+  rlimit_nofile: 0
+  user: ""

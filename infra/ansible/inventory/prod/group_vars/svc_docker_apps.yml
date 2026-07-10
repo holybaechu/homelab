@@ -1,33 +1,88 @@
 docker_apps_compose_root: /opt/homelab-compose
-docker_apps_data_root: /srv/docker-apps
-docker_apps_public_path: /public
-docker_apps_downloads_path: /downloads
-docker_apps_shared_readonly_path: /shared-readonly
-docker_apps_minecraft_path: /minecraft
-
+docker_apps_data_root: /srv/homelab
 docker_apps_timezone: "{{ homelab_timezone }}"
-docker_apps_uid: "{{ docker_apps_service_uid }}"
-docker_apps_gid: "{{ docker_apps_service_gid }}"
+docker_apps_uid: "{{ service_uid }}"
+docker_apps_gid: "{{ service_gid }}"
 
 traefik_acme_email: holybaechu@proton.me
 traefik_domain: hchu.me
 traefik_private_domain: home.hchu.me
 traefik_proxy_network: homelab_proxy
+cloudflare_ddns_domains: home.hchu.me
+
+adguard_admin_username: admin
+adguard_admin_port: 3000
+adguard_dns_port: 53
+adguard_upstream_dns:
+  - tls://1.1.1.1
+  - tls://1.0.0.1
+adguard_bootstrap_dns:
+  - 1.1.1.1
+  - 1.0.0.1
+adguard_fallback_dns:
+  - 1.1.1.1
+  - 1.0.0.1
+adguard_dns_filters:
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_48.txt
+    name: HaGeZi's Pro Blocklist
+    id: 48
+
+proton_server_country: Japan
+proton_wireguard_address: 10.2.0.2/32
+qbittorrent_webui_username: holybaechu
 copyparty_listen_port: 3923
 
-# Compose projects are copied from the tracked repo and receive host-rendered
-# .env files from templates under roles/docker_compose_project/templates/.
+minecraft_version: 26.1.2
+minecraft_memory: 3G
+minecraft_max_players: 10
+minecraft_motd: hchu.me Minecraft
+
+hermes_uid: "{{ hermes_service_uid }}"
+hermes_gid: "{{ hermes_service_gid }}"
+hermes_discord_require_mention: true
+hermes_discord_ignore_no_mention: true
+hermes_discord_home_channel: "{{ hermes_discord_allowed_users }}"
+hermes_honcho_environment: production
+hermes_newrrow_username_ref: op://Hermes/Newrrow/username
+hermes_newrrow_password_ref: op://Hermes/Newrrow/password
+
+backup_interval_seconds: 86400
+backup_aws_default_region: auto
+backup_keep_daily: 7
+backup_keep_weekly: 5
+backup_keep_monthly: 12
+
 docker_compose_projects:
-  - name: traefik
-    src: apps/compose/traefik
-    dest: "{{ docker_apps_compose_root }}/traefik"
-    env_template: traefik.env.j2
+  - name: platform
+    src: apps/compose/platform
+    dest: "{{ docker_apps_compose_root }}/platform"
+    env_template: platform.env.j2
+    config_templates:
+      - src: AdGuardHome.yaml.j2
+        dest: AdGuardHome.yaml
+        mode: "0600"
   - name: media
     src: apps/compose/media
     dest: "{{ docker_apps_compose_root }}/media"
     env_template: media.env.j2
-    copyparty_config_template: copyparty.conf.j2
+    config_templates:
+      - src: copyparty.conf.j2
+        dest: copyparty.conf
+        mode: "0600"
   - name: game
     src: apps/compose/game
     dest: "{{ docker_apps_compose_root }}/game"
     env_template: game.env.j2
+    config_templates:
+      - src: velocity.toml.j2
+        dest: /srv/homelab/minecraft/velocity/velocity.toml
+        mode: "0644"
+  - name: hermes
+    src: apps/compose/hermes
+    dest: "{{ docker_apps_compose_root }}/hermes"
+    env_template: hermes.env.j2
+  - name: backup
+    src: apps/compose/backup
+    dest: "{{ docker_apps_compose_root }}/backup"
+    env_template: backup.env.j2

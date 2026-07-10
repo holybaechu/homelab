@@ -1,15 +1,18 @@
 # Media Compose Project
 
-Runs qBittorrent behind gluetun and Copyparty on the same Docker host so
-shared storage can use direct bind-mount modes instead of cross-LXC ACLs.
+Gluetun owns the network namespace used by qBittorrent. Proton WireGuard port
+forwarding is enabled natively and Gluetun updates qBittorrent through its
+loopback Web API whenever the forwarded port changes; no custom WireGuard,
+server-selection, NAT-PMP, or killswitch script remains.
 
-Storage policy:
+Bind mounts are used for data that is shared, backed up, migrated, or inspected
+outside a single container:
 
-- qBittorrent mounts `/downloads` read-write.
-- qBittorrent mounts `/public` read-write so public content can keep seeding.
-- Copyparty mounts `/srv/downloads` read-only from `/downloads/complete`.
-- Copyparty mounts `/srv/shared-readonly` read-only.
-- Copyparty mounts `/srv/public` read-write for the existing admin/upload model.
+- `/srv/homelab/downloads` is read-write in qBittorrent.
+- `/srv/homelab/copyparty/public` is read-write in both qBittorrent and
+  Copyparty so public torrents can continue seeding.
+- completed downloads and the shared-readonly tree are read-only in Copyparty.
+- qBittorrent and Copyparty configuration/state are bind mounts so native-LXC
+  state can be migrated and backed up.
 
-Copyparty user data keeps plaintext `password` entries in `COPYPARTY_USERS_JSON`.
-Do not change to hashed-password entries unless explicitly requested.
+Opaque Gluetun runtime state uses a named volume.

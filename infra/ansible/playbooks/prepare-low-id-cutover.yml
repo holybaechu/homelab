@@ -1,0 +1,9 @@
+---
+- name: Prepare the one-time lowest-ID LXC cutover
+  hosts: pve_hosts
+  gather_facts: false
+  roles:
+    - pve_retire_legacy_lxcs
+    - pve_homelab_storage
+    - pve_pre_cutover_backup
+    - pve_prepare_low_id_cutover

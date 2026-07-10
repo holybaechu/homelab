@@ -2,25 +2,27 @@ name: game
 
 services:
   paper:
-    image: itzg/minecraft-server:java21
+    image: itzg/minecraft-server:2026.5.4-java25
     restart: unless-stopped
     env_file: .env
     environment:
       EULA: "TRUE"
       TYPE: PAPER
+      VERSION: "${MINECRAFT_VERSION:-26.1.2}"
       MEMORY: "${MINECRAFT_MEMORY:-3G}"
       MOTD: "${MINECRAFT_MOTD:-hchu.me Minecraft}"
       MAX_PLAYERS: "${MINECRAFT_MAX_PLAYERS:-10}"
       ONLINE_MODE: "FALSE"
+      SERVER_PORT: "25565"
     volumes:
-      - /minecraft/paper:/data:rw
+      - /srv/homelab/minecraft/paper:/data:rw
     networks:
       - minecraft
     labels:
       - homelab.optional=true
 
   velocity:
-    image: itzg/mc-proxy:java21
+    image: itzg/mc-proxy:2025.10.0-java21
     restart: unless-stopped
     env_file: .env
     environment:
@@ -32,7 +34,7 @@ services:
       - "25565:25565/tcp"
       - "19132:19132/udp"
     volumes:
-      - /minecraft/velocity:/server:rw
+      - /srv/homelab/minecraft/velocity:/server:rw
     networks:
       - minecraft
     labels:

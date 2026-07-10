@@ -1,0 +1,116 @@
+---
+- name: Inspect each lowest-ID target and its current source
+  ansible.builtin.shell: |
+    set -eu
+    target_vmid="{{ item.target_vmid }}"
+    source_vmid="{{ item.source_vmid }}"
+    target_hostname=""
+
+    if pct config "$target_vmid" >/dev/null 2>&1; then
+      target_hostname="$(pct config "$target_vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+      if [ "$target_hostname" = "{{ item.desired_name }}" ]; then
+        echo cutover_required=no
+        echo legacy_present=no
+        exit 0
+      fi
+      if [ "$target_hostname" != "{{ item.legacy_name }}" ]; then
+        printf 'Refusing VMID %s: expected hostname {{ item.legacy_name }} or {{ item.desired_name }}, found %s\n' \
+          "$target_vmid" "$target_hostname" >&2
+        exit 1
+      fi
+      echo legacy_present=yes
+    else
+      echo legacy_present=no
+    fi
+
+    if ! pct config "$source_vmid" >/dev/null 2>&1; then
+      printf 'Cannot populate VMID %s: source VMID %s is missing\n' \
+        "$target_vmid" "$source_vmid" >&2
+      exit 1
+    fi
+    source_hostname="$(pct config "$source_vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+    if [ "$source_hostname" != "{{ item.desired_name }}" ]; then
+      printf 'Refusing source VMID %s: expected hostname {{ item.desired_name }}, found %s\n' \
+        "$source_vmid" "$source_hostname" >&2
+      exit 1
+    fi
+    echo cutover_required=yes
+  args:
+    executable: /bin/sh
+  loop: "{{ low_id_cutover_mappings }}"
+  loop_control:
+    label: "{{ item.source_vmid }} -> {{ item.target_vmid }}"
+  register: low_id_cutover_inspection
+  changed_when: false
+
+- name: Require explicit cutover and verified data backup
+  ansible.builtin.assert:
+    that:
+      - low_id_cutover_confirmed | default(false) | bool
+      - low_id_data_backup_confirmed | default(false) | bool
+    fail_msg: >-
+      Lowest-ID replacement is destructive. Complete and verify the qBittorrent
+      and Copyparty Restic backup must succeed before replacement, and
+      LOW_ID_CUTOVER_CONFIRMED must be true in the prod GitHub environment.
+  loop: "{{ low_id_cutover_inspection.results }}"
+  loop_control:
+    label: "{{ item.item.source_vmid }} -> {{ item.item.target_vmid }}"
+  when: "'cutover_required=yes' in item.stdout"
+
+- name: Back up source LXCs before replacement
+  ansible.builtin.command:
+    argv:
+      - vzdump
+      - "{{ item.item.source_vmid | string }}"
+      - --storage
+      - "{{ low_id_cutover_backup_storage }}"
+      - --mode
+      - stop
+      - --compress
+      - zstd
+      - --notes-template
+      - "pre-low-id-cutover-{{ item.item.desired_name }}"
+  loop: "{{ low_id_cutover_inspection.results }}"
+  loop_control:
+    label: "{{ item.item.desired_name }} source ({{ item.item.source_vmid }})"
+  when: "'cutover_required=yes' in item.stdout"
+  changed_when: true
+
+- name: Back up legacy LXCs occupying the target IDs
+  ansible.builtin.command:
+    argv:
+      - vzdump
+      - "{{ item.item.target_vmid | string }}"
+      - --storage
+      - "{{ low_id_cutover_backup_storage }}"
+      - --mode
+      - stop
+      - --compress
+      - zstd
+      - --notes-template
+      - "pre-low-id-cutover-{{ item.item.legacy_name }}"
+  loop: "{{ low_id_cutover_inspection.results }}"
+  loop_control:
+    label: "{{ item.item.legacy_name }} target ({{ item.item.target_vmid }})"
+  when:
+    - "'cutover_required=yes' in item.stdout"
+    - "'legacy_present=yes' in item.stdout"
+  changed_when: true
+
+- name: Destroy only hostname-verified legacy target occupants
+  ansible.builtin.command:
+    argv:
+      - pct
+      - destroy
+      - "{{ item.item.target_vmid | string }}"
+      - --purge
+      - "1"
+      - --destroy-unreferenced-disks
+      - "1"
+  loop: "{{ low_id_cutover_inspection.results }}"
+  loop_control:
+    label: "{{ item.item.legacy_name }} ({{ item.item.target_vmid }})"
+  when:
+    - "'cutover_required=yes' in item.stdout"
+    - "'legacy_present=yes' in item.stdout"
+  changed_when: true

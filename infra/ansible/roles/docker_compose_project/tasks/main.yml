@@ -1,11 +1,89 @@
 ---
-- name: Create Compose root directory
+- name: Require application and backup secrets
+  ansible.builtin.assert:
+    that:
+      - cloudflare_traefik_token is defined and cloudflare_traefik_token | length > 0
+      - cloudflare_ddns_token is defined and cloudflare_ddns_token | length > 0
+      - adguard_admin_password is defined and adguard_admin_password | length > 0
+      - proton_wireguard_private_key is defined and proton_wireguard_private_key | length > 0
+      - qbittorrent_webui_password is defined and qbittorrent_webui_password | length > 0
+      - copyparty_users is defined and copyparty_users | length > 0
+      - hermes_discord_bot_token is defined and hermes_discord_bot_token | length > 0
+      - hermes_discord_allowed_users is defined and hermes_discord_allowed_users | length > 0
+      - hermes_parallel_api_key is defined and hermes_parallel_api_key | length > 0
+      - hermes_firecrawl_api_key is defined and hermes_firecrawl_api_key | length > 0
+      - hermes_browserbase_api_key is defined and hermes_browserbase_api_key | length > 0
+      - hermes_browserbase_project_id is defined and hermes_browserbase_project_id | length > 0
+      - hermes_1password_service_account_token is defined and hermes_1password_service_account_token | length > 0
+      - backup_restic_repository is defined and backup_restic_repository | length > 0
+      - backup_restic_password is defined and backup_restic_password | length > 0
+      - backup_aws_access_key_id is defined and backup_aws_access_key_id | length > 0
+      - backup_aws_secret_access_key is defined and backup_aws_secret_access_key | length > 0
+    fail_msg: Configure every required prod secret before deploying the consolidated Compose host.
+  no_log: true
+
+- name: Validate Copyparty account shape
+  ansible.builtin.assert:
+    that:
+      - copyparty_users | selectattr('name', 'defined') | list | length == copyparty_users | length
+      - copyparty_users | selectattr('password', 'defined') | list | length == copyparty_users | length
+      - copyparty_users | selectattr('password_hash', 'defined') | list | length == 0
+    fail_msg: Copyparty accounts must contain name and plaintext password fields; Ansible protects the rendered config.
+  no_log: true
+
+- name: Require the Proxmox homelab bind mount before writing application data
+  ansible.builtin.command: mountpoint -q /srv/homelab
+  changed_when: false
+
+- name: Check for superseded Traefik Compose project
+  ansible.builtin.stat:
+    path: "{{ docker_apps_compose_root }}/traefik/compose.yml"
+  register: retired_traefik_compose
+
+- name: Stop superseded Traefik Compose project before platform takeover
+  ansible.builtin.command:
+    cmd: docker compose stop
+    chdir: "{{ docker_apps_compose_root }}/traefik"
+  when: retired_traefik_compose.stat.exists
+  changed_when: true
+
+- name: Remove superseded Traefik containers while preserving the shared network
+  ansible.builtin.command:
+    cmd: docker compose rm -f
+    chdir: "{{ docker_apps_compose_root }}/traefik"
+  when: retired_traefik_compose.stat.exists
+  changed_when: true
+
+- name: Check shared Traefik proxy network
+  ansible.builtin.command: docker network inspect homelab_proxy
+  register: homelab_proxy_network
+  changed_when: false
+  failed_when: homelab_proxy_network.rc not in [0, 1]
+
+- name: Create shared Traefik proxy network
+  ansible.builtin.command: docker network create homelab_proxy
+  when: homelab_proxy_network.rc != 0
+  changed_when: true
+
+- name: Create Compose and bind-mount directories
   ansible.builtin.file:
-    path: "{{ docker_apps_compose_root }}"
+    path: "{{ item.path }}"
     state: directory
-    owner: root
-    group: root
-    mode: "0755"
+    owner: "{{ item.owner | default(service_uid) }}"
+    group: "{{ item.group | default(service_gid) }}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop:
+    - {path: "{{ docker_apps_compose_root }}", owner: root, group: root}
+    - {path: /srv/homelab/docker-apps/qbittorrent/qBittorrent, mode: "0700"}
+    - {path: /srv/homelab/docker-apps/copyparty}
+    - {path: /srv/homelab/downloads/complete}
+    - {path: /srv/homelab/downloads/incomplete}
+    - {path: /srv/homelab/copyparty/public}
+    - {path: /srv/homelab/copyparty/shared-readonly}
+    - {path: /srv/homelab/minecraft/paper}
+    - {path: /srv/homelab/minecraft/velocity}
+    - {path: /srv/homelab/hermes/home, owner: "{{ hermes_uid }}", group: "{{ hermes_gid }}"}
+    - {path: /srv/homelab/hermes/workspace, owner: "{{ hermes_uid }}", group: "{{ hermes_gid }}"}
 
 - name: Create Compose project directories
   ansible.builtin.file:
@@ -30,6 +108,134 @@
     label: "{{ item.name }}"
   notify: Restart Compose project
 
+- name: Read existing AdGuard admin password hash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        from pathlib import Path
+        import sys
+        path = Path(sys.argv[1])
+        username = sys.argv[2]
+        if path.exists():
+            lines = path.read_text(encoding="utf-8").splitlines()
+            for index, line in enumerate(lines):
+                if line.strip().startswith("- name:") and line.split(":", 1)[1].strip().strip("'\"") == username:
+                    for candidate in lines[index + 1:index + 4]:
+                        if candidate.strip().startswith("password:"):
+                            print(candidate.split(":", 1)[1].strip().strip('"'))
+                            raise SystemExit(0)
+        print("")
+      - "{{ docker_apps_compose_root }}/platform/AdGuardHome.yaml"
+      - "{{ adguard_admin_username }}"
+  register: adguard_existing_admin_hash
+  changed_when: false
+  no_log: true
+
+- name: Verify existing AdGuard admin password hash
+  ansible.builtin.shell: |
+    set -eu
+    tmp="$(mktemp)"
+    trap 'rm -f "${tmp}"' EXIT
+    printf '%s:%s\n' "$ADGUARD_ADMIN_USERNAME" "$ADGUARD_ADMIN_HASH" > "$tmp"
+    htpasswd -vb "$tmp" "$ADGUARD_ADMIN_USERNAME" "$ADGUARD_ADMIN_PASSWORD" >/dev/null
+  args:
+    executable: /bin/sh
+  environment:
+    ADGUARD_ADMIN_USERNAME: "{{ adguard_admin_username }}"
+    ADGUARD_ADMIN_HASH: "{{ adguard_existing_admin_hash.stdout }}"
+    ADGUARD_ADMIN_PASSWORD: "{{ adguard_admin_password }}"
+  register: adguard_existing_admin_hash_verify
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: adguard_existing_admin_hash.stdout | length > 0
+
+- name: Hash AdGuard admin password when rotation is required
+  ansible.builtin.command:
+    argv:
+      - htpasswd
+      - -B
+      - -C
+      - "10"
+      - -n
+      - -b
+      - "{{ adguard_admin_username }}"
+      - "{{ adguard_admin_password }}"
+  register: adguard_admin_htpasswd
+  changed_when: false
+  no_log: true
+  when: (adguard_existing_admin_hash_verify.rc | default(1)) != 0
+
+- name: Generate deterministic qBittorrent Web UI password hash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import base64, hashlib, sys
+        password = sys.argv[1].encode()
+        salt = hashlib.sha256(password + b":qbittorrent-webui").digest()[:16]
+        digest = hashlib.pbkdf2_hmac("sha512", password, salt, 100000)
+        print("@ByteArray(%s:%s)" % (
+            base64.b64encode(salt).decode(), base64.b64encode(digest).decode()
+        ))
+      - "{{ qbittorrent_webui_password }}"
+  register: qbittorrent_webui_password_hash
+  changed_when: false
+  no_log: true
+
+- name: Set service password hash facts
+  ansible.builtin.set_fact:
+    adguard_admin_password_hash: >-
+      {{ adguard_existing_admin_hash.stdout
+      if (adguard_existing_admin_hash_verify.rc | default(1)) == 0
+      else adguard_admin_htpasswd.stdout.split(':', 1)[1] }}
+    qbittorrent_webui_password_pbkdf2: "{{ qbittorrent_webui_password_hash.stdout }}"
+  no_log: true
+
+- name: Render qBittorrent configuration candidate
+  ansible.builtin.template:
+    src: qBittorrent.conf.j2
+    dest: /tmp/qBittorrent.conf.candidate
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    mode: "0600"
+  changed_when: false
+  no_log: true
+
+- name: Compare qBittorrent configuration candidate
+  ansible.builtin.shell: |
+    test -f /srv/homelab/docker-apps/qbittorrent/qBittorrent/qBittorrent.conf \
+      && cmp -s /tmp/qBittorrent.conf.candidate \
+        /srv/homelab/docker-apps/qbittorrent/qBittorrent/qBittorrent.conf
+  args:
+    executable: /bin/sh
+  register: qbittorrent_config_compare
+  failed_when: qbittorrent_config_compare.rc not in [0, 1]
+  changed_when: false
+  no_log: true
+
+- name: Stop qBittorrent before replacing changed configuration
+  ansible.builtin.command:
+    cmd: docker compose stop qbittorrent
+    chdir: "{{ docker_apps_compose_root }}/media"
+  when: qbittorrent_config_compare.rc != 0
+  failed_when: false
+  changed_when: true
+
+- name: Install managed qBittorrent configuration
+  ansible.builtin.copy:
+    src: /tmp/qBittorrent.conf.candidate
+    dest: /srv/homelab/docker-apps/qbittorrent/qBittorrent/qBittorrent.conf
+    remote_src: true
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    mode: "0600"
+  when: qbittorrent_config_compare.rc != 0
+  no_log: true
+
 - name: Render Compose project environment files
   ansible.builtin.template:
     src: "{{ item.env_template }}"
@@ -40,40 +246,42 @@
   loop: "{{ docker_compose_projects }}"
   loop_control:
     label: "{{ item.name }}"
-  when: item.env_template is defined
   no_log: true
   notify: Restart Compose project
 
-- name: Render media Copyparty config with plaintext password accounts
+- name: Render managed application configuration
   ansible.builtin.template:
-    src: "{{ item.copyparty_config_template }}"
-    dest: "{{ item.dest }}/copyparty.conf"
-    owner: root
-    group: root
-    mode: "0600"
-  loop: "{{ docker_compose_projects }}"
+    src: "{{ item.1.src }}"
+    dest: "{{ item.1.dest if item.1.dest.startswith('/') else item.0.dest + '/' + item.1.dest }}"
+    owner: "{{ item.1.owner | default(service_uid) }}"
+    group: "{{ item.1.group | default(service_gid) }}"
+    mode: "{{ item.1.mode | default('0644') }}"
+  loop: "{{ docker_compose_projects | subelements('config_templates', skip_missing=True) }}"
   loop_control:
-    label: "{{ item.name }}"
-  when: item.copyparty_config_template is defined
+    label: "{{ item.0.name }}:{{ item.1.dest }}"
   no_log: true
   notify: Restart Compose project
 
 - name: Pull Compose project images
   ansible.builtin.command:
-    cmd: docker compose pull
+    cmd: docker compose pull --ignore-buildable
     chdir: "{{ item.dest }}"
   loop: "{{ docker_compose_projects }}"
   loop_control:
     label: "{{ item.name }}"
-  changed_when: "'Downloaded newer image' in docker_compose_pull.stdout or 'Pull complete' in docker_compose_pull.stdout"
-  register: docker_compose_pull
+  changed_when: false
 
-- name: Start Compose projects
+- name: Build and start Compose projects in dependency order
   ansible.builtin.command:
-    cmd: docker compose up -d --remove-orphans
+    cmd: docker compose up -d --build --remove-orphans
     chdir: "{{ item.dest }}"
   loop: "{{ docker_compose_projects }}"
   loop_control:
     label: "{{ item.name }}"
   register: docker_compose_up
-  changed_when: "'Creating' in docker_compose_up.stdout or 'Recreating' in docker_compose_up.stdout or 'Started' in docker_compose_up.stdout or 'Removed orphan' in docker_compose_up.stdout"
+  changed_when: >-
+    'Creating' in docker_compose_up.stdout or
+    'Recreating' in docker_compose_up.stdout or
+    'Started' in docker_compose_up.stdout or
+    'Removed orphan' in docker_compose_up.stdout or
+    'Building' in docker_compose_up.stdout

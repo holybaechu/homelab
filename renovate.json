@@ -6,13 +6,11 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Update inline Renovate-managed runtime pins",
+      "description": "Update inline Renovate-managed CI pins",
       "managerFilePatterns": [
         "/^\\.github\\/workflows\\/(ci|cd)\\.yml$/",
         "/^scripts\\/ci\\/install-tools\\.sh$/",
-        "/^scripts\\/ci\\/install-opentofu\\.sh$/",
-        "/^infra\\/ansible\\/inventory\\/prod\\/group_vars\\/svc_(edge|dns|downloads)\\.yml$/",
-        "/^infra\\/ansible\\/roles\\/copyparty\\/tasks\\/main\\.yml$/"
+        "/^scripts\\/ci\\/install-opentofu\\.sh$/"
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?(?: extractVersion=(?<extractVersion>\\S+))?\\s+[^\\n]*?(?<currentValue>\\d+(?:\\.\\d+)+)"
@@ -25,11 +23,6 @@
       "matchCurrentVersion": "!/^0/",
       "automerge": true,
       "platformAutomerge": true
-    },
-    {
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["linuxserver/qbittorrent"],
-      "allowedVersions": "<14.3.9"
     }
   ]
 }

@@ -13,7 +13,7 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     for secret_name in (
         "PROXMOX_API_TOKEN",
         "DEPLOY_SSH_PRIVATE_KEY",
-        "CLOUDFLARE_CADDY_TOKEN",
+        "CLOUDFLARE_TRAEFIK_TOKEN",
         "PROTON_WIREGUARD_PRIVATE_KEY",
         "HERMES_DISCORD_BOT_TOKEN",
         "COPYPARTY_USERS_JSON",
@@ -21,6 +21,7 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
         assert f"{secret_name}:" not in job_env
 
     assert "python3 scripts/ci/write_ansible_extra_vars.py" in workflow
+    assert workflow.index("Validate and write Ansible service secrets") < workflow.index("OpenTofu plan")
     assert "${{ runner.temp }}/ansible-extra-vars.json" in workflow
     assert "ADGUARD_ADMIN_PASSWORD:" in workflow
     assert "COPYPARTY_USERS_JSON:" in workflow
@@ -192,9 +193,12 @@ def test_tofu_apply_is_guarded_against_destroying_lxcs():
         encoding="utf-8"
     )
 
-    assert "prevent_destroy = true" in module
+    assert "prevent_destroy = true" not in module
     assert "tofu show -json prod.tfplan" in plan_script
     assert "check_tofu_plan_safe.py" in plan_script
+    assert "APPROVED_LOW_ID_RENUMBER" in guard_script
+    assert "(117, 110)" in guard_script
+    assert "(112, 111)" in guard_script
     assert "ALLOW_TOFU_DESTROY" in guard_script
     assert "ALLOW_EMPTY_STATE_BOOTSTRAP" in guard_script
     assert '"delete" in actions' in guard_script
@@ -282,7 +286,7 @@ def test_inventory_uses_service_group_names_to_avoid_host_group_warnings():
     inventory = (REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "hosts.yml").read_text(encoding="utf-8")
     site = (REPO_ROOT / "infra" / "ansible" / "playbooks" / "site.yml").read_text(encoding="utf-8")
 
-    for group in ("svc_edge", "svc_dns", "svc_tailnet", "svc_downloads", "svc_files", "svc_minecraft", "svc_hermes"):
+    for group in ("svc_tailnet", "svc_docker_apps"):
         assert f"    {group}:" in inventory
         assert f"hosts: {group}" in site
     for old_group in ("edge", "dns", "downloads", "hermes", "minecraft", "tailnet", "files"):

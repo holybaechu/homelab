@@ -16,10 +16,6 @@ secrets/*.sops.yml
 secrets/*.agekey
 !secrets/README.md
 
-apps/dns/AdGuardHome.yaml
-apps/downloads/vpn/*.conf
-apps/downloads/qbittorrent/profile/
-
 *.retry
 __pycache__/
 .pytest_cache/

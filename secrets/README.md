@@ -4,9 +4,7 @@ Store real service secrets in SOPS-encrypted files or GitHub Actions secrets.
 
 Expected encrypted values:
 
-- `cloudflare_caddy_token`
-- `cloudflare_zone_id`
-- `cloudflare_adguard_acme_token`
+- `cloudflare_traefik_token`
 - `cloudflare_ddns_token`
 - `proton_wireguard_private_key`
 - `tailscale_auth_key`
@@ -20,10 +18,11 @@ Expected encrypted values:
 - `hermes_browserbase_project_id`
 - `hermes_honcho_api_key`, optional Honcho Cloud API key; required only when `hermes_memory_provider` is explicitly set to `honcho`
 - `hermes_1password_service_account_token`
-- `hermes_config_repo_token`, a fine-scoped GitHub token that can read and push `holybaechu/hermes-config`
-- `hermes_config_webhook_secret`, the shared HMAC secret for GitHub push webhooks into the Hermes config sync receiver
 - `copyparty_users`, as a list of account objects with `name` and `password`
 - `adguard_admin_password`, as plaintext; the AdGuard role hashes it before writing the service config
+- `backup_restic_repository`, the off-host S3-compatible Restic repository URL
+- `backup_restic_password`, the Restic repository encryption password
+- `backup_aws_access_key_id` and `backup_aws_secret_access_key`, credentials scoped to the backup bucket
 
 Non-secret deployment values:
 
@@ -32,7 +31,11 @@ Non-secret deployment values:
 - `hermes_memory_provider`, empty by default for built-in memory; set to `honcho` only when intentionally enabling Honcho-backed memory
 - `hermes_honcho_environment`, defaults to `production` and is rendered as `HONCHO_ENVIRONMENT`
 
-GitHub Actions secret names for the Hermes web, browser, Honcho, 1Password, and hermes-config GitOps backends are `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, optional `HONCHO_API_KEY`, `OP_SERVICE_ACCOUNT_TOKEN`, `HERMES_CONFIG_REPO_TOKEN`, and `HERMES_CONFIG_WEBHOOK_SECRET`; the CD helper maps them to `hermes_parallel_api_key`, `hermes_firecrawl_api_key`, `hermes_browserbase_api_key`, `hermes_browserbase_project_id`, optional `hermes_honcho_api_key`, `hermes_1password_service_account_token`, `hermes_config_repo_token`, and `hermes_config_webhook_secret` for Ansible.
+GitHub Actions secret names for the Hermes web, browser, Honcho, and 1Password backends are `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, optional `HONCHO_API_KEY`, and `OP_SERVICE_ACCOUNT_TOKEN`; the CD helper maps them to the matching Ansible variables.
+
+GitHub Actions backup secret names are `BACKUP_RESTIC_REPOSITORY`,
+`BACKUP_RESTIC_PASSWORD`, `BACKUP_AWS_ACCESS_KEY_ID`, and
+`BACKUP_AWS_SECRET_ACCESS_KEY`.
 
 Do not commit decrypted secret files.
 
