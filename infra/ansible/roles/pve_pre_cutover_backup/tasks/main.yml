@@ -44,7 +44,7 @@
     RESTIC_PASSWORD: "{{ backup_restic_password }}"
     AWS_ACCESS_KEY_ID: "{{ backup_aws_access_key_id }}"
     AWS_SECRET_ACCESS_KEY: "{{ backup_aws_secret_access_key }}"
-    AWS_DEFAULT_REGION: "{{ backup_aws_default_region }}"
+    AWS_DEFAULT_REGION: "{{ backup_aws_default_region | default('auto') }}"
   register: pre_cutover_restic_probe
   changed_when: false
   failed_when: false
