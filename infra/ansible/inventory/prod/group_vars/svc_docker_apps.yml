@@ -15,6 +15,39 @@ traefik_private_domain: home.hchu.me
 traefik_proxy_network: homelab_proxy
 copyparty_listen_port: 3923
 
+adguard_image: adguard/adguardhome:v0.107.77
+adguard_admin_port: 3000
+adguard_dns_port: 53
+adguard_https_port: 443
+adguard_dot_port: 853
+adguard_cert_domain: adguard.home.hchu.me
+adguard_host_work_dir: "{{ docker_apps_data_root }}/adguard/work"
+adguard_host_conf_dir: "{{ docker_apps_data_root }}/adguard/conf"
+adguard_host_tls_dir: "{{ docker_apps_data_root }}/adguard/tls"
+adguard_host_lego_path: "{{ docker_apps_data_root }}/adguard/lego"
+adguard_acme_env_path: /etc/homelab/adguard-acme.env
+adguard_container_tls_dir: /opt/adguardhome/tls
+adguard_acme_interval_seconds: 43200
+adguard_upstream_dns:
+  - tls://1.1.1.1
+  - tls://1.0.0.1
+adguard_bootstrap_dns:
+  - 1.1.1.1
+  - 1.0.0.1
+adguard_fallback_dns:
+  - 1.1.1.1
+  - 1.0.0.1
+adguard_trusted_proxies:
+  - 127.0.0.0/8
+  - ::1/128
+  - 172.16.0.0/12
+  - "{{ docker_apps_ip }}/32"
+adguard_dns_filters:
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_48.txt
+    name: HaGeZi's Pro Blocklist
+    id: 48
+
 # Compose projects are copied from the tracked repo and receive host-rendered
 # .env files from templates under roles/docker_compose_project/templates/.
 docker_compose_projects:
@@ -22,6 +55,12 @@ docker_compose_projects:
     src: apps/compose/traefik
     dest: "{{ docker_apps_compose_root }}/traefik"
     env_template: traefik.env.j2
+  - name: dns
+    src: apps/compose/dns
+    dest: "{{ docker_apps_compose_root }}/dns"
+    env_template: dns.env.j2
+    adguard_config_template: adguardhome.yaml.j2
+    adguard_acme: true
   - name: media
     src: apps/compose/media
     dest: "{{ docker_apps_compose_root }}/media"

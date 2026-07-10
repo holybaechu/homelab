@@ -54,6 +54,10 @@
       "${mount_path}/copyparty/shared-readonly" \
       "${mount_path}/copyparty/downloads" \
       "${mount_path}/docker-apps/traefik" \
+      "${mount_path}/docker-apps/adguard/work" \
+      "${mount_path}/docker-apps/adguard/conf" \
+      "${mount_path}/docker-apps/adguard/tls" \
+      "${mount_path}/docker-apps/adguard/lego" \
       "${mount_path}/docker-apps/qbittorrent" \
       "${mount_path}/docker-apps/gluetun" \
       "${mount_path}/docker-apps/copyparty" \
@@ -68,7 +72,7 @@
       chown -R {{ homelab_container_uid_offset + docker_apps_service_uid }}:{{ homelab_container_uid_offset + docker_apps_service_gid }} "${mount_path}/docker-apps" "${mount_path}/minecraft"
       chmod 0755 "${mount_path}" "${mount_path}/downloads" "${mount_path}/downloads/complete" "${mount_path}/downloads/incomplete" "${mount_path}/copyparty"
       chmod 0755 "${mount_path}/copyparty/public" "${mount_path}/copyparty/shared-readonly" "${mount_path}/copyparty/downloads"
-      chmod 0755 "${mount_path}/docker-apps" "${mount_path}/docker-apps/traefik" "${mount_path}/docker-apps/qbittorrent" "${mount_path}/docker-apps/gluetun" "${mount_path}/docker-apps/copyparty" "${mount_path}/minecraft"
+      chmod 0755 "${mount_path}/docker-apps" "${mount_path}/docker-apps/traefik" "${mount_path}/docker-apps/adguard" "${mount_path}/docker-apps/adguard/work" "${mount_path}/docker-apps/adguard/conf" "${mount_path}/docker-apps/adguard/tls" "${mount_path}/docker-apps/adguard/lego" "${mount_path}/docker-apps/qbittorrent" "${mount_path}/docker-apps/gluetun" "${mount_path}/docker-apps/copyparty" "${mount_path}/minecraft"
       chmod 0755 "${mount_path}/hermes" "${mount_path}/hermes/home" "${mount_path}/hermes/workspace"
       find "${mount_path}/copyparty/public" -type d -exec chmod 0755 {} +
       find "${mount_path}/copyparty/public" -type f -exec chmod 0644 {} +

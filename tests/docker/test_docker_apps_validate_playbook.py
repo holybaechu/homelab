@@ -10,5 +10,8 @@ def test_validate_playbook_checks_docker_apps_compose_projects():
     assert "docker network inspect {{ traefik_proxy_network }}" in validate
     assert "docker compose config" in validate
     assert "docker compose ps --services" in validate
+    assert "expected=\"adguard\"" in validate
     assert "gluetun qbittorrent copyparty" in validate
     assert "paper velocity" in validate
+    assert "Check Docker AdGuard DNS TCP port" in validate
+    assert "Check Docker AdGuard DNS-over-TLS TCP port" in validate

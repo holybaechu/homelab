@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew AdGuard Home certificate for Docker Compose DNS periodically
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec={{ adguard_acme_interval_seconds }}s
+Persistent=true
+Unit=adguard-acme.service
+
+[Install]
+WantedBy=timers.target

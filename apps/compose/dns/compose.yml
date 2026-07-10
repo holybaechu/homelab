@@ -1,0 +1,30 @@
+name: dns
+
+services:
+  adguard:
+    image: ${ADGUARD_IMAGE:-adguard/adguardhome:v0.107.77}
+    restart: unless-stopped
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "853:853/tcp"
+      - "853:853/udp"
+    volumes:
+      - /srv/docker-apps/adguard/work:/opt/adguardhome/work:rw
+      - /srv/docker-apps/adguard/conf:/opt/adguardhome/conf:rw
+      - /srv/docker-apps/adguard/tls:/opt/adguardhome/tls:ro
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.adguard.rule=Host(`adguard.home.hchu.me`)
+      - traefik.http.routers.adguard.entrypoints=websecure
+      - traefik.http.routers.adguard.tls.certresolver=cloudflare
+      - traefik.http.routers.adguard.middlewares=private-only@file,secure-headers@file
+      - traefik.http.services.adguard.loadbalancer.server.port=3000
+
+networks:
+  proxy:
+    external: true
+    name: homelab_proxy

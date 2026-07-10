@@ -263,6 +263,9 @@
           traefik)
             expected="traefik"
             ;;
+          dns)
+            expected="adguard"
+            ;;
           media)
             expected="gluetun qbittorrent copyparty"
             ;;
@@ -283,6 +286,18 @@
       loop_control:
         label: "{{ item.name }}"
       changed_when: false
+
+    - name: Check Docker AdGuard DNS TCP port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ adguard_dns_port }}"
+        timeout: 10
+
+    - name: Check Docker AdGuard DNS-over-TLS TCP port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ adguard_dot_port }}"
+        timeout: 10
 
 - name: Validate hermes
   hosts: svc_hermes
