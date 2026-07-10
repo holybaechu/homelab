@@ -52,6 +52,9 @@ jobs:
       - name: Check Ansible bootstrap syntax
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/bootstrap.yml --syntax-check
 
+      - name: Check Ansible lowest-ID cutover syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/prepare-low-id-cutover.yml --syntax-check
+
       - name: Check Ansible service syntax
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/site.yml --syntax-check
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PYTEST_TARGETS=(tests/docker tests/edge tests/infra tests/repo)
+PYTEST_TARGETS=(tests/docker tests/infra tests/repo tests/tailnet)
 python3 -m pytest "${PYTEST_TARGETS[@]}" -q
 
 ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/site.yml --syntax-check

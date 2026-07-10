@@ -12,6 +12,10 @@ from typing import Any
 from homelab_topology import expected_lxc_count
 
 LXC_RESOURCE_SUFFIX = ".proxmox_virtual_environment_container.this"
+APPROVED_LOW_ID_RENUMBER = {
+    f'module.active_lxc["docker_apps"]{LXC_RESOURCE_SUFFIX}': (117, 110),
+    f'module.active_lxc["tailnet"]{LXC_RESOURCE_SUFFIX}': (112, 111),
+}
 
 
 def _truthy(value: str | None) -> bool:
@@ -37,11 +41,26 @@ def _actions(resource: dict[str, Any]) -> list[str]:
     return list(resource.get("change", {}).get("actions", []))
 
 
+def _is_approved_low_id_renumber(resource: dict[str, Any]) -> bool:
+    address = resource.get("address", "")
+    expected = APPROVED_LOW_ID_RENUMBER.get(address)
+    if expected is None or _actions(resource) not in (
+        ["delete", "create"],
+        ["create", "delete"],
+    ):
+        return False
+
+    change = resource.get("change", {})
+    before_vmid = (change.get("before") or {}).get("vm_id")
+    after_vmid = (change.get("after") or {}).get("vm_id")
+    return (before_vmid, after_vmid) == expected
+
+
 def _destructive_changes(plan: dict[str, Any]) -> list[str]:
     destructive = []
     for resource in _resource_changes(plan):
         actions = _actions(resource)
-        if "delete" in actions:
+        if "delete" in actions and not _is_approved_low_id_renumber(resource):
             address = resource.get("address", "<unknown>")
             destructive.append(f"{address}: {','.join(actions)}")
     return destructive
@@ -51,7 +70,7 @@ def _create_only_lxc_changes(plan: dict[str, Any]) -> list[str]:
     create_only = []
     for resource in _resource_changes(plan):
         address = resource.get("address", "")
-        if not address.startswith("module.lxc[") or not address.endswith(LXC_RESOURCE_SUFFIX):
+        if not address.startswith("module.active_lxc[") or not address.endswith(LXC_RESOURCE_SUFFIX):
             continue
         if _actions(resource) == ["create"]:
             create_only.append(address)
@@ -67,6 +86,11 @@ def _expected_lxc_count() -> int:
 
 def main(argv: list[str]) -> int:
     plan = _load_plan(argv)
+    approved_renumbers = [
+        resource.get("address", "<unknown>")
+        for resource in _resource_changes(plan)
+        if _is_approved_low_id_renumber(resource)
+    ]
     destructive = _destructive_changes(plan)
 
     if destructive:
@@ -84,6 +108,10 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
+
+    for address in approved_renumbers:
+        old_vmid, new_vmid = APPROVED_LOW_ID_RENUMBER[address]
+        print(f"Approved one-time low-ID renumber: {address} {old_vmid} -> {new_vmid}.")
 
     create_only_lxcs = _create_only_lxc_changes(plan)
     expected_lxcs = _expected_lxc_count()
@@ -104,7 +132,7 @@ def main(argv: list[str]) -> int:
     if create_only_lxcs and _truthy(os.environ.get("ALLOW_EMPTY_STATE_BOOTSTRAP")):
         print("ALLOW_EMPTY_STATE_BOOTSTRAP is set; allowing create-only LXC plan.", file=sys.stderr)
 
-    print("OpenTofu plan safety check passed: no destructive actions.")
+    print("OpenTofu plan safety check passed: no unapproved destructive actions.")
     return 0
 
 

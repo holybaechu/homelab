@@ -3,3 +3,9 @@
   ansible.builtin.systemd:
     name: docker
     state: restarted
+
+- name: Restart systemd-resolved
+  ansible.builtin.systemd:
+    name: systemd-resolved
+    enabled: true
+    state: restarted

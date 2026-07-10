@@ -1,0 +1,62 @@
+name: platform
+
+services:
+  traefik:
+    image: traefik:v3.7.7
+    restart: unless-stopped
+    env_file: .env
+    command:
+      - --configFile=/etc/traefik/traefik.yml
+    ports:
+      - "80:80"
+      - "443:443"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - /etc/ssl/certs/homelab-pve-root-ca.pem:/etc/ssl/certs/homelab-pve-root-ca.pem:ro
+      - traefik_data:/data
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  adguard:
+    image: adguard/adguardhome:v0.107.77
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./AdGuardHome.yaml:/opt/adguardhome/conf/AdGuardHome.yaml:rw
+      - adguard_work:/opt/adguardhome/work
+    healthcheck:
+      test: ["CMD", "/opt/adguardhome/AdGuardHome", "--check-config", "-c", "/opt/adguardhome/conf/AdGuardHome.yaml"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  cloudflare-ddns:
+    image: favonia/cloudflare-ddns:1
+    restart: unless-stopped
+    env_file: .env
+    network_mode: host
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  proxy:
+    external: true
+    name: homelab_proxy
+
+volumes:
+  traefik_data:
+  adguard_work:

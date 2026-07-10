@@ -1,9 +1,0 @@
-[Unit]
-Description=Synchronize live Hermes config repository
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=oneshot
-EnvironmentFile={{ hermes_config_sync_env_path }}
-ExecStart={{ hermes_config_git_sync_path }} --source systemd

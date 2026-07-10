@@ -8,10 +8,10 @@
         set -eu
         config="$(pct config "{{ item.vmid }}")"
         {% for setting in item.settings %}
-        if ! printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
+        printf '%s\n' "$config" | grep -Eq '{{ setting.pattern }}' || {
           printf 'Missing {{ setting.description }} on {{ item.name }} ({{ item.vmid }})\n' >&2
           exit 1
-        fi
+        }
         {% endfor %}
       args:
         executable: /bin/sh
@@ -20,584 +20,161 @@
       loop_control:
         label: "{{ item.name }} ({{ item.vmid }})"
 
-- name: Validate edge
-  hosts: svc_edge
-  gather_facts: false
-  tasks:
-    - name: Validate Caddy config
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          . /etc/conf.d/caddy
-          export CLOUDFLARE_DNS_API_TOKEN XDG_DATA_HOME XDG_CONFIG_HOME HOME
-          caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-        executable: /bin/sh
-      changed_when: false
-
-    - name: Check Caddy service
-      ansible.builtin.command:
-        cmd: rc-service caddy status
-      changed_when: false
-
-- name: Validate DNS
-  hosts: svc_dns
-  gather_facts: false
-  tasks:
-    - name: Check AdGuard service
-      ansible.builtin.command:
-        cmd: rc-service adguardhome status
-      changed_when: false
-
-    - name: Check AdGuard Web UI is served through Caddy TLS route
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          headers="$(curl -fsSI --http1.1 --resolve "adguard.home.hchu.me:443:{{ edge_ip }}" https://adguard.home.hchu.me/login.html)"
-          printf '%s\n' "$headers" | grep -F "HTTP/1.1 200"
-          printf '%s\n' "$headers" | grep -Fi "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload"
-        executable: /bin/sh
-      changed_when: false
-
-    - name: Query AdGuard normal DNS
-      ansible.builtin.command:
-        cmd: drill @127.0.0.1 example.com
-      changed_when: false
-
-    - name: Query AdGuard private home DNS rewrite
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          drill @127.0.0.1 qbt.home.hchu.me A | grep -F "{{ edge_ip }}"
-        executable: /bin/sh
-      changed_when: false
-
 - name: Validate tailnet
   hosts: svc_tailnet
   gather_facts: false
   tasks:
     - name: Check tailscaled service
-      ansible.builtin.command:
-        cmd: systemctl is-active tailscaled
+      ansible.builtin.command: systemctl is-active tailscaled
       changed_when: false
 
     - name: Check Tailscale status
-      ansible.builtin.command:
-        cmd: tailscale status
+      ansible.builtin.command: tailscale status
       changed_when: false
       when: tailscale_auth_key is defined
 
-- name: Validate downloads
-  hosts: svc_downloads
-  gather_facts: false
-  tasks:
-    - name: Check WireGuard service
-      ansible.builtin.command:
-        cmd: systemctl is-active wg-quick@wg-proton
-      changed_when: false
-
-    - name: Check qBittorrent service
-      ansible.builtin.command:
-        cmd: systemctl is-active qbittorrent
-      changed_when: false
-
-    - name: Check qBittorrent Web UI port
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: 8080
-        timeout: 5
-
-    - name: Check Proton NAT-PMP timer
-      ansible.builtin.command:
-        cmd: systemctl is-active proton-natpmp-qbt.timer
-      changed_when: false
-
-- name: Validate files
-  hosts: svc_files
-  gather_facts: false
-  tasks:
-    - name: Check Copyparty service
-      ansible.builtin.command:
-        cmd: rc-service copyparty status
-      changed_when: false
-
-    - name: Check Copyparty port
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: 3923
-        timeout: 5
-
-- name: Validate minecraft service
-  hosts: svc_minecraft
-  gather_facts: false
-  tasks:
-    - name: Check Paper service
-      ansible.builtin.command:
-        cmd: systemctl is-active minecraft-paper
-      register: minecraft_paper_service_status
-      until: minecraft_paper_service_status.stdout == "active"
-      retries: 12
-      delay: 5
-      changed_when: false
-
-    - name: Check Velocity service
-      ansible.builtin.command:
-        cmd: systemctl is-active minecraft-velocity
-      register: minecraft_velocity_service_status
-      until: minecraft_velocity_service_status.stdout == "active"
-      retries: 12
-      delay: 5
-      changed_when: false
-
-    - name: Check Velocity Java port
-      ansible.builtin.wait_for:
-        host: 0.0.0.0
-        port: "{{ minecraft_java_port }}"
-        timeout: 5
-
-    - name: Check Velocity Java port is publicly bound
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          listeners="$(ss -H -ltn "sport = :{{ minecraft_java_port }}")"
-          test -n "$listeners"
-          if ! printf '%s\n' "$listeners" | awk '{ print $4 }' | grep -Eq '^(\*|0\.0\.0\.0|\[::\]|::):{{ minecraft_java_port }}$'; then
-            printf 'Velocity Java listeners are not publicly bound:\n%s\n' "$listeners" >&2
-            exit 1
-          fi
-        executable: /bin/sh
-      changed_when: false
-
-    - name: Check Paper backend port
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: "{{ minecraft_paper_port }}"
-        timeout: 60
-
-    - name: Check Paper backend is bound only to localhost
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          listeners="$(ss -H -ltn "sport = :{{ minecraft_paper_port }}")"
-          test -n "$listeners"
-          addresses="$(printf '%s\n' "$listeners" | awk '{ print $4 }')"
-          paper_loopback_pattern='^(127\.0\.0\.1|\[::1\]|::1|\[0:0:0:0:0:0:0:1\]|0:0:0:0:0:0:0:1|\[::ffff:127\.0\.0\.1\]|::ffff:127\.0\.0\.1):{{ minecraft_paper_port }}$'
-          if ! printf '%s\n' "$addresses" | grep -Eq "$paper_loopback_pattern"; then
-            printf 'Paper backend listeners are not loopback-only:\n%s\n' "$listeners" >&2
-            exit 1
-          fi
-          if public_listeners="$(printf '%s\n' "$addresses" | grep -Ev "$paper_loopback_pattern")"; then
-            printf 'Paper backend has non-loopback listeners:\n%s\n' "$public_listeners" >&2
-            exit 1
-          fi
-        executable: /bin/sh
-      changed_when: false
-
-    - name: Check Geyser Bedrock UDP port
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          for _ in 1 2 3 4 5 6; do
-            listeners="$(ss -H -lun "sport = :{{ minecraft_bedrock_port }}" || true)"
-            if printf '%s\n' "$listeners" | grep -F ":{{ minecraft_bedrock_port }}"; then
-              exit 0
-            fi
-            sleep 5
-          done
-
-          printf 'Geyser Bedrock UDP listener is not active. UDP listeners:\n' >&2
-          ss -H -lun >&2 || true
-          printf '\nRecent Velocity journal:\n' >&2
-          journalctl -u minecraft-velocity.service -n 200 --no-pager >&2 || true
-          exit 1
-        executable: /bin/sh
-      changed_when: false
-
-    - name: Check Minecraft plugin jars
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      register: minecraft_plugin_stats
-      loop:
-        - "{{ minecraft_paper_plugins_dir }}/ViaVersion.jar"
-        - "{{ minecraft_velocity_plugins_dir }}/Geyser-Velocity.jar"
-        - "{{ minecraft_velocity_plugins_dir }}/floodgate-velocity.jar"
-
-    - name: Require Minecraft plugin jars
-      ansible.builtin.assert:
-        that:
-          - (item.stat.exists | default(false)) and ((item.stat.size | default(0) | int) > 0)
-        fail_msg: "Missing or empty Minecraft plugin jar at {{ item.item }}"
-      loop: "{{ minecraft_plugin_stats.results }}"
-
-- name: Validate Docker apps
+- name: Validate Docker Compose application host
   hosts: svc_docker_apps
   gather_facts: false
   tasks:
-    - name: Check Docker service
-      ansible.builtin.command:
-        cmd: systemctl is-active docker
-      register: docker_service_active
-      changed_when: false
-      until: docker_service_active.rc == 0
-      retries: 12
-      delay: 5
-
-    - name: Check shared Traefik proxy network exists
-      ansible.builtin.command:
-        cmd: docker network inspect {{ traefik_proxy_network }}
+    - name: Check Docker Engine
+      ansible.builtin.command: systemctl is-active docker
       changed_when: false
 
-    - name: Validate Compose project configs
+    - name: Validate rendered Compose projects
       ansible.builtin.command:
-        cmd: docker compose config
+        cmd: docker compose config --quiet
         chdir: "{{ item.dest }}"
+      changed_when: false
       loop: "{{ docker_compose_projects }}"
       loop_control:
         label: "{{ item.name }}"
-      changed_when: false
 
-    - name: Check Compose project services exist
+    - name: Require every Compose service to be running
       ansible.builtin.shell: |
         set -eu
-        services="$(docker compose ps --services)"
-        case "{{ item.name }}" in
-          traefik)
-            expected="traefik"
-            ;;
-          media)
-            expected="gluetun qbittorrent copyparty"
-            ;;
-          game)
-            expected="paper velocity"
-            ;;
-          *)
-            expected=""
-            ;;
-        esac
-        for service in ${expected}; do
-          printf '%s\n' "${services}" | grep -Fx "${service}"
-        done
+        expected="$(docker compose config --services | sort)"
+        running="$(docker compose ps --services --status running | sort)"
+        test "$expected" = "$running" || {
+          printf 'Expected running services:\n%s\nActual running services:\n%s\n' "$expected" "$running" >&2
+          docker compose ps >&2
+          exit 1
+        }
       args:
-        chdir: "{{ item.dest }}"
         executable: /bin/sh
+        chdir: "{{ item.dest }}"
+      changed_when: false
+      retries: 12
+      delay: 10
+      register: compose_running
+      until: compose_running.rc == 0
       loop: "{{ docker_compose_projects }}"
       loop_control:
         label: "{{ item.name }}"
-      changed_when: false
 
-- name: Validate hermes
-  hosts: svc_hermes
-  gather_facts: false
-  tasks:
-    - name: Check Hermes gateway service
+    - name: Query AdGuard normal DNS
+      ansible.builtin.command: dig +short @127.0.0.1 example.com A
+      register: adguard_dns_query
+      changed_when: false
+      failed_when: adguard_dns_query.stdout | length == 0
+
+    - name: Query AdGuard private rewrite
+      ansible.builtin.command: dig +short @127.0.0.1 qbt.home.hchu.me A
+      register: adguard_private_query
+      changed_when: false
+      failed_when: docker_apps_ip not in adguard_private_query.stdout_lines
+
+    - name: Check private Traefik routes
       ansible.builtin.command:
-        cmd: systemctl is-active hermes-gateway
-      register: hermes_gateway_active
+        argv:
+          - curl
+          - --fail
+          - --silent
+          - --show-error
+          - --resolve
+          - "{{ item }}:443:127.0.0.1"
+          - "https://{{ item }}/"
       changed_when: false
-      until: hermes_gateway_active.rc == 0
-      retries: 24
-      delay: 5
+      register: private_traefik_route
+      retries: 12
+      delay: 10
+      until: private_traefik_route.rc == 0
+      loop:
+        - adguard.home.hchu.me
+        - qbt.home.hchu.me
 
-    - name: Check Hermes browser automation CLI
+    - name: Check public Copyparty route
       ansible.builtin.command:
-        cmd: test -x "{{ hermes_agent_dir }}/node_modules/.bin/agent-browser"
+        argv:
+          - curl
+          - --fail
+          - --silent
+          - --show-error
+          - --resolve
+          - copyparty.hchu.me:443:127.0.0.1
+          - https://copyparty.hchu.me/
+      changed_when: false
+      register: public_copyparty_route
+      retries: 12
+      delay: 10
+      until: public_copyparty_route.rc == 0
+
+    - name: Check Gluetun and host use different public addresses
+      ansible.builtin.shell: |
+        set -eu
+        host_ip="$(curl -fsS https://api.ipify.org)"
+        vpn_ip="$(docker compose exec -T gluetun wget -qO- https://api.ipify.org)"
+        test -n "$host_ip"
+        test -n "$vpn_ip"
+        test "$host_ip" != "$vpn_ip"
+      args:
+        executable: /bin/sh
+        chdir: "{{ docker_apps_compose_root }}/media"
       changed_when: false
 
-    - name: Check Hermes local browser runtime
+    - name: Check Gluetun received a Proton forwarded port
       ansible.builtin.command:
-        cmd: >-
-          python3 -c 'import os, sys; p = "{{ hermes_browser_browsers_path }}"; sys.exit(0 if os.path.isdir(p) and any(n.startswith("chrome-") for n in os.listdir(p)) else 1)'
+        cmd: docker compose exec -T gluetun cat /tmp/gluetun/forwarded_port
+        chdir: "{{ docker_apps_compose_root }}/media"
+      register: gluetun_forwarded_port
       changed_when: false
+      retries: 12
+      delay: 10
+      until: gluetun_forwarded_port.stdout | trim | int > 0
 
-    - name: Check Hermes compression timeout
+    - name: Check Minecraft Java listener
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 25565
+        timeout: 60
+
+    - name: Check Minecraft Bedrock listener
       ansible.builtin.shell: |
-        {{ hermes_venv_path }}/bin/python - <<'PY'
-        from pathlib import Path
-        import yaml
-
-        config = yaml.safe_load(Path("{{ hermes_home }}/config.yaml").read_text(encoding="utf-8")) or {}
-        compression = (config.get("auxiliary") or {}).get("compression") or {}
-        checks = [
-            ("auxiliary.compression.provider", compression.get("provider"), "main"),
-            ("auxiliary.compression.model", compression.get("model"), ""),
-            ("auxiliary.compression.timeout", compression.get("timeout"), 360),
-        ]
-        mismatches = [
-            f"{label}={actual!r} expected {expected!r}"
-            for label, actual, expected in checks
-            if actual != expected
-        ]
-        if mismatches:
-            raise SystemExit("; ".join(mismatches))
-        PY
+        set -eu
+        ss -H -lun 'sport = :19132' | grep -F ':19132'
       args:
-        executable: /bin/bash
+        executable: /bin/sh
+      register: minecraft_bedrock_listener
       changed_when: false
+      retries: 12
+      delay: 10
+      until: minecraft_bedrock_listener.rc == 0
 
-    - name: Check Hermes memory provider and Honcho runtime secret gate
-      ansible.builtin.shell: |
-        set -euo pipefail
-        {{ hermes_venv_path }}/bin/python - <<'PY'
-        from pathlib import Path
-        import yaml
-
-        config = yaml.safe_load(Path("{{ hermes_home }}/config.yaml").read_text(encoding="utf-8")) or {}
-        provider = (config.get("memory") or {}).get("provider", "") or ""
-        expected = "{{ hermes_memory_provider }}"
-        if provider != expected:
-            raise SystemExit(f"memory.provider={provider!r} expected {expected!r}")
-
-        env_lines = Path("{{ hermes_env_path }}").read_text(encoding="utf-8").splitlines()
-        has_honcho_key = any(
-            line.startswith("HONCHO_API_KEY=") and line.split("=", 1)[1].strip().strip('"\'')
-            for line in env_lines
-        )
-        if expected == "honcho" and not has_honcho_key:
-            raise SystemExit("HONCHO_API_KEY must be present in the gateway env when memory.provider=honcho")
-        PY
-      args:
-        executable: /bin/bash
-      changed_when: false
-      no_log: true
-
-    - name: Check Hermes config synchronization services
-      ansible.builtin.shell: |
-        set -euo pipefail
-        systemctl is-active hermes-config-watch.service
-        systemctl is-active hermes-config-webhook.service
-        systemctl is-active hermes-config-sync.timer
-        test -x "{{ hermes_config_git_sync_path }}"
-        test -x "{{ hermes_config_apply_path }}"
-        test -x "{{ hermes_config_webhook_path }}"
-        test -d "{{ hermes_config_dir }}/.git"
-        test "$(readlink -f "{{ hermes_home }}/skills")" = "$(readlink -f "{{ hermes_config_dir }}/skills")"
-        test "$(readlink -f "{{ hermes_home }}/memories")" = "$(readlink -f "{{ hermes_config_dir }}/memories")"
-        test "$(readlink -f "{{ hermes_home }}/plugins")" = "$(readlink -f "{{ hermes_config_dir }}/plugins")"
-      args:
-        executable: /bin/bash
-      changed_when: false
-
-    - name: Check Hermes 1Password CLI
+    - name: Check Velocity can reach the Paper backend
       ansible.builtin.command:
-        cmd: op --version
+        cmd: docker compose exec -T velocity bash -lc 'timeout 5 bash -c "</dev/tcp/paper/25565"'
+        chdir: "{{ docker_apps_compose_root }}/game"
       changed_when: false
 
-    - name: Check Hermes 1Password skill
+    - name: Check Hermes gateway status
       ansible.builtin.command:
-        cmd: test -f "{{ hermes_home }}/skills/security/1password/SKILL.md"
+        cmd: docker compose exec -T hermes hermes status
+        chdir: "{{ docker_apps_compose_root }}/hermes"
       changed_when: false
 
-    - name: Check Hermes Newrrow points skill
-      ansible.builtin.shell: |
-        set -euo pipefail
-        test -f "{{ hermes_home }}/skills/newrrow-points-automation/SKILL.md"
-        test -f "{{ hermes_home }}/skills/newrrow-points-automation/references/ui-flow.md"
-        test -x "{{ hermes_home }}/skills/newrrow-points-automation/scripts/newrrow-login.sh"
-        test ! -e "{{ hermes_home }}/skills/productivity/newrrow-points-automation"
-        test -f "{{ hermes_home }}/plugins/newrrow-browser-login/plugin.yaml"
-        test -f "{{ hermes_home }}/plugins/newrrow-browser-login/__init__.py"
-      args:
-        executable: /bin/bash
-      changed_when: false
-
-    - name: Check Hermes Newrrow browser login plugin is enabled
-      ansible.builtin.shell: |
-        {{ hermes_venv_path }}/bin/python - <<'PY'
-        from pathlib import Path
-        import yaml
-
-        config = yaml.safe_load(Path("{{ hermes_home }}/config.yaml").read_text(encoding="utf-8")) or {}
-        enabled = ((config.get("plugins") or {}).get("enabled") or [])
-        if enabled != ["newrrow-browser-login"]:
-            raise SystemExit(f"enabled plugins mismatch: {enabled!r}")
-        toolsets = ((config.get("platform_toolsets") or {}).get("discord") or [])
-        expected_toolsets = ["hermes-discord", "browser", "kanban"]
-        if toolsets != expected_toolsets:
-            raise SystemExit(f"discord platform toolsets mismatch: {toolsets!r}")
-        PY
-      args:
-        executable: /bin/bash
-      changed_when: false
-
-
-    - name: Check Hermes 5+1 profiles, policy files, and Kanban routing config
-      ansible.builtin.shell: |
-        {{ hermes_venv_path }}/bin/python - <<'PY'
-        from pathlib import Path
-        import sqlite3
-        import yaml
-
-        hermes_home = Path("{{ hermes_home }}")
-        expected_profiles = {{ hermes_profiles | map(attribute='name') | list | to_json }}
-        expected_cli_toolsets = {
-        {% for profile in hermes_profiles %}
-            "{{ profile.name }}": {{ profile.cli_toolsets | to_json }},
-        {% endfor %}
-        }
-        expected_proxy = {
-        {% for profile in hermes_profiles %}
-            "{{ profile.name }}": "{{ profile.browserbase_proxies | string | lower }}",
-        {% endfor %}
-        }
-        expected_required_skills = {
-        {% for profile in hermes_profiles %}
-            "{{ profile.name }}": {{ (profile.required_skills | default([])) | to_json }},
-        {% endfor %}
-        }
-        expected_boards = {{ hermes_kanban_boards | map(attribute='slug') | list | to_json }}
-
-        config = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8")) or {}
-        kanban = config.get("kanban") or {}
-        checks = [
-            ("kanban.dispatch_in_gateway", kanban.get("dispatch_in_gateway"), True),
-            ("kanban.orchestrator_profile", kanban.get("orchestrator_profile"), "{{ hermes_kanban.orchestrator_profile }}"),
-            ("kanban.default_assignee", kanban.get("default_assignee"), "{{ hermes_kanban.default_assignee }}"),
-            ("kanban.max_in_progress_per_profile", kanban.get("max_in_progress_per_profile"), {{ hermes_kanban.max_in_progress_per_profile }}),
-            ("kanban.auto_decompose", kanban.get("auto_decompose"), {{ hermes_kanban.auto_decompose | bool }}),
-        ]
-        discord_toolsets = (config.get("platform_toolsets") or {}).get("discord") or []
-        if "kanban" not in discord_toolsets:
-            raise SystemExit("discord platform is missing kanban toolset")
-        for label, actual, expected in checks:
-            if actual != expected:
-                raise SystemExit(f"{label}={actual!r} expected {expected!r}")
-
-        default_soul = (hermes_home / "SOUL.md").read_text(encoding="utf-8")
-        if "HOMELAB-HERMES-DEFAULT-CONTROL-PLANE:START" not in default_soul:
-            raise SystemExit("default profile is missing control-plane guidance")
-        policy_dir = hermes_home / "kanban" / "policies"
-        for filename, required_text in {
-            "routing-matrix.md": "Profile lanes",
-            "card-template.md": "Evidence required",
-            "review-required.md": "review-required",
-        }.items():
-            text = (policy_dir / filename).read_text(encoding="utf-8")
-            if required_text not in text:
-                raise SystemExit(f"{filename} is missing {required_text!r}")
-
-        for name in expected_profiles:
-            profile_dir = hermes_home / "profiles" / name
-            if not profile_dir.is_dir():
-                raise SystemExit(f"missing profile dir: {name}")
-            profile_config = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8")) or {}
-            profile_meta = yaml.safe_load((profile_dir / "profile.yaml").read_text(encoding="utf-8")) or {}
-            profile_kanban = profile_config.get("kanban") or {}
-            profile_toolsets = (profile_config.get("platform_toolsets") or {}).get("cli") or []
-            if profile_kanban.get("dispatch_in_gateway") is not False:
-                raise SystemExit(f"{name}: kanban.dispatch_in_gateway must be false")
-            if profile_toolsets != expected_cli_toolsets[name]:
-                raise SystemExit(f"{name}: cli toolsets {profile_toolsets!r} expected {expected_cli_toolsets[name]!r}")
-            if not (profile_meta.get("description") or "").strip():
-                raise SystemExit(f"{name}: missing profile description")
-            if profile_meta.get("required_skills") != expected_required_skills[name]:
-                raise SystemExit(f"{name}: required skills metadata mismatch")
-            if not profile_meta.get("routing"):
-                raise SystemExit(f"{name}: missing routing metadata")
-            soul = (profile_dir / "SOUL.md").read_text(encoding="utf-8")
-            if "Required skills to attach or load" not in soul or "Completion contract" not in soul:
-                raise SystemExit(f"{name}: managed SOUL contract is missing")
-            for skill in expected_required_skills[name]:
-                skill_matches = list((profile_dir / "skills").rglob("SKILL.md"))
-                if not any(f"name: {skill}" in p.read_text(encoding="utf-8") for p in skill_matches):
-                    raise SystemExit(f"{name}: required skill not seeded: {skill}")
-            env_lines = (profile_dir / ".env").read_text(encoding="utf-8").splitlines()
-            proxy_lines = [line for line in env_lines if line.strip().startswith("BROWSERBASE_PROXIES=")]
-            if proxy_lines != [f"BROWSERBASE_PROXIES={expected_proxy[name]}"]:
-                raise SystemExit(f"{name}: BROWSERBASE_PROXIES effective override mismatch or duplicate")
-            stealth_lines = [line for line in env_lines if line.strip().startswith("BROWSERBASE_ADVANCED_STEALTH=")]
-            if len(stealth_lines) != 1:
-                raise SystemExit(f"{name}: BROWSERBASE_ADVANCED_STEALTH override must appear exactly once")
-
-        for board in expected_boards:
-            db_path = hermes_home / "kanban.db" if board == "default" else hermes_home / "kanban" / "boards" / board / "kanban.db"
-            if not db_path.is_file():
-                raise SystemExit(f"missing kanban board db: {board}")
-            with sqlite3.connect(db_path) as conn:
-                result = conn.execute("PRAGMA quick_check").fetchone()
-            if not result or result[0] != "ok":
-                raise SystemExit(f"kanban board db quick_check failed: {board}: {result}")
-        PY
-      args:
-        executable: /bin/bash
-      changed_when: false
-
-    - name: Check Hermes Kanban board is initialized
+    - name: Check Restic repository access
       ansible.builtin.command:
-        cmd: test -f "{{ hermes_home }}/kanban.db"
-      changed_when: false
-
-    - name: Check Hermes Kanban diagnostics cron
-      ansible.builtin.shell: |
-        {{ hermes_venv_path }}/bin/python - <<'PY'
-        import json
-        from pathlib import Path
-
-        script = Path("{{ hermes_home }}/scripts/{{ hermes_kanban_diagnostics_cron.script }}")
-        if not script.is_file():
-            raise SystemExit(f"missing diagnostics script: {script}")
-        if not script.stat().st_mode & 0o111:
-            raise SystemExit(f"diagnostics script is not executable: {script}")
-        jobs_path = Path("{{ hermes_home }}/cron/jobs.json")
-        data = json.loads(jobs_path.read_text(encoding="utf-8")) if jobs_path.exists() else {"jobs": []}
-        matches = [job for job in data.get("jobs", []) if job.get("name") == "{{ hermes_kanban_diagnostics_cron.name }}"]
-        if len(matches) != 1:
-            raise SystemExit(f"expected one diagnostics cron job, found {len(matches)}")
-        job = matches[0]
-        expected = {
-            "script": "{{ hermes_kanban_diagnostics_cron.script }}",
-            "no_agent": True,
-            "deliver": "{{ hermes_kanban_diagnostics_cron.deliver }}",
-            "schedule_display": "{{ hermes_kanban_diagnostics_cron.schedule }}",
-        }
-        for key, value in expected.items():
-            if job.get(key) != value:
-                raise SystemExit(f"diagnostics cron {key}={job.get(key)!r} expected {value!r}")
-        env_path = Path("{{ hermes_env_path }}")
-        env_lines = env_path.read_text(encoding="utf-8").splitlines()
-        if not any(line.startswith("DISCORD_HOME_CHANNEL=") and line.split("=", 1)[1].strip().strip('"\'') for line in env_lines):
-            raise SystemExit("DISCORD_HOME_CHANNEL must be set for diagnostics cron deliver=discord")
-        PY
-      args:
-        executable: /bin/bash
-      changed_when: false
-
-    - name: Check Hermes 1Password CLI config file mode
-      ansible.builtin.shell: |
-        {{ hermes_venv_path }}/bin/python - <<'PY'
-        from pathlib import Path
-        import pwd
-        import grp
-        import stat
-
-        path = Path("{{ hermes_home }}/.config/op/config")
-        if not path.exists():
-            raise SystemExit(0)
-        if path.is_symlink():
-            raise SystemExit(f"{path} must not be a symlink")
-        st = path.stat()
-        expected_uid = pwd.getpwnam("{{ hermes_user }}").pw_uid
-        expected_gid = grp.getgrnam("{{ hermes_group }}").gr_gid
-        failures = []
-        if st.st_uid != expected_uid:
-            failures.append(f"owner uid {st.st_uid} != {expected_uid}")
-        if st.st_gid != expected_gid:
-            failures.append(f"group gid {st.st_gid} != {expected_gid}")
-        if stat.S_IMODE(st.st_mode) != 0o600:
-            failures.append(f"mode {stat.S_IMODE(st.st_mode):04o} != 0600")
-        if failures:
-            raise SystemExit("; ".join(failures))
-        PY
-      args:
-        executable: /bin/bash
-      changed_when: false
-
-    - name: Check Hermes 1Password service account authentication
-      ansible.builtin.shell: |
-        set -euo pipefail
-        set -a
-        . "{{ hermes_env_path }}"
-        set +a
-        runuser -u "{{ hermes_user }}" -- env "HOME={{ hermes_home }}" "OP_SERVICE_ACCOUNT_TOKEN=$OP_SERVICE_ACCOUNT_TOKEN" op whoami >/dev/null
-      args:
-        executable: /bin/bash
+        cmd: docker compose exec -T restic-backup restic cat config
+        chdir: "{{ docker_apps_compose_root }}/backup"
       changed_when: false
       no_log: true

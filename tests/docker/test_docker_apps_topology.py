@@ -1,49 +1,69 @@
 from tests.helpers import REPO_ROOT
 
 
-def _read(path: str) -> str:
+def read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_compose_projects_are_tracked_under_apps_compose():
-    for project in ("traefik", "media", "game"):
-        assert (REPO_ROOT / "apps" / "compose" / project / "compose.yml").exists()
-        assert (REPO_ROOT / "apps" / "compose" / project / ".env.example").exists()
+def test_only_tailnet_and_docker_apps_are_managed_lxcs():
+    topology = read("infra/opentofu/envs/prod/containers.auto.tfvars")
+    inventory = read("infra/ansible/inventory/prod/hosts.yml")
 
-
-def test_docker_apps_iac_topology_exists_and_keeps_recovery_planes_separate():
-    topology = _read("infra/opentofu/envs/prod/containers.auto.tfvars")
-    inventory = _read("infra/ansible/inventory/prod/hosts.yml")
-    all_vars = _read("infra/ansible/inventory/prod/group_vars/all.yml")
-    site = _read("infra/ansible/playbooks/site.yml")
-
-    assert "docker_apps = {" in topology
-    assert 'hostname         = "docker-apps"' in topology
-    assert "docker_apps:" in inventory
-    assert "svc_docker_apps:" in inventory
-    assert "docker_apps_ip: \"{{ hostvars['docker_apps'].ansible_host }}\"" in all_vars
-    assert "hosts: svc_docker_apps" in site
-
-    # Network/control-plane services stay independently managed as LXCs.
+    assert topology.count("vmid             =") == 2
     assert "tailnet = {" in topology
-    assert "hermes = {" in topology
-    assert "hosts: svc_tailnet" in site
-    assert "hosts: svc_hermes" in site
+    assert "docker_apps = {" in topology
+    for retired in ("dns", "edge", "downloads", "files", "minecraft", "hermes"):
+        assert f"  {retired} = {{" not in topology
+        assert f"svc_{retired}:" not in inventory
+
+    assert "vmid             = 110" in topology
+    assert 'ip_address       = "192.168.0.3/24"' in topology
+    assert "vmid             = 111" in topology
+    assert 'ip_address       = "192.168.0.4/24"' in topology
 
 
-def test_docker_roles_are_present():
-    assert (REPO_ROOT / "infra" / "ansible" / "roles" / "docker_engine" / "tasks" / "main.yml").exists()
-    assert (REPO_ROOT / "infra" / "ansible" / "roles" / "docker_compose_project" / "tasks" / "main.yml").exists()
+def test_retired_lxcs_are_forgotten_without_destruction():
+    main = read("infra/opentofu/envs/prod/main.tf")
+    assert 'from = module.lxc["tailnet"]' in main
+    assert 'to   = module.active_lxc["tailnet"]' in main
+    assert 'from = module.lxc["docker_apps"]' in main
+    assert "from = module.lxc\n" in main
+    assert main.count("destroy = false") == 1
 
 
-def test_docker_apps_root_options_mount_existing_shared_storage_once():
-    all_vars = _read("infra/ansible/inventory/prod/group_vars/all.yml")
-    docker_apps = all_vars.split("  - vmid: 117", maxsplit=1)[1].split("pve_lxc_access_bootstrap:", maxsplit=1)[0]
+def test_docker_lxc_gets_tun_and_one_data_root_mount():
+    all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
+    docker = all_vars.split("  - vmid: 110", 1)[1].split("pve_lxc_access_bootstrap:", 1)[0]
 
-    assert "name: docker_apps" in docker_apps
-    assert "pass through tun device for gluetun" in docker_apps
-    assert "enable nesting for Docker Engine in LXC" in docker_apps
-    assert "mp=/downloads" in docker_apps
-    assert "mp=/public" in docker_apps
-    assert "mp=/shared-readonly,ro=1" in docker_apps
-    assert "mp=/minecraft" in docker_apps
+    assert "pass through tun device for Gluetun" in docker
+    assert "enable nesting for Docker Engine in LXC" in docker
+    assert "-mp0 /var/lib/homelab,mp=/srv/homelab" in docker
+    assert "-mp1" not in docker
+
+
+def test_low_id_cutover_is_hostname_guarded_and_backed_up():
+    all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
+    tasks = read("infra/ansible/roles/pve_prepare_low_id_cutover/tasks/main.yml")
+    backup = read("infra/ansible/roles/pve_pre_cutover_backup/tasks/main.yml")
+    playbook = read("infra/ansible/playbooks/prepare-low-id-cutover.yml")
+
+    assert "target_vmid: 110" in all_vars
+    assert "legacy_name: edge" in all_vars
+    assert "target_vmid: 111" in all_vars
+    assert "legacy_name: dns" in all_vars
+    assert "vzdump" in tasks
+    assert "      - pct\n      - destroy" in tasks
+    assert "low_id_cutover_confirmed" in tasks
+    assert "low_id_data_backup_confirmed" in tasks
+    assert playbook.index("pve_retire_legacy_lxcs") < playbook.index("pve_homelab_storage")
+    assert playbook.index("pve_homelab_storage") < playbook.index("pve_pre_cutover_backup")
+    assert "restic\n      - backup" in backup
+    assert "restic check" in backup
+    assert "low_id_data_backup_confirmed: true" in backup
+
+
+def test_every_application_is_a_compose_project():
+    for project in ("platform", "media", "game", "hermes", "backup"):
+        root = REPO_ROOT / "apps" / "compose" / project
+        assert (root / "compose.yml").exists()
+        assert (root / ".env.example").exists()

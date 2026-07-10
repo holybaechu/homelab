@@ -5,7 +5,9 @@ This repository has two workflows:
 - `.github/workflows/ci.yml`: repository tests, Ansible syntax checks, and OpenTofu validation for pushes and pull requests.
 - `.github/workflows/cd.yml`: production deployment through Tailscale, OpenTofu, and Ansible.
 
-Create a GitHub environment named `prod` before enabling CD. Use environment protection rules so a push to `main` cannot deploy without approval.
+Create a GitHub environment named `prod` before enabling CD. Pushes to `main`
+deploy automatically; add an environment approval rule only if you intentionally
+want production deployment to pause for review.
 
 ## `prod` Environment Variables
 
@@ -18,6 +20,8 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `TOFU_STATE_REGION`: use `auto` for Cloudflare R2, or the AWS region for AWS S3
 - `TOFU_STATE_ENDPOINT`: S3-compatible endpoint, for example `https://<account-id>.r2.cloudflarestorage.com` for Cloudflare R2
 - `ADGUARD_ADMIN_USERNAME`: optional AdGuard Home admin username; defaults to the inventory value
+- `LOW_ID_CUTOVER_CONFIRMED`: set to `true` only for the first 117/112 to
+  110/111 renumber after reviewing the plan
 
 ## `prod` Environment Secrets
 
@@ -30,10 +34,8 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `TOFU_STATE_SECRET_ACCESS_KEY`
 - `TS_OAUTH_CLIENT_ID`
 - `TS_AUDIENCE`
-- `CLOUDFLARE_CADDY_TOKEN`
-- `CLOUDFLARE_ZONE_ID`
+- `CLOUDFLARE_TRAEFIK_TOKEN`
 - `CLOUDFLARE_DDNS_TOKEN`
-- `CLOUDFLARE_ADGUARD_ACME_TOKEN`
 - `ADGUARD_ADMIN_PASSWORD`, as plaintext; Ansible hashes it before rendering or updating AdGuard Home config
 - `TAILSCALE_AUTH_KEY`
 - `PROTON_WIREGUARD_PRIVATE_KEY`
@@ -45,10 +47,12 @@ Create a GitHub environment named `prod` before enabling CD. Use environment pro
 - `BROWSERBASE_API_KEY`
 - `BROWSERBASE_PROJECT_ID`
 - `OP_SERVICE_ACCOUNT_TOKEN`
-- `HERMES_CONFIG_REPO_TOKEN`, fine-scoped to read/write the private `holybaechu/hermes-config` repo
-- `HERMES_CONFIG_WEBHOOK_SECRET`, shared with the GitHub webhook for HMAC verification
 - `HERMES_DISCORD_HOME_CHANNEL`, optional; overrides the default cron/home delivery target for Hermes Discord notifications
 - `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and plaintext `password`
+- `BACKUP_RESTIC_REPOSITORY`
+- `BACKUP_RESTIC_PASSWORD`
+- `BACKUP_AWS_ACCESS_KEY_ID`
+- `BACKUP_AWS_SECRET_ACCESS_KEY`
 
 Example `COPYPARTY_USERS_JSON`:
 
@@ -87,7 +91,7 @@ Create a Tailscale federated identity for GitHub Actions and allow it to create 
 The `tag:ci` ACL should only reach:
 
 - Proxmox SSH/API
-- LXC SSH targets on `192.168.0.3` through `192.168.0.9`
+- LXC SSH targets at `192.168.0.4` (tailnet) and `192.168.0.3` (Docker apps)
 
 ## OpenTofu State
 
@@ -99,15 +103,21 @@ Private provider values stay in ignored local tfvars files or the generated CI `
 
 ## CD Parallelism
 
-The CD workflow keeps OpenTofu and bootstrap operations serial, then runs Ansible service deploy and validation in parallel across `edge`, `dns`, `tailnet`, `downloads`, `files`, `minecraft`, and `hermes`.
+The CD workflow keeps the low-ID preflight, OpenTofu, and bootstrap operations
+serial, then deploys and validates `tailnet` and `docker_apps`. All
+application services within `docker_apps` are ordered Compose projects.
 
 Each service run uses `ansible-playbook --limit <service>` through `scripts/ci/run-ansible-parallel.sh`. GitHub logs are grouped per service, and the step fails if any service deploy or validation process fails.
 
 ## First Deployment
 
 1. Push these workflow changes and confirm `ci` passes.
-2. Open the `cd` workflow and run it with `workflow_dispatch`.
-3. Approve the `prod` environment deployment if protection rules are enabled.
-4. Confirm the workflow completes `OpenTofu apply`, `Bootstrap Proxmox and LXC access`, `Deploy services`, and `Validate services`.
+2. Set the one-time low-ID confirmation variable to `true`; the preflight
+   performs and verifies the encrypted qBittorrent/Copyparty backup itself.
+3. Open the `cd` workflow and run it with `workflow_dispatch`.
+4. Approve the `prod` environment deployment if protection rules are enabled.
+5. Confirm the workflow completes `Prepare one-time lowest-ID cutover`,
+   `OpenTofu apply`, `Bootstrap Proxmox and LXC access`, `Deploy services`,
+   and `Validate services`.
 
 The AdGuard role only writes the baseline `AdGuardHome.yaml` when no migrated config exists, but it updates the existing `users:` block from `ADGUARD_ADMIN_USERNAME` and `ADGUARD_ADMIN_PASSWORD` on each deploy.

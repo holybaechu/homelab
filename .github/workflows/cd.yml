@@ -51,6 +51,46 @@ jobs:
           DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: ./scripts/ci/configure-ssh.sh
 
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infra/ansible/requirements.yml
+
+      - name: Validate and write Ansible service secrets
+        env:
+          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
+          CLOUDFLARE_TRAEFIK_TOKEN: ${{ secrets.CLOUDFLARE_TRAEFIK_TOKEN || secrets.CLOUDFLARE_CADDY_TOKEN }}
+          CLOUDFLARE_DDNS_TOKEN: ${{ secrets.CLOUDFLARE_DDNS_TOKEN }}
+          ADGUARD_ADMIN_USERNAME: ${{ vars.ADGUARD_ADMIN_USERNAME }}
+          ADGUARD_ADMIN_PASSWORD: ${{ secrets.ADGUARD_ADMIN_PASSWORD }}
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          PROTON_WIREGUARD_PRIVATE_KEY: ${{ secrets.PROTON_WIREGUARD_PRIVATE_KEY }}
+          QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
+          HERMES_DISCORD_BOT_TOKEN: ${{ secrets.HERMES_DISCORD_BOT_TOKEN }}
+          HERMES_DISCORD_ALLOWED_USERS: ${{ secrets.HERMES_DISCORD_ALLOWED_USERS }}
+          HERMES_DISCORD_HOME_CHANNEL: ${{ secrets.HERMES_DISCORD_HOME_CHANNEL }}
+          PARALLEL_API_KEY: ${{ secrets.PARALLEL_API_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
+          BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
+          HONCHO_API_KEY: ${{ secrets.HONCHO_API_KEY }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
+          BACKUP_RESTIC_REPOSITORY: ${{ secrets.BACKUP_RESTIC_REPOSITORY }}
+          BACKUP_RESTIC_PASSWORD: ${{ secrets.BACKUP_RESTIC_PASSWORD }}
+          BACKUP_AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_AWS_ACCESS_KEY_ID || secrets.TOFU_STATE_ACCESS_KEY_ID }}
+          BACKUP_AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_AWS_SECRET_ACCESS_KEY || secrets.TOFU_STATE_SECRET_ACCESS_KEY }}
+        run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
+
+      - name: Prepare one-time lowest-ID cutover
+        env:
+          LOW_ID_CUTOVER_CONFIRMED: ${{ vars.LOW_ID_CUTOVER_CONFIRMED }}
+          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
+          infra/ansible/playbooks/prepare-low-id-cutover.yml
+          --extra-vars
+          "low_id_cutover_confirmed=${LOW_ID_CUTOVER_CONFIRMED}"
+          --extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"
+
       - name: OpenTofu plan
         env:
           PROXMOX_ENDPOINT: ${{ secrets.PROXMOX_ENDPOINT }}
@@ -86,37 +126,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.TOFU_STATE_SECRET_ACCESS_KEY }}
         run: ./scripts/ci/tofu-apply.sh
 
-      - name: Install Ansible collections
-        run: ansible-galaxy collection install -r infra/ansible/requirements.yml
-
       - name: Bootstrap Proxmox and LXC access
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/bootstrap.yml
-
-      - name: Write Ansible extra vars
-        env:
-          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
-          CLOUDFLARE_CADDY_TOKEN: ${{ secrets.CLOUDFLARE_CADDY_TOKEN }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          CLOUDFLARE_DDNS_TOKEN: ${{ secrets.CLOUDFLARE_DDNS_TOKEN }}
-          CLOUDFLARE_ADGUARD_ACME_TOKEN: ${{ secrets.CLOUDFLARE_ADGUARD_ACME_TOKEN }}
-          ADGUARD_ADMIN_USERNAME: ${{ vars.ADGUARD_ADMIN_USERNAME }}
-          ADGUARD_ADMIN_PASSWORD: ${{ secrets.ADGUARD_ADMIN_PASSWORD }}
-          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-          PROTON_WIREGUARD_PRIVATE_KEY: ${{ secrets.PROTON_WIREGUARD_PRIVATE_KEY }}
-          QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
-          HERMES_DISCORD_BOT_TOKEN: ${{ secrets.HERMES_DISCORD_BOT_TOKEN }}
-          HERMES_DISCORD_ALLOWED_USERS: ${{ secrets.HERMES_DISCORD_ALLOWED_USERS }}
-          HERMES_DISCORD_HOME_CHANNEL: ${{ secrets.HERMES_DISCORD_HOME_CHANNEL }}
-          PARALLEL_API_KEY: ${{ secrets.PARALLEL_API_KEY }}
-          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
-          BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
-          BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
-          HONCHO_API_KEY: ${{ secrets.HONCHO_API_KEY }}
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          HERMES_CONFIG_REPO_TOKEN: ${{ secrets.HERMES_CONFIG_REPO_TOKEN }}
-          HERMES_CONFIG_WEBHOOK_SECRET: ${{ secrets.HERMES_CONFIG_WEBHOOK_SECRET }}
-          COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
-        run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Deploy services
         env:

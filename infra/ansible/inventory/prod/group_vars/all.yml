@@ -4,103 +4,51 @@ homelab_lan_cidr: 192.168.0.0/24
 homelab_tailscale_cidr: 100.64.0.0/10
 homelab_timezone: Asia/Seoul
 
-edge_ip: "{{ hostvars['edge'].ansible_host }}"
-dns_ip: "{{ hostvars['dns'].ansible_host }}"
 tailnet_ip: "{{ hostvars['tailnet'].ansible_host }}"
-downloads_ip: "{{ hostvars['downloads'].ansible_host }}"
-files_ip: "{{ hostvars['files'].ansible_host }}"
-minecraft_ip: "{{ hostvars['minecraft'].ansible_host }}"
-hermes_ip: "{{ hostvars['hermes'].ansible_host }}"
 docker_apps_ip: "{{ hostvars['docker_apps'].ansible_host }}"
 
 service_user: homelab
 service_group: homelab
 service_uid: 1000
 service_gid: 1000
-downloads_service_uid: 1100
-downloads_service_gid: 1100
 hermes_service_uid: 1200
 hermes_service_gid: 1200
-docker_apps_service_uid: 1000
-docker_apps_service_gid: 1000
 
 homelab_data_lv_name: homelab-data
 homelab_data_lv_size: 896G
 homelab_data_mount: /var/lib/homelab
 homelab_container_uid_offset: 100000
 
+legacy_lxcs:
+  - {name: downloads, vmid: 113}
+  - {name: files, vmid: 114}
+  - {name: minecraft, vmid: 115}
+  - {name: hermes, vmid: 116}
+
+low_id_cutover_backup_storage: local
+low_id_cutover_mappings:
+  - {target_vmid: 110, legacy_name: edge, desired_name: docker-apps, source_vmid: 117}
+  - {target_vmid: 111, legacy_name: dns, desired_name: tailnet, source_vmid: 112}
+
 pve_lxc_root_options:
-  - vmid: 112
+  - vmid: 111
     name: tailnet
     settings:
       - description: pass through tun device for Tailscale
         pattern: '^dev0: /dev/net/tun(,.*)?$'
         pct_args: '-dev0 /dev/net/tun,mode=0666'
-      - description: enable nesting for Debian 13 systemd
+      - description: enable nesting for Debian systemd
         pattern: '^features:.*[ ,]nesting=1(,|$)'
         pct_args: '-features nesting=1,keyctl=1'
       - description: enable keyctl for Tailscale
         pattern: '^features:.*[ ,]keyctl=1(,|$)'
         pct_args: '-features nesting=1,keyctl=1'
-  - vmid: 113
-    name: downloads
-    bind_mount_sources:
-      - /var/lib/homelab/downloads
-      - /var/lib/homelab/copyparty/public
-    settings:
-      - description: pass through tun device for WireGuard
-        pattern: '^dev0: /dev/net/tun(,.*)?$'
-        pct_args: '-dev0 /dev/net/tun,mode=0666'
-      - description: enable nesting for Debian 13 systemd
-        pattern: '^features:.*[ ,]nesting=1(,|$)'
-        pct_args: '-features nesting=1,keyctl=1'
-      - description: enable keyctl for WireGuard userspace helpers
-        pattern: '^features:.*[ ,]keyctl=1(,|$)'
-        pct_args: '-features nesting=1,keyctl=1'
-      - description: mount downloads data
-        pattern: '^mp0: /var/lib/homelab/downloads,mp=/downloads(,.*)?$'
-        pct_args: '-mp0 /var/lib/homelab/downloads,mp=/downloads'
-      - description: mount public Copyparty share read-write for seeded public content
-        pattern: '^mp1: /var/lib/homelab/copyparty/public,mp=/public$'
-        pct_args: '-mp1 /var/lib/homelab/copyparty/public,mp=/public'
-  - vmid: 114
-    name: files
-    bind_mount_sources:
-      - /var/lib/homelab/copyparty/public
-      - /var/lib/homelab/copyparty/shared-readonly
-      - /var/lib/homelab/downloads/complete
-    settings:
-      - description: mount completed downloads read-only
-        pattern: '^mp0: /var/lib/homelab/downloads/complete,mp=/srv/downloads(,.*)?$'
-        pct_args: '-mp0 /var/lib/homelab/downloads/complete,mp=/srv/downloads,ro=1'
-      - description: mount public Copyparty share
-        pattern: '^mp1: /var/lib/homelab/copyparty/public,mp=/srv/public(,.*)?$'
-        pct_args: '-mp1 /var/lib/homelab/copyparty/public,mp=/srv/public'
-      - description: mount shared-readonly Copyparty share
-        pattern: '^mp2: /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly(,.*)?$'
-        pct_args: '-mp2 /var/lib/homelab/copyparty/shared-readonly,mp=/srv/shared-readonly'
-  - vmid: 116
-    name: hermes
-    bind_mount_sources:
-      - /var/lib/homelab/hermes/home
-      - /var/lib/homelab/hermes/workspace
-    settings:
-      - description: mount Hermes home
-        pattern: '^mp0: /var/lib/homelab/hermes/home,mp=/var/lib/hermes(,.*)?$'
-        pct_args: '-mp0 /var/lib/homelab/hermes/home,mp=/var/lib/hermes'
-      - description: mount Hermes workspace
-        pattern: '^mp1: /var/lib/homelab/hermes/workspace,mp=/workspace(,.*)?$'
-        pct_args: '-mp1 /var/lib/homelab/hermes/workspace,mp=/workspace'
-  - vmid: 117
+  - vmid: 110
     name: docker_apps
     bind_mount_sources:
-      - /var/lib/homelab/docker-apps
-      - /var/lib/homelab/downloads
-      - /var/lib/homelab/copyparty/public
-      - /var/lib/homelab/copyparty/shared-readonly
-      - /var/lib/homelab/minecraft
+      - /var/lib/homelab
     settings:
-      - description: pass through tun device for gluetun
+      - description: pass through tun device for Gluetun
         pattern: '^dev0: /dev/net/tun(,.*)?$'
         pct_args: '-dev0 /dev/net/tun,mode=0666'
       - description: enable nesting for Docker Engine in LXC
@@ -109,44 +57,14 @@ pve_lxc_root_options:
       - description: enable keyctl for Docker in LXC
         pattern: '^features:.*[ ,]keyctl=1(,|$)'
         pct_args: '-features nesting=1,keyctl=1'
-      - description: mount Docker app state
-        pattern: '^mp0: /var/lib/homelab/docker-apps,mp=/srv/docker-apps(,.*)?$'
-        pct_args: '-mp0 /var/lib/homelab/docker-apps,mp=/srv/docker-apps'
-      - description: mount downloads data
-        pattern: '^mp1: /var/lib/homelab/downloads,mp=/downloads(,.*)?$'
-        pct_args: '-mp1 /var/lib/homelab/downloads,mp=/downloads'
-      - description: mount public Copyparty share read-write for seeded public content
-        pattern: '^mp2: /var/lib/homelab/copyparty/public,mp=/public(,.*)?$'
-        pct_args: '-mp2 /var/lib/homelab/copyparty/public,mp=/public'
-      - description: mount shared-readonly Copyparty share read-only
-        pattern: '^mp3: /var/lib/homelab/copyparty/shared-readonly,mp=/shared-readonly(,.*)?$'
-        pct_args: '-mp3 /var/lib/homelab/copyparty/shared-readonly,mp=/shared-readonly,ro=1'
-      - description: mount Minecraft data
-        pattern: '^mp4: /var/lib/homelab/minecraft,mp=/minecraft(,.*)?$'
-        pct_args: '-mp4 /var/lib/homelab/minecraft,mp=/minecraft'
+      - description: mount the homelab data root once
+        pattern: '^mp0: /var/lib/homelab,mp=/srv/homelab(,.*)?$'
+        pct_args: '-mp0 /var/lib/homelab,mp=/srv/homelab'
 
 pve_lxc_access_bootstrap:
-  - vmid: 110
-    name: edge
-    os_family: alpine
   - vmid: 111
-    name: dns
-    os_family: alpine
-  - vmid: 112
     name: tailnet
     os_family: debian
-  - vmid: 113
-    name: downloads
-    os_family: debian
-  - vmid: 114
-    name: files
-    os_family: alpine
-  - vmid: 115
-    name: minecraft
-    os_family: debian
-  - vmid: 116
-    name: hermes
-    os_family: debian
-  - vmid: 117
+  - vmid: 110
     name: docker_apps
     os_family: debian

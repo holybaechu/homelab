@@ -2,11 +2,43 @@
 - name: Install Docker apt prerequisites
   ansible.builtin.apt:
     name:
+      - apache2-utils
       - ca-certificates
       - curl
+      - dnsutils
       - gnupg
+      - systemd-resolved
     update_cache: true
     state: present
+
+- name: Disable systemd-resolved DNS stub for AdGuard port 53
+  ansible.builtin.file:
+    path: /etc/systemd/resolved.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure systemd-resolved without a local DNS stub
+  ansible.builtin.copy:
+    dest: /etc/systemd/resolved.conf.d/adguardhome.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Resolve]
+      DNS=1.1.1.1 1.0.0.1
+      FallbackDNS=8.8.8.8
+      DNSStubListener=no
+  notify: Restart systemd-resolved
+
+- name: Use systemd-resolved upstream resolvers without the local stub
+  ansible.builtin.file:
+    src: /run/systemd/resolve/resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+    force: true
+  notify: Restart systemd-resolved
 
 - name: Create Docker apt keyring directory
   ansible.builtin.file:
@@ -51,3 +83,6 @@
     name: docker
     enabled: true
     state: started
+
+- name: Apply Docker and resolver changes before Compose starts
+  ansible.builtin.meta: flush_handlers

@@ -1,0 +1,106 @@
+---
+- name: Require encrypted off-host backup credentials
+  ansible.builtin.assert:
+    that:
+      - backup_restic_repository is defined
+      - backup_restic_repository | length > 0
+      - backup_restic_password is defined
+      - backup_restic_password | length > 0
+      - backup_aws_access_key_id is defined
+      - backup_aws_access_key_id | length > 0
+      - backup_aws_secret_access_key is defined
+      - backup_aws_secret_access_key | length > 0
+  no_log: true
+
+- name: Install Restic on Proxmox
+  ansible.builtin.apt:
+    name: restic
+    state: present
+    update_cache: true
+
+- name: Verify pre-cutover backup source directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ homelab_data_mount }}/docker-apps/qbittorrent"
+    - "{{ homelab_data_mount }}/downloads"
+    - "{{ homelab_data_mount }}/copyparty"
+    - "{{ homelab_data_mount }}/docker-apps/copyparty"
+  register: pre_cutover_backup_sources
+
+- name: Require every qBittorrent and Copyparty backup source
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+  loop: "{{ pre_cutover_backup_sources.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Probe the Restic repository
+  ansible.builtin.command: restic cat config
+  environment: &restic_environment
+    RESTIC_REPOSITORY: "{{ backup_restic_repository }}"
+    RESTIC_PASSWORD: "{{ backup_restic_password }}"
+    AWS_ACCESS_KEY_ID: "{{ backup_aws_access_key_id }}"
+    AWS_SECRET_ACCESS_KEY: "{{ backup_aws_secret_access_key }}"
+    AWS_DEFAULT_REGION: "{{ backup_aws_default_region }}"
+  register: pre_cutover_restic_probe
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Initialize the encrypted Restic repository when absent
+  ansible.builtin.command: restic init
+  environment: *restic_environment
+  when: pre_cutover_restic_probe.rc != 0
+  changed_when: true
+  no_log: true
+
+- name: Back up qBittorrent and Copyparty before cutover
+  ansible.builtin.command:
+    argv:
+      - restic
+      - backup
+      - --host
+      - pve-pre-cutover
+      - --tag
+      - pre-low-id-cutover
+      - "{{ homelab_data_mount }}/docker-apps/qbittorrent"
+      - "{{ homelab_data_mount }}/downloads"
+      - "{{ homelab_data_mount }}/copyparty"
+      - "{{ homelab_data_mount }}/docker-apps/copyparty"
+  environment: *restic_environment
+  register: pre_cutover_restic_backup
+  changed_when: true
+  no_log: true
+
+- name: Check the encrypted Restic repository
+  ansible.builtin.command: restic check
+  environment: *restic_environment
+  changed_when: false
+  no_log: true
+
+- name: Verify a pre-cutover snapshot exists
+  ansible.builtin.command:
+    argv:
+      - restic
+      - snapshots
+      - --host
+      - pve-pre-cutover
+      - --tag
+      - pre-low-id-cutover
+      - --latest
+      - "1"
+      - --json
+  environment: *restic_environment
+  register: pre_cutover_restic_snapshots
+  changed_when: false
+  failed_when: >-
+    pre_cutover_restic_snapshots.rc != 0 or
+    (pre_cutover_restic_snapshots.stdout | from_json | length) != 1
+  no_log: true
+
+- name: Authorize LXC replacement after verified data backup
+  ansible.builtin.set_fact:
+    low_id_data_backup_confirmed: true

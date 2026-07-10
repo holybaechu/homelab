@@ -6,8 +6,8 @@ def test_game_compose_uses_itzg_images_and_persistent_bind_mounts():
 
     assert "itzg/minecraft-server" in compose
     assert "itzg/mc-proxy" in compose
-    assert "/minecraft/paper:/data:rw" in compose
-    assert "/minecraft/velocity:/server:rw" in compose
+    assert "/srv/homelab/minecraft/paper:/data:rw" in compose
+    assert "/srv/homelab/minecraft/velocity:/server:rw" in compose
     assert 'MEMORY: "${MINECRAFT_MEMORY:-3G}"' in compose
 
 

@@ -1,0 +1,28 @@
+name: backup
+
+services:
+  restic-backup:
+    image: restic/restic:0.18.1
+    restart: unless-stopped
+    env_file: .env
+    entrypoint: ["/bin/sh", "/scripts/backup-loop.sh"]
+    volumes:
+      - ./backup-loop.sh:/scripts/backup-loop.sh:ro
+      - /srv/homelab/docker-apps/qbittorrent:/sources/qbittorrent-config:ro
+      - /srv/homelab/downloads:/sources/downloads:ro
+      - /srv/homelab/copyparty:/sources/copyparty:ro
+      - /srv/homelab/docker-apps/copyparty:/sources/copyparty-state:ro
+      - backup_state:/state
+      - restic_cache:/root/.cache/restic
+    healthcheck:
+      test: ["CMD-SHELL", "find /state/last-success -mmin -2880 -print -quit | grep -q ."]
+      interval: 1h
+      timeout: 10s
+      retries: 3
+      start_period: 10m
+
+volumes:
+  backup_state:
+    name: homelab_backup_state
+  restic_cache:
+    name: homelab_restic_cache

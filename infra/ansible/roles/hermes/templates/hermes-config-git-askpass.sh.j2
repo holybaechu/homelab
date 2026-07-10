@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  *Username*|*username*) printf '%s\n' x-access-token ;;
-  *Password*|*password*) printf '%s\n' "${HERMES_CONFIG_GIT_TOKEN:?HERMES_CONFIG_GIT_TOKEN is required}" ;;
-  *) printf '%s\n' x-access-token ;;
-esac

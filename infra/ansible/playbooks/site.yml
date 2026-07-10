@@ -1,29 +1,9 @@
 ---
-- name: Configure Alpine base
-  hosts: alpine
-  gather_facts: true
-  roles:
-    - common_alpine
-
 - name: Configure Debian base
   hosts: debian
   gather_facts: true
   roles:
     - common_debian
-
-- name: Configure edge LXC
-  hosts: svc_edge
-  gather_facts: true
-  roles:
-    - caddy
-    - ddns
-
-- name: Configure DNS LXC
-  hosts: svc_dns
-  gather_facts: true
-  roles:
-    - adguard_acme
-    - adguard
 
 - name: Configure tailnet LXC
   hosts: svc_tailnet
@@ -31,7 +11,7 @@
   roles:
     - tailscale_gateway
 
-- name: Configure Docker apps LXC
+- name: Configure Docker Compose application LXC
   hosts: svc_docker_apps
   gather_facts: true
   roles:
@@ -39,28 +19,3 @@
       tags: [docker_apps, docker_engine]
     - role: docker_compose_project
       tags: [docker_apps, compose]
-
-- name: Configure downloads LXC
-  hosts: svc_downloads
-  gather_facts: true
-  roles:
-    - qbittorrent
-    - downloads_vpn
-
-- name: Configure files LXC
-  hosts: svc_files
-  gather_facts: true
-  roles:
-    - copyparty
-
-- name: Configure minecraft LXC
-  hosts: svc_minecraft
-  gather_facts: true
-  roles:
-    - minecraft
-
-- name: Configure hermes LXC
-  hosts: svc_hermes
-  gather_facts: true
-  roles:
-    - hermes

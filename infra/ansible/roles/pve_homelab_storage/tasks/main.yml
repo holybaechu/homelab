@@ -1,9 +1,4 @@
 ---
-- name: Install ACL tools for shared bind-mount permissions
-  ansible.builtin.apt:
-    name: acl
-    state: present
-
 - name: Configure homelab data filesystem
   ansible.builtin.shell: |
     set -eu
@@ -11,9 +6,8 @@
     lv_path="/dev/pve/{{ homelab_data_lv_name }}"
     mount_path="{{ homelab_data_mount }}"
     tmp_mount="/mnt/{{ homelab_data_lv_name }}-init"
-    permissions_marker="${mount_path}/.homelab-permissions-initialized"
-    public_qbt_acl_marker="${mount_path}/.homelab-public-qbittorrent-acl-v1"
-    docker_apps_acl_marker="${mount_path}/.homelab-docker-apps-acl-v1"
+    permissions_marker="${mount_path}/.homelab-two-lxc-permissions-v1"
+    migration_marker="${mount_path}/.homelab-two-lxc-data-migrated-v1"
 
     if [ ! -e "${lv_path}" ]; then
       lvcreate -V "{{ homelab_data_lv_size }}" -T pve/data -n "{{ homelab_data_lv_name }}"
@@ -27,17 +21,12 @@
     fi
 
     mkdir -p "${mount_path}"
-
     if ! mountpoint -q "${mount_path}"; then
       mkdir -p "${tmp_mount}"
       if ! mountpoint -q "${tmp_mount}"; then
         mount "${lv_path}" "${tmp_mount}"
       fi
-
-      if [ -d "${mount_path}" ]; then
-        rsync -a "${mount_path}/" "${tmp_mount}/"
-      fi
-
+      rsync -a "${mount_path}/" "${tmp_mount}/"
       umount "${tmp_mount}"
       uuid="$(blkid -s UUID -o value "${lv_path}")"
       if ! grep -qE "[[:space:]]${mount_path}[[:space:]]" /etc/fstab; then
@@ -48,64 +37,80 @@
     fi
 
     mkdir -p \
+      "${mount_path}/docker-apps/qbittorrent/qBittorrent" \
+      "${mount_path}/docker-apps/copyparty" \
       "${mount_path}/downloads/complete" \
       "${mount_path}/downloads/incomplete" \
       "${mount_path}/copyparty/public" \
       "${mount_path}/copyparty/shared-readonly" \
-      "${mount_path}/copyparty/downloads" \
-      "${mount_path}/docker-apps/traefik" \
-      "${mount_path}/docker-apps/qbittorrent" \
-      "${mount_path}/docker-apps/gluetun" \
-      "${mount_path}/docker-apps/copyparty" \
-      "${mount_path}/minecraft" \
+      "${mount_path}/minecraft/paper" \
+      "${mount_path}/minecraft/velocity" \
       "${mount_path}/hermes/home" \
       "${mount_path}/hermes/workspace"
 
+    mounted_vmid=""
+    cleanup_lxc_mount() {
+      if [ -n "${mounted_vmid}" ]; then
+        pct unmount "${mounted_vmid}" >/dev/null 2>&1 || true
+      fi
+    }
+    trap cleanup_lxc_mount EXIT
+
+    migrate_tree() {
+      vmid="$1"
+      source_path="$2"
+      target_path="$3"
+      if ! pct status "${vmid}" >/dev/null 2>&1; then
+        return 0
+      fi
+      pct mount "${vmid}" >/dev/null
+      mounted_vmid="${vmid}"
+      rootfs="/var/lib/lxc/${vmid}/rootfs"
+      if [ -d "${rootfs}${source_path}" ]; then
+        mkdir -p "${target_path}"
+        rsync -a --ignore-existing "${rootfs}${source_path}/" "${target_path}/"
+      fi
+      pct unmount "${vmid}"
+      mounted_vmid=""
+    }
+
+    if [ ! -e "${migration_marker}" ]; then
+      migrate_tree 113 /var/lib/qbittorrent/.config/QBittorrent \
+        "${mount_path}/docker-apps/qbittorrent/qBittorrent"
+      migrate_tree 113 /var/lib/qbittorrent/.config/qBittorrent \
+        "${mount_path}/docker-apps/qbittorrent/qBittorrent"
+      migrate_tree 113 /var/lib/qbittorrent/.local/share/qBittorrent \
+        "${mount_path}/docker-apps/qbittorrent/qBittorrent"
+      migrate_tree 114 /var/lib/copyparty \
+        "${mount_path}/docker-apps/copyparty"
+      touch "${migration_marker}"
+      changed=1
+    fi
+
     if [ ! -e "${permissions_marker}" ] || [ "{{ homelab_data_reconcile_permissions | default(false) | lower }}" = "true" ]; then
-      chown -R {{ homelab_container_uid_offset + downloads_service_uid }}:{{ homelab_container_uid_offset + downloads_service_gid }} "${mount_path}/downloads"
-      chown -R {{ homelab_container_uid_offset + service_uid }}:{{ homelab_container_uid_offset + service_gid }} "${mount_path}/copyparty"
-      chown -R {{ homelab_container_uid_offset + hermes_service_uid }}:{{ homelab_container_uid_offset + hermes_service_gid }} "${mount_path}/hermes"
-      chown -R {{ homelab_container_uid_offset + docker_apps_service_uid }}:{{ homelab_container_uid_offset + docker_apps_service_gid }} "${mount_path}/docker-apps" "${mount_path}/minecraft"
-      chmod 0755 "${mount_path}" "${mount_path}/downloads" "${mount_path}/downloads/complete" "${mount_path}/downloads/incomplete" "${mount_path}/copyparty"
-      chmod 0755 "${mount_path}/copyparty/public" "${mount_path}/copyparty/shared-readonly" "${mount_path}/copyparty/downloads"
-      chmod 0755 "${mount_path}/docker-apps" "${mount_path}/docker-apps/traefik" "${mount_path}/docker-apps/qbittorrent" "${mount_path}/docker-apps/gluetun" "${mount_path}/docker-apps/copyparty" "${mount_path}/minecraft"
-      chmod 0755 "${mount_path}/hermes" "${mount_path}/hermes/home" "${mount_path}/hermes/workspace"
-      find "${mount_path}/copyparty/public" -type d -exec chmod 0755 {} +
-      find "${mount_path}/copyparty/public" -type f -exec chmod 0644 {} +
+      app_uid={{ homelab_container_uid_offset + service_uid }}
+      hermes_uid={{ homelab_container_uid_offset + hermes_service_uid }}
+      chown -R "${app_uid}:${app_uid}" \
+        "${mount_path}/docker-apps" \
+        "${mount_path}/downloads" \
+        "${mount_path}/copyparty" \
+        "${mount_path}/minecraft"
+      chown -R "${hermes_uid}:${hermes_uid}" "${mount_path}/hermes"
+      find \
+        "${mount_path}/docker-apps" \
+        "${mount_path}/downloads" \
+        "${mount_path}/copyparty" \
+        "${mount_path}/minecraft" \
+        "${mount_path}/hermes" \
+        -type d -exec chmod 0755 {} +
       touch "${permissions_marker}"
-      echo "permissions_changed=1"
       changed=1
-    else
-      echo "permissions_changed=0"
-    fi
-
-    if [ ! -e "${public_qbt_acl_marker}" ] || [ "{{ homelab_data_reconcile_permissions | default(false) | lower }}" = "true" ]; then
-      setfacl -R -m "u:{{ homelab_container_uid_offset + service_uid }}:rwX,u:{{ homelab_container_uid_offset + downloads_service_uid }}:rwX" "${mount_path}/copyparty/public"
-      find "${mount_path}/copyparty/public" -type d -exec setfacl -m "d:u:{{ homelab_container_uid_offset + service_uid }}:rwx,d:u:{{ homelab_container_uid_offset + downloads_service_uid }}:rwx" {} +
-      touch "${public_qbt_acl_marker}"
-      echo "public_qbittorrent_acl_changed=1"
-      changed=1
-    else
-      echo "public_qbittorrent_acl_changed=0"
-    fi
-
-
-    if [ ! -e "${docker_apps_acl_marker}" ] || [ "{{ homelab_data_reconcile_permissions | default(false) | lower }}" = "true" ]; then
-      setfacl -R -m "u:{{ homelab_container_uid_offset + docker_apps_service_uid }}:rwX" "${mount_path}/downloads" "${mount_path}/copyparty/public" "${mount_path}/minecraft"
-      setfacl -R -m "u:{{ homelab_container_uid_offset + docker_apps_service_uid }}:rX" "${mount_path}/copyparty/shared-readonly"
-      find "${mount_path}/downloads" "${mount_path}/copyparty/public" "${mount_path}/minecraft" -type d -exec setfacl -m "d:u:{{ homelab_container_uid_offset + docker_apps_service_uid }}:rwx" {} +
-      find "${mount_path}/copyparty/shared-readonly" -type d -exec setfacl -m "d:u:{{ homelab_container_uid_offset + docker_apps_service_uid }}:rx" {} +
-      touch "${docker_apps_acl_marker}"
-      echo "docker_apps_acl_changed=1"
-      changed=1
-    else
-      echo "docker_apps_acl_changed=0"
     fi
 
     if [ "${changed}" -eq 1 ]; then
-      echo "changed=yes"
+      echo changed=yes
     else
-      echo "changed=no"
+      echo changed=no
     fi
   args:
     executable: /bin/sh

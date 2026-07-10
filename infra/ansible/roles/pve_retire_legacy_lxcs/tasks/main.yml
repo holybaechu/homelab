@@ -1,0 +1,38 @@
+---
+- name: Gracefully stop legacy LXCs before shared-data ownership moves
+  ansible.builtin.shell: |
+    set -eu
+    vmid="{{ item.vmid }}"
+    if ! pct status "$vmid" >/dev/null 2>&1; then
+      echo missing=yes
+      exit 0
+    fi
+    actual_hostname="$(pct config "$vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+    if [ "$actual_hostname" != "{{ item.name }}" ]; then
+      printf 'Refusing to stop VMID %s: expected hostname {{ item.name }}, found %s\n' \
+        "$vmid" "$actual_hostname" >&2
+      exit 1
+    fi
+    if ! pct status "$vmid" | grep -q 'status: running'; then
+      echo changed=no
+      exit 0
+    fi
+    if ! pct shutdown "$vmid" --timeout 120; then
+      pct stop "$vmid"
+    fi
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      if pct status "$vmid" | grep -q 'status: stopped'; then
+        echo changed=yes
+        exit 0
+      fi
+      sleep 5
+    done
+    printf 'Legacy LXC %s did not stop\n' "$vmid" >&2
+    exit 1
+  args:
+    executable: /bin/sh
+  loop: "{{ legacy_lxcs }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.vmid }})"
+  register: legacy_lxc_shutdown
+  changed_when: "'changed=yes' in legacy_lxc_shutdown.stdout"

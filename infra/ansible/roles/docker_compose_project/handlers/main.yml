@@ -1,7 +1,7 @@
 ---
 - name: Restart Compose project
   ansible.builtin.command:
-    cmd: docker compose up -d --remove-orphans
+    cmd: docker compose up -d --build --force-recreate --remove-orphans
     chdir: "{{ item.dest }}"
   loop: "{{ docker_compose_projects }}"
   loop_control:

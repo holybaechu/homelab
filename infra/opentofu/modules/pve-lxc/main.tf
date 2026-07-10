@@ -8,8 +8,6 @@ resource "proxmox_virtual_environment_container" "this" {
   tags          = var.tags
 
   lifecycle {
-    prevent_destroy = true
-
     ignore_changes = [
       features,
       device_passthrough,

@@ -10,10 +10,8 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_ENV = {
-    "cloudflare_caddy_token": "CLOUDFLARE_CADDY_TOKEN",
-    "cloudflare_zone_id": "CLOUDFLARE_ZONE_ID",
+    "cloudflare_traefik_token": "CLOUDFLARE_TRAEFIK_TOKEN",
     "cloudflare_ddns_token": "CLOUDFLARE_DDNS_TOKEN",
-    "cloudflare_adguard_acme_token": "CLOUDFLARE_ADGUARD_ACME_TOKEN",
     "adguard_admin_password": "ADGUARD_ADMIN_PASSWORD",
     "tailscale_auth_key": "TAILSCALE_AUTH_KEY",
     "proton_wireguard_private_key": "PROTON_WIREGUARD_PRIVATE_KEY",
@@ -25,8 +23,10 @@ REQUIRED_ENV = {
     "hermes_browserbase_api_key": "BROWSERBASE_API_KEY",
     "hermes_browserbase_project_id": "BROWSERBASE_PROJECT_ID",
     "hermes_1password_service_account_token": "OP_SERVICE_ACCOUNT_TOKEN",
-    "hermes_config_repo_token": "HERMES_CONFIG_REPO_TOKEN",
-    "hermes_config_webhook_secret": "HERMES_CONFIG_WEBHOOK_SECRET",
+    "backup_restic_repository": "BACKUP_RESTIC_REPOSITORY",
+    "backup_restic_password": "BACKUP_RESTIC_PASSWORD",
+    "backup_aws_access_key_id": "BACKUP_AWS_ACCESS_KEY_ID",
+    "backup_aws_secret_access_key": "BACKUP_AWS_SECRET_ACCESS_KEY",
 }
 
 OPTIONAL_ENV = {

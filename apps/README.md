@@ -1,10 +1,12 @@
-# Apps
+# Applications
 
-This directory contains service configuration that is deployed into Proxmox LXCs by Ansible.
+All application services run through Docker Compose on the `docker_apps` LXC.
 
-- `edge`: Caddy and Cloudflare DDNS.
-- `dns`: AdGuard Home ACME support.
-- `downloads`: qBittorrent and Proton VPN helper scripts.
-- `files`: Copyparty configuration.
+- `compose/platform`: Traefik, AdGuard Home, Cloudflare DDNS.
+- `compose/media`: Gluetun, qBittorrent, Copyparty.
+- `compose/game`: Paper and Velocity/Geyser.
+- `compose/hermes`: Hermes Agent Discord gateway.
+- `compose/backup`: encrypted off-host Restic backups.
 
-Runtime secrets are supplied through SOPS or GitHub Actions secrets. They are not stored in this directory.
+Ansible copies these projects to `/opt/homelab-compose`, renders private `.env`
+and configuration files, and reconciles them automatically in CI/CD.

@@ -3,7 +3,18 @@
   hosts: pve_hosts
   gather_facts: false
   roles:
+    - pve_retire_legacy_lxcs
     - pve_homelab_storage
+  post_tasks:
+    - name: Read Proxmox root CA for the Traefik upstream trust store
+      ansible.builtin.slurp:
+        src: /etc/pve/pve-root-ca.pem
+      register: pve_root_ca
+
+    - name: Retain Proxmox root CA for later LXC bootstrap plays
+      ansible.builtin.set_fact:
+        pve_root_ca_pem: "{{ pve_root_ca.content | b64decode }}"
+      no_log: true
 
 - name: Configure Proxmox root-only LXC options
   hosts: pve_hosts
@@ -68,14 +79,21 @@
       loop_control:
         label: "{{ item.name }}"
 
-- name: Bootstrap Alpine LXCs
-  hosts: alpine
-  gather_facts: false
-  roles:
-    - common_alpine
-
 - name: Bootstrap Debian LXCs
   hosts: debian
   gather_facts: false
   roles:
     - common_debian
+
+- name: Install Proxmox CA on the Docker application LXC
+  hosts: svc_docker_apps
+  gather_facts: false
+  tasks:
+    - name: Install Proxmox root CA for verified Traefik upstream TLS
+      ansible.builtin.copy:
+        content: "{{ hostvars['pve'].pve_root_ca_pem }}"
+        dest: /etc/ssl/certs/homelab-pve-root-ca.pem
+        owner: root
+        group: root
+        mode: "0644"
+      no_log: true
