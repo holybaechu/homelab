@@ -1,6 +1,15 @@
 from tests.helpers import REPO_ROOT
 
 
+def test_restic_repository_validation_retries_transient_remote_errors():
+    validation = (REPO_ROOT / "infra/ansible/playbooks/validate.yml").read_text(encoding="utf-8")
+    restic = validation.split("- name: Check Restic repository access", 1)[1]
+
+    assert "retries: 6" in restic
+    assert "delay: 10" in restic
+    assert "until: restic_repository_access.rc == 0" in restic
+
+
 def test_backup_covers_qbittorrent_downloads_and_copyparty_read_only():
     compose = (REPO_ROOT / "apps/compose/backup/compose.yml").read_text(encoding="utf-8")
     script = (REPO_ROOT / "apps/compose/backup/backup-loop.sh").read_text(encoding="utf-8")
@@ -26,4 +35,3 @@ def test_cd_requires_encrypted_off_host_backup_credentials():
     ):
         assert name in workflow
         assert name in writer
-
