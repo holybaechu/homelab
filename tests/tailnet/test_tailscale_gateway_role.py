@@ -38,5 +38,6 @@ def test_tailnet_uses_ipv4_only_underlay_when_public_ipv6_is_unroutable():
 
     assert "net.ipv6.conf.all.disable_ipv6=1" in role
     assert "net.ipv6.conf.default.disable_ipv6=1" in role
-    assert "sysctl --system" in role
+    assert "sysctl -w" in role
+    assert "net.ipv4.ip_forward=1" in role
     assert "net.ipv6.conf.all.forwarding=1" not in role
