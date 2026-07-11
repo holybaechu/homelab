@@ -40,23 +40,21 @@ def test_tofu_plan_guard_accepts_non_destructive_changes():
     assert "no unapproved destructive actions" in result.stdout
 
 
-def test_tofu_plan_guard_allows_only_exact_low_id_renumbers():
+def test_tofu_plan_guard_allows_only_exact_retained_source_low_id_targets():
     result = run_guard(
         {
             "resource_changes": [
                 {
-                    "address": 'module.active_lxc["docker_apps"].proxmox_virtual_environment_container.this',
+                    "address": 'module.target_lxc["docker_apps"].proxmox_virtual_environment_container.this',
                     "change": {
-                        "actions": ["delete", "create"],
-                        "before": {"vm_id": 117},
+                        "actions": ["create"],
                         "after": {"vm_id": 110},
                     },
                 },
                 {
-                    "address": 'module.active_lxc["tailnet"].proxmox_virtual_environment_container.this',
+                    "address": 'module.target_lxc["tailnet"].proxmox_virtual_environment_container.this',
                     "change": {
-                        "actions": ["delete", "create"],
-                        "before": {"vm_id": 112},
+                        "actions": ["create"],
                         "after": {"vm_id": 111},
                     },
                 },
@@ -65,19 +63,18 @@ def test_tofu_plan_guard_allows_only_exact_low_id_renumbers():
     )
 
     assert result.returncode == 0
-    assert "117 -> 110" in result.stdout
-    assert "112 -> 111" in result.stdout
+    assert "-> 110" in result.stdout
+    assert "-> 111" in result.stdout
 
 
-def test_tofu_plan_guard_rejects_almost_matching_renumber():
+def test_tofu_plan_guard_rejects_almost_matching_low_id_target():
     result = run_guard(
         {
             "resource_changes": [
                 {
-                    "address": 'module.active_lxc["docker_apps"].proxmox_virtual_environment_container.this',
+                    "address": 'module.target_lxc["docker_apps"].proxmox_virtual_environment_container.this',
                     "change": {
-                        "actions": ["delete", "create"],
-                        "before": {"vm_id": 117},
+                        "actions": ["create"],
                         "after": {"vm_id": 109},
                     },
                 }
@@ -86,7 +83,7 @@ def test_tofu_plan_guard_rejects_almost_matching_renumber():
     )
 
     assert result.returncode == 1
-    assert "ALLOW_TOFU_DESTROY" in result.stderr
+    assert "expected VMID 110" in result.stderr
 
 
 def test_tofu_plan_guard_rejects_delete_actions_by_default():
@@ -128,7 +125,7 @@ def test_tofu_plan_guard_rejects_create_only_lxc_plan_by_default():
         {
             "resource_changes": [
                 {
-                    "address": f"module.active_lxc[\"svc{i}\"].proxmox_virtual_environment_container.this",
+                    "address": f"module.target_lxc[\"svc{i}\"].proxmox_virtual_environment_container.this",
                     "change": {"actions": ["create"]},
                 }
                 for i in range(expected_lxc_count())
@@ -150,7 +147,7 @@ def test_tofu_plan_guard_allows_create_only_lxc_plan_for_explicit_bootstrap():
             {
                 "resource_changes": [
                     {
-                        "address": f"module.active_lxc[\"svc{i}\"].proxmox_virtual_environment_container.this",
+                        "address": f"module.target_lxc[\"svc{i}\"].proxmox_virtual_environment_container.this",
                         "change": {"actions": ["create"]},
                     }
                     for i in range(expected_lxc_count())
