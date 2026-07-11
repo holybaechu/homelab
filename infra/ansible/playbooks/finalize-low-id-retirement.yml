@@ -1,0 +1,8 @@
+---
+- name: Retire archived source LXCs after the new subnet route is proven
+  hosts: pve_hosts
+  gather_facts: false
+  roles:
+    - role: pve_finalize_low_id_cutover
+      vars:
+        low_id_finalize_phase: finalize

@@ -1,0 +1,124 @@
+---
+- name: Require an explicit finalization phase
+  ansible.builtin.assert:
+    that:
+      - low_id_finalize_phase in ['arm', 'finalize']
+    fail_msg: low_id_finalize_phase must be arm or finalize
+
+- name: Arm tailnet source failback and schedule its graceful shutdown
+  ansible.builtin.shell: |
+    set -eu
+    source_vmid=112
+    target_vmid=111
+    failback_unit=homelab-tailnet-source-failback
+    stop_unit=homelab-tailnet-source-stop
+
+    if ! pct config "$source_vmid" >/dev/null 2>&1; then
+      echo changed=no
+      exit 0
+    fi
+
+    source_hostname="$(pct config "$source_vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+    target_hostname="$(pct config "$target_vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+    if [ "$source_hostname" != tailnet ] || [ "$target_hostname" != tailnet ]; then
+      printf 'Refusing tailnet handoff: source=%s target=%s\n' \
+        "$source_hostname" "$target_hostname" >&2
+      exit 1
+    fi
+    pct status "$target_vmid" | grep -q 'status: running'
+    pct exec "$target_vmid" -- systemctl is-active --quiet tailscaled
+    pct config "$target_vmid" | grep -Fq 'ip=192.168.0.4/24'
+
+    systemctl stop "${failback_unit}.timer" "${failback_unit}.service" \
+      "${stop_unit}.timer" "${stop_unit}.service" >/dev/null 2>&1 || true
+    systemctl reset-failed "${failback_unit}.service" "${stop_unit}.service" \
+      >/dev/null 2>&1 || true
+
+    systemd-run --quiet --unit="$failback_unit" --on-active=5m \
+      /usr/sbin/pct start "$source_vmid"
+    systemd-run --quiet --unit="$stop_unit" --on-active=10s \
+      /bin/sh -c "/usr/sbin/pct shutdown $source_vmid --timeout 120 || /usr/sbin/pct stop $source_vmid"
+    echo changed=yes
+  args:
+    executable: /bin/sh
+  register: low_id_tailnet_handoff
+  changed_when: "'changed=yes' in low_id_tailnet_handoff.stdout"
+  when: low_id_finalize_phase == 'arm'
+
+- name: Verify the target pair before retiring source LXCs
+  ansible.builtin.shell: |
+    set -eu
+    for mapping in '110:docker-apps:192.168.0.3/24' '111:tailnet:192.168.0.4/24'; do
+      vmid="${mapping%%:*}"
+      rest="${mapping#*:}"
+      expected_hostname="${rest%%:*}"
+      expected_ip="${rest#*:}"
+      actual_hostname="$(pct config "$vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+      if [ "$actual_hostname" != "$expected_hostname" ]; then
+        printf 'Refusing finalization: VMID %s expected %s, found %s\n' \
+          "$vmid" "$expected_hostname" "$actual_hostname" >&2
+        exit 1
+      fi
+      pct status "$vmid" | grep -q 'status: running'
+      pct config "$vmid" | grep -Fq "ip=$expected_ip"
+    done
+    pct exec 111 -- systemctl is-active --quiet tailscaled
+    if pct config 112 >/dev/null 2>&1; then
+      pct status 112 | grep -q 'status: stopped'
+    fi
+  args:
+    executable: /bin/sh
+  changed_when: false
+  when: low_id_finalize_phase == 'finalize'
+
+- name: Cancel the automatic tailnet source failback
+  ansible.builtin.shell: |
+    set -eu
+    systemctl stop homelab-tailnet-source-failback.timer \
+      homelab-tailnet-source-failback.service \
+      homelab-tailnet-source-stop.timer \
+      homelab-tailnet-source-stop.service >/dev/null 2>&1 || true
+    systemctl reset-failed homelab-tailnet-source-failback.service \
+      homelab-tailnet-source-stop.service >/dev/null 2>&1 || true
+  args:
+    executable: /bin/sh
+  changed_when: false
+  when: low_id_finalize_phase == 'finalize'
+
+- name: Destroy only archived and hostname-verified source LXCs
+  ansible.builtin.shell: |
+    set -eu
+    vmid="{{ item.source_vmid }}"
+    if ! pct config "$vmid" >/dev/null 2>&1; then
+      echo changed=no
+      exit 0
+    fi
+    actual_hostname="$(pct config "$vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+    if [ "$actual_hostname" != "{{ item.desired_name }}" ]; then
+      printf 'Refusing to retire VMID %s: expected {{ item.desired_name }}, found %s\n' \
+        "$vmid" "$actual_hostname" >&2
+      exit 1
+    fi
+    find /var/lib/vz/dump -maxdepth 1 -type f \
+      -name "vzdump-lxc-${vmid}-*.tar.zst" -print -quit | grep -q . || {
+        printf 'Refusing to retire VMID %s without a local vzdump archive\n' "$vmid" >&2
+        exit 1
+      }
+    if pct status "$vmid" | grep -q 'status: running'; then
+      if [ "$vmid" = 112 ]; then
+        printf 'Refusing to retire tailnet source VMID 112 before route handoff\n' >&2
+        exit 1
+      fi
+      pct shutdown "$vmid" --timeout 120 || pct stop "$vmid"
+    fi
+    pct status "$vmid" | grep -q 'status: stopped'
+    pct destroy "$vmid" --purge 1 --destroy-unreferenced-disks 1
+    echo changed=yes
+  args:
+    executable: /bin/sh
+  loop: "{{ low_id_cutover_mappings }}"
+  loop_control:
+    label: "{{ item.desired_name }} source ({{ item.source_vmid }})"
+  register: low_id_source_retirement
+  changed_when: "'changed=yes' in low_id_source_retirement.stdout"
+  when: low_id_finalize_phase == 'finalize'

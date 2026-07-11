@@ -65,6 +65,20 @@ def test_low_id_cutover_is_hostname_guarded_and_backed_up():
     assert "low_id_data_backup_confirmed: true" in backup
 
 
+def test_source_pair_is_retired_only_after_a_failback_guarded_route_handoff():
+    workflow = read(".github/workflows/cd.yml")
+    tasks = read("infra/ansible/roles/pve_finalize_low_id_cutover/tasks/main.yml")
+
+    assert workflow.index("Validate services") < workflow.index("Arm failback")
+    assert workflow.index("Arm failback") < workflow.index("Prove Proxmox remains reachable")
+    assert workflow.index("Prove Proxmox remains reachable") < workflow.index("Retire the archived source pair")
+    assert "homelab-tailnet-source-failback" in tasks
+    assert "--on-active=5m" in tasks
+    assert "pct status 112 | grep -q 'status: stopped'" in tasks
+    assert "without a local vzdump archive" in tasks
+    assert 'pct destroy "$vmid"' in tasks
+
+
 def test_every_application_is_a_compose_project():
     for project in ("platform", "media", "game", "hermes", "backup"):
         root = REPO_ROOT / "apps" / "compose" / project
