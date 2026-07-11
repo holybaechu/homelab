@@ -137,6 +137,30 @@ jobs:
       - name: Validate services
         run: sh ./scripts/ci/run-ansible-parallel.sh validate
 
+      - name: Arm failback and move the subnet route to VMID 111
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
+          infra/ansible/playbooks/arm-low-id-retirement.yml
+
+      - name: Prove Proxmox remains reachable after VMID 112 stops
+        run: |
+          set -eu
+          for attempt in $(seq 1 48); do
+            if ansible pve_hosts -i infra/ansible/inventory/prod/hosts.yml \
+              -m ansible.builtin.shell \
+              -a "if pct config 112 >/dev/null 2>&1; then pct status 112 | grep -q 'status: stopped'; fi"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "The new tailnet route was not proven; VMID 112 will restart automatically." >&2
+          exit 1
+
+      - name: Retire the archived source pair
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
+          infra/ansible/playbooks/finalize-low-id-retirement.yml
+
       - name: Remove Ansible extra vars
         if: always()
         env:
