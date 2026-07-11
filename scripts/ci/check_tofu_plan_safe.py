@@ -12,9 +12,9 @@ from typing import Any
 from homelab_topology import expected_lxc_count
 
 LXC_RESOURCE_SUFFIX = ".proxmox_virtual_environment_container.this"
-APPROVED_LOW_ID_RENUMBER = {
-    f'module.active_lxc["docker_apps"]{LXC_RESOURCE_SUFFIX}': (117, 110),
-    f'module.active_lxc["tailnet"]{LXC_RESOURCE_SUFFIX}': (112, 111),
+APPROVED_LOW_ID_TARGETS = {
+    f'module.target_lxc["docker_apps"]{LXC_RESOURCE_SUFFIX}': 110,
+    f'module.target_lxc["tailnet"]{LXC_RESOURCE_SUFFIX}': 111,
 }
 
 
@@ -41,26 +41,22 @@ def _actions(resource: dict[str, Any]) -> list[str]:
     return list(resource.get("change", {}).get("actions", []))
 
 
-def _is_approved_low_id_renumber(resource: dict[str, Any]) -> bool:
+def _is_approved_low_id_target(resource: dict[str, Any]) -> bool:
     address = resource.get("address", "")
-    expected = APPROVED_LOW_ID_RENUMBER.get(address)
-    if expected is None or _actions(resource) not in (
-        ["delete", "create"],
-        ["create", "delete"],
-    ):
+    expected = APPROVED_LOW_ID_TARGETS.get(address)
+    if expected is None or _actions(resource) != ["create"]:
         return False
 
     change = resource.get("change", {})
-    before_vmid = (change.get("before") or {}).get("vm_id")
     after_vmid = (change.get("after") or {}).get("vm_id")
-    return (before_vmid, after_vmid) == expected
+    return after_vmid == expected
 
 
 def _destructive_changes(plan: dict[str, Any]) -> list[str]:
     destructive = []
     for resource in _resource_changes(plan):
         actions = _actions(resource)
-        if "delete" in actions and not _is_approved_low_id_renumber(resource):
+        if "delete" in actions:
             address = resource.get("address", "<unknown>")
             destructive.append(f"{address}: {','.join(actions)}")
     return destructive
@@ -70,7 +66,7 @@ def _create_only_lxc_changes(plan: dict[str, Any]) -> list[str]:
     create_only = []
     for resource in _resource_changes(plan):
         address = resource.get("address", "")
-        if not address.startswith("module.active_lxc[") or not address.endswith(LXC_RESOURCE_SUFFIX):
+        if not address.startswith("module.target_lxc[") or not address.endswith(LXC_RESOURCE_SUFFIX):
             continue
         if _actions(resource) == ["create"]:
             create_only.append(address)
@@ -86,10 +82,10 @@ def _expected_lxc_count() -> int:
 
 def main(argv: list[str]) -> int:
     plan = _load_plan(argv)
-    approved_renumbers = [
+    approved_targets = [
         resource.get("address", "<unknown>")
         for resource in _resource_changes(plan)
-        if _is_approved_low_id_renumber(resource)
+        if _is_approved_low_id_target(resource)
     ]
     destructive = _destructive_changes(plan)
 
@@ -109,17 +105,33 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
-    for address in approved_renumbers:
-        old_vmid, new_vmid = APPROVED_LOW_ID_RENUMBER[address]
-        print(f"Approved one-time low-ID renumber: {address} {old_vmid} -> {new_vmid}.")
+    for address in approved_targets:
+        vmid = APPROVED_LOW_ID_TARGETS[address]
+        print(f"Approved one-time retained-source low-ID target: {address} -> {vmid}.")
 
     create_only_lxcs = _create_only_lxc_changes(plan)
+    invalid_known_targets = [
+        resource.get("address", "<unknown>")
+        for resource in _resource_changes(plan)
+        if resource.get("address") in APPROVED_LOW_ID_TARGETS
+        and _actions(resource) == ["create"]
+        and not _is_approved_low_id_target(resource)
+    ]
+    if invalid_known_targets:
+        print("OpenTofu plan uses an unexpected VMID for a protected low-ID target:", file=sys.stderr)
+        for address in invalid_known_targets:
+            print(f"- {address}: expected VMID {APPROVED_LOW_ID_TARGETS[address]}", file=sys.stderr)
+        return 1
+
+    unapproved_create_only_lxcs = [
+        address for address in create_only_lxcs if address not in APPROVED_LOW_ID_TARGETS
+    ]
     expected_lxcs = _expected_lxc_count()
-    if len(create_only_lxcs) >= expected_lxcs and not _truthy(
+    if len(unapproved_create_only_lxcs) >= expected_lxcs and not _truthy(
         os.environ.get("ALLOW_EMPTY_STATE_BOOTSTRAP")
     ):
         print("OpenTofu plan appears to be a create-only LXC bootstrap plan:", file=sys.stderr)
-        for address in create_only_lxcs:
+        for address in unapproved_create_only_lxcs:
             print(f"- {address}: create-only", file=sys.stderr)
         print(
             "Refusing to continue because this often means the production remote state "

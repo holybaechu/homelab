@@ -98,15 +98,31 @@
   changed_when: true
 
 - name: Destroy only hostname-verified legacy target occupants
-  ansible.builtin.command:
-    argv:
-      - pct
-      - destroy
-      - "{{ item.item.target_vmid | string }}"
-      - --purge
-      - "1"
-      - --destroy-unreferenced-disks
-      - "1"
+  ansible.builtin.shell: |
+    set -eu
+    vmid="{{ item.item.target_vmid }}"
+    actual_hostname="$(pct config "$vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+    if [ "$actual_hostname" != "{{ item.item.legacy_name }}" ]; then
+      printf 'Refusing to destroy VMID %s: expected hostname {{ item.item.legacy_name }}, found %s\n' \
+        "$vmid" "$actual_hostname" >&2
+      exit 1
+    fi
+    if pct status "$vmid" | grep -q 'status: running'; then
+      if ! pct shutdown "$vmid" --timeout 120; then
+        pct stop "$vmid"
+      fi
+    fi
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      if pct status "$vmid" | grep -q 'status: stopped'; then
+        pct destroy "$vmid" --purge 1 --destroy-unreferenced-disks 1
+        exit 0
+      fi
+      sleep 5
+    done
+    printf 'Refusing to destroy VMID %s because it did not stop\n' "$vmid" >&2
+    exit 1
+  args:
+    executable: /bin/sh
   loop: "{{ low_id_cutover_inspection.results }}"
   loop_control:
     label: "{{ item.item.legacy_name }} ({{ item.item.target_vmid }})"

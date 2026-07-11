@@ -196,9 +196,9 @@ def test_tofu_apply_is_guarded_against_destroying_lxcs():
     assert "prevent_destroy = true" not in module
     assert "tofu show -json prod.tfplan" in plan_script
     assert "check_tofu_plan_safe.py" in plan_script
-    assert "APPROVED_LOW_ID_RENUMBER" in guard_script
-    assert "(117, 110)" in guard_script
-    assert "(112, 111)" in guard_script
+    assert "APPROVED_LOW_ID_TARGETS" in guard_script
+    assert "docker_apps" in guard_script and ": 110" in guard_script
+    assert "tailnet" in guard_script and ": 111" in guard_script
     assert "ALLOW_TOFU_DESTROY" in guard_script
     assert "ALLOW_EMPTY_STATE_BOOTSTRAP" in guard_script
     assert '"delete" in actions' in guard_script

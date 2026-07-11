@@ -24,11 +24,10 @@ def test_only_tailnet_and_docker_apps_are_managed_lxcs():
 
 def test_retired_lxcs_are_forgotten_without_destruction():
     main = read("infra/opentofu/envs/prod/main.tf")
-    assert 'from = module.lxc["tailnet"]' in main
-    assert 'to   = module.active_lxc["tailnet"]' in main
-    assert 'from = module.lxc["docker_apps"]' in main
+    assert 'module "target_lxc"' in main
+    assert "from = module.active_lxc\n" in main
     assert "from = module.lxc\n" in main
-    assert main.count("destroy = false") == 1
+    assert main.count("destroy = false") == 2
 
 
 def test_docker_lxc_gets_tun_and_one_data_root_mount():
@@ -54,7 +53,9 @@ def test_low_id_cutover_is_hostname_guarded_and_backed_up():
     assert "desired_name: docker-apps, source_vmid: 117, backup_mode: stop" in all_vars
     assert "desired_name: tailnet, source_vmid: 112, backup_mode: snapshot" in all_vars
     assert "vzdump" in tasks
-    assert "      - pct\n      - destroy" in tasks
+    assert "pct shutdown" in tasks
+    assert "status: stopped" in tasks
+    assert 'pct destroy "$vmid"' in tasks
     assert "low_id_cutover_confirmed" in tasks
     assert "low_id_data_backup_confirmed" in tasks
     assert playbook.index("pve_retire_legacy_lxcs") < playbook.index("pve_homelab_storage")

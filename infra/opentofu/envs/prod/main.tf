@@ -1,4 +1,4 @@
-module "active_lxc" {
+module "target_lxc" {
   for_each = var.containers
 
   source = "../../modules/pve-lxc"
@@ -24,18 +24,17 @@ module "active_lxc" {
   startup_order    = each.value.startup_order
 }
 
-moved {
-  from = module.lxc["tailnet"]
-  to   = module.active_lxc["tailnet"]
+# Keep the source pair online while the lowest-ID replacements are created and
+# validated. They are retired explicitly only after the new tailnet is usable.
+removed {
+  from = module.active_lxc
+
+  lifecycle {
+    destroy = false
+  }
 }
 
-moved {
-  from = module.lxc["docker_apps"]
-  to   = module.active_lxc["docker_apps"]
-}
-
-# After the retained instances move to active_lxc, forget every legacy
-# instance left at the old module address without destroying its container.
+# Forget every earlier legacy instance without destroying its container.
 removed {
   from = module.lxc
 
