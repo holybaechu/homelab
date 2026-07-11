@@ -60,7 +60,7 @@ docker_compose_projects:
     env_template: platform.env.j2
     config_templates:
       - src: AdGuardHome.yaml.j2
-        dest: AdGuardHome.yaml
+        dest: adguard/AdGuardHome.yaml
         mode: "0600"
   - name: media
     src: apps/compose/media
