@@ -32,7 +32,7 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - ./AdGuardHome.yaml:/opt/adguardhome/conf/AdGuardHome.yaml:rw
+      - ./adguard:/opt/adguardhome/conf:rw
       - adguard_work:/opt/adguardhome/work
     healthcheck:
       test: ["CMD", "/opt/adguardhome/AdGuardHome", "--check-config", "-c", "/opt/adguardhome/conf/AdGuardHome.yaml"]

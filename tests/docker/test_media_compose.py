@@ -10,6 +10,8 @@ def test_qbittorrent_uses_gluetun_namespace_and_native_port_forwarding():
     assert "ports:" not in qbittorrent
     assert 'VPN_PORT_FORWARDING: "on"' in gluetun
     assert 'PORT_FORWARD_ONLY: "on"' in gluetun
+    assert "HEALTH_SMALL_CHECK_TYPE: dns" in gluetun
+    assert 'HEALTH_TARGET_ADDRESSES: "cloudflare.com:443,github.com:443"' in gluetun
     assert "VPN_PORT_FORWARDING_UP_COMMAND" in gluetun
     assert "/api/v2/app/setPreferences" in gluetun
 

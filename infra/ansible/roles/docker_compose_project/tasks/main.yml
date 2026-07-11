@@ -74,6 +74,7 @@
     mode: "{{ item.mode | default('0755') }}"
   loop:
     - {path: "{{ docker_apps_compose_root }}", owner: root, group: root}
+    - {path: "{{ docker_apps_compose_root }}/platform/adguard", owner: root, group: root, mode: "0750"}
     - {path: /srv/homelab/docker-apps/qbittorrent/qBittorrent, mode: "0700"}
     - {path: /srv/homelab/docker-apps/copyparty}
     - {path: /srv/homelab/downloads/complete}
@@ -127,7 +128,7 @@
                             print(candidate.split(":", 1)[1].strip().strip('"'))
                             raise SystemExit(0)
         print("")
-      - "{{ docker_apps_compose_root }}/platform/AdGuardHome.yaml"
+      - "{{ docker_apps_compose_root }}/platform/adguard/AdGuardHome.yaml"
       - "{{ adguard_admin_username }}"
   register: adguard_existing_admin_hash
   changed_when: false

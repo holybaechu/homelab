@@ -36,6 +36,8 @@ def test_adguard_uses_host_network_only_for_plain_dns_and_private_admin():
     ).read_text(encoding="utf-8")
 
     assert "network_mode: host" in compose
+    assert "./adguard:/opt/adguardhome/conf:rw" in compose
+    assert "./AdGuardHome.yaml:/opt/adguardhome/conf/AdGuardHome.yaml" not in compose
     assert "port: {{ adguard_dns_port }}" in template
     assert "address: 0.0.0.0:{{ adguard_admin_port }}" in template
     assert "enabled: false" in template.split("tls:", 1)[1]
