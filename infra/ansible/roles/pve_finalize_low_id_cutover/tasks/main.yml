@@ -122,3 +122,68 @@
   register: low_id_source_retirement
   changed_when: "'changed=yes' in low_id_source_retirement.stdout"
   when: low_id_finalize_phase == 'finalize'
+
+- name: Archive stopped legacy application LXCs before final retirement
+  ansible.builtin.shell: |
+    set -eu
+    vmid="{{ item.vmid }}"
+    if ! pct config "$vmid" >/dev/null 2>&1; then
+      echo changed=no
+      exit 0
+    fi
+    actual_hostname="$(pct config "$vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+    if [ "$actual_hostname" != "{{ item.name }}" ]; then
+      printf 'Refusing to archive VMID %s: expected {{ item.name }}, found %s\n' \
+        "$vmid" "$actual_hostname" >&2
+      exit 1
+    fi
+    pct status "$vmid" | grep -q 'status: stopped'
+    if find /var/lib/vz/dump -maxdepth 1 -type f \
+      -name "vzdump-lxc-${vmid}-*.tar.zst" -print -quit | grep -q .; then
+      echo changed=no
+      exit 0
+    fi
+    vzdump "$vmid" --storage local --mode stop --compress zstd \
+      --notes-template "pre-two-lxc-retirement-{{ item.name }}"
+    find /var/lib/vz/dump -maxdepth 1 -type f \
+      -name "vzdump-lxc-${vmid}-*.tar.zst" -print -quit | grep -q .
+    echo changed=yes
+  args:
+    executable: /bin/sh
+  loop: "{{ legacy_lxcs }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.vmid }})"
+  register: legacy_lxc_archival
+  changed_when: "'changed=yes' in legacy_lxc_archival.stdout"
+  when: low_id_finalize_phase == 'finalize'
+
+- name: Destroy only archive-verified legacy application LXCs
+  ansible.builtin.shell: |
+    set -eu
+    vmid="{{ item.vmid }}"
+    if ! pct config "$vmid" >/dev/null 2>&1; then
+      echo changed=no
+      exit 0
+    fi
+    actual_hostname="$(pct config "$vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
+    if [ "$actual_hostname" != "{{ item.name }}" ]; then
+      printf 'Refusing to retire VMID %s: expected {{ item.name }}, found %s\n' \
+        "$vmid" "$actual_hostname" >&2
+      exit 1
+    fi
+    pct status "$vmid" | grep -q 'status: stopped'
+    find /var/lib/vz/dump -maxdepth 1 -type f \
+      -name "vzdump-lxc-${vmid}-*.tar.zst" -print -quit | grep -q . || {
+        printf 'Refusing to retire VMID %s without a local vzdump archive\n' "$vmid" >&2
+        exit 1
+      }
+    pct destroy "$vmid" --purge 1 --destroy-unreferenced-disks 1
+    echo changed=yes
+  args:
+    executable: /bin/sh
+  loop: "{{ legacy_lxcs }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.vmid }})"
+  register: legacy_lxc_retirement
+  changed_when: "'changed=yes' in legacy_lxc_retirement.stdout"
+  when: low_id_finalize_phase == 'finalize'
