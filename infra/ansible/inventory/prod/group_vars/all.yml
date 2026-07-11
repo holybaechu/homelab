@@ -27,8 +27,8 @@ legacy_lxcs:
 
 low_id_cutover_backup_storage: local
 low_id_cutover_mappings:
-  - {target_vmid: 110, legacy_name: edge, desired_name: docker-apps, source_vmid: 117}
-  - {target_vmid: 111, legacy_name: dns, desired_name: tailnet, source_vmid: 112}
+  - {target_vmid: 110, legacy_name: edge, desired_name: docker-apps, source_vmid: 117, backup_mode: stop}
+  - {target_vmid: 111, legacy_name: dns, desired_name: tailnet, source_vmid: 112, backup_mode: snapshot}
 
 pve_lxc_root_options:
   - vmid: 111

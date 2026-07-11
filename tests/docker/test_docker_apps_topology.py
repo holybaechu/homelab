@@ -51,6 +51,8 @@ def test_low_id_cutover_is_hostname_guarded_and_backed_up():
     assert "legacy_name: edge" in all_vars
     assert "target_vmid: 111" in all_vars
     assert "legacy_name: dns" in all_vars
+    assert "desired_name: docker-apps, source_vmid: 117, backup_mode: stop" in all_vars
+    assert "desired_name: tailnet, source_vmid: 112, backup_mode: snapshot" in all_vars
     assert "vzdump" in tasks
     assert "      - pct\n      - destroy" in tasks
     assert "low_id_cutover_confirmed" in tasks

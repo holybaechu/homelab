@@ -65,7 +65,7 @@
       - --storage
       - "{{ low_id_cutover_backup_storage }}"
       - --mode
-      - stop
+      - "{{ item.item.backup_mode }}"
       - --compress
       - zstd
       - --notes-template
