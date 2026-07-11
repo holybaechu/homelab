@@ -36,10 +36,33 @@
         '
         ;;
       debian)
-        pct exec "${vmid}" -- /bin/bash -lc '
+        nameservers="$(pct config "${vmid}" | awk -F ': ' '$1 == "nameserver" { print $2 }')"
+        if [ -z "${nameservers}" ]; then
+          printf "No Proxmox nameservers configured for VMID %s\n" "${vmid}" >&2
+          exit 1
+        fi
+        pct exec "${vmid}" -- /usr/bin/env \
+          HOMELAB_NAMESERVERS="${nameservers}" \
+          HOMELAB_SEARCH_DOMAIN="{{ homelab_private_domain }}" \
+          /bin/bash -lc '
           set -eu
           changed=0
           export DEBIAN_FRONTEND=noninteractive
+
+          expected_resolver="$(
+            printf "# --- BEGIN PVE ---\nsearch %s\n" "${HOMELAB_SEARCH_DOMAIN}"
+            for nameserver in ${HOMELAB_NAMESERVERS}; do
+              printf "nameserver %s\n" "${nameserver}"
+            done
+            printf "# --- END PVE ---"
+          )"
+          current_resolver="$(cat /etc/resolv.conf 2>/dev/null || true)"
+          if [ "${current_resolver}" != "${expected_resolver}" ]; then
+            rm -f /etc/resolv.conf
+            printf "%s\n" "${expected_resolver}" > /etc/resolv.conf
+            changed=1
+          fi
+
           missing=0
           for pkg in openssh-server python3; do
             if ! dpkg -s "${pkg}" >/dev/null 2>&1; then
