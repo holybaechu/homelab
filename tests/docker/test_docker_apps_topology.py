@@ -89,6 +89,21 @@ def test_source_pair_is_retired_only_after_a_failback_guarded_route_handoff():
     assert 'pct destroy "$vmid"' in tasks
 
 
+def test_legacy_application_lxcs_are_archived_before_final_retirement():
+    tasks = read("infra/ansible/roles/pve_finalize_low_id_cutover/tasks/main.yml")
+
+    archive = tasks.index("Archive stopped legacy application LXCs")
+    retire = tasks.index("Destroy only archive-verified legacy application LXCs")
+    assert archive < retire
+    legacy_tasks = tasks[archive:]
+    assert 'loop: "{{ legacy_lxcs }}"' in legacy_tasks
+    assert "pre-two-lxc-retirement-{{ item.name }}" in legacy_tasks
+    assert legacy_tasks.count('status: stopped') >= 2
+    assert 'vzdump "$vmid"' in legacy_tasks
+    assert 'name "vzdump-lxc-${vmid}-*.tar.zst"' in legacy_tasks
+    assert 'pct destroy "$vmid" --purge 1 --destroy-unreferenced-disks 1' in legacy_tasks
+
+
 def test_every_application_is_a_compose_project():
     for project in ("platform", "media", "game", "hermes", "backup"):
         root = REPO_ROOT / "apps" / "compose" / project
