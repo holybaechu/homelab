@@ -40,6 +40,16 @@ def test_docker_lxc_gets_tun_and_one_data_root_mount():
     assert "-mp1" not in docker
 
 
+def test_debian_bootstrap_materializes_proxmox_dns_before_apt():
+    tasks = read("infra/ansible/roles/pve_lxc_access_bootstrap/tasks/main.yml")
+
+    dns = tasks.index('nameservers="$(pct config')
+    resolver = tasks.index("rm -f /etc/resolv.conf")
+    apt = tasks.index("apt-get update", resolver)
+    assert dns < resolver < apt
+    assert "HOMELAB_SEARCH_DOMAIN" in tasks
+
+
 def test_low_id_cutover_is_hostname_guarded_and_backed_up():
     all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
     tasks = read("infra/ansible/roles/pve_prepare_low_id_cutover/tasks/main.yml")
