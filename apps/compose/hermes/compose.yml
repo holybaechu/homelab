@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: homelab/hermes-agent:0.18.2
+    image: homelab/hermes-agent:2026.7.7.2
     container_name: hermes
     restart: unless-stopped
     command: ["gateway", "run"]
@@ -25,4 +25,3 @@ services:
         limits:
           memory: 4G
           cpus: "2.0"
-

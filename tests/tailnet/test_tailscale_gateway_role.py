@@ -23,3 +23,20 @@ def test_tailnet_lxc_disables_tailscale_dns_acceptance():
 
     assert "tailscale_accept_dns: false" in inventory
     assert "--accept-dns={{ tailscale_accept_dns | default(false) | lower }}" in role
+
+
+def test_tailnet_uses_ipv4_only_underlay_when_public_ipv6_is_unroutable():
+    role = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "tailscale_gateway"
+        / "tasks"
+        / "main.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "net.ipv6.conf.all.disable_ipv6=1" in role
+    assert "net.ipv6.conf.default.disable_ipv6=1" in role
+    assert "sysctl --system" in role
+    assert "net.ipv6.conf.all.forwarding=1" not in role
