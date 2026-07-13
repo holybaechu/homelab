@@ -28,7 +28,7 @@ services:
       start_period: 10s
 
   adguard:
-    image: adguard/adguardhome:v0.107.77
+    image: adguard/adguardhome:v0.107.78
     restart: unless-stopped
     network_mode: host
     volumes:
