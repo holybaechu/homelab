@@ -74,10 +74,6 @@ jobs:
           HONCHO_API_KEY: ${{ secrets.HONCHO_API_KEY }}
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
-          BACKUP_RESTIC_REPOSITORY: ${{ secrets.BACKUP_RESTIC_REPOSITORY }}
-          BACKUP_RESTIC_PASSWORD: ${{ secrets.BACKUP_RESTIC_PASSWORD }}
-          BACKUP_AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_AWS_ACCESS_KEY_ID || secrets.TOFU_STATE_ACCESS_KEY_ID }}
-          BACKUP_AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_AWS_SECRET_ACCESS_KEY || secrets.TOFU_STATE_SECRET_ACCESS_KEY }}
         run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Prepare one-time lowest-ID cutover

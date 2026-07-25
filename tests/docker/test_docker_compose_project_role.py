@@ -12,4 +12,16 @@ def test_compose_role_reconciles_projects_in_declared_order():
     assert 'mode: "0600"' in tasks
     assert "no_log: true" in tasks
     assert variables.index("name: platform") < variables.index("name: media")
-    assert variables.index("name: media") < variables.index("name: backup")
+    assert variables.index("name: media") < variables.index("name: game")
+    assert variables.index("name: game") < variables.index("name: hermes")
+
+
+def test_compose_role_removes_retired_backup_project_and_volumes():
+    tasks = (REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml").read_text(encoding="utf-8")
+    variables = (REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml").read_text(encoding="utf-8")
+    active_projects = variables.split("\ndocker_compose_projects:", 1)[1]
+
+    assert "docker compose down --volumes --remove-orphans" in tasks
+    assert "retired_docker_compose_projects" in tasks
+    assert "name: backup" in variables
+    assert "name: backup" not in active_projects

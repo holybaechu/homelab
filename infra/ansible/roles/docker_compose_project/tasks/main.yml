@@ -1,5 +1,5 @@
 ---
-- name: Require application and backup secrets
+- name: Require application secrets
   ansible.builtin.assert:
     that:
       - cloudflare_traefik_token is defined and cloudflare_traefik_token | length > 0
@@ -15,10 +15,6 @@
       - hermes_browserbase_api_key is defined and hermes_browserbase_api_key | length > 0
       - hermes_browserbase_project_id is defined and hermes_browserbase_project_id | length > 0
       - hermes_1password_service_account_token is defined and hermes_1password_service_account_token | length > 0
-      - backup_restic_repository is defined and backup_restic_repository | length > 0
-      - backup_restic_password is defined and backup_restic_password | length > 0
-      - backup_aws_access_key_id is defined and backup_aws_access_key_id | length > 0
-      - backup_aws_secret_access_key is defined and backup_aws_secret_access_key | length > 0
     fail_msg: Configure every required prod secret before deploying the consolidated Compose host.
   no_log: true
 
@@ -85,6 +81,32 @@
     - {path: /srv/homelab/minecraft/velocity}
     - {path: /srv/homelab/hermes/home, owner: "{{ hermes_uid }}", group: "{{ hermes_gid }}"}
     - {path: /srv/homelab/hermes/workspace, owner: "{{ hermes_uid }}", group: "{{ hermes_gid }}"}
+
+- name: Inspect retired Compose projects
+  ansible.builtin.stat:
+    path: "{{ item.dest }}/compose.yml"
+  loop: "{{ retired_docker_compose_projects | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: retired_compose_project_files
+
+- name: Stop and remove retired Compose projects
+  ansible.builtin.command:
+    cmd: docker compose down --volumes --remove-orphans
+    chdir: "{{ item.item.dest }}"
+  loop: "{{ retired_compose_project_files.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.stat.exists
+  changed_when: true
+
+- name: Remove retired Compose project directories
+  ansible.builtin.file:
+    path: "{{ item.dest }}"
+    state: absent
+  loop: "{{ retired_docker_compose_projects | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Create Compose project directories
   ansible.builtin.file:

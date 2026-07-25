@@ -23,10 +23,6 @@ REQUIRED_ENV = {
     "hermes_browserbase_api_key": "BROWSERBASE_API_KEY",
     "hermes_browserbase_project_id": "BROWSERBASE_PROJECT_ID",
     "hermes_1password_service_account_token": "OP_SERVICE_ACCOUNT_TOKEN",
-    "backup_restic_repository": "BACKUP_RESTIC_REPOSITORY",
-    "backup_restic_password": "BACKUP_RESTIC_PASSWORD",
-    "backup_aws_access_key_id": "BACKUP_AWS_ACCESS_KEY_ID",
-    "backup_aws_secret_access_key": "BACKUP_AWS_SECRET_ACCESS_KEY",
 }
 
 OPTIONAL_ENV = {

@@ -8,13 +8,12 @@ The managed production topology contains exactly two LXCs:
 - `docker_apps` (`192.168.0.3`, VMID 110): every application, managed with
   Docker Compose.
 
-The Docker host runs five projects in dependency order:
+The Docker host runs four projects in dependency order:
 
 1. `platform`: Traefik, AdGuard Home, and Cloudflare DDNS.
 2. `media`: Gluetun, qBittorrent, and Copyparty.
 3. `game`: Paper and Velocity/Geyser.
 4. `hermes`: the official Hermes Agent gateway image.
-5. `backup`: encrypted Restic backups of qBittorrent and Copyparty data.
 
 ## Storage policy
 
@@ -29,7 +28,7 @@ must migrate from an old service:
 - `/srv/homelab/hermes`
 
 Use named volumes for opaque state owned by one application: Traefik ACME,
-AdGuard work data, Gluetun state, Restic cache, and backup health state.
+AdGuard work data, and Gluetun state.
 
 ## Automatic CI/CD
 
@@ -38,6 +37,12 @@ triggers `.github/workflows/cd.yml`. CD connects through Tailscale, plans and
 applies OpenTofu, bootstraps both LXCs, renders secret Compose environments and
 application configs with Ansible, pulls/builds images, runs `docker compose up
 -d --build --remove-orphans`, and performs live validation.
+
+The deployment also retires the former `backup` project: it runs `docker
+compose down --volumes --remove-orphans` when the deployed project still
+exists, then removes `/opt/homelab-compose/backup`. This removes only the local
+container, cache/state volumes, and deployed files; it does not delete data in
+the former off-host repository.
 
 The first consolidated apply intentionally renumbers the retained Docker and
 tailnet LXCs into the two lowest legacy service slots. Before OpenTofu runs,
@@ -49,32 +54,26 @@ replacements. Every other destructive plan remains blocked.
 The four higher legacy application LXCs remain forgotten with
 `destroy = false` and are stopped during bootstrap.
 
-Required new GitHub `prod` secrets:
+Required GitHub `prod` secret for consolidated routing:
 
 - `CLOUDFLARE_TRAEFIK_TOKEN`
-- `BACKUP_RESTIC_REPOSITORY`
-- `BACKUP_RESTIC_PASSWORD`
-- `BACKUP_AWS_ACCESS_KEY_ID`
-- `BACKUP_AWS_SECRET_ACCESS_KEY`
 
 Retain the other service secrets documented in `secrets/README.md`.
 
 For the one-time renumber only, set the GitHub `prod` environment variable
 `LOW_ID_CUTOVER_CONFIRMED=true`. The preflight stops the legacy application
-LXCs, migrates qBittorrent and Copyparty data, creates and checks an encrypted
-off-host Restic snapshot, and only then authorizes replacement. The variable
-may be removed after VMIDs 110/111 have the target hostnames.
+LXCs, hostname-verifies the affected containers, and creates local `vzdump`
+archives before replacement. The variable may be removed after VMIDs 110/111
+have the target hostnames.
 
 ## Pre-cutover
 
-1. Confirm the Restic repository is off-host and credentials are bucket-scoped.
-2. Set the one-time GitHub environment confirmation described above.
-3. Run CI and inspect the OpenTofu plan. It may replace only
+1. Set the one-time GitHub environment confirmation described above.
+2. Run CI and inspect the OpenTofu plan. It may replace only
    `docker_apps` 117 to 110 and `tailnet` 112 to 111.
-4. The automated preflight stops the legacy write-heavy services, performs the
-   final qBittorrent/Copyparty sync, and verifies the first Restic snapshot.
-5. Deploy VMID 110 and wait for the Ansible validation playbook to pass.
-6. Confirm another scheduled Restic snapshot completes before retiring legacy data.
+3. The automated preflight hostname-verifies the affected containers and creates
+   local `vzdump` archives before replacement.
+4. Deploy VMID 110 and wait for the Ansible validation playbook to pass.
 
 ## Network cutover
 
@@ -86,21 +85,11 @@ may be removed after VMIDs 110/111 have the target hostnames.
 5. Confirm the qBittorrent public address differs from the Docker host address
    and the forwarded port appears in Gluetun logs.
 
-## Backup and restore
+## Data protection
 
-The backup container starts a Restic backup immediately, then every 24 hours.
-It includes qBittorrent configuration and downloads, Copyparty share data, and
-Copyparty runtime/index state. Retention is 7 daily, 5 weekly, and 12 monthly.
-
-List snapshots:
-
-```bash
-ssh root@192.168.0.3 \
-  'cd /opt/homelab-compose/backup && docker compose exec restic-backup restic snapshots'
-```
-
-Restore into a staging directory, inspect it, stop the affected Compose project,
-and only then copy selected data back. Never restore over running containers.
+Application-level backups are not managed by this repository. The cutover
+workflow's local `vzdump` archives are rollback artifacts, not recurring data
+backups.
 
 ## Rollback
 
@@ -109,9 +98,7 @@ and only then copy selected data back. Never restore over running containers.
    unused temporary VMIDs.
 3. Restore router port forwards and DHCP DNS to those recovery LXCs.
 4. Start the retained 113-116 legacy LXCs and validate them before accepting traffic.
-5. Restore data from the pre-cutover Restic snapshot if new services modified it
-   incompatibly.
 
-After the soak period and a tested Restic restore, destroy the unmanaged
-113-116 legacy LXCs manually. They are intentionally no longer part of
-OpenTofu state.
+After the soak period and separate data-protection verification, destroy the
+unmanaged 113-116 legacy LXCs manually. They are intentionally no longer part
+of OpenTofu state.

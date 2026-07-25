@@ -50,10 +50,9 @@ def test_debian_bootstrap_materializes_proxmox_dns_before_apt():
     assert "HOMELAB_SEARCH_DOMAIN" in tasks
 
 
-def test_low_id_cutover_is_hostname_guarded_and_backed_up():
+def test_low_id_cutover_is_hostname_guarded_and_locally_archived():
     all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
     tasks = read("infra/ansible/roles/pve_prepare_low_id_cutover/tasks/main.yml")
-    backup = read("infra/ansible/roles/pve_pre_cutover_backup/tasks/main.yml")
     playbook = read("infra/ansible/playbooks/prepare-low-id-cutover.yml")
 
     assert "target_vmid: 110" in all_vars
@@ -67,12 +66,10 @@ def test_low_id_cutover_is_hostname_guarded_and_backed_up():
     assert "status: stopped" in tasks
     assert 'pct destroy "$vmid"' in tasks
     assert "low_id_cutover_confirmed" in tasks
-    assert "low_id_data_backup_confirmed" in tasks
     assert playbook.index("pve_retire_legacy_lxcs") < playbook.index("pve_homelab_storage")
-    assert playbook.index("pve_homelab_storage") < playbook.index("pve_pre_cutover_backup")
-    assert "restic\n      - backup" in backup
-    assert "restic check" in backup
-    assert "low_id_data_backup_confirmed: true" in backup
+    assert playbook.index("pve_homelab_storage") < playbook.index("pve_prepare_low_id_cutover")
+    assert "name: restic" in playbook
+    assert "state: absent" in playbook
 
 
 def test_source_pair_is_retired_only_after_a_failback_guarded_route_handoff():
@@ -105,7 +102,7 @@ def test_legacy_application_lxcs_are_archived_before_final_retirement():
 
 
 def test_every_application_is_a_compose_project():
-    for project in ("platform", "media", "game", "hermes", "backup"):
+    for project in ("platform", "media", "game", "hermes"):
         root = REPO_ROOT / "apps" / "compose" / project
         assert (root / "compose.yml").exists()
         assert (root / ".env.example").exists()

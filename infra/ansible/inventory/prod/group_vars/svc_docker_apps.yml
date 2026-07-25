@@ -47,11 +47,9 @@ hermes_honcho_environment: production
 hermes_newrrow_username_ref: op://Hermes/Newrrow/username
 hermes_newrrow_password_ref: op://Hermes/Newrrow/password
 
-backup_interval_seconds: 86400
-backup_aws_default_region: auto
-backup_keep_daily: 7
-backup_keep_weekly: 5
-backup_keep_monthly: 12
+retired_docker_compose_projects:
+  - name: backup
+    dest: "{{ docker_apps_compose_root }}/backup"
 
 docker_compose_projects:
   - name: platform
@@ -82,7 +80,3 @@ docker_compose_projects:
     src: apps/compose/hermes
     dest: "{{ docker_apps_compose_root }}/hermes"
     env_template: hermes.env.j2
-  - name: backup
-    src: apps/compose/backup
-    dest: "{{ docker_apps_compose_root }}/backup"
-    env_template: backup.env.j2

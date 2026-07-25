@@ -9,6 +9,9 @@ def test_retired_native_service_roles_and_scripts_are_removed():
         "infra/ansible/roles/caddy/tasks/main.yml",
         "infra/ansible/roles/downloads_vpn/tasks/main.yml",
         "infra/ansible/roles/qbittorrent/tasks/main.yml",
+        "apps/compose/backup/compose.yml",
+        "infra/ansible/roles/docker_compose_project/templates/backup.env.j2",
+        "infra/ansible/roles/pve_pre_cutover_backup/tasks/main.yml",
     ):
         assert not (REPO_ROOT / path).exists()
 

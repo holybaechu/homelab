@@ -6,7 +6,6 @@ def test_runbook_documents_exact_two_lxc_compose_target_and_rollback():
     assert "two LXCs" in runbook
     assert "tailnet" in runbook
     assert "docker_apps" in runbook
-    assert "Restic" in runbook
     assert "Rollback" in runbook
 
 

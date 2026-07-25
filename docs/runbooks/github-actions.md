@@ -49,10 +49,6 @@ want production deployment to pause for review.
 - `OP_SERVICE_ACCOUNT_TOKEN`
 - `HERMES_DISCORD_HOME_CHANNEL`, optional; overrides the default cron/home delivery target for Hermes Discord notifications
 - `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and plaintext `password`
-- `BACKUP_RESTIC_REPOSITORY`
-- `BACKUP_RESTIC_PASSWORD`
-- `BACKUP_AWS_ACCESS_KEY_ID`
-- `BACKUP_AWS_SECRET_ACCESS_KEY`
 
 Example `COPYPARTY_USERS_JSON`:
 
@@ -113,7 +109,8 @@ Each service run uses `ansible-playbook --limit <service>` through `scripts/ci/r
 
 1. Push these workflow changes and confirm `ci` passes.
 2. Set the one-time low-ID confirmation variable to `true`; the preflight
-   performs and verifies the encrypted qBittorrent/Copyparty backup itself.
+   hostname-verifies the affected containers and creates local `vzdump` archives
+   before replacement.
 3. Open the `cd` workflow and run it with `workflow_dispatch`.
 4. Approve the `prod` environment deployment if protection rules are enabled.
 5. Confirm the workflow completes `Prepare one-time lowest-ID cutover`,

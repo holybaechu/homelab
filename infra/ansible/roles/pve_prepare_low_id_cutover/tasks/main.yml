@@ -43,15 +43,14 @@
   register: low_id_cutover_inspection
   changed_when: false
 
-- name: Require explicit cutover and verified data backup
+- name: Require explicit cutover approval
   ansible.builtin.assert:
     that:
       - low_id_cutover_confirmed | default(false) | bool
-      - low_id_data_backup_confirmed | default(false) | bool
     fail_msg: >-
-      Lowest-ID replacement is destructive. Complete and verify the qBittorrent
-      and Copyparty Restic backup must succeed before replacement, and
-      LOW_ID_CUTOVER_CONFIRMED must be true in the prod GitHub environment.
+      Lowest-ID replacement is destructive. LOW_ID_CUTOVER_CONFIRMED must be
+      true in the prod GitHub environment before creating local vzdump archives
+      and replacing the verified containers.
   loop: "{{ low_id_cutover_inspection.results }}"
   loop_control:
     label: "{{ item.item.source_vmid }} -> {{ item.item.target_vmid }}"

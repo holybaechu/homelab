@@ -20,9 +20,6 @@ Expected encrypted values:
 - `hermes_1password_service_account_token`
 - `copyparty_users`, as a list of account objects with `name` and `password`
 - `adguard_admin_password`, as plaintext; the AdGuard role hashes it before writing the service config
-- `backup_restic_repository`, the off-host S3-compatible Restic repository URL
-- `backup_restic_password`, the Restic repository encryption password
-- `backup_aws_access_key_id` and `backup_aws_secret_access_key`, credentials scoped to the backup bucket
 
 Non-secret deployment values:
 
@@ -32,10 +29,6 @@ Non-secret deployment values:
 - `hermes_honcho_environment`, defaults to `production` and is rendered as `HONCHO_ENVIRONMENT`
 
 GitHub Actions secret names for the Hermes web, browser, Honcho, and 1Password backends are `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, optional `HONCHO_API_KEY`, and `OP_SERVICE_ACCOUNT_TOKEN`; the CD helper maps them to the matching Ansible variables.
-
-GitHub Actions backup secret names are `BACKUP_RESTIC_REPOSITORY`,
-`BACKUP_RESTIC_PASSWORD`, `BACKUP_AWS_ACCESS_KEY_ID`, and
-`BACKUP_AWS_SECRET_ACCESS_KEY`.
 
 Do not commit decrypted secret files.
 

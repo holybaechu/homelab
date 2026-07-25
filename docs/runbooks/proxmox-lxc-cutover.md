@@ -11,7 +11,6 @@ rollback. The cutover gate is:
 - Every Compose project is running and Ansible live validation passes.
 - Router TCP 80/443 and DHCP DNS point to `192.168.0.3`.
 - Gluetun's public IP differs from the host IP.
-- The first encrypted off-host Restic snapshot and a staged test restore pass.
 
 Keep legacy VMIDs 113-116 stopped but intact through the soak period, and keep
 the pre-cutover `vzdump` archives until rollback is no longer required.
