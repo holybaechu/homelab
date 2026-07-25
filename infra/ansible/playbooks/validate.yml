@@ -28,6 +28,19 @@
       ansible.builtin.command: systemctl is-active tailscaled
       changed_when: false
 
+    - name: Check IP forwarding
+      ansible.builtin.command:
+        argv:
+          - sysctl
+          - -n
+          - "{{ item }}"
+      changed_when: false
+      register: tailnet_forwarding
+      failed_when: tailnet_forwarding.stdout | trim != "1"
+      loop:
+        - net.ipv4.ip_forward
+        - net.ipv6.conf.all.forwarding
+
     - name: Check Tailscale status
       ansible.builtin.command: tailscale status
       changed_when: false
