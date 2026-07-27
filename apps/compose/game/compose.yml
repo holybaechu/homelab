@@ -22,7 +22,7 @@ services:
       - homelab.optional=true
 
   velocity:
-    image: itzg/mc-proxy:2025.10.0-java21
+    image: itzg/mc-proxy:2026.7.1-java21
     restart: unless-stopped
     env_file: .env
     environment:
