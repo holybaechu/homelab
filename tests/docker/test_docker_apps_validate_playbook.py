@@ -12,3 +12,14 @@ def test_validation_checks_compose_dns_vpn_routes_and_hermes():
     assert "copyparty.hchu.me" in validate
     assert "host_ip" in validate and "vpn_ip" in validate
     assert "hermes status" in validate
+
+
+def test_validation_proves_vuetorrent_assets_config_and_route():
+    validation = (REPO_ROOT / "infra/ansible/playbooks/validate.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "test -f /vuetorrent/index.html" in validation
+    assert "WebUI\\AlternativeUIEnabled=true" in validation
+    assert "WebUI\\RootFolder=/vuetorrent" in validation
+    assert "qbt.home.hchu.me" in validation

@@ -5,6 +5,10 @@ forwarding is enabled natively and Gluetun updates qBittorrent through its
 loopback Web API whenever the forwarded port changes; no custom WireGuard,
 server-selection, NAT-PMP, or killswitch script remains.
 
+The pinned official LinuxServer VueTorrent mod provides assets at
+`/vuetorrent`, and Ansible selects that directory as qBittorrent's alternative
+Web UI.
+
 Bind mounts are used for data that is shared, backed up, migrated, or inspected
 outside a single container:
 

@@ -85,6 +85,21 @@
       loop_control:
         label: "{{ item.name }}"
 
+    - name: Validate VueTorrent assets and qBittorrent selection
+      ansible.builtin.shell: |
+        set -eu
+        docker compose exec -T qbittorrent test -f /vuetorrent/index.html
+        docker compose exec -T qbittorrent grep -Fx \
+          'WebUI\AlternativeUIEnabled=true' \
+          /config/qBittorrent/qBittorrent.conf
+        docker compose exec -T qbittorrent grep -Fx \
+          'WebUI\RootFolder=/vuetorrent' \
+          /config/qBittorrent/qBittorrent.conf
+      args:
+        executable: /bin/sh
+        chdir: "{{ docker_apps_compose_root }}/media"
+      changed_when: false
+
     - name: Query AdGuard normal DNS
       ansible.builtin.command: dig +short @127.0.0.1 example.com A
       register: adguard_dns_query

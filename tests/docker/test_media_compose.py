@@ -36,3 +36,17 @@ def test_custom_wireguard_and_natpmp_roles_are_not_deployed():
 def test_copyparty_history_uses_the_backed_up_state_mount():
     config = (REPO_ROOT / "infra/ansible/roles/docker_compose_project/templates/copyparty.conf.j2").read_text(encoding="utf-8")
     assert "hist: /config/state" in config
+
+
+def test_qbittorrent_uses_pinned_official_vuetorrent_mod_and_managed_ui():
+    compose = (REPO_ROOT / "apps/compose/media/compose.yml").read_text(encoding="utf-8")
+    config = (
+        REPO_ROOT
+        / "infra/ansible/roles/docker_compose_project/templates/qBittorrent.conf.j2"
+    ).read_text(encoding="utf-8")
+
+    qbittorrent = compose.split("  qbittorrent:", 1)[1].split("  copyparty:", 1)[0]
+    assert "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.34.0" in qbittorrent
+    assert ":latest" not in qbittorrent
+    assert "WebUI\\AlternativeUIEnabled=true" in config
+    assert "WebUI\\RootFolder=/vuetorrent" in config
