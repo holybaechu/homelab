@@ -155,30 +155,6 @@
       delay: 10
       until: gluetun_forwarded_port.stdout | trim | int > 0
 
-    - name: Check Minecraft Java listener
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: 25565
-        timeout: 60
-
-    - name: Check Minecraft Bedrock listener
-      ansible.builtin.shell: |
-        set -eu
-        ss -H -lun 'sport = :19132' | grep -F ':19132'
-      args:
-        executable: /bin/sh
-      register: minecraft_bedrock_listener
-      changed_when: false
-      retries: 12
-      delay: 10
-      until: minecraft_bedrock_listener.rc == 0
-
-    - name: Check Velocity can reach the Paper backend
-      ansible.builtin.command:
-        cmd: docker compose exec -T velocity bash -lc 'timeout 5 bash -c "</dev/tcp/paper/25565"'
-        chdir: "{{ docker_apps_compose_root }}/game"
-      changed_when: false
-
     - name: Check Hermes gateway status
       ansible.builtin.command:
         cmd: docker compose exec -T hermes hermes status

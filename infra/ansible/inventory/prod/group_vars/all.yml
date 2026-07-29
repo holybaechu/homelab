@@ -22,7 +22,6 @@ homelab_container_uid_offset: 100000
 legacy_lxcs:
   - {name: downloads, vmid: 113}
   - {name: files, vmid: 114}
-  - {name: minecraft, vmid: 115}
   - {name: hermes, vmid: 116}
 
 low_id_cutover_backup_storage: local

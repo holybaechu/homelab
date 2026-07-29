@@ -43,8 +43,6 @@
       "${mount_path}/downloads/incomplete" \
       "${mount_path}/copyparty/public" \
       "${mount_path}/copyparty/shared-readonly" \
-      "${mount_path}/minecraft/paper" \
-      "${mount_path}/minecraft/velocity" \
       "${mount_path}/hermes/home" \
       "${mount_path}/hermes/workspace"
 
@@ -94,13 +92,11 @@
         "${mount_path}/docker-apps" \
         "${mount_path}/downloads" \
         "${mount_path}/copyparty" \
-        "${mount_path}/minecraft"
       chown -R "${hermes_uid}:${hermes_uid}" "${mount_path}/hermes"
       find \
         "${mount_path}/docker-apps" \
         "${mount_path}/downloads" \
         "${mount_path}/copyparty" \
-        "${mount_path}/minecraft" \
         "${mount_path}/hermes" \
         -type d -exec chmod 0755 {} +
       touch "${permissions_marker}"

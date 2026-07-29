@@ -12,6 +12,13 @@ def test_retired_native_service_roles_and_scripts_are_removed():
         "apps/compose/backup/compose.yml",
         "infra/ansible/roles/docker_compose_project/templates/backup.env.j2",
         "infra/ansible/roles/pve_pre_cutover_backup/tasks/main.yml",
+        "apps/compose/game/.env.example",
+        "apps/compose/game/README.md",
+        "apps/compose/game/compose.yml",
+        "infra/ansible/roles/docker_compose_project/templates/game.env.j2",
+        "infra/ansible/roles/docker_compose_project/templates/velocity.toml.j2",
+        "docs/runbooks/minecraft-server.md",
+        "tests/docker/test_game_compose.py",
     ):
         assert not (REPO_ROOT / path).exists()
 

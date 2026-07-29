@@ -10,5 +10,6 @@
         purge: true
   roles:
     - pve_retire_legacy_lxcs
+    - pve_retire_minecraft
     - pve_homelab_storage
     - pve_prepare_low_id_cutover

@@ -33,11 +33,6 @@ proton_wireguard_address: 10.2.0.2/32
 qbittorrent_webui_username: holybaechu
 copyparty_listen_port: 3923
 
-minecraft_version: 26.1.2
-minecraft_memory: 3G
-minecraft_max_players: 10
-minecraft_motd: hchu.me Minecraft
-
 hermes_uid: "{{ hermes_service_uid }}"
 hermes_gid: "{{ hermes_service_gid }}"
 hermes_discord_require_mention: true
@@ -50,6 +45,11 @@ hermes_newrrow_password_ref: op://Hermes/Newrrow/password
 retired_docker_compose_projects:
   - name: backup
     dest: "{{ docker_apps_compose_root }}/backup"
+  - name: game
+    dest: "{{ docker_apps_compose_root }}/game"
+
+retired_docker_data_paths:
+  - /srv/homelab/minecraft
 
 docker_compose_projects:
   - name: platform
@@ -68,14 +68,6 @@ docker_compose_projects:
       - src: copyparty.conf.j2
         dest: copyparty.conf
         mode: "0600"
-  - name: game
-    src: apps/compose/game
-    dest: "{{ docker_apps_compose_root }}/game"
-    env_template: game.env.j2
-    config_templates:
-      - src: velocity.toml.j2
-        dest: /srv/homelab/minecraft/velocity/velocity.toml
-        mode: "0644"
   - name: hermes
     src: apps/compose/hermes
     dest: "{{ docker_apps_compose_root }}/hermes"

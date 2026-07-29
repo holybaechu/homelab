@@ -77,8 +77,6 @@
     - {path: /srv/homelab/downloads/incomplete}
     - {path: /srv/homelab/copyparty/public}
     - {path: /srv/homelab/copyparty/shared-readonly}
-    - {path: /srv/homelab/minecraft/paper}
-    - {path: /srv/homelab/minecraft/velocity}
     - {path: /srv/homelab/hermes/home, owner: "{{ hermes_uid }}", group: "{{ hermes_gid }}"}
     - {path: /srv/homelab/hermes/workspace, owner: "{{ hermes_uid }}", group: "{{ hermes_gid }}"}
 
@@ -107,6 +105,21 @@
   loop: "{{ retired_docker_compose_projects | default([]) }}"
   loop_control:
     label: "{{ item.name }}"
+
+- name: Validate retired Docker data paths
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^/srv/homelab/[A-Za-z0-9._/-]+$')
+      - item != '/srv/homelab'
+    fail_msg: "Refusing unsafe retired Docker data path: {{ item }}"
+  loop: "{{ retired_docker_data_paths | default([]) }}"
+
+- name: Remove retired Docker data paths
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ retired_docker_data_paths | default([]) }}"
 
 - name: Create Compose project directories
   ansible.builtin.file:

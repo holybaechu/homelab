@@ -102,7 +102,8 @@ def test_legacy_application_lxcs_are_archived_before_final_retirement():
 
 
 def test_every_application_is_a_compose_project():
-    for project in ("platform", "media", "game", "hermes"):
+    for project in ("platform", "media", "hermes"):
         root = REPO_ROOT / "apps" / "compose" / project
         assert (root / "compose.yml").exists()
         assert (root / ".env.example").exists()
+    assert not (REPO_ROOT / "apps/compose/game").exists()

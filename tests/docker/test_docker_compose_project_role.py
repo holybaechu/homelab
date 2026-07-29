@@ -12,8 +12,7 @@ def test_compose_role_reconciles_projects_in_declared_order():
     assert 'mode: "0600"' in tasks
     assert "no_log: true" in tasks
     assert variables.index("name: platform") < variables.index("name: media")
-    assert variables.index("name: media") < variables.index("name: game")
-    assert variables.index("name: game") < variables.index("name: hermes")
+    assert variables.index("name: media") < variables.index("name: hermes")
 
 
 def test_compose_role_removes_retired_backup_project_and_volumes():

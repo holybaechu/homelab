@@ -4,7 +4,7 @@ from tests.helpers import REPO_ROOT
 def test_real_compose_env_files_are_not_committed():
     compose_root = REPO_ROOT / "apps" / "compose"
     assert list(compose_root.rglob(".env")) == []
-    assert len(list(compose_root.rglob(".env.example"))) == 4
+    assert len(list(compose_root.rglob(".env.example"))) == 3
     assert "*.env" in (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
 
 
@@ -13,7 +13,6 @@ def test_ansible_renders_every_secret_environment():
     for name in (
         "platform.env.j2",
         "media.env.j2",
-        "game.env.j2",
         "hermes.env.j2",
         "copyparty.conf.j2",
         "qBittorrent.conf.j2",
