@@ -25,6 +25,7 @@ def test_retired_data_cleanup_is_parent_and_character_guarded():
     assert validate < remove
     assert "^/srv/homelab/[A-Za-z0-9._/-]+$" in tasks
     assert "item != '/srv/homelab'" in tasks
+    assert "'..' not in item.split('/')" in tasks
     assert 'loop: "{{ retired_docker_data_paths | default([]) }}"' in tasks
     assert "ansible.builtin.file:" in tasks[remove:]
     assert "state: absent" in tasks[remove:]
