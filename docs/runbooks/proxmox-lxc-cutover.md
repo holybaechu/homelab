@@ -8,7 +8,8 @@ rollback. The cutover gate is:
 - Legacy VMIDs 113-116 are forgotten with `destroy = false`, not destroyed.
 - VMID 110 has `/dev/net/tun`, nesting/keyctl, and the single
   `/var/lib/homelab` bind mount.
-- Every Compose project is running and Ansible live validation passes.
+- The three active Compose projects (`platform`, `media`, and `hermes`) are
+  running and Ansible live validation passes.
 - Router TCP 80/443 and DHCP DNS point to `192.168.0.3`.
 - Gluetun's public IP differs from the host IP.
 

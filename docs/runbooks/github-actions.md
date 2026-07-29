@@ -9,6 +9,24 @@ Create a GitHub environment named `prod` before enabling CD. Pushes to `main`
 deploy automatically; add an environment approval rule only if you intentionally
 want production deployment to pause for review.
 
+## Dependency Updates
+
+Renovate creates reviewed source-update pull requests for versions stored in
+Git. Minor and patch updates automerge only when the current version is not
+`0.x`; major updates and every `0.x` update require review.
+
+Built-in managers cover supported package manifests. Custom regex managers
+also cover the shared `.opentofu-version`, the annotated Tailscale GitHub
+Action version, the pinned VueTorrent LinuxServer mod, Debian 13 Proxmox LXC
+template versions, and the pinned 1Password CLI package. The Proxmox template
+and 1Password CLI use their configured custom datasources.
+
+Packages installed from apt repositories are runtime dependencies, not
+Renovate dependencies when their versions are not recorded in Git. During each
+deployment, Ansible refreshes apt metadata and upgrades the managed Debian,
+Docker Engine and Compose plugin, and Tailscale packages to the repository
+version available from their configured apt repositories.
+
 ## `prod` Environment Variables
 
 - `PVE_NODE_NAME`: `pve`

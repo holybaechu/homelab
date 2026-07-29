@@ -8,12 +8,11 @@ The managed production topology contains exactly two LXCs:
 - `docker_apps` (`192.168.0.3`, VMID 110): every application, managed with
   Docker Compose.
 
-The Docker host runs four projects in dependency order:
+The Docker host runs three projects in dependency order:
 
 1. `platform`: Traefik, AdGuard Home, and Cloudflare DDNS.
 2. `media`: Gluetun, qBittorrent, and Copyparty.
-3. `game`: Paper and Velocity/Geyser.
-4. `hermes`: the official Hermes Agent gateway image.
+3. `hermes`: the official Hermes Agent gateway image.
 
 ## Storage policy
 
@@ -24,7 +23,6 @@ must migrate from an old service:
 - `/srv/homelab/copyparty`
 - `/srv/homelab/docker-apps/qbittorrent`
 - `/srv/homelab/docker-apps/copyparty`
-- `/srv/homelab/minecraft`
 - `/srv/homelab/hermes`
 
 Use named volumes for opaque state owned by one application: Traefik ACME,
@@ -80,8 +78,8 @@ have the target hostnames.
 1. Change router TCP 80/443 forwards from the old edge IP to `192.168.0.3`.
 2. Keep router DHCP DNS at `192.168.0.3`.
 3. Renew a LAN DHCP lease and verify `dig @192.168.0.3 example.com`.
-4. Verify `copyparty.hchu.me`, private qBittorrent/AdGuard routes, Minecraft
-   Java/Bedrock connectivity, Tailscale routing, and Hermes Discord delivery.
+4. Verify `copyparty.hchu.me`, private qBittorrent/AdGuard routes, Tailscale
+   routing, and Hermes Discord delivery.
 5. Confirm the qBittorrent public address differs from the Docker host address
    and the forwarded port appears in Gluetun logs.
 
