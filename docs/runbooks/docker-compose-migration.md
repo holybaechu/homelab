@@ -49,8 +49,9 @@ occupants at 110/111, then destroys only the verified `edge` and `dns`
 occupants. The plan guard permits only the exact 117 to 110 and 112 to 111
 replacements. Every other destructive plan remains blocked.
 
-The four higher legacy application LXCs remain forgotten with
-`destroy = false` and are stopped during bootstrap.
+The retained legacy application VMIDs 113, 114, and 116 remain forgotten with
+`destroy = false` and are stopped during bootstrap. Minecraft VMID 115 is the
+exception: deployment permanently destroys it and its matching local archives.
 
 Required GitHub `prod` secret for consolidated routing:
 
@@ -95,8 +96,12 @@ backups.
 2. Restore the timestamped `vzdump` backups of the former 110/111 occupants to
    unused temporary VMIDs.
 3. Restore router port forwards and DHCP DNS to those recovery LXCs.
-4. Start the retained 113-116 legacy LXCs and validate them before accepting traffic.
+4. Start the retained legacy VMIDs 113, 114, and 116 and validate them before
+   accepting traffic.
+
+Minecraft has no rollback path: VMID 115, `/srv/homelab/minecraft`, and local
+`vzdump-lxc-115-*` archives are permanently deleted during deployment.
 
 After the soak period and separate data-protection verification, destroy the
-unmanaged 113-116 legacy LXCs manually. They are intentionally no longer part
-of OpenTofu state.
+unmanaged VMIDs 113, 114, and 116 manually. They are intentionally no longer
+part of OpenTofu state.

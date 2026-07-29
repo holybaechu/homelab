@@ -110,8 +110,9 @@
   ansible.builtin.assert:
     that:
       - item is string
-      - item is match('^/srv/homelab/[A-Za-z0-9._/-]+$')
+      - item is match('^/srv/homelab/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+\\Z')
       - item != '/srv/homelab'
+      - "'.' not in item.split('/')"
       - "'..' not in item.split('/')"
     fail_msg: "Refusing unsafe retired Docker data path: {{ item }}"
   loop: "{{ retired_docker_data_paths | default([]) }}"

@@ -6,6 +6,8 @@
     expected_hostname="minecraft"
     archive_root="/var/lib/vz/dump"
     changed=0
+    cleanup_state="$(mktemp)"
+    trap 'rm -f -- "$cleanup_state"' EXIT
 
     if pct config "$vmid" >/dev/null 2>&1; then
       actual_hostname="$(pct config "$vmid" | awk -F ': ' '$1 == "hostname" { print $2 }')"
@@ -30,11 +32,10 @@
         esac
         rm -f -- "$archive"
         printf 'archive-removed=yes\n'
-      done > /tmp/homelab-minecraft-archive-cleanup
-    if grep -q 'archive-removed=yes' /tmp/homelab-minecraft-archive-cleanup; then
+      done > "$cleanup_state"
+    if grep -q 'archive-removed=yes' "$cleanup_state"; then
       changed=1
     fi
-    rm -f -- /tmp/homelab-minecraft-archive-cleanup
 
     if [ "$changed" -eq 1 ]; then
       echo changed=yes

@@ -1,3 +1,9 @@
+import re
+
+import pytest
+import yaml
+from jinja2 import Environment, StrictUndefined
+
 from tests.helpers import REPO_ROOT
 
 
@@ -17,15 +23,64 @@ def test_minecraft_is_retired_with_runtime_and_data_tombstones():
     assert not (REPO_ROOT / "docs/runbooks/minecraft-server.md").exists()
 
 
-def test_retired_data_cleanup_is_parent_and_character_guarded():
+def retired_data_path_is_safe(path: object) -> bool:
+    tasks = yaml.safe_load(
+        read("infra/ansible/roles/docker_compose_project/tasks/main.yml")
+    )
+    validate = next(
+        task for task in tasks if task["name"] == "Validate retired Docker data paths"
+    )
+    conditions = validate["ansible.builtin.assert"]["that"]
+    environment = Environment(undefined=StrictUndefined)
+    environment.tests["match"] = (
+        lambda value, pattern: re.match(pattern, value) is not None
+    )
+    return all(
+        bool(environment.compile_expression(condition)(item=path))
+        for condition in conditions
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/srv/homelab/minecraft",
+        "/srv/homelab/retired.service/data_1",
+    ],
+)
+def test_retired_data_cleanup_accepts_canonical_descendant_paths(path):
+    assert retired_data_path_is_safe(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "",
+        "/",
+        "/srv",
+        "/srv/homelab",
+        "/srv/homelab/",
+        "/srv/homelab/.",
+        "/srv/homelab//",
+        "/srv/homelab/minecraft/",
+        "/srv/homelab/minecraft//world",
+        "/srv/homelab/minecraft\n",
+        "/srv/homelab/..",
+        "/srv/homelab/minecraft/../other",
+        "/srv/homelab/mine*craft",
+        "/srv/other/minecraft",
+    ],
+)
+def test_retired_data_cleanup_rejects_noncanonical_or_unscoped_paths(path):
+    assert not retired_data_path_is_safe(path)
+
+
+def test_retired_data_cleanup_validation_precedes_removal():
     tasks = read("infra/ansible/roles/docker_compose_project/tasks/main.yml")
 
     validate = tasks.index("Validate retired Docker data paths")
     remove = tasks.index("Remove retired Docker data paths")
     assert validate < remove
-    assert "^/srv/homelab/[A-Za-z0-9._/-]+$" in tasks
-    assert "item != '/srv/homelab'" in tasks
-    assert "'..' not in item.split('/')" in tasks
     assert 'loop: "{{ retired_docker_data_paths | default([]) }}"' in tasks
     assert "ansible.builtin.file:" in tasks[remove:]
     assert "state: absent" in tasks[remove:]
@@ -44,3 +99,11 @@ def test_proxmox_minecraft_tombstone_is_exact_and_idempotent():
     assert 'vzdump-lxc-115-*.tar.zst' in tasks
     assert 'rm -f -- "$archive"' in tasks
     assert "echo changed=no" in tasks
+
+
+def test_proxmox_minecraft_tombstone_has_no_predictable_scratch_file():
+    tasks = read("infra/ansible/roles/pve_retire_minecraft/tasks/main.yml")
+
+    assert "/tmp/homelab-minecraft-archive-cleanup" not in tasks
+    assert 'cleanup_state="$(mktemp)"' in tasks
+    assert "trap 'rm -f -- \"$cleanup_state\"' EXIT" in tasks
