@@ -16,5 +16,4 @@ if [ -n "${GITHUB_PATH:-}" ]; then
 fi
 
 ./scripts/ci/install-opentofu.sh
-# renovate: datasource=github-releases depName=opentofu/opentofu versioning=semver extractVersion=^v(?<version>.*)$
 ansible --version

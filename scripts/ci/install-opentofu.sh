@@ -2,7 +2,6 @@
 set -eu
 
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
-# renovate: datasource=github-releases depName=opentofu/opentofu versioning=semver extractVersion=^v(?<version>.*)$
 TOFU_VERSION="${TOFU_VERSION:-$(cat "${repo_root}/.opentofu-version")}" 
 TOFU_OS="${TOFU_OS:-linux}"
 TOFU_ARCH="${TOFU_ARCH:-amd64}"

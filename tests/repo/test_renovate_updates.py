@@ -1,4 +1,5 @@
 import json
+import re
 
 from tests.helpers import REPO_ROOT
 
@@ -35,3 +36,44 @@ def test_ansible_install_is_pinned_and_opentofu_lockfile_is_tracked():
     assert "ansible==" in read("requirements-deploy.txt")
     assert "requirements-deploy.txt" in read(".github/workflows/ci.yml")
     assert ".terraform.lock.hcl" not in read(".gitignore")
+
+
+def test_action_sha_pins_keep_release_comments_for_renovate():
+    workflows = read(".github/workflows/ci.yml") + read(".github/workflows/cd.yml")
+    action_lines = [line.strip() for line in workflows.splitlines() if "uses:" in line]
+    sha_lines = [line for line in action_lines if re.search(r"@[0-9a-f]{40}\b", line)]
+
+    assert sha_lines
+    assert all(re.search(r"\s#\s+v?\d+(?:\.\d+){0,2}$", line) for line in sha_lines)
+
+
+def test_nonstandard_version_surfaces_have_focused_managers():
+    config = json.loads(read("renovate.json"))
+    manager_text = json.dumps(config.get("customManagers", []))
+    datasource_text = json.dumps(config.get("customDatasources", {}))
+
+    for marker in (
+        ".opentofu-version",
+        "tailscale/tailscale",
+        "vuetorrent-lsio-mod",
+        "containers.auto.tfvars",
+        "OP_CLI_VERSION",
+    ):
+        assert marker in manager_text
+    assert "download.proxmox.com/images/system" in datasource_text
+    assert "app-updates.agilebits.com/product_history/CLI2" in datasource_text
+
+
+def test_direct_requirements_are_exact_and_local_hermes_tag_is_constant():
+    requirements = read("requirements-dev.txt").splitlines()
+    collection = read("infra/ansible/requirements.yml")
+    compose = read("apps/compose/hermes/compose.yml")
+
+    assert requirements == ["pytest==9.1.1", "Jinja2==3.1.6", "PyYAML==6.0.3"]
+    assert 'version: "13.2.0"' in collection
+    assert "image: homelab/hermes-agent:local" in compose
+    assert "homelab/hermes-agent:2026" not in compose
+
+
+def test_opentofu_updates_trigger_cd():
+    assert '      - ".opentofu-version"' in read(".github/workflows/cd.yml")

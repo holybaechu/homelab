@@ -6,18 +6,91 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Update inline Renovate-managed CI pins",
+      "description": "Update OpenTofu from the shared version file",
       "managerFilePatterns": [
-        "/^\\.github\\/workflows\\/(ci|cd)\\.yml$/",
-        "/^scripts\\/ci\\/install-tools\\.sh$/",
-        "/^scripts\\/ci\\/install-opentofu\\.sh$/"
+        "/^\\.opentofu-version$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?(?: extractVersion=(?<extractVersion>\\S+))?\\s+[^\\n]*?(?<currentValue>\\d+(?:\\.\\d+)+)"
-      ]
+        "^(?<currentValue>\\d+\\.\\d+\\.\\d+)\\s*$"
+      ],
+      "depNameTemplate": "opentofu/opentofu",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the annotated Tailscale GitHub Action version",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/cd\\.yml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=\\^v\\(\\?<version>\\.\\*\\)\\$\\s+version: \\\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\\\""
+      ],
+      "depNameTemplate": "tailscale/tailscale",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the VueTorrent LinuxServer Docker mod",
+      "managerFilePatterns": [
+        "/^apps\\/compose\\/media\\/compose\\.yml$/"
+      ],
+      "matchStrings": [
+        "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "ghcr.io/vuetorrent/vuetorrent-lsio-mod",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Debian 13 Proxmox LXC template versions in containers.auto.tfvars",
+      "managerFilePatterns": [
+        "/^infra\\/opentofu\\/envs\\/prod\\/containers\\.auto\\.tfvars$/"
+      ],
+      "matchStrings": [
+        "template_file_id\\s*=\\s*\\\"local:vztmpl/debian-13-standard_(?<currentValue>[^_]+)_amd64\\.tar\\.zst\\\""
+      ],
+      "depNameTemplate": "proxmox-debian-13",
+      "datasourceTemplate": "custom.proxmox-debian-13",
+      "versioningTemplate": "loose"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the pinned 1Password CLI package",
+      "managerFilePatterns": [
+        "/^apps\\/compose\\/hermes\\/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "ARG OP_CLI_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "onepassword-cli",
+      "datasourceTemplate": "custom.onepassword-cli",
+      "versioningTemplate": "semver"
     }
   ],
+  "customDatasources": {
+    "proxmox-debian-13": {
+      "defaultRegistryUrlTemplate": "https://download.proxmox.com/images/system/",
+      "format": "html"
+    },
+    "onepassword-cli": {
+      "defaultRegistryUrlTemplate": "https://app-updates.agilebits.com/product_history/CLI2",
+      "format": "html"
+    }
+  },
   "packageRules": [
+    {
+      "matchDatasources": ["custom.proxmox-debian-13"],
+      "extractVersion": "^debian-13-standard_(?<version>.+)_amd64\\.tar\\.zst$"
+    },
+    {
+      "matchDatasources": ["custom.onepassword-cli"],
+      "extractVersion": ".*op_linux_amd64_v(?<version>\\d+\\.\\d+\\.\\d+)\\.zip$"
+    },
     {
       "matchUpdateTypes": ["minor", "patch"],
       "matchCurrentVersion": "!/^0/",

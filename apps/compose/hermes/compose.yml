@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: homelab/hermes-agent:2026.7.7.2
+    image: homelab/hermes-agent:local
     container_name: hermes
     restart: unless-stopped
     command: ["gateway", "run"]

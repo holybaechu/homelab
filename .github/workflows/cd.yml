@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - ".github/workflows/cd.yml"
+      - ".opentofu-version"
       - "apps/**"
       - "infra/**"
       - "requirements-deploy.txt"
@@ -30,14 +31,15 @@ jobs:
       ANSIBLE_CONFIG: infra/ansible/ansible.cfg
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Connect Tailscale
-        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
+          # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
           version: "1.98.4"
           args: --accept-dns=false
           ping: ${{ vars.PVE_TAILSCALE_IP }}
