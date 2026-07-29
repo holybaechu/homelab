@@ -51,3 +51,22 @@ def test_tailnet_validation_checks_ip_forwarding():
     assert "net.ipv4.ip_forward" in validation
     assert "net.ipv6.conf.all.forwarding" in validation
     assert 'tailnet_forwarding.stdout | trim != "1"' in validation
+
+
+def test_tailscale_apt_package_upgrades_and_restarts_after_underlay_change():
+    role = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "tailscale_gateway"
+        / "tasks"
+        / "main.yml"
+    ).read_text(encoding="utf-8")
+    package = role.split("- name: Install Tailscale\n", 1)[1].split(
+        "- name: Disable unusable public IPv6", 1
+    )[0]
+
+    assert "state: latest" in package
+    assert "update_cache: true" in package
+    assert "notify: Restart tailscaled after underlay change" in package

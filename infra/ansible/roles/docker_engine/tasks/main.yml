@@ -9,7 +9,7 @@
       - gnupg
       - systemd-resolved
     update_cache: true
-    state: present
+    state: latest
 
 - name: Disable systemd-resolved DNS stub for AdGuard port 53
   ansible.builtin.file:
@@ -67,7 +67,9 @@
       - containerd.io
       - docker-buildx-plugin
       - docker-compose-plugin
-    state: present
+    update_cache: true
+    state: latest
+  notify: Restart Docker
 
 - name: Configure Docker daemon defaults
   ansible.builtin.template:

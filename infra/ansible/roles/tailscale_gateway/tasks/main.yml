@@ -16,7 +16,8 @@
   ansible.builtin.apt:
     name: tailscale
     update_cache: true
-    state: present
+    state: latest
+  notify: Restart tailscaled after underlay change
 
 - name: Disable unusable public IPv6 underlay for stable DERP selection
   ansible.builtin.copy:

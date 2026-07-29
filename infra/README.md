@@ -12,3 +12,5 @@ forgotten from state without destruction during cutover and remain manual
 rollback targets until explicitly retired.
 
 OpenTofu state is not committed to Git.
+
+Renovate updates versions stored in Git; Ansible upgrades apt-owned dependencies during deployment.

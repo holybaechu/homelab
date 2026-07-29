@@ -3,7 +3,7 @@
   ansible.builtin.apt:
     name: "{{ common_debian_packages }}"
     update_cache: true
-    state: present
+    state: latest
 
 - name: Set timezone
   community.general.timezone:

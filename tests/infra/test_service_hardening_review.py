@@ -40,3 +40,17 @@ def test_tailscale_join_is_idempotent():
     tasks = (REPO_ROOT / "infra/ansible/roles/tailscale_gateway/tasks/main.yml").read_text(encoding="utf-8")
     join = tasks.split("- name: Join Tailscale when auth key is supplied", 1)[1]
     assert "changed_when: false" in join
+
+
+def test_apt_owned_runtime_dependencies_upgrade_on_deploy():
+    common = (REPO_ROOT / "infra/ansible/roles/common_debian/tasks/main.yml").read_text(encoding="utf-8")
+    docker = (REPO_ROOT / "infra/ansible/roles/docker_engine/tasks/main.yml").read_text(encoding="utf-8")
+    tailscale = (REPO_ROOT / "infra/ansible/roles/tailscale_gateway/tasks/main.yml").read_text(encoding="utf-8")
+
+    assert "Install Debian base packages" in common
+    assert "state: latest" in common.split("- name: Set timezone", 1)[0]
+    assert "state: latest" in docker.split("- name: Configure Docker daemon defaults", 1)[0]
+    assert "state: latest" in tailscale.split("- name: Disable unusable public IPv6", 1)[0]
+    assert "update_cache: true" in common
+    assert "update_cache: true" in docker
+    assert "update_cache: true" in tailscale
