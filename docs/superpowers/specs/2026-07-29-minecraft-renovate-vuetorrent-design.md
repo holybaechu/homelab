@@ -88,17 +88,22 @@ Restore these managed qBittorrent preferences:
 
 ```ini
 WebUI\AlternativeUIEnabled=true
-WebUI\RootFolder=/vuetorrent
+WebUI\RootFolder=/vuetorrent/public
 ```
 
-The existing candidate/compare/install sequence remains responsible for stopping qBittorrent before changing its configuration. Compose recreation then loads the mod and restarts qBittorrent with the managed settings.
+The official `ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.34.0` layer contains
+`vuetorrent/public/index.html`, so the public subdirectory—not the extraction
+root—is the qBittorrent Web UI root. The existing candidate/compare/install
+sequence remains responsible for stopping qBittorrent before changing its
+configuration. Compose recreation then loads the mod and restarts qBittorrent
+with the managed settings.
 
 ### Validation
 
 Production validation must prove all three layers:
 
-- `/vuetorrent/index.html` exists inside the qBittorrent container.
-- The installed qBittorrent configuration contains `WebUI\AlternativeUIEnabled=true` and `WebUI\RootFolder=/vuetorrent`.
+- `/vuetorrent/public/index.html` exists inside the qBittorrent container.
+- The installed qBittorrent configuration contains `WebUI\AlternativeUIEnabled=true` and `WebUI\RootFolder=/vuetorrent/public`.
 - `https://qbt.home.hchu.me/` responds successfully after recreation.
 
 This distinguishes asset installation, qBittorrent selection, and reverse-proxy reachability.

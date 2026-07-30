@@ -236,11 +236,11 @@ git commit -m "Remove Minecraft service and data"
 **Interfaces:**
 
 - Consumes: LinuxServer `DOCKER_MODS`, qBittorrent alternative-Web-UI preferences, and existing Traefik `qbt` route.
-- Produces: VueTorrent assets at `/vuetorrent`, managed selection in qBittorrent, and three-layer production validation.
+- Produces: VueTorrent assets at `/vuetorrent/public`, managed selection in qBittorrent, and three-layer production validation.
 
 - [ ] **Step 1: Write failing VueTorrent integration tests**
 
-Append to `tests/docker/test_media_compose.py`:
+Add `import re` at the top of `tests/docker/test_media_compose.py`, then append:
 
 ```python
 def test_qbittorrent_uses_pinned_official_vuetorrent_mod_and_managed_ui():
@@ -251,10 +251,14 @@ def test_qbittorrent_uses_pinned_official_vuetorrent_mod_and_managed_ui():
     ).read_text(encoding="utf-8")
 
     qbittorrent = compose.split("  qbittorrent:", 1)[1].split("  copyparty:", 1)[0]
-    assert "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.34.0" in qbittorrent
+    assert re.search(
+        r"^\s+DOCKER_MODS: ghcr\.io/vuetorrent/vuetorrent-lsio-mod:\d+\.\d+\.\d+$",
+        qbittorrent,
+        re.MULTILINE,
+    )
     assert ":latest" not in qbittorrent
     assert "WebUI\\AlternativeUIEnabled=true" in config
-    assert "WebUI\\RootFolder=/vuetorrent" in config
+    assert "WebUI\\RootFolder=/vuetorrent/public" in config
 ```
 
 Append to `tests/docker/test_docker_apps_validate_playbook.py`:
@@ -265,9 +269,9 @@ def test_validation_proves_vuetorrent_assets_config_and_route():
         encoding="utf-8"
     )
 
-    assert "test -f /vuetorrent/index.html" in validation
+    assert "test -f /vuetorrent/public/index.html" in validation
     assert "WebUI\\\\AlternativeUIEnabled=true" in validation
-    assert "WebUI\\\\RootFolder=/vuetorrent" in validation
+    assert "WebUI\\\\RootFolder=/vuetorrent/public" in validation
     assert "qbt.home.hchu.me" in validation
 ```
 
@@ -293,7 +297,7 @@ Add immediately after `WebUI\LocalHostAuth=false` in `qBittorrent.conf.j2`:
 
 ```ini
 WebUI\AlternativeUIEnabled=true
-WebUI\RootFolder=/vuetorrent
+WebUI\RootFolder=/vuetorrent/public
 ```
 
 - [ ] **Step 4: Add production proof and documentation**
@@ -304,12 +308,12 @@ Add a validation task after the Compose-running check:
     - name: Validate VueTorrent assets and qBittorrent selection
       ansible.builtin.shell: |
         set -eu
-        docker compose exec -T qbittorrent test -f /vuetorrent/index.html
+        docker compose exec -T qbittorrent test -f /vuetorrent/public/index.html
         docker compose exec -T qbittorrent grep -Fx \
           'WebUI\AlternativeUIEnabled=true' \
           /config/qBittorrent/qBittorrent.conf
         docker compose exec -T qbittorrent grep -Fx \
-          'WebUI\RootFolder=/vuetorrent' \
+          'WebUI\RootFolder=/vuetorrent/public' \
           /config/qBittorrent/qBittorrent.conf
       args:
         executable: /bin/sh
@@ -317,7 +321,7 @@ Add a validation task after the Compose-running check:
       changed_when: false
 ```
 
-Keep the existing routed `curl` check for `qbt.home.hchu.me`; the new task proves the two internal layers. Update `apps/compose/media/README.md` to state that the official pinned mod supplies `/vuetorrent` and Ansible selects it.
+Keep the existing routed `curl` check for `qbt.home.hchu.me`; the new task proves the two internal layers. Update `apps/compose/media/README.md` to state that the official pinned mod supplies `/vuetorrent/public` and Ansible selects it.
 
 - [ ] **Step 5: Verify GREEN and commit**
 

@@ -10,8 +10,8 @@
 
 ## Global Constraints
 
-- Do not change or guess the VueTorrent integration itself.
-- Check `/vuetorrent/index.html`, exact `WebUI\AlternativeUIEnabled=true`, exact `WebUI\RootFolder=/vuetorrent`, and the effective container `DOCKER_MODS` value separately.
+- Keep the official `DOCKER_MODS` integration unchanged; the image layer and deployed diagnostics establish `/vuetorrent/public` as the managed Web UI root.
+- Check `/vuetorrent/public/index.html`, exact `WebUI\AlternativeUIEnabled=true`, exact `WebUI\RootFolder=/vuetorrent/public`, and the effective container `DOCKER_MODS` value separately.
 - Emit every internal diagnostic before failing; an early failed check must not stop later checks.
 - On failure, inspect at most 80 qBittorrent init-log lines but emit only constant boolean summaries for VueTorrent, Docker-mod, and error/failure mentions; never emit raw container log bytes.
 - Print the effective `DOCKER_MODS` value only after it matches the strict official-image-plus-semver allowlist. Suppress invalid, unavailable, and failed-command values with a constant diagnostic.
@@ -38,9 +38,9 @@
 Run the production validator with a fake `docker` at the front of `PATH`. The fake's first check fails, the later checks record their calls, and the log result contains both an ordinary line and a PBKDF2 line. Assert:
 
 ```text
-FAIL asset: /vuetorrent/index.html
+FAIL asset: /vuetorrent/public/index.html
 FAIL config: exact WebUI\AlternativeUIEnabled=true
-FAIL config: exact WebUI\RootFolder=/vuetorrent
+FAIL config: exact WebUI\RootFolder=/vuetorrent/public
 FAIL environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>
 ```
 

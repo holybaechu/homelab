@@ -11,11 +11,11 @@ fail() {
   failures=$((failures + 1))
 }
 
-if docker compose exec -T qbittorrent test -f /vuetorrent/index.html \
+if docker compose exec -T qbittorrent test -f /vuetorrent/public/index.html \
   >/dev/null 2>&1; then
-  pass 'asset: /vuetorrent/index.html exists'
+  pass 'asset: /vuetorrent/public/index.html exists'
 else
-  fail 'asset: /vuetorrent/index.html is missing or inaccessible'
+  fail 'asset: /vuetorrent/public/index.html is missing or inaccessible'
 fi
 
 if docker compose exec -T qbittorrent grep -Fx -- \
@@ -27,11 +27,11 @@ else
 fi
 
 if docker compose exec -T qbittorrent grep -Fx -- \
-  'WebUI\RootFolder=/vuetorrent' \
+  'WebUI\RootFolder=/vuetorrent/public' \
   /config/qBittorrent/qBittorrent.conf >/dev/null 2>&1; then
-  pass 'config: exact WebUI\RootFolder=/vuetorrent'
+  pass 'config: exact WebUI\RootFolder=/vuetorrent/public'
 else
-  fail 'config: exact WebUI\RootFolder=/vuetorrent is missing'
+  fail 'config: exact WebUI\RootFolder=/vuetorrent/public is missing'
 fi
 
 effective_mods="$(

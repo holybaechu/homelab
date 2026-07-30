@@ -1,3 +1,5 @@
+import re
+
 from tests.helpers import REPO_ROOT
 
 
@@ -46,7 +48,11 @@ def test_qbittorrent_uses_pinned_official_vuetorrent_mod_and_managed_ui():
     ).read_text(encoding="utf-8")
 
     qbittorrent = compose.split("  qbittorrent:", 1)[1].split("  copyparty:", 1)[0]
-    assert "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.34.0" in qbittorrent
+    assert re.search(
+        r"^\s+DOCKER_MODS: ghcr\.io/vuetorrent/vuetorrent-lsio-mod:\d+\.\d+\.\d+$",
+        qbittorrent,
+        re.MULTILINE,
+    )
     assert ":latest" not in qbittorrent
     assert "WebUI\\AlternativeUIEnabled=true" in config
-    assert "WebUI\\RootFolder=/vuetorrent" in config
+    assert "WebUI\\RootFolder=/vuetorrent/public" in config

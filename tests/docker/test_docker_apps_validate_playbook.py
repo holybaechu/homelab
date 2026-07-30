@@ -44,7 +44,7 @@ def test_validation_proves_vuetorrent_assets_config_and_route():
     assert validation.index("validate-vuetorrent.sh") < validation.index(
         "- name: Check private Traefik routes"
     )
-    assert "docker compose exec -T qbittorrent test -f /vuetorrent/index.html" not in validation
+    assert "docker compose exec -T qbittorrent test -f" not in validation
     assert "qbt.home.hchu.me" in validation
 
 

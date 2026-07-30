@@ -97,6 +97,26 @@ def test_onepassword_cli_manager_tracks_upstream_semver():
     )
 
 
+def test_vuetorrent_mod_manager_tracks_official_semver():
+    config = json.loads(read("renovate.json"))
+    manager = next(
+        manager
+        for manager in config["customManagers"]
+        if manager.get("depNameTemplate")
+        == "ghcr.io/vuetorrent/vuetorrent-lsio-mod"
+    )
+
+    assert manager["managerFilePatterns"] == [
+        "/^apps\\/compose\\/media\\/compose\\.yml$/"
+    ]
+    assert manager["matchStrings"] == [
+        "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:"
+        "(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+    ]
+    assert manager["datasourceTemplate"] == "docker"
+    assert manager["versioningTemplate"] == "semver"
+
+
 def test_direct_requirements_are_exact_and_local_hermes_tag_is_constant():
     requirements = read("requirements-dev.txt").splitlines()
     collection = read("infra/ansible/requirements.yml")

@@ -18,13 +18,13 @@ cat > "${fake_bin}/docker" <<'EOF'
 printf '%s\n' "$*" >> "${FAKE_DOCKER_CALLS}"
 
 case "$*" in
-  *"test -f /vuetorrent/index.html")
+  *"test -f /vuetorrent/public/index.html")
     test "${FAKE_DOCKER_SCENARIO}" != all_fail
     ;;
   *"AlternativeUIEnabled=true"*)
     test "${FAKE_DOCKER_SCENARIO}" != all_fail
     ;;
-  *"RootFolder=/vuetorrent"*)
+  *"RootFolder=/vuetorrent/public"*)
     test "${FAKE_DOCKER_SCENARIO}" != all_fail
     ;;
   *"printenv DOCKER_MODS")
@@ -74,11 +74,11 @@ set -e
 
 test "${all_fail_status}" -eq 1
 printf '%s\n' "${all_fail_output}" | grep -F \
-  'FAIL asset: /vuetorrent/index.html is missing or inaccessible'
+  'FAIL asset: /vuetorrent/public/index.html is missing or inaccessible'
 printf '%s\n' "${all_fail_output}" | grep -F \
   'FAIL config: exact WebUI\AlternativeUIEnabled=true is missing'
 printf '%s\n' "${all_fail_output}" | grep -F \
-  'FAIL config: exact WebUI\RootFolder=/vuetorrent is missing'
+  'FAIL config: exact WebUI\RootFolder=/vuetorrent/public is missing'
 
 for leaked_text in \
   'mod-leak-z9Q7' \
@@ -104,9 +104,9 @@ printf '%s\n' "${all_fail_output}" | grep -F \
 printf '%s\n' "${all_fail_output}" | grep -F \
   'INFO qBittorrent init-log summary: error/failure mentioned=yes'
 
-grep -F 'test -f /vuetorrent/index.html' "${calls}"
+grep -F 'test -f /vuetorrent/public/index.html' "${calls}"
 grep -F 'AlternativeUIEnabled=true' "${calls}"
-grep -F 'RootFolder=/vuetorrent' "${calls}"
+grep -F 'RootFolder=/vuetorrent/public' "${calls}"
 grep -F 'printenv DOCKER_MODS' "${calls}"
 grep -Fx 'compose logs --no-color --tail 80 qbittorrent' "${calls}"
 
@@ -119,11 +119,11 @@ success_output="$({
 } 2>&1)"
 
 printf '%s\n' "${success_output}" | grep -F \
-  'PASS asset: /vuetorrent/index.html exists'
+  'PASS asset: /vuetorrent/public/index.html exists'
 printf '%s\n' "${success_output}" | grep -F \
   'PASS config: exact WebUI\AlternativeUIEnabled=true'
 printf '%s\n' "${success_output}" | grep -F \
-  'PASS config: exact WebUI\RootFolder=/vuetorrent'
+  'PASS config: exact WebUI\RootFolder=/vuetorrent/public'
 printf '%s\n' "${success_output}" | grep -F \
   'PASS environment: effective DOCKER_MODS=ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7'
 if grep -F 'compose logs' "${calls}" >/dev/null; then
