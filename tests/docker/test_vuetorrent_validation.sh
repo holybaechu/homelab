@@ -19,24 +19,41 @@ printf '%s\n' "$*" >> "${FAKE_DOCKER_CALLS}"
 
 case "$*" in
   *"test -f /vuetorrent/index.html")
-    test "${FAKE_DOCKER_SCENARIO}" = success
+    test "${FAKE_DOCKER_SCENARIO}" != all_fail
     ;;
   *"AlternativeUIEnabled=true"*)
-    test "${FAKE_DOCKER_SCENARIO}" = success
+    test "${FAKE_DOCKER_SCENARIO}" != all_fail
     ;;
   *"RootFolder=/vuetorrent"*)
-    test "${FAKE_DOCKER_SCENARIO}" = success
+    test "${FAKE_DOCKER_SCENARIO}" != all_fail
     ;;
   *"printenv DOCKER_MODS")
-    if test "${FAKE_DOCKER_SCENARIO}" = success; then
-      printf '%s\n' 'ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7'
-    else
-      printf '%s\n' 'unexpected-mod'
-    fi
+    case "${FAKE_DOCKER_SCENARIO}" in
+      success)
+        printf '%s\n' 'ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7'
+        ;;
+      command_fail)
+        printf '%s\n' 'printenv-command-leak-z9Q7' >&2
+        exit 77
+        ;;
+      *)
+        printf '%s\n' \
+          'ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7-extra::notice::mod-leak-z9Q7'
+        ;;
+    esac
     ;;
   "compose logs --no-color --tail 80 qbittorrent")
-    printf '%s\n' 'normal init line'
-    printf '%s\n' 'WebUI Password_PBKDF2=very-secret-hash'
+    if test "${FAKE_DOCKER_SCENARIO}" = command_fail; then
+      printf '%s\n' 'logs-command-leak-z9Q7 ::error:: Bearer leaked-token' >&2
+      exit 78
+    fi
+    printf '%s\n' 'VueTorrent docker mod initialization error'
+    printf '%s\n' 'keyword-free-leak-z9Q7'
+    printf '%s\n' 'apikey=api-leak-z9Q7'
+    printf '%s\n' 'Authorization: Bearer bearer-leak-z9Q7'
+    printf '%s\n' '::error file=container::workflow-command-leak-z9Q7'
+    printf '\033[31mcontrol-sequence-leak-z9Q7\033[0m\n'
+    printf '%s\n' 'WebUI Password_PBKDF2=password-leak-z9Q7'
     ;;
   *)
     exit 98
@@ -62,15 +79,30 @@ printf '%s\n' "${all_fail_output}" | grep -F \
   'FAIL config: exact WebUI\AlternativeUIEnabled=true is missing'
 printf '%s\n' "${all_fail_output}" | grep -F \
   'FAIL config: exact WebUI\RootFolder=/vuetorrent is missing'
+
+for leaked_text in \
+  'mod-leak-z9Q7' \
+  'keyword-free-leak-z9Q7' \
+  'api-leak-z9Q7' \
+  'bearer-leak-z9Q7' \
+  'workflow-command-leak-z9Q7' \
+  'control-sequence-leak-z9Q7' \
+  'password-leak-z9Q7'
+do
+  if printf '%s\n' "${all_fail_output}" | grep -F "${leaked_text}" >/dev/null; then
+    printf 'container-controlled text leaked to output: %s\n' "${leaked_text}" >&2
+    exit 1
+  fi
+done
+
 printf '%s\n' "${all_fail_output}" | grep -F \
-  'FAIL environment: effective DOCKER_MODS=unexpected-mod'
-printf '%s\n' "${all_fail_output}" | grep -F 'normal init line'
+  'FAIL environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>'
 printf '%s\n' "${all_fail_output}" | grep -F \
-  '[redacted potentially sensitive init-log line]'
-if printf '%s\n' "${all_fail_output}" | grep -F 'very-secret-hash' >/dev/null; then
-  printf '%s\n' 'sensitive init-log content was not redacted' >&2
-  exit 1
-fi
+  'INFO qBittorrent init-log summary: VueTorrent mentioned=yes'
+printf '%s\n' "${all_fail_output}" | grep -F \
+  'INFO qBittorrent init-log summary: Docker mod mentioned=yes'
+printf '%s\n' "${all_fail_output}" | grep -F \
+  'INFO qBittorrent init-log summary: error/failure mentioned=yes'
 
 grep -F 'test -f /vuetorrent/index.html' "${calls}"
 grep -F 'AlternativeUIEnabled=true' "${calls}"
@@ -98,3 +130,31 @@ if grep -F 'compose logs' "${calls}" >/dev/null; then
   printf '%s\n' 'successful validation unexpectedly requested container logs' >&2
   exit 1
 fi
+
+: > "${calls}"
+set +e
+command_fail_output="$({
+  FAKE_DOCKER_SCENARIO=command_fail \
+  FAKE_DOCKER_CALLS="${calls}" \
+  PATH="${fake_bin}:${PATH}" \
+    sh "${validator}"
+} 2>&1)"
+command_fail_status=$?
+set -e
+
+test "${command_fail_status}" -eq 1
+printf '%s\n' "${command_fail_output}" | grep -F \
+  'FAIL environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>; printenv command failed'
+printf '%s\n' "${command_fail_output}" | grep -F \
+  'INFO qBittorrent init-log summary unavailable (docker compose logs command failed)'
+for leaked_text in \
+  'printenv-command-leak-z9Q7' \
+  'logs-command-leak-z9Q7' \
+  'Bearer leaked-token' \
+  '::error::'
+do
+  if printf '%s\n' "${command_fail_output}" | grep -F "${leaked_text}" >/dev/null; then
+    printf 'failed-command text leaked to output: %s\n' "${leaked_text}" >&2
+    exit 1
+  fi
+done

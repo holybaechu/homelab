@@ -45,46 +45,45 @@ effective_mods_matches="$(
     | grep -Ec '^ghcr\.io/vuetorrent/vuetorrent-lsio-mod:[0-9]+\.[0-9]+\.[0-9]+$'
 )"
 
-safe_effective_mods="$(
-  printf '%s' "${effective_mods}" | tr '\n' ' ' | cut -c 1-200
-)"
-if test -z "${safe_effective_mods}"; then
-  safe_effective_mods='<empty>'
-elif printf '%s\n' "${safe_effective_mods}" \
-  | grep -Eiq '(password|passwd|secret|token|authorization|cookie|private[ _-]?key|pbkdf2|hash)'; then
-  safe_effective_mods='<redacted potentially sensitive value>'
-fi
-
-if test "${effective_mods_status}" -eq 0 \
-  && test "${effective_mods_lines}" -eq 1 \
+if test "${effective_mods_status}" -ne 0; then
+  fail 'environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>; printenv command failed'
+elif test "${effective_mods_lines}" -eq 1 \
   && test "${effective_mods_matches}" -eq 1; then
-  pass "environment: effective DOCKER_MODS=${safe_effective_mods}"
+  pass "environment: effective DOCKER_MODS=${effective_mods}"
 else
-  fail "environment: effective DOCKER_MODS=${safe_effective_mods}; expected one official VueTorrent mod with a semantic-version tag"
+  fail 'environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>; expected one official VueTorrent mod with a semantic-version tag'
 fi
 
 if test "${failures}" -eq 0; then
   exit 0
 fi
 
-printf '%s\n' \
-  'INFO qBittorrent init logs: last 80 lines, max 400 characters per line; sensitive lines redacted'
 init_logs="$(docker compose logs --no-color --tail 80 qbittorrent 2>&1)"
 init_logs_status=$?
 if test "${init_logs_status}" -eq 0; then
-  printf '%s\n' "${init_logs}" | awk '
-    {
-      lower = tolower($0)
-      if (lower ~ /(password|passwd|secret|token|authorization|cookie|private[ _-]?key|pbkdf2|hash)/) {
-        print "[redacted potentially sensitive init-log line]"
-      } else {
-        print substr($0, 1, 400)
-      }
-    }
-  '
+  vuetorrent_mentioned=no
+  docker_mod_mentioned=no
+  error_failure_mentioned=no
+  if printf '%s\n' "${init_logs}" | grep -Eiq 'vuetorrent' 2>/dev/null; then
+    vuetorrent_mentioned=yes
+  fi
+  if printf '%s\n' "${init_logs}" \
+    | grep -Eiq 'docker[ _-]?mods?|linuxserver[ _-]?mods?' 2>/dev/null; then
+    docker_mod_mentioned=yes
+  fi
+  if printf '%s\n' "${init_logs}" \
+    | grep -Eiq 'error|fail(ed|ure|ing)?' 2>/dev/null; then
+    error_failure_mentioned=yes
+  fi
+  printf 'INFO qBittorrent init-log summary: VueTorrent mentioned=%s\n' \
+    "${vuetorrent_mentioned}"
+  printf 'INFO qBittorrent init-log summary: Docker mod mentioned=%s\n' \
+    "${docker_mod_mentioned}"
+  printf 'INFO qBittorrent init-log summary: error/failure mentioned=%s\n' \
+    "${error_failure_mentioned}"
 else
-  printf 'INFO qBittorrent init logs unavailable (docker compose rc=%s)\n' \
-    "${init_logs_status}"
+  printf '%s\n' \
+    'INFO qBittorrent init-log summary unavailable (docker compose logs command failed)'
 fi
 
 exit 1
