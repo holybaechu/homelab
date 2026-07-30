@@ -23,5 +23,5 @@ Opaque Gluetun runtime state uses a named volume.
 
 MeTube is available only on the private network at
 `https://metube.home.hchu.me`. It saves browser-requested downloads under
-`/srv/homelab/downloads/metube`; completed files remain there until the user
+`/srv/homelab/copyparty/downloads`; completed files remain there until the user
 presses MeTube's trash button, which also deletes the server-side file.

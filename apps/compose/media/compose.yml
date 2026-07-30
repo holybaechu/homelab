@@ -81,7 +81,7 @@ services:
     environment:
       DELETE_FILE_ON_TRASHCAN: "true"
     volumes:
-      - /srv/homelab/downloads/metube:/downloads:rw
+      - /srv/homelab/copyparty/downloads:/downloads:rw
     networks:
       - proxy
     labels:

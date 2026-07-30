@@ -80,7 +80,7 @@ def test_metube_is_private_browser_downloader_with_managed_cleanup():
     assert ":latest" not in metube
     assert "env_file: .env" in metube
     assert 'DELETE_FILE_ON_TRASHCAN: "true"' in metube
-    assert "/srv/homelab/downloads/metube:/downloads:rw" in metube
+    assert "/srv/homelab/copyparty/downloads:/downloads:rw" in metube
     assert "ports:" not in metube
     assert "- proxy" in metube
     assert "traefik.http.routers.metube.rule=Host(`metube.home.hchu.me`)" in metube
@@ -91,7 +91,7 @@ def test_metube_is_private_browser_downloader_with_managed_cleanup():
     ) in metube
     assert "traefik.http.services.metube.loadbalancer.server.port=8081" in metube
 
-    assert "{path: /srv/homelab/downloads/metube}" in tasks
+    assert "{path: /srv/homelab/copyparty/downloads}" in tasks
     for variable in ("PUID", "PGID", "TZ"):
         assert f"{variable}=" in env_template
 
@@ -104,5 +104,5 @@ def test_media_docs_describe_metube_storage_and_trash_cleanup():
 
     assert "MeTube" in overview
     assert "metube.home.hchu.me" in readme
-    assert "/srv/homelab/downloads/metube" in readme
+    assert "/srv/homelab/copyparty/downloads" in readme
     assert "trash" in readme.lower()
