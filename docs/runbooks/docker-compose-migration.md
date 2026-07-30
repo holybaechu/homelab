@@ -99,8 +99,11 @@ backups.
 4. Start the retained legacy VMIDs 113, 114, and 116 and validate them before
    accepting traffic.
 
-Minecraft has no rollback path: VMID 115, `/srv/homelab/minecraft`, and local
-`vzdump-lxc-115-*` archives are permanently deleted during deployment.
+Minecraft has no rollback path: VMID 115, the Proxmox-host path
+`/var/lib/homelab/minecraft`, and local `vzdump-lxc-115-*` archives are
+permanently deleted during deployment. The host data deletion runs only after
+the retired `game` Compose project has been stopped and removed in
+`docker_apps`.
 
 After the soak period and separate data-protection verification, destroy the
 unmanaged VMIDs 113, 114, and 116 manually. They are intentionally no longer

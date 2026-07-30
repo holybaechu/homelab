@@ -1,0 +1,28 @@
+---
+- name: Require the exact retired Minecraft host data path
+  ansible.builtin.assert:
+    that:
+      - retired_minecraft_data_path is defined
+      - retired_minecraft_data_path is string
+      - retired_minecraft_data_path == '/var/lib/homelab/minecraft'
+      - retired_minecraft_data_path == homelab_data_mount + '/minecraft'
+    fail_msg: >-
+      Refusing retired Minecraft cleanup outside
+      /var/lib/homelab/minecraft.
+
+- name: Install the retired Minecraft data guard
+  ansible.builtin.copy:
+    src: retire-minecraft-data.sh
+    dest: /usr/local/sbin/homelab-retire-minecraft-data
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Permanently remove the exact retired Minecraft host data path
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/homelab-retire-minecraft-data
+      - --delete
+      - "{{ retired_minecraft_data_path }}"
+  register: retired_minecraft_data_cleanup
+  changed_when: "'changed=yes' in retired_minecraft_data_cleanup.stdout"

@@ -22,7 +22,7 @@ def test_cutover_runbooks_exclude_destroyed_minecraft_assets_from_rollback():
     for runbook in runbooks:
         assert "VMIDs 113, 114, and 116" in runbook
         assert "VMID 115" in runbook
-        assert "/srv/homelab/minecraft" in runbook
+        assert "/var/lib/homelab/minecraft" in runbook
         assert "vzdump-lxc-115-*" in runbook
         assert "no rollback path" in runbook
 

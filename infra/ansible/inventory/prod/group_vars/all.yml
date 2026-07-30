@@ -18,6 +18,7 @@ homelab_data_lv_name: homelab-data
 homelab_data_lv_size: 896G
 homelab_data_mount: /var/lib/homelab
 homelab_container_uid_offset: 100000
+retired_minecraft_data_path: /var/lib/homelab/minecraft
 
 legacy_lxcs:
   - {name: downloads, vmid: 113}

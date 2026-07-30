@@ -106,23 +106,6 @@
   loop_control:
     label: "{{ item.name }}"
 
-- name: Validate retired Docker data paths
-  ansible.builtin.assert:
-    that:
-      - item is string
-      - item is match('^/srv/homelab/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+\\Z')
-      - item != '/srv/homelab'
-      - "'.' not in item.split('/')"
-      - "'..' not in item.split('/')"
-    fail_msg: "Refusing unsafe retired Docker data path: {{ item }}"
-  loop: "{{ retired_docker_data_paths | default([]) }}"
-
-- name: Remove retired Docker data paths
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop: "{{ retired_docker_data_paths | default([]) }}"
-
 - name: Create Compose project directories
   ansible.builtin.file:
     path: "{{ item.dest }}"

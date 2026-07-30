@@ -48,9 +48,6 @@ retired_docker_compose_projects:
   - name: game
     dest: "{{ docker_apps_compose_root }}/game"
 
-retired_docker_data_paths:
-  - /srv/homelab/minecraft
-
 docker_compose_projects:
   - name: platform
     src: apps/compose/platform

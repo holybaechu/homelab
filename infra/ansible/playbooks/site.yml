@@ -72,3 +72,9 @@
       tags: [docker_apps, docker_engine]
     - role: docker_compose_project
       tags: [docker_apps, compose]
+
+- name: Permanently remove retired Minecraft data from Proxmox storage
+  hosts: pve_hosts
+  gather_facts: false
+  roles:
+    - pve_retire_minecraft_data

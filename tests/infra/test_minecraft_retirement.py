@@ -1,8 +1,8 @@
-import re
+import os
+import shutil
+import subprocess
 
 import pytest
-import yaml
-from jinja2 import Environment, StrictUndefined
 
 from tests.helpers import REPO_ROOT
 
@@ -13,43 +13,52 @@ def read(path: str) -> str:
 
 def test_minecraft_is_retired_with_runtime_and_data_tombstones():
     variables = read("infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml")
+    all_variables = read("infra/ansible/inventory/prod/group_vars/all.yml")
     active = variables.split("\ndocker_compose_projects:", 1)[1]
 
     assert "name: game" in variables.split("\ndocker_compose_projects:", 1)[0]
     assert "name: game" not in active
-    assert "retired_docker_data_paths:" in variables
-    assert "- /srv/homelab/minecraft" in variables
+    assert "retired_docker_data_paths:" not in variables
+    assert "retired_minecraft_data_path: /var/lib/homelab/minecraft" in all_variables
     assert not (REPO_ROOT / "apps/compose/game").exists()
     assert not (REPO_ROOT / "docs/runbooks/minecraft-server.md").exists()
 
 
-def retired_data_path_is_safe(path: object) -> bool:
-    tasks = yaml.safe_load(
-        read("infra/ansible/roles/docker_compose_project/tasks/main.yml")
+def run_retired_data_guard(mode: str, path: str) -> subprocess.CompletedProcess[str]:
+    script = REPO_ROOT / (
+        "infra/ansible/roles/pve_retire_minecraft_data/"
+        "files/retire-minecraft-data.sh"
     )
-    validate = next(
-        task for task in tasks if task["name"] == "Validate retired Docker data paths"
-    )
-    conditions = validate["ansible.builtin.assert"]["that"]
-    environment = Environment(undefined=StrictUndefined)
-    environment.tests["match"] = (
-        lambda value, pattern: re.match(pattern, value) is not None
-    )
-    return all(
-        bool(environment.compile_expression(condition)(item=path))
-        for condition in conditions
+    if os.name == "nt":
+        shell = os.path.join(
+            os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "sh.exe"
+        )
+        if not os.path.exists(shell):
+            pytest.skip("Git sh is unavailable")
+        drive, remainder = os.path.splitdrive(str(script))
+        script_arg = f"/{drive[0].lower()}{remainder.replace(os.sep, '/')}"
+    else:
+        shell = shutil.which("sh")
+        if shell is None:
+            pytest.skip("POSIX shell is unavailable")
+        script_arg = str(script)
+
+    return subprocess.run(
+        [shell, script_arg, mode, path],
+        cwd=REPO_ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
     )
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/srv/homelab/minecraft",
-        "/srv/homelab/retired.service/data_1",
-    ],
-)
-def test_retired_data_cleanup_accepts_canonical_descendant_paths(path):
-    assert retired_data_path_is_safe(path)
+def test_retired_data_cleanup_accepts_only_the_exact_host_path():
+    result = run_retired_data_guard("--check", "/var/lib/homelab/minecraft")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/var/lib/homelab/minecraft"
 
 
 @pytest.mark.parametrize(
@@ -57,33 +66,51 @@ def test_retired_data_cleanup_accepts_canonical_descendant_paths(path):
     [
         "",
         "/",
-        "/srv",
-        "/srv/homelab",
-        "/srv/homelab/",
-        "/srv/homelab/.",
-        "/srv/homelab//",
-        "/srv/homelab/minecraft/",
-        "/srv/homelab/minecraft//world",
-        "/srv/homelab/minecraft\n",
-        "/srv/homelab/..",
-        "/srv/homelab/minecraft/../other",
-        "/srv/homelab/mine*craft",
-        "/srv/other/minecraft",
+        "/var",
+        "/var/lib/homelab",
+        "/var/lib/homelab/",
+        "/var/lib/homelab/./minecraft",
+        "/var/lib/homelab//minecraft",
+        "/var/lib/homelab/minecraft/",
+        "/var/lib/homelab/mine\ncraft",
+        "/var/lib/homelab/../homelab/minecraft",
+        "/var/lib/homelab/minecraft/../other",
+        "/var/lib/homelab/mine*craft",
+        "/var/lib/homelab/mine?craft",
+        "/var/lib/homelab/mine[craft",
+        "/srv/homelab/minecraft",
+        "/var/lib/other/minecraft",
     ],
 )
 def test_retired_data_cleanup_rejects_noncanonical_or_unscoped_paths(path):
-    assert not retired_data_path_is_safe(path)
+    result = run_retired_data_guard("--check", path)
+
+    assert result.returncode != 0
 
 
-def test_retired_data_cleanup_validation_precedes_removal():
-    tasks = read("infra/ansible/roles/docker_compose_project/tasks/main.yml")
+def test_retired_data_cleanup_rejects_out_of_scope_delete_without_removing_it(tmp_path):
+    out_of_scope = tmp_path / "minecraft"
+    out_of_scope.mkdir()
+    sentinel = out_of_scope / "world.dat"
+    sentinel.write_text("keep", encoding="utf-8")
 
-    validate = tasks.index("Validate retired Docker data paths")
-    remove = tasks.index("Remove retired Docker data paths")
-    assert validate < remove
-    assert 'loop: "{{ retired_docker_data_paths | default([]) }}"' in tasks
-    assert "ansible.builtin.file:" in tasks[remove:]
-    assert "state: absent" in tasks[remove:]
+    result = run_retired_data_guard("--delete", str(out_of_scope))
+
+    assert result.returncode != 0
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_retired_data_cleanup_runs_on_proxmox_after_compose_retirement():
+    site = read("infra/ansible/playbooks/site.yml")
+    prepare = read("infra/ansible/playbooks/prepare-low-id-cutover.yml")
+    tasks = read("infra/ansible/roles/pve_retire_minecraft_data/tasks/main.yml")
+
+    assert site.index("docker_compose_project") < site.index("pve_retire_minecraft_data")
+    assert "pve_retire_minecraft_data" not in prepare
+    assert "ansible.builtin.command:" in tasks
+    assert "--delete" in tasks
+    assert "{{ retired_minecraft_data_path }}" in tasks
+    assert "'changed=yes' in retired_minecraft_data_cleanup.stdout" in tasks
 
 
 def test_proxmox_minecraft_tombstone_is_exact_and_idempotent():

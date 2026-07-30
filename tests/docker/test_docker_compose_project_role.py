@@ -26,7 +26,10 @@ def test_compose_role_removes_retired_backup_project_and_volumes():
     assert "name: backup" not in active_projects
 
 
-def test_retired_data_cleanup_rejects_parent_traversal_paths():
+def test_retired_data_cleanup_is_not_attempted_inside_unprivileged_lxc():
     tasks = (REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml").read_text(encoding="utf-8")
+    variables = (REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml").read_text(encoding="utf-8")
 
-    assert "'..' not in item.split('/')" in tasks
+    assert "retired_docker_data_paths" not in variables
+    assert "Validate retired Docker data paths" not in tasks
+    assert "Remove retired Docker data paths" not in tasks

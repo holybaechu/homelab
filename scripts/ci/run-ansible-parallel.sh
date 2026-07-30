@@ -28,6 +28,7 @@ esac
 case "${mode}" in
   site)
     playbook="infra/ansible/playbooks/site.yml"
+    TARGETS="${TARGETS} pve:pve_hosts"
     ;;
   validate)
     playbook="infra/ansible/playbooks/validate.yml"
@@ -84,28 +85,32 @@ run_foreground_target() {
 
 if [ "${mode}" = "site" ]; then
   tailnet_entry=""
+  docker_apps_entry=""
+  pve_entry=""
   parallel_targets=""
   for entry in ${TARGETS}; do
     target="${entry%%:*}"
-    if [ "${target}" = "tailnet" ]; then
-      tailnet_entry="${entry}"
-    else
-      parallel_targets="${parallel_targets} ${entry}"
-    fi
+    case "${target}" in
+      tailnet) tailnet_entry="${entry}" ;;
+      docker_apps) docker_apps_entry="${entry}" ;;
+      pve) pve_entry="${entry}" ;;
+      *) parallel_targets="${parallel_targets} ${entry}" ;;
+    esac
   done
 
-  if [ -z "${tailnet_entry}" ]; then
-    echo "The rendered Ansible targets do not include tailnet" >&2
-    exit 2
-  fi
-
-  target="${tailnet_entry%%:*}"
-  limit="${tailnet_entry#*:}"
-  if run_foreground_target "${target}" "${limit}" "$@"; then
-    :
-  else
-    exit $?
-  fi
+  for required_entry in "${tailnet_entry}" "${docker_apps_entry}" "${pve_entry}"; do
+    if [ -z "${required_entry}" ]; then
+      echo "The site deployment requires tailnet, docker_apps, and pve targets" >&2
+      exit 2
+    fi
+    target="${required_entry%%:*}"
+    limit="${required_entry#*:}"
+    if run_foreground_target "${target}" "${limit}" "$@"; then
+      :
+    else
+      exit $?
+    fi
+  done
   TARGETS="${parallel_targets}"
 fi
 

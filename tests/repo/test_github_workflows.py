@@ -115,7 +115,7 @@ def _posix_shell_command(script: str) -> list[str]:
     return [git_shell, git_path]
 
 
-def test_parallel_ansible_runner_gates_docker_on_tailnet_recovery():
+def test_parallel_ansible_runner_orders_tailnet_docker_then_pve_cleanup():
     script = str(REPO_ROOT / "tests" / "repo" / "test_run_ansible_parallel.sh")
     env = os.environ.copy()
     if os.name == "nt":
@@ -143,6 +143,9 @@ def test_parallel_ansible_runner_gates_docker_on_tailnet_recovery():
     assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
     assert result.stdout.index("tailnet complete") < result.stdout.index(
         "docker started after tailnet"
+    )
+    assert result.stdout.index("docker started after tailnet") < result.stdout.index(
+        "pve cleanup started after docker retirement"
     )
     assert "timed out after 1 seconds" in result.stdout
 
