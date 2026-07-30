@@ -92,6 +92,12 @@
       "extractVersion": ".*op_linux_amd64_v(?<version>\\d+\\.\\d+\\.\\d+)\\.zip$"
     },
     {
+      "description": "Order MeTube calendar-versioned Docker tags",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/alexta69/metube"],
+      "versioning": "regex:^(?<major>\\d{4})\\.(?<minor>\\d{2})\\.(?<patch>\\d{2})$"
+    },
+    {
       "matchUpdateTypes": ["minor", "patch"],
       "matchCurrentVersion": "!/^0/",
       "automerge": true,

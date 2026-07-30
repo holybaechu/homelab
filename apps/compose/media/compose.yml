@@ -74,6 +74,24 @@ services:
       - traefik.http.routers.copyparty.middlewares=secure-headers@file
       - traefik.http.services.copyparty.loadbalancer.server.port=3923
 
+  metube:
+    image: ghcr.io/alexta69/metube:2026.07.27
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DELETE_FILE_ON_TRASHCAN: "true"
+    volumes:
+      - /srv/homelab/downloads/metube:/downloads:rw
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.metube.rule=Host(`metube.home.hchu.me`)
+      - traefik.http.routers.metube.entrypoints=websecure
+      - traefik.http.routers.metube.middlewares=private-only@file,secure-headers@file
+      - traefik.http.services.metube.loadbalancer.server.port=8081
+
 networks:
   proxy:
     external: true

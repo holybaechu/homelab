@@ -56,3 +56,53 @@ def test_qbittorrent_uses_pinned_official_vuetorrent_mod_and_managed_ui():
     assert ":latest" not in qbittorrent
     assert "WebUI\\AlternativeUIEnabled=true" in config
     assert "WebUI\\RootFolder=/vuetorrent/public" in config
+
+
+def test_metube_is_private_browser_downloader_with_managed_cleanup():
+    compose = (REPO_ROOT / "apps/compose/media/compose.yml").read_text(
+        encoding="utf-8"
+    )
+    metube = compose.split("  metube:", 1)[1].split("\nnetworks:", 1)[0]
+    tasks = (
+        REPO_ROOT
+        / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
+    ).read_text(encoding="utf-8")
+    env_template = (
+        REPO_ROOT
+        / "infra/ansible/roles/docker_compose_project/templates/media.env.j2"
+    ).read_text(encoding="utf-8")
+
+    assert re.search(
+        r"^\s+image: ghcr\.io/alexta69/metube:\d{4}\.\d{2}\.\d{2}$",
+        metube,
+        re.MULTILINE,
+    )
+    assert ":latest" not in metube
+    assert "env_file: .env" in metube
+    assert 'DELETE_FILE_ON_TRASHCAN: "true"' in metube
+    assert "/srv/homelab/downloads/metube:/downloads:rw" in metube
+    assert "ports:" not in metube
+    assert "- proxy" in metube
+    assert "traefik.http.routers.metube.rule=Host(`metube.home.hchu.me`)" in metube
+    assert "traefik.http.routers.metube.entrypoints=websecure" in metube
+    assert (
+        "traefik.http.routers.metube.middlewares="
+        "private-only@file,secure-headers@file"
+    ) in metube
+    assert "traefik.http.services.metube.loadbalancer.server.port=8081" in metube
+
+    assert "{path: /srv/homelab/downloads/metube}" in tasks
+    for variable in ("PUID", "PGID", "TZ"):
+        assert f"{variable}=" in env_template
+
+
+def test_media_docs_describe_metube_storage_and_trash_cleanup():
+    overview = (REPO_ROOT / "apps/README.md").read_text(encoding="utf-8")
+    readme = (REPO_ROOT / "apps/compose/media/README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "MeTube" in overview
+    assert "metube.home.hchu.me" in readme
+    assert "/srv/homelab/downloads/metube" in readme
+    assert "trash" in readme.lower()

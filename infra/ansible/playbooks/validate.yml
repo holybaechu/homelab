@@ -98,11 +98,14 @@
       changed_when: false
       failed_when: adguard_dns_query.stdout | length == 0
 
-    - name: Query AdGuard private rewrite
-      ansible.builtin.command: dig +short @127.0.0.1 qbt.home.hchu.me A
+    - name: Query AdGuard private rewrites
+      ansible.builtin.command: "dig +short @127.0.0.1 {{ item }} A"
       register: adguard_private_query
       changed_when: false
       failed_when: docker_apps_ip not in adguard_private_query.stdout_lines
+      loop:
+        - qbt.home.hchu.me
+        - metube.home.hchu.me
 
     - name: Check private Traefik routes
       ansible.builtin.command:
@@ -122,6 +125,7 @@
       loop:
         - adguard.home.hchu.me
         - qbt.home.hchu.me
+        - metube.home.hchu.me
 
     - name: Check public Copyparty route
       ansible.builtin.command:

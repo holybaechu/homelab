@@ -117,6 +117,20 @@ def test_vuetorrent_mod_manager_tracks_official_semver():
     assert manager["versioningTemplate"] == "semver"
 
 
+def test_metube_image_uses_explicit_calendar_versioning():
+    config = json.loads(read("renovate.json"))
+    rule = next(
+        rule
+        for rule in config["packageRules"]
+        if rule.get("matchPackageNames") == ["ghcr.io/alexta69/metube"]
+    )
+
+    assert rule["matchDatasources"] == ["docker"]
+    assert rule["versioning"] == (
+        r"regex:^(?<major>\d{4})\.(?<minor>\d{2})\.(?<patch>\d{2})$"
+    )
+
+
 def test_direct_requirements_are_exact_and_local_hermes_tag_is_constant():
     requirements = read("requirements-dev.txt").splitlines()
     collection = read("infra/ansible/requirements.yml")

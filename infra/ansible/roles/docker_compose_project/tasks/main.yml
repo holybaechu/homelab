@@ -75,6 +75,7 @@
     - {path: /srv/homelab/docker-apps/copyparty}
     - {path: /srv/homelab/downloads/complete}
     - {path: /srv/homelab/downloads/incomplete}
+    - {path: /srv/homelab/downloads/metube}
     - {path: /srv/homelab/copyparty/public}
     - {path: /srv/homelab/copyparty/shared-readonly}
     - {path: /srv/homelab/hermes/home, owner: "{{ hermes_uid }}", group: "{{ hermes_gid }}"}
