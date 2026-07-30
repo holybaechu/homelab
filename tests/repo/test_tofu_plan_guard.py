@@ -162,3 +162,22 @@ def test_tofu_plan_guard_allows_create_only_lxc_plan_for_explicit_bootstrap():
 
     assert result.returncode == 0
     assert "ALLOW_EMPTY_STATE_BOOTSTRAP is set" in result.stderr
+
+
+def test_cd_manual_dispatch_guardedly_recovers_a_confirmed_stale_lock():
+    workflow = (REPO_ROOT / ".github/workflows/cd.yml").read_text(encoding="utf-8")
+    plan_script = (REPO_ROOT / "scripts/ci/tofu-plan.sh").read_text(
+        encoding="utf-8"
+    )
+    runbook = (REPO_ROOT / "docs/runbooks/github-actions.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "tofu_force_unlock_id:" in workflow
+    assert "TOFU_FORCE_UNLOCK_ID: ${{ inputs.tofu_force_unlock_id || '' }}" in workflow
+    assert "grep -Eq" in plan_script
+    assert "tofu force-unlock -force \"${TOFU_FORCE_UNLOCK_ID}\"" in plan_script
+    assert plan_script.index("tofu init") < plan_script.index("tofu force-unlock")
+    assert plan_script.index("tofu force-unlock") < plan_script.index("tofu state list")
+    assert "confirmed stale lock" in runbook.lower()
+    assert "tofu_force_unlock_id" in runbook

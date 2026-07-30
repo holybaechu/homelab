@@ -21,6 +21,17 @@ if [ -n "${TOFU_STATE_ENDPOINT:-}" ]; then
 fi
 
 tofu init -input=false "$@"
+
+if [ -n "${TOFU_FORCE_UNLOCK_ID:-}" ]; then
+  if ! printf '%s\n' "${TOFU_FORCE_UNLOCK_ID}" | grep -Eq \
+    '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'; then
+    echo "TOFU_FORCE_UNLOCK_ID must be a complete UUID." >&2
+    exit 1
+  fi
+  echo "Force-unlocking confirmed stale OpenTofu lock ${TOFU_FORCE_UNLOCK_ID}."
+  tofu force-unlock -force "${TOFU_FORCE_UNLOCK_ID}"
+fi
+
 tofu fmt -recursive -check ../..
 tofu validate
 

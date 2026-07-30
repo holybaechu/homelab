@@ -2,6 +2,11 @@ name: cd
 
 on:
   workflow_dispatch:
+    inputs:
+      tofu_force_unlock_id:
+        description: Confirmed stale OpenTofu lock UUID to remove before planning
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -104,6 +109,7 @@ jobs:
           TOFU_STATE_ENDPOINT: ${{ vars.TOFU_STATE_ENDPOINT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.TOFU_STATE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.TOFU_STATE_SECRET_ACCESS_KEY }}
+          TOFU_FORCE_UNLOCK_ID: ${{ inputs.tofu_force_unlock_id || '' }}
         run: ./scripts/ci/tofu-plan.sh
 
       - name: OpenTofu apply

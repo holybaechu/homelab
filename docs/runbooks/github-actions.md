@@ -115,6 +115,15 @@ The CI workflow validates OpenTofu with `tofu init -backend=false`; only CD need
 Container topology is tracked in `infra/opentofu/envs/prod/containers.auto.tfvars`.
 Private provider values stay in ignored local tfvars files or the generated CI `ci.auto.tfvars.json`.
 
+### Confirmed stale lock recovery
+
+Use force-unlock only after the owning CD job has completed and no other CD run
+is active. Copy the complete lock UUID from the failed OpenTofu log, open the
+`cd` workflow with `workflow_dispatch`, and supply it as
+`tofu_force_unlock_id`. The workflow validates the UUID, initializes the exact
+production backend, removes that confirmed stale lock, and then performs the
+normal plan and deployment. Leave the input empty for every normal deployment.
+
 ## CD Parallelism
 
 The CD workflow keeps the low-ID preflight, OpenTofu, and bootstrap operations
