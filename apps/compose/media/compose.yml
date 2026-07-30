@@ -2,7 +2,7 @@ name: media
 
 services:
   gluetun:
-    image: qmcgaw/gluetun:v3.41.2
+    image: qmcgaw/gluetun:v3.41.3
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
