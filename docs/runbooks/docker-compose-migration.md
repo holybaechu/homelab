@@ -103,7 +103,10 @@ Minecraft has no rollback path: VMID 115, the Proxmox-host path
 `/var/lib/homelab/minecraft`, and local `vzdump-lxc-115-*` archives are
 permanently deleted during deployment. The host data deletion runs only after
 the retired `game` Compose project has been stopped and removed in
-`docker_apps`.
+`docker_apps` and Docker reports no containers labeled
+`com.docker.compose.project=game`. Before deletion, Proxmox verifies that
+`/var/lib/homelab` is the root of `/dev/pve/homelab-data` and that no mountpoint
+exists at or below the Minecraft target.
 
 After the soak period and separate data-protection verification, destroy the
 unmanaged VMIDs 113, 114, and 116 manually. They are intentionally no longer

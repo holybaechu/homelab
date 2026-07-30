@@ -1,3 +1,9 @@
+import os
+import shutil
+import subprocess
+
+import pytest
+
 from tests.helpers import REPO_ROOT
 
 
@@ -24,6 +30,58 @@ def test_compose_role_removes_retired_backup_project_and_volumes():
     assert "retired_docker_compose_projects" in tasks
     assert "name: backup" in variables
     assert "name: backup" not in active_projects
+
+
+def _posix_shell_command(script: str) -> list[str]:
+    shell = shutil.which("sh")
+    if shell and os.name != "nt":
+        return [shell, script]
+
+    git_shell = os.path.join(
+        os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "sh.exe"
+    )
+    if not os.path.exists(git_shell):
+        pytest.skip("POSIX shell is unavailable")
+    drive, remainder = os.path.splitdrive(script)
+    git_path = f"/{drive[0].lower()}{remainder.replace(os.sep, '/')}"
+    return [git_shell, git_path]
+
+
+def test_missing_compose_file_cannot_hide_surviving_game_containers():
+    script = str(REPO_ROOT / "tests/docker/test_retired_compose_guard.sh")
+    env = os.environ.copy()
+    if os.name == "nt":
+        git_root = os.path.join(
+            os.environ.get("ProgramFiles", r"C:\Program Files"), "Git"
+        )
+        env["PATH"] = os.pathsep.join(
+            [
+                os.path.join(git_root, "usr", "bin"),
+                os.path.join(git_root, "mingw64", "bin"),
+                env["PATH"],
+            ]
+        )
+    result = subprocess.run(
+        _posix_shell_command(script),
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
+
+
+def test_compose_role_always_runs_the_game_container_postcondition():
+    tasks = (REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml").read_text(encoding="utf-8")
+
+    assert tasks.index("Remove retired Compose project directories") < tasks.index(
+        "Assert no game Compose containers remain"
+    )
+    assert "assert-no-game-compose-containers.sh" in tasks
 
 
 def test_retired_data_cleanup_is_not_attempted_inside_unprivileged_lxc():

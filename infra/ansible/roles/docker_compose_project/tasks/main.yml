@@ -106,6 +106,13 @@
   loop_control:
     label: "{{ item.name }}"
 
+- name: Assert no game Compose containers remain
+  ansible.builtin.script:
+    cmd: >-
+      {{ playbook_dir }}/../files/assert-no-game-compose-containers.sh
+      /usr/bin/docker
+  changed_when: false
+
 - name: Create Compose project directories
   ansible.builtin.file:
     path: "{{ item.dest }}"

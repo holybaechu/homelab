@@ -67,6 +67,7 @@
 - name: Configure Docker Compose application LXC
   hosts: svc_docker_apps
   gather_facts: true
+  any_errors_fatal: true
   roles:
     - role: docker_engine
       tags: [docker_apps, docker_engine]

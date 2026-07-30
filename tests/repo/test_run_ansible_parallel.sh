@@ -6,6 +6,7 @@ test_root="$(mktemp -d)"
 fake_bin="${test_root}/bin"
 marker="${test_root}/tailnet-complete"
 docker_marker="${test_root}/docker-retirement-complete"
+pve_marker="${test_root}/pve-cleanup-started"
 mkdir -p "${fake_bin}"
 
 cleanup() {
@@ -32,6 +33,10 @@ case "$*" in
       printf '%s\n' 'docker started before tailnet completed' >&2
       exit 91
     fi
+    if [ "${FAKE_DOCKER_FAIL:-0}" = "1" ]; then
+      printf '%s\n' 'docker retirement failed deliberately' >&2
+      exit 93
+    fi
     sleep "${FAKE_DOCKER_DELAY_SECONDS:-0}"
     : > "${DOCKER_RETIREMENT_COMPLETE_MARKER}"
     printf '%s\n' 'docker started after tailnet'
@@ -41,6 +46,7 @@ case "$*" in
       printf '%s\n' 'pve cleanup started before docker retirement completed' >&2
       exit 92
     fi
+    : > "${PVE_CLEANUP_STARTED_MARKER}"
     printf '%s\n' 'pve cleanup started after docker retirement'
     ;;
   *'validate.yml'*'--limit pve_hosts'*)
@@ -54,8 +60,33 @@ chmod +x "${fake_bin}/python3" "${fake_bin}/ansible-playbook"
 PATH="${fake_bin}:${PATH}" \
 TAILNET_COMPLETE_MARKER="${marker}" \
 DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
+PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
 ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
   sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
+
+rm -f "${marker}" "${docker_marker}" "${pve_marker}"
+set +e
+docker_failure_output="$({
+  PATH="${fake_bin}:${PATH}" \
+  TAILNET_COMPLETE_MARKER="${marker}" \
+  DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
+  PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
+  FAKE_DOCKER_FAIL=1 \
+  ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
+    sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
+} 2>&1)"
+docker_failure_status=$?
+set -e
+
+printf '%s\n' "${docker_failure_output}"
+test "${docker_failure_status}" -ne 0
+printf '%s\n' "${docker_failure_output}" | grep -F \
+  'docker retirement failed deliberately'
+test ! -e "${pve_marker}"
+if printf '%s\n' "${docker_failure_output}" | grep -F \
+  'pve cleanup started after docker retirement'; then
+  exit 1
+fi
 
 rm -f "${marker}" "${docker_marker}"
 set +e
@@ -63,6 +94,7 @@ timeout_output="$({
   PATH="${fake_bin}:${PATH}" \
   TAILNET_COMPLETE_MARKER="${marker}" \
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
+  PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
   FAKE_TAILNET_DELAY_SECONDS=3 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=1 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
@@ -80,6 +112,7 @@ background_timeout_output="$({
   PATH="${fake_bin}:${PATH}" \
   TAILNET_COMPLETE_MARKER="${marker}" \
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
+  PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
   FAKE_TAILNET_DELAY_SECONDS=0 \
   FAKE_DOCKER_DELAY_SECONDS=3 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=1 \

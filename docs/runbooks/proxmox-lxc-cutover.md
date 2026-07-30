@@ -10,7 +10,9 @@ rollback. The cutover gate is:
 - Minecraft VMID 115 is permanently destroyed with the Proxmox-host path
   `/var/lib/homelab/minecraft` and matching local `vzdump-lxc-115-*` archives;
   these assets have no rollback path. The data path is deleted only after the
-  retired `game` Compose project has been stopped and removed in `docker_apps`.
+  retired `game` Compose project has been stopped and Docker reports no
+  `com.docker.compose.project=game` containers. Proxmox also verifies the
+  `/dev/pve/homelab-data` mount identity and rejects target/descendant mounts.
 - VMID 110 has `/dev/net/tun`, nesting/keyctl, and the single
   `/var/lib/homelab` bind mount.
 - The three active Compose projects (`platform`, `media`, and `hermes`) are

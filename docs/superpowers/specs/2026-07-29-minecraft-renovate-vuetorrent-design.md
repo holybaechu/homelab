@@ -1,12 +1,19 @@
 # Minecraft Retirement, Renovate Coverage, and VueTorrent Repair Design
 
+> Recovery correction (2026-07-30): the bind-mounted Minecraft data is owned
+> by Proxmox, not the unprivileged Docker LXC. The exact host path
+> `/var/lib/homelab/minecraft` is deleted by the `pve_retire_minecraft_data`
+> role in `site.yml` only after Docker proves no
+> `com.docker.compose.project=game` containers remain. The VMID/archive
+> tombstone remains separate in `prepare-low-id-cutover.yml`.
+
 ## Goal
 
 Permanently retire every Minecraft runtime and repository artifact, restore VueTorrent as qBittorrent's managed alternative Web UI, and ensure every repository-controlled dependency version is discoverable and updated by Renovate while operating-system packages are upgraded deterministically by Ansible.
 
 ## Decisions
 
-- Minecraft data is intentionally unrecoverable after deployment. The cleanup includes the Compose project, `/srv/homelab/minecraft`, legacy VMID 115, and local `vzdump-lxc-115-*` archives.
+- Minecraft data is intentionally unrecoverable after deployment. The cleanup includes the Compose project, Proxmox-host path `/var/lib/homelab/minecraft`, legacy VMID 115, and local `vzdump-lxc-115-*` archives.
 - Renovate keeps the current risk policy: minor and patch updates automerge, while major updates require review.
 - VueTorrent uses the official LinuxServer Docker mod rather than a separate web server or a custom qBittorrent image.
 - All source-controlled versions must be either handled by a built-in Renovate manager or carry an explicit custom-manager annotation/configuration.
@@ -31,7 +38,17 @@ docker compose down --volumes --remove-orphans
 
 from `/opt/homelab-compose/game`, then removes that deployed project directory. The cleanup must tolerate an already-absent project.
 
-After the Compose project is stopped, delete `/srv/homelab/minecraft` through a literal, allowlisted retired-data-path mechanism. The deletion task must reject `/`, `/srv`, `/srv/homelab`, empty strings, variables containing shell glob characters, and paths outside `/srv/homelab/`.
+After the Compose project is stopped, always query Docker for every container
+labeled `com.docker.compose.project=game`; an absent `compose.yml` must not
+skip this postcondition. Only after the query is empty may the Proxmox-host
+role delete `/var/lib/homelab/minecraft`. That role independently repeats the
+Docker query through delegation to `docker_apps`, verifies that
+`/var/lib/homelab` is the root of the expected `/dev/pve/homelab-data` ext4
+filesystem by canonical block-device identity, rejects bind aliases and every
+mountpoint at or below the target, and keeps the deletion on one filesystem.
+Empty, root, traversal, glob, LXC-view, symlink, noncanonical, and alternate
+device paths must fail closed. This data role runs in `site.yml` after the
+Docker Compose play, never in `prepare-low-id-cutover.yml`.
 
 On Proxmox, add an idempotent Minecraft retirement task that:
 
@@ -147,6 +164,10 @@ Documentation and tests must not describe apt runtime upgrades as Renovate PR co
 ## Failure Handling and Safety
 
 - Minecraft cleanup stops containers before deleting data.
+- Missing Compose files do not bypass the Docker label postcondition, and the
+  Proxmox data role independently rechecks it on `docker_apps`.
+- The storage guard proves the canonical homelab-data block device and rejects
+  exact-path or descendant bind mounts before deleting on one filesystem.
 - Every destructive target is an exact path or a path validated beneath an exact parent.
 - VMID 115 is destroyed only after an exact hostname match.
 - Failure to validate a destructive target aborts deployment before deletion.

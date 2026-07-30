@@ -3,7 +3,7 @@
   ansible.builtin.shell: |
     set -eu
     changed=0
-    lv_path="/dev/pve/{{ homelab_data_lv_name }}"
+    lv_path="{{ homelab_data_device }}"
     mount_path="{{ homelab_data_mount }}"
     tmp_mount="/mnt/{{ homelab_data_lv_name }}-init"
     permissions_marker="${mount_path}/.homelab-two-lxc-permissions-v1"

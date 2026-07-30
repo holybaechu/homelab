@@ -1,16 +1,25 @@
 # Minecraft Retirement, Renovate Coverage, and VueTorrent Repair Implementation Plan
 
+> **Recovery correction (2026-07-30):** Minecraft data cleanup is not an LXC
+> retired-data-path task. Docker first proves no
+> `com.docker.compose.project=game` containers remain, then `site.yml` runs
+> `pve_retire_minecraft_data` on Proxmox for the exact host path
+> `/var/lib/homelab/minecraft`. The role rechecks Docker through delegation and
+> validates `/dev/pve/homelab-data` plus the complete descendant mount set.
+> `prepare-low-id-cutover.yml` retains only the separate VMID 115/archive
+> tombstone.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Permanently delete Minecraft from the repository and production homelab, restore VueTorrent for qBittorrent, and close all repository-controlled Renovate coverage gaps while making apt-managed services upgrade on deployment.
 
-**Architecture:** Retire Minecraft with idempotent, hostname- and path-guarded Ansible tombstones before deleting its active declarations. Supply VueTorrent through the official pinned LinuxServer mod and select it through the managed qBittorrent configuration. Use focused Renovate managers for each nonstandard version surface and keep apt-owned package drift under Ansible rather than mislabeling it as Renovate coverage.
+**Architecture:** Retire Minecraft with an idempotent VMID/archive tombstone and a separate post-Compose, Proxmox-host data tombstone before deleting its active declarations. Supply VueTorrent through the official pinned LinuxServer mod and select it through the managed qBittorrent configuration. Use focused Renovate managers for each nonstandard version surface and keep apt-owned package drift under Ansible rather than mislabeling it as Renovate coverage.
 
 **Tech Stack:** Docker Compose, Ansible, OpenTofu, Renovate, GitHub Actions, Python/pytest, PowerShell and WSL validation.
 
 ## Global Constraints
 
-- Minecraft deletion is irreversible and includes `/srv/homelab/minecraft`, VMID 115, and matching local `/var/lib/vz/dump/vzdump-lxc-115-*.tar.zst` archives.
+- Minecraft deletion is irreversible and includes `/var/lib/homelab/minecraft` on Proxmox, VMID 115, and matching local `/var/lib/vz/dump/vzdump-lxc-115-*.tar.zst` archives.
 - Destructive tasks must validate exact parents, hostnames, and VMIDs before deletion; no unresolved wildcard may be passed to `rm` or another destructive command.
 - Preserve the active two-LXC architecture: VMID 110 `docker-apps` and VMID 111 `tailnet`.
 - Minor and patch dependency updates automerge; major and `0.x` updates remain review-gated.
@@ -36,15 +45,18 @@
 ### Files created
 
 - `infra/ansible/roles/pve_retire_minecraft/tasks/main.yml` — exact VMID 115 and local archive tombstone.
+- `infra/ansible/roles/pve_retire_minecraft_data/` — post-Compose host-data tombstone with canonical device and mount-tree validation.
+- `infra/ansible/files/assert-no-game-compose-containers.sh` — shared Docker runtime postcondition used by both hosts.
 - `tests/infra/test_minecraft_retirement.py` — permanent retirement and cleanup-policy regression tests.
 
 ### Files modified
 
 - `infra/ansible/inventory/prod/group_vars/all.yml` — remove Minecraft from generic legacy services.
 - `infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml` — remove active game variables/project and add retired project/data tombstones.
-- `infra/ansible/roles/docker_compose_project/tasks/main.yml` — validate and delete exact retired data paths after stopping retired projects.
+- `infra/ansible/roles/docker_compose_project/tasks/main.yml` — stop retired projects and always assert that no game-labeled containers survive.
 - `infra/ansible/roles/pve_homelab_storage/tasks/main.yml` — stop creating, migrating, chowning, or chmodding Minecraft data.
-- `infra/ansible/playbooks/prepare-low-id-cutover.yml` — run the Minecraft tombstone before shared-storage reconciliation.
+- `infra/ansible/playbooks/prepare-low-id-cutover.yml` — run only the VMID/archive Minecraft tombstone before shared-storage reconciliation.
+- `infra/ansible/playbooks/site.yml` — run guarded Proxmox data deletion after the Docker Compose play succeeds.
 - `infra/ansible/playbooks/validate.yml` — remove Minecraft checks and add VueTorrent checks.
 - `apps/compose/media/compose.yml` — install the official pinned VueTorrent mod.
 - `infra/ansible/roles/docker_compose_project/templates/qBittorrent.conf.j2` — select VueTorrent as the alternative Web UI.
@@ -84,59 +96,17 @@
 **Interfaces:**
 
 - Consumes: `retired_docker_compose_projects`, `docker_compose_projects`, `/opt/homelab-compose`, and Proxmox `pct`/`vzdump` layout.
-- Produces: `retired_docker_data_paths`, role `pve_retire_minecraft`, and a three-project active Compose topology.
+- Produces: roles `pve_retire_minecraft` and `pve_retire_minecraft_data`, a Docker label postcondition, and a three-project active Compose topology.
 
 - [ ] **Step 1: Write the failing retirement-policy tests**
 
-Create `tests/infra/test_minecraft_retirement.py`:
-
-```python
-from tests.helpers import REPO_ROOT
-
-
-def read(path: str) -> str:
-    return (REPO_ROOT / path).read_text(encoding="utf-8")
-
-
-def test_minecraft_is_retired_with_runtime_and_data_tombstones():
-    variables = read("infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml")
-    active = variables.split("\ndocker_compose_projects:", 1)[1]
-
-    assert "name: game" in variables.split("\ndocker_compose_projects:", 1)[0]
-    assert "name: game" not in active
-    assert "retired_docker_data_paths:" in variables
-    assert "- /srv/homelab/minecraft" in variables
-    assert not (REPO_ROOT / "apps/compose/game").exists()
-    assert not (REPO_ROOT / "docs/runbooks/minecraft-server.md").exists()
-
-
-def test_retired_data_cleanup_is_parent_and_character_guarded():
-    tasks = read("infra/ansible/roles/docker_compose_project/tasks/main.yml")
-
-    validate = tasks.index("Validate retired Docker data paths")
-    remove = tasks.index("Remove retired Docker data paths")
-    assert validate < remove
-    assert "^/srv/homelab/[A-Za-z0-9._/-]+$" in tasks
-    assert "item != '/srv/homelab'" in tasks
-    assert 'loop: "{{ retired_docker_data_paths | default([]) }}"' in tasks
-    assert "ansible.builtin.file:" in tasks[remove:]
-    assert "state: absent" in tasks[remove:]
-
-
-def test_proxmox_minecraft_tombstone_is_exact_and_idempotent():
-    role = REPO_ROOT / "infra/ansible/roles/pve_retire_minecraft/tasks/main.yml"
-    assert role.exists()
-    tasks = role.read_text(encoding="utf-8")
-
-    assert 'vmid="115"' in tasks
-    assert 'expected_hostname="minecraft"' in tasks
-    assert 'if [ "$actual_hostname" != "$expected_hostname" ]' in tasks
-    assert 'pct destroy "$vmid" --purge 1 --destroy-unreferenced-disks 1' in tasks
-    assert 'archive_root="/var/lib/vz/dump"' in tasks
-    assert 'vzdump-lxc-115-*.tar.zst' in tasks
-    assert 'rm -f -- "$archive"' in tasks
-    assert "echo changed=no" in tasks
-```
+Create behavior tests that execute the shared Docker label guard with a
+missing `compose.yml` and a surviving labeled container. Exercise the same
+mountinfo/device validator used by the Proxmox deletion command with literal
+fixtures for a valid ext4 LV root, a different device, a same-device bind
+alias, a stacked exact-path bind, and same-filesystem descendant mounts.
+Require full validation even when the target is already absent. Retain the
+exact VMID 115/hostname/archive tombstone tests.
 
 Update `tests/docker/test_docker_apps_topology.py` so `test_every_application_is_a_compose_project` loops over only `("platform", "media", "hermes")` and explicitly asserts `apps/compose/game` does not exist. Update `tests/docker/test_compose_secrets.py` to expect three `.env.example` files and remove `game.env.j2` from its template list.
 
@@ -152,33 +122,23 @@ Expected: FAIL because `game` is still active, the new tombstones and role do no
 
 - [ ] **Step 3: Add guarded runtime tombstones**
 
-In `svc_docker_apps.yml`, retain `backup` and add `game` under `retired_docker_compose_projects`, add:
+In `svc_docker_apps.yml`, retain `backup` and add `game` under
+`retired_docker_compose_projects`. Remove `minecraft_version`,
+`minecraft_memory`, `minecraft_max_players`, `minecraft_motd`, the active
+`game` project, and every LXC-side retired data path.
 
-```yaml
-retired_docker_data_paths:
-  - /srv/homelab/minecraft
-```
+After retired Compose reconciliation, always run the shared Docker guard. It
+must query all containers by the exact
+`com.docker.compose.project=game` label and fail on any returned ID, even when
+the deployed Compose file is already absent.
 
-Remove `minecraft_version`, `minecraft_memory`, `minecraft_max_players`, `minecraft_motd`, and the active `game` project.
-
-In `docker_compose_project/tasks/main.yml`, immediately after retired project directory removal add:
-
-```yaml
-- name: Validate retired Docker data paths
-  ansible.builtin.assert:
-    that:
-      - item is string
-      - item is match('^/srv/homelab/[A-Za-z0-9._/-]+$')
-      - item != '/srv/homelab'
-    fail_msg: "Refusing unsafe retired Docker data path: {{ item }}"
-  loop: "{{ retired_docker_data_paths | default([]) }}"
-
-- name: Remove retired Docker data paths
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop: "{{ retired_docker_data_paths | default([]) }}"
-```
+Create `pve_retire_minecraft_data` for `/var/lib/homelab/minecraft`. Before
+deletion, delegate the same Docker guard to `docker_apps`, prove the canonical
+block-device identity of `/dev/pve/homelab-data`, require the mount's
+filesystem root and ext4 type, and reject every mountpoint at or below the
+target. Keep `rm --one-file-system` and make an already-absent target
+idempotent only after all storage and Docker checks pass. Run this data role
+from `site.yml` after the Docker Compose play with fatal host errors.
 
 Create `pve_retire_minecraft/tasks/main.yml` with one guarded shell task:
 
@@ -232,7 +192,10 @@ Create `pve_retire_minecraft/tasks/main.yml` with one guarded shell task:
   changed_when: "'changed=yes' in retired_minecraft_cleanup.stdout"
 ```
 
-Run `pve_retire_minecraft` in `prepare-low-id-cutover.yml` before `pve_homelab_storage`. Remove `{name: minecraft, vmid: 115}` from `legacy_lxcs` so the tombstone is the only remaining operational reference.
+Run only the VMID/archive role `pve_retire_minecraft` in
+`prepare-low-id-cutover.yml` before `pve_homelab_storage`. Remove
+`{name: minecraft, vmid: 115}` from `legacy_lxcs`; bind-mounted data deletion
+belongs exclusively to the later `site.yml` Proxmox play.
 
 - [ ] **Step 4: Remove active Minecraft files and shared-storage behavior**
 
@@ -729,7 +692,7 @@ git commit -m "Document service retirement and update policy"
 
 - [ ] **Step 1: Confirm destructive scope and push**
 
-The conversation already explicitly authorizes permanent deletion. Before pushing, confirm the diff still targets only VMID 115, `/srv/homelab/minecraft`, `/opt/homelab-compose/game`, and `/var/lib/vz/dump/vzdump-lxc-115-*.tar.zst`.
+The conversation already explicitly authorizes permanent deletion. Before pushing, confirm the diff still targets only VMID 115, `/var/lib/homelab/minecraft` on Proxmox, `/opt/homelab-compose/game`, and `/var/lib/vz/dump/vzdump-lxc-115-*.tar.zst`.
 
 Run:
 
@@ -770,7 +733,7 @@ gh run view $cdRunId --log
 Confirm log evidence for:
 
 - retired `game` Compose project removal;
-- `/srv/homelab/minecraft` deletion;
+- `/var/lib/homelab/minecraft` deletion on Proxmox after Docker's runtime postcondition;
 - VMID 115 and matching local archive deletion or an idempotent already-absent result;
 - VueTorrent asset/config validation;
 - successful routed qBittorrent check;
