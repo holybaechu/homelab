@@ -86,16 +86,8 @@
         label: "{{ item.name }}"
 
     - name: Validate VueTorrent assets and qBittorrent selection
-      ansible.builtin.shell: |
-        set -eu
-        docker compose exec -T qbittorrent test -f /vuetorrent/index.html
-        docker compose exec -T qbittorrent grep -Fx \
-          'WebUI\AlternativeUIEnabled=true' \
-          /config/qBittorrent/qBittorrent.conf
-        docker compose exec -T qbittorrent grep -Fx \
-          'WebUI\RootFolder=/vuetorrent' \
-          /config/qBittorrent/qBittorrent.conf
-      args:
+      ansible.builtin.script:
+        cmd: "{{ playbook_dir }}/../files/validate-vuetorrent.sh"
         executable: /bin/sh
         chdir: "{{ docker_apps_compose_root }}/media"
       changed_when: false
