@@ -5,7 +5,7 @@
       - apache2-utils
       - ca-certificates
       - curl
-      - dnsutils
+      - bind9-dnsutils
       - gnupg
       - systemd-resolved
     update_cache: true

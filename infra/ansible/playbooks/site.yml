@@ -11,6 +11,33 @@
   roles:
     - tailscale_gateway
 
+- name: Wait for tailnet route recovery
+  hosts: svc_tailnet
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH through the restarted subnet route
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        connect_timeout: 5
+        sleep: 5
+        timeout: 180
+      when: tailscale_restart_scheduled | default(false)
+
+    - name: Verify tailscaled is running the installed binary
+      ansible.builtin.shell: |
+        set -eu
+        pid="$(systemctl show --property MainPID --value tailscaled)"
+        test "${pid}" -gt 0
+        readlink "/proc/${pid}/exe"
+      args:
+        executable: /bin/sh
+      register: tailscale_running_executable
+      changed_when: false
+      failed_when: >-
+        tailscale_running_executable.rc != 0
+        or tailscale_running_executable.stdout != "/usr/sbin/tailscaled"
+      when: tailscale_restart_scheduled | default(false)
+
 - name: Configure Docker Compose application LXC
   hosts: svc_docker_apps
   gather_facts: true

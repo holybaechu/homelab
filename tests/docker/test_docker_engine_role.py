@@ -1,3 +1,5 @@
+import yaml
+
 from tests.helpers import REPO_ROOT
 
 
@@ -28,3 +30,24 @@ def test_docker_apt_packages_upgrade_and_restart_docker_on_deploy():
     assert "state: latest" in engine
     assert "update_cache: true" in engine
     assert "notify: Restart Docker" in engine
+
+
+def test_docker_apt_prerequisites_use_the_debian_13_dnsutils_provider():
+    tasks = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "infra"
+            / "ansible"
+            / "roles"
+            / "docker_engine"
+            / "tasks"
+            / "main.yml"
+        ).read_text(encoding="utf-8")
+    )
+    prerequisites = next(
+        task for task in tasks if task["name"] == "Install Docker apt prerequisites"
+    )["ansible.builtin.apt"]
+
+    assert "bind9-dnsutils" in prerequisites["name"]
+    assert "dnsutils" not in prerequisites["name"]
+    assert prerequisites["state"] == "latest"

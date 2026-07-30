@@ -1,3 +1,9 @@
+import os
+import shutil
+import subprocess
+
+import pytest
+
 from tests.helpers import REPO_ROOT
 
 
@@ -90,6 +96,55 @@ def test_parallel_validate_runner_includes_pve_drift_validation_target():
 
     assert 'TARGETS="pve:pve_hosts ${TARGETS}"' in runner
     assert 'mode" = "validate"' in runner
+
+
+def _posix_shell_command(script: str) -> list[str]:
+    shell = shutil.which("sh")
+    if shell:
+        return [shell, script]
+
+    git_shell = os.path.join(
+        os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "sh.exe"
+    )
+    if not os.path.exists(git_shell):
+        pytest.skip("POSIX shell is unavailable")
+    drive, remainder = os.path.splitdrive(script)
+    if not drive:
+        pytest.skip("cannot translate test script path for Git sh")
+    git_path = f"/{drive[0].lower()}{remainder.replace(os.sep, '/')}"
+    return [git_shell, git_path]
+
+
+def test_parallel_ansible_runner_gates_docker_on_tailnet_recovery():
+    script = str(REPO_ROOT / "tests" / "repo" / "test_run_ansible_parallel.sh")
+    env = os.environ.copy()
+    if os.name == "nt":
+        git_root = os.path.join(
+            os.environ.get("ProgramFiles", r"C:\Program Files"), "Git"
+        )
+        env["PATH"] = os.pathsep.join(
+            [
+                os.path.join(git_root, "usr", "bin"),
+                os.path.join(git_root, "mingw64", "bin"),
+                env["PATH"],
+            ]
+        )
+    result = subprocess.run(
+        _posix_shell_command(script),
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
+    assert result.stdout.index("tailnet complete") < result.stdout.index(
+        "docker started after tailnet"
+    )
+    assert "timed out after 1 seconds" in result.stdout
 
 
 def test_cd_workflow_configures_remote_tofu_state():

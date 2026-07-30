@@ -1,5 +1,0 @@
----
-- name: Restart tailscaled after underlay change
-  ansible.builtin.systemd:
-    name: tailscaled
-    state: restarted

@@ -12,12 +12,13 @@
     content: |
       deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main
 
-- name: Install Tailscale
+- name: Install Tailscale without disrupting the active route
   ansible.builtin.apt:
     name: tailscale
     update_cache: true
     state: latest
-  notify: Restart tailscaled after underlay change
+    policy_rc_d: 101
+  register: tailscale_package
 
 - name: Disable unusable public IPv6 underlay for stable DERP selection
   ansible.builtin.copy:
@@ -27,7 +28,7 @@
       net.ipv6.conf.all.disable_ipv6=1
       net.ipv6.conf.default.disable_ipv6=1
       net.ipv6.conf.lo.disable_ipv6=1
-  notify: Restart tailscaled after underlay change
+  register: tailscale_underlay
 
 - name: Enable IP forwarding
   ansible.builtin.copy:
@@ -68,5 +69,52 @@
   when: tailscale_auth_key is defined
   changed_when: false
 
-- name: Apply pending Tailscale underlay restart before validation
-  ansible.builtin.meta: flush_handlers
+- name: Detect a tailscaled process using a replaced binary
+  ansible.builtin.shell: |
+    set -eu
+    pid="$(systemctl show --property MainPID --value tailscaled)"
+    test "${pid}" -gt 0
+    running_executable="$(readlink "/proc/${pid}/exe")"
+    case "${running_executable}" in
+      /usr/sbin/tailscaled)
+        exit 1
+        ;;
+      "/usr/sbin/tailscaled (deleted)")
+        exit 0
+        ;;
+      *)
+        printf 'Unexpected tailscaled executable: %s\n' "${running_executable}" >&2
+        exit 0
+        ;;
+    esac
+  args:
+    executable: /bin/sh
+  register: tailscale_stale_binary
+  changed_when: false
+  failed_when: false
+
+- name: Decide whether tailscaled must restart
+  ansible.builtin.set_fact:
+    tailscale_restart_required: >-
+      {{
+        tailscale_package.changed
+        or tailscale_underlay.changed
+        or tailscale_stale_binary.rc == 0
+      }}
+
+- name: Record the pending tailscaled restart for the recovery play
+  ansible.builtin.set_fact:
+    tailscale_restart_scheduled: true
+  when: tailscale_restart_required
+
+- name: Schedule a detached tailscaled restart
+  ansible.builtin.command:
+    argv:
+      - systemd-run
+      - --on-active=5s
+      - --collect
+      - /usr/bin/systemctl
+      - restart
+      - tailscaled
+  changed_when: true
+  when: tailscale_restart_required
