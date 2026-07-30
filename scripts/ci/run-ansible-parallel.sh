@@ -134,8 +134,8 @@ while read -r pid target; do
     status="success"
     result=0
   else
-    status="failure"
     result=$?
+    status="failure"
     failed=1
   fi
 

@@ -31,6 +31,7 @@ case "$*" in
       printf '%s\n' 'docker started before tailnet completed' >&2
       exit 91
     fi
+    sleep "${FAKE_DOCKER_DELAY_SECONDS:-0}"
     printf '%s\n' 'docker started after tailnet'
     ;;
 esac
@@ -58,3 +59,23 @@ set -e
 printf '%s\n' "${timeout_output}"
 test "${timeout_status}" -ne 0
 printf '%s\n' "${timeout_output}" | grep -F 'timed out after 1 seconds'
+
+: > "${marker}"
+set +e
+background_timeout_output="$({
+  PATH="${fake_bin}:${PATH}" \
+  TAILNET_COMPLETE_MARKER="${marker}" \
+  FAKE_TAILNET_DELAY_SECONDS=0 \
+  FAKE_DOCKER_DELAY_SECONDS=3 \
+  ANSIBLE_TARGET_TIMEOUT_SECONDS=1 \
+    sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" validate
+} 2>&1)"
+background_timeout_status=$?
+set -e
+
+printf '%s\n' "${background_timeout_output}"
+test "${background_timeout_status}" -ne 0
+printf '%s\n' "${background_timeout_output}" | grep -F \
+  'Ansible validate target docker_apps timed out after 1 seconds'
+printf '%s\n' "${background_timeout_output}" | grep -F \
+  '::group::validate docker_apps failure'

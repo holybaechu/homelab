@@ -23,6 +23,32 @@
         timeout: 180
       when: tailscale_restart_scheduled | default(false)
 
+    - name: Wait for the requested tailscaled restart to complete
+      ansible.builtin.shell: |
+        set -eu
+        test "$(cat /run/homelab-tailscale-restart.completed)" = "{{ tailscale_restart_id }}"
+      args:
+        executable: /bin/sh
+      register: tailscale_restart_completion
+      changed_when: false
+      retries: 36
+      delay: 5
+      until: tailscale_restart_completion.rc == 0
+      when: tailscale_restart_scheduled | default(false)
+
+    - name: Verify the deterministic restart unit succeeded
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - --property=Result
+          - --value
+          - tailscaled-ansible-restart.service
+      register: tailscale_restart_result
+      changed_when: false
+      failed_when: tailscale_restart_result.stdout != "success"
+      when: tailscale_restart_scheduled | default(false)
+
     - name: Verify tailscaled is running the installed binary
       ansible.builtin.shell: |
         set -eu

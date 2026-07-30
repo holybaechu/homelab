@@ -105,27 +105,87 @@ def test_tailscale_upgrade_defers_self_restart_and_recovers_stale_binary():
     assert "tailscale_package.changed" in expression
     assert "tailscale_underlay.changed" in expression
     assert "tailscale_stale_binary.rc == 0" in expression
+    assert "tailscale_previous_restart_guard.stat.exists" in expression
 
     restart_required = Environment().from_string(expression)
     cases = (
-        (True, False, 1, True),
-        (False, True, 1, True),
-        (False, False, 0, True),
-        (False, False, 1, False),
+        (True, False, 1, False, True),
+        (False, True, 1, False, True),
+        (False, False, 0, False, True),
+        (False, False, 1, True, True),
+        (False, False, 1, False, False),
     )
-    for package_changed, underlay_changed, stale_rc, expected in cases:
+    for package_changed, underlay_changed, stale_rc, previous_guard, expected in cases:
         rendered = restart_required.render(
             tailscale_package={"changed": package_changed},
             tailscale_underlay={"changed": underlay_changed},
             tailscale_stale_binary={"rc": stale_rc},
+            tailscale_previous_restart_guard={"stat": {"exists": previous_guard}},
         )
         assert yaml.safe_load(rendered) is expected
 
-    restart = by_name["Schedule a detached tailscaled restart"]
-    argv = restart["ansible.builtin.command"]["argv"]
-    assert argv[:3] == ["systemd-run", "--on-active=5s", "--collect"]
-    assert argv[-3:] == ["/usr/bin/systemctl", "restart", "tailscaled"]
+    service_path = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "tailscale_gateway"
+        / "files"
+        / "tailscaled-ansible-restart.service"
+    )
+    timer_path = service_path.with_suffix(".timer")
+    assert service_path.exists()
+    assert timer_path.exists()
+
+    service = service_path.read_text(encoding="utf-8")
+    timer = timer_path.read_text(encoding="utf-8")
+    assert "Type=oneshot" in service
+    assert "RemainAfterExit=yes" in service
+    assert "ExecStart=/usr/bin/systemctl restart tailscaled.service" in service
+    assert "ExecStartPost=/bin/cp -- /run/homelab-tailscale-restart.request /run/homelab-tailscale-restart.completed" in service
+    assert "ExecStartPost=/bin/rm -f -- /run/homelab-tailscale-restart.in-progress" in service
+    assert "OnActiveSec=5s" in timer
+    assert "AccuracySec=1us" in timer
+    assert "RandomizedDelaySec=0" in timer
+    assert "RemainAfterElapse=no" in timer
+    assert "Unit=tailscaled-ansible-restart.service" in timer
+
+    task_names = [task["name"] for task in tasks]
+    assert task_names.index("Cancel any pending tailscaled restart") < task_names.index(
+        "Install Tailscale without disrupting the active route"
+    )
+    assert task_names.index("Mark this role run as interruption-sensitive") < task_names.index(
+        "Install Tailscale without disrupting the active route"
+    )
+    assert task_names.index("Reset the deterministic tailscaled restart units") < task_names.index(
+        "Schedule the deterministic tailscaled restart"
+    )
+    assert task_names.index("Remove the previous tailscaled restart completion proof") < task_names.index(
+        "Write the requested tailscaled restart identifier"
+    ) < task_names.index("Schedule the deterministic tailscaled restart")
+
+    request = by_name["Write the requested tailscaled restart identifier"]
+    assert request["ansible.builtin.copy"]["content"] == "{{ tailscale_restart_id }}\n"
+    assert request["when"] == "tailscale_restart_required"
+
+    clear_guard = by_name["Clear the interrupted-run guard when no restart is needed"]
+    assert clear_guard["ansible.builtin.file"]["state"] == "absent"
+    assert clear_guard["when"] == "not tailscale_restart_required"
+
+    restart = by_name["Schedule the deterministic tailscaled restart"]
+    systemd = restart["ansible.builtin.systemd_service"]
+    assert systemd["name"] == "tailscaled-ansible-restart.timer"
+    assert systemd["state"] == "started"
     assert restart["when"] == "tailscale_restart_required"
+    assert "systemd-run" not in (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "roles"
+        / "tailscale_gateway"
+        / "tasks"
+        / "main.yml"
+    ).read_text(encoding="utf-8")
 
 
 def test_tailnet_restart_recovery_is_bounded_and_verifies_the_running_binary():
@@ -146,9 +206,29 @@ def test_tailnet_restart_recovery_is_bounded_and_verifies_the_running_binary():
         "timeout": 180,
     }
 
+    completion = by_name["Wait for the requested tailscaled restart to complete"]
+    assert completion["when"] == "tailscale_restart_scheduled | default(false)"
+    assert completion["changed_when"] is False
+    assert completion["retries"] == 36
+    assert completion["delay"] == 5
+    assert completion["until"] == "tailscale_restart_completion.rc == 0"
+    assert "/run/homelab-tailscale-restart.completed" in completion[
+        "ansible.builtin.shell"
+    ]
+    assert "tailscale_restart_id" in completion["ansible.builtin.shell"]
+
+    result = by_name["Verify the deterministic restart unit succeeded"]
+    assert result["changed_when"] is False
+    assert result["failed_when"] == 'tailscale_restart_result.stdout != "success"'
+
     verify = by_name["Verify tailscaled is running the installed binary"]
     assert verify["when"] == "tailscale_restart_scheduled | default(false)"
     assert verify["changed_when"] is False
     assert 'tailscale_running_executable.stdout != "/usr/sbin/tailscaled"' in verify[
         "failed_when"
     ]
+
+    task_names = [task["name"] for task in recovery["tasks"]]
+    assert task_names.index("Wait for the requested tailscaled restart to complete") < task_names.index(
+        "Verify the deterministic restart unit succeeded"
+    ) < task_names.index("Verify tailscaled is running the installed binary")

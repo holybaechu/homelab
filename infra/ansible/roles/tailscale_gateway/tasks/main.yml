@@ -1,4 +1,19 @@
 ---
+- name: Cancel any pending tailscaled restart
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - stop
+      - tailscaled-ansible-restart.timer
+      - tailscaled-ansible-restart.service
+  changed_when: false
+  failed_when: false
+
+- name: Inspect the interrupted-run guard
+  ansible.builtin.stat:
+    path: /run/homelab-tailscale-restart.in-progress
+  register: tailscale_previous_restart_guard
+
 - name: Install Tailscale signing key
   ansible.builtin.get_url:
     url: https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg
@@ -11,6 +26,33 @@
     mode: "0644"
     content: |
       deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main
+
+- name: Install the deterministic tailscaled restart service
+  ansible.builtin.copy:
+    src: tailscaled-ansible-restart.service
+    dest: /etc/systemd/system/tailscaled-ansible-restart.service
+    mode: "0644"
+
+- name: Install the deterministic tailscaled restart timer
+  ansible.builtin.copy:
+    src: tailscaled-ansible-restart.timer
+    dest: /etc/systemd/system/tailscaled-ansible-restart.timer
+    mode: "0644"
+
+- name: Reload systemd for the deterministic restart units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Allocate this run's tailscaled restart identifier
+  ansible.builtin.set_fact:
+    tailscale_restart_id: "{{ ansible_date_time.iso8601_micro }}"
+
+- name: Mark this role run as interruption-sensitive
+  ansible.builtin.copy:
+    dest: /run/homelab-tailscale-restart.in-progress
+    content: "{{ tailscale_restart_id }}\n"
+    mode: "0600"
+  changed_when: false
 
 - name: Install Tailscale without disrupting the active route
   ansible.builtin.apt:
@@ -100,21 +142,46 @@
         tailscale_package.changed
         or tailscale_underlay.changed
         or tailscale_stale_binary.rc == 0
+        or tailscale_previous_restart_guard.stat.exists
       }}
+
+- name: Reset the deterministic tailscaled restart units
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - reset-failed
+      - tailscaled-ansible-restart.timer
+      - tailscaled-ansible-restart.service
+  changed_when: false
+  when: tailscale_restart_required
+
+- name: Remove the previous tailscaled restart completion proof
+  ansible.builtin.file:
+    path: /run/homelab-tailscale-restart.completed
+    state: absent
+  when: tailscale_restart_required
+
+- name: Write the requested tailscaled restart identifier
+  ansible.builtin.copy:
+    dest: /run/homelab-tailscale-restart.request
+    content: "{{ tailscale_restart_id }}\n"
+    mode: "0600"
+  when: tailscale_restart_required
 
 - name: Record the pending tailscaled restart for the recovery play
   ansible.builtin.set_fact:
     tailscale_restart_scheduled: true
   when: tailscale_restart_required
 
-- name: Schedule a detached tailscaled restart
-  ansible.builtin.command:
-    argv:
-      - systemd-run
-      - --on-active=5s
-      - --collect
-      - /usr/bin/systemctl
-      - restart
-      - tailscaled
-  changed_when: true
+- name: Schedule the deterministic tailscaled restart
+  ansible.builtin.systemd_service:
+    name: tailscaled-ansible-restart.timer
+    state: started
   when: tailscale_restart_required
+
+- name: Clear the interrupted-run guard when no restart is needed
+  ansible.builtin.file:
+    path: /run/homelab-tailscale-restart.in-progress
+    state: absent
+  changed_when: false
+  when: not tailscale_restart_required

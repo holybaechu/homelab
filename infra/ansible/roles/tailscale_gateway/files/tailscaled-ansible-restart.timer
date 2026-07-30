@@ -1,0 +1,9 @@
+[Unit]
+Description=Schedule the Ansible-managed tailscaled restart
+
+[Timer]
+OnActiveSec=5s
+AccuracySec=1us
+RandomizedDelaySec=0
+RemainAfterElapse=no
+Unit=tailscaled-ansible-restart.service

@@ -1,0 +1,10 @@
+[Unit]
+Description=Restart tailscaled after an Ansible-managed package or underlay change
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=120s
+ExecStart=/usr/bin/systemctl restart tailscaled.service
+ExecStartPost=/bin/cp -- /run/homelab-tailscale-restart.request /run/homelab-tailscale-restart.completed
+ExecStartPost=/bin/rm -f -- /run/homelab-tailscale-restart.in-progress
