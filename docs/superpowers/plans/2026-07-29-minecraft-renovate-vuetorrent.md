@@ -453,7 +453,9 @@ Change the Hermes Compose image to `homelab/hermes-agent:local`. In the Dockerfi
 ARG OP_CLI_VERSION=2.35.0
 ```
 
-and install `1password-cli=${OP_CLI_VERSION}`.
+and install `1password-cli=${OP_CLI_VERSION}-1`. Keep the build argument as the
+upstream semantic version Renovate discovers; append the repository's Debian
+revision only at the APT install boundary.
 
 - [ ] **Step 4: Replace the broad Renovate regex with focused managers**
 

@@ -1,3 +1,5 @@
+import re
+
 from tests.helpers import REPO_ROOT
 
 
@@ -7,8 +9,14 @@ def test_hermes_uses_official_image_persistent_mounts_and_no_docker_socket():
 
     assert "FROM nousresearch/hermes-agent:v2026.7.7.2@sha256:" in dockerfile
     assert "image: homelab/hermes-agent:local" in compose
-    assert "ARG OP_CLI_VERSION=2.35.0" in dockerfile
-    assert "1password-cli=${OP_CLI_VERSION}" in dockerfile
+    op_cli_version = re.search(
+        r"^ARG OP_CLI_VERSION=(\d+\.\d+\.\d+)$", dockerfile, re.MULTILINE
+    )
+    assert op_cli_version is not None
+    assert op_cli_version.group(1) == "2.35.0"
+    assert re.findall(r"\b1password-cli=([^\s\\]+)", dockerfile) == [
+        "${OP_CLI_VERSION}-1"
+    ]
     assert 'command: ["gateway", "run"]' in compose
     assert "/srv/homelab/hermes/home:/opt/data:rw" in compose
     assert "/srv/homelab/hermes/workspace:/workspace:rw" in compose

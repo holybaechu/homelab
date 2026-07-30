@@ -125,7 +125,7 @@ Add focused managers rather than one broad cross-file expression:
 2. **Tailscale action input:** match the annotated `version` under the Tailscale GitHub Action and use `github-releases` for `tailscale/tailscale`.
 3. **VueTorrent mod:** match the `DOCKER_MODS` image tag in the media Compose file and use the Docker datasource for `ghcr.io/vuetorrent/vuetorrent-lsio-mod`.
 4. **Proxmox Debian template:** use an HTML custom datasource at `https://download.proxmox.com/images/system/`, extract filenames with `^debian-13-standard_(?<version>.+)_amd64\.tar\.zst$`, and update both identical template IDs in `containers.auto.tfvars` in one branch.
-5. **1Password CLI:** introduce one `OP_CLI_VERSION` build argument in the Hermes Dockerfile, install `1password-cli=${OP_CLI_VERSION}`, and source available versions from the official 1Password CLI release-history endpoint `https://app-updates.agilebits.com/product_history/CLI2` through an HTML custom datasource.
+5. **1Password CLI:** introduce one upstream-semver-only `OP_CLI_VERSION` build argument in the Hermes Dockerfile, install the APT package at its Debian revision as `1password-cli=${OP_CLI_VERSION}-1`, and source available upstream versions from the official 1Password CLI release-history endpoint `https://app-updates.agilebits.com/product_history/CLI2` through an HTML custom datasource.
 
 The managers must use file-specific patterns and exact named captures so unrelated numeric values cannot be changed.
 

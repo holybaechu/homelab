@@ -64,6 +64,39 @@ def test_nonstandard_version_surfaces_have_focused_managers():
     assert "app-updates.agilebits.com/product_history/CLI2" in datasource_text
 
 
+def test_onepassword_cli_manager_tracks_upstream_semver():
+    config = json.loads(read("renovate.json"))
+    manager = next(
+        manager
+        for manager in config["customManagers"]
+        if manager.get("depNameTemplate") == "onepassword-cli"
+    )
+    datasource = config["customDatasources"]["onepassword-cli"]
+    package_rule = next(
+        rule
+        for rule in config["packageRules"]
+        if rule.get("matchDatasources") == ["custom.onepassword-cli"]
+    )
+
+    assert manager["managerFilePatterns"] == [
+        "/^apps\\/compose\\/hermes\\/Dockerfile$/"
+    ]
+    assert manager["matchStrings"] == [
+        "ARG OP_CLI_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+    ]
+    assert manager["datasourceTemplate"] == "custom.onepassword-cli"
+    assert manager["versioningTemplate"] == "semver"
+    assert datasource == {
+        "defaultRegistryUrlTemplate": (
+            "https://app-updates.agilebits.com/product_history/CLI2"
+        ),
+        "format": "html",
+    }
+    assert package_rule["extractVersion"] == (
+        ".*op_linux_amd64_v(?<version>\\d+\\.\\d+\\.\\d+)\\.zip$"
+    )
+
+
 def test_direct_requirements_are_exact_and_local_hermes_tag_is_constant():
     requirements = read("requirements-dev.txt").splitlines()
     collection = read("infra/ansible/requirements.yml")
