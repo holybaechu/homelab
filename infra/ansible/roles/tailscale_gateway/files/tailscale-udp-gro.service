@@ -1,0 +1,13 @@
+[Unit]
+Description=Configure UDP GRO forwarding for the Tailscale gateway
+Wants=network-online.target
+After=network-online.target
+Before=tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/configure-tailscale-udp-gro
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

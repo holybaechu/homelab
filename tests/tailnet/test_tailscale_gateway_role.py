@@ -56,6 +56,71 @@ def test_tailnet_validation_checks_ip_forwarding():
     assert 'tailnet_forwarding.stdout | trim != "1"' in validation
 
 
+def test_tailnet_manages_and_validates_persistent_udp_gro_forwarding():
+    role_root = (
+        REPO_ROOT / "infra" / "ansible" / "roles" / "tailscale_gateway"
+    )
+    tasks = yaml.safe_load(
+        (role_root / "tasks" / "main.yml").read_text(encoding="utf-8")
+    )
+    by_name = {task["name"]: task for task in tasks}
+
+    tooling = by_name["Install Tailscale gateway network tooling"][
+        "ansible.builtin.apt"
+    ]
+    assert tooling["name"] == "ethtool"
+    assert tooling["state"] == "latest"
+
+    script_task = by_name["Install the Tailscale UDP GRO configuration script"][
+        "ansible.builtin.copy"
+    ]
+    assert script_task["dest"] == "/usr/local/sbin/configure-tailscale-udp-gro"
+    assert script_task["mode"] == "0755"
+
+    service_task = by_name["Install the persistent Tailscale UDP GRO service"][
+        "ansible.builtin.copy"
+    ]
+    assert service_task["dest"] == "/etc/systemd/system/tailscale-udp-gro.service"
+    assert service_task["mode"] == "0644"
+
+    enabled = by_name["Enable persistent Tailscale UDP GRO forwarding"][
+        "ansible.builtin.systemd_service"
+    ]
+    assert enabled == {
+        "name": "tailscale-udp-gro.service",
+        "enabled": True,
+        "state": "started",
+    }
+
+    apply = by_name["Apply Tailscale UDP GRO forwarding on every deployment"]
+    assert apply["ansible.builtin.command"]["argv"] == [
+        "/usr/local/sbin/configure-tailscale-udp-gro"
+    ]
+    assert apply["changed_when"] is False
+
+    script = (role_root / "files" / "configure-tailscale-udp-gro").read_text(
+        encoding="utf-8"
+    )
+    assert "ip -o route get 8.8.8.8" in script
+    assert 'rx-udp-gro-forwarding on rx-gro-list off' in script
+
+    service = (role_root / "files" / "tailscale-udp-gro.service").read_text(
+        encoding="utf-8"
+    )
+    assert "Before=tailscaled.service" in service
+    assert "Type=oneshot" in service
+    assert "ExecStart=/usr/local/sbin/configure-tailscale-udp-gro" in service
+    assert "RemainAfterExit=yes" in service
+    assert "WantedBy=multi-user.target" in service
+
+    validation = (
+        REPO_ROOT / "infra" / "ansible" / "playbooks" / "validate.yml"
+    ).read_text(encoding="utf-8")
+    assert "systemctl\n          - is-enabled\n          - tailscale-udp-gro.service" in validation
+    assert "rx-udp-gro-forwarding: on" in validation
+    assert "rx-gro-list: off" in validation
+
+
 def test_tailscale_apt_package_upgrades_and_restarts_after_underlay_change():
     tasks = yaml.safe_load(
         (

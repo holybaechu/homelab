@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+netdev="$(
+  ip -o route get 8.8.8.8 |
+    awk '{ for (field = 1; field <= NF; field++) if ($field == "dev") { print $(field + 1); exit } }'
+)"
+test -n "${netdev}"
+
+exec /usr/sbin/ethtool -K "${netdev}" rx-udp-gro-forwarding on rx-gro-list off

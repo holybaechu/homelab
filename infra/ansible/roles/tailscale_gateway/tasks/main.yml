@@ -27,6 +27,12 @@
     content: |
       deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main
 
+- name: Install Tailscale gateway network tooling
+  ansible.builtin.apt:
+    name: ethtool
+    update_cache: true
+    state: latest
+
 - name: Install the deterministic tailscaled restart service
   ansible.builtin.copy:
     src: tailscaled-ansible-restart.service
@@ -39,9 +45,33 @@
     dest: /etc/systemd/system/tailscaled-ansible-restart.timer
     mode: "0644"
 
-- name: Reload systemd for the deterministic restart units
+- name: Install the Tailscale UDP GRO configuration script
+  ansible.builtin.copy:
+    src: configure-tailscale-udp-gro
+    dest: /usr/local/sbin/configure-tailscale-udp-gro
+    mode: "0755"
+
+- name: Install the persistent Tailscale UDP GRO service
+  ansible.builtin.copy:
+    src: tailscale-udp-gro.service
+    dest: /etc/systemd/system/tailscale-udp-gro.service
+    mode: "0644"
+
+- name: Reload systemd for the Tailscale units
   ansible.builtin.systemd_service:
     daemon_reload: true
+
+- name: Enable persistent Tailscale UDP GRO forwarding
+  ansible.builtin.systemd_service:
+    name: tailscale-udp-gro.service
+    enabled: true
+    state: started
+
+- name: Apply Tailscale UDP GRO forwarding on every deployment
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/configure-tailscale-udp-gro
+  changed_when: false
 
 - name: Allocate this run's tailscaled restart identifier
   ansible.builtin.set_fact:

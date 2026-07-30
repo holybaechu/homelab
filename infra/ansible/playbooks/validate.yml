@@ -41,6 +41,29 @@
         - net.ipv4.ip_forward
         - net.ipv6.conf.all.forwarding
 
+    - name: Check persistent Tailscale UDP GRO service
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-enabled
+          - tailscale-udp-gro.service
+      changed_when: false
+
+    - name: Check Tailscale UDP GRO forwarding
+      ansible.builtin.shell: |
+        set -eu
+        netdev="$(
+          ip -o route get 8.8.8.8 |
+            awk '{ for (field = 1; field <= NF; field++) if ($field == "dev") { print $(field + 1); exit } }'
+        )"
+        test -n "${netdev}"
+        features="$(ethtool -k "${netdev}")"
+        printf '%s\n' "${features}" | grep -Eq '^[[:space:]]*rx-udp-gro-forwarding: on$'
+        printf '%s\n' "${features}" | grep -Eq '^[[:space:]]*rx-gro-list: off$'
+      args:
+        executable: /bin/sh
+      changed_when: false
+
     - name: Check Tailscale status
       ansible.builtin.command: tailscale status
       changed_when: false
