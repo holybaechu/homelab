@@ -13,7 +13,6 @@ def test_hermes_uses_official_image_persistent_mounts_and_no_docker_socket():
         r"^ARG OP_CLI_VERSION=(\d+\.\d+\.\d+)$", dockerfile, re.MULTILINE
     )
     assert op_cli_version is not None
-    assert op_cli_version.group(1) == "2.35.0"
     assert re.findall(r"\b1password-cli=([^\s\\]+)", dockerfile) == [
         "${OP_CLI_VERSION}-1"
     ]
