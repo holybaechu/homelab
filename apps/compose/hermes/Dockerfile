@@ -2,7 +2,7 @@ FROM nousresearch/hermes-agent:v2026.7.7.2@sha256:9c841866021c54c4596849f6135717
 
 USER root
 
-ARG OP_CLI_VERSION=2.35.0
+ARG OP_CLI_VERSION=2.38.1
 
 RUN install -d -m 0755 /usr/share/keyrings \
     && curl -fsSL https://downloads.1password.com/linux/keys/1password.asc \
