@@ -2,7 +2,7 @@ name: platform
 
 services:
   traefik:
-    image: traefik:v3.7.9
+    image: traefik:v3.7.10
     restart: unless-stopped
     env_file: .env
     command:
