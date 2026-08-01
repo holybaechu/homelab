@@ -72,6 +72,7 @@
     - {path: "{{ docker_apps_compose_root }}", owner: root, group: root}
     - {path: "{{ docker_apps_compose_root }}/platform/adguard", owner: root, group: root, mode: "0750"}
     - {path: /srv/homelab/docker-apps/qbittorrent/qBittorrent, mode: "0700"}
+    - {path: /srv/homelab/docker-apps/qbittorrent-vpn/qBittorrent, mode: "0700"}
     - {path: /srv/homelab/docker-apps/copyparty}
     - {path: /srv/homelab/downloads/complete}
     - {path: /srv/homelab/downloads/incomplete}
@@ -224,47 +225,6 @@
     qbittorrent_webui_password_pbkdf2: "{{ qbittorrent_webui_password_hash.stdout }}"
   no_log: true
 
-- name: Render qBittorrent configuration candidate
-  ansible.builtin.template:
-    src: qBittorrent.conf.j2
-    dest: /tmp/qBittorrent.conf.candidate
-    owner: "{{ service_uid }}"
-    group: "{{ service_gid }}"
-    mode: "0600"
-  changed_when: false
-  no_log: true
-
-- name: Compare qBittorrent configuration candidate
-  ansible.builtin.shell: |
-    test -f /srv/homelab/docker-apps/qbittorrent/qBittorrent/qBittorrent.conf \
-      && cmp -s /tmp/qBittorrent.conf.candidate \
-        /srv/homelab/docker-apps/qbittorrent/qBittorrent/qBittorrent.conf
-  args:
-    executable: /bin/sh
-  register: qbittorrent_config_compare
-  failed_when: qbittorrent_config_compare.rc not in [0, 1]
-  changed_when: false
-  no_log: true
-
-- name: Stop qBittorrent before replacing changed configuration
-  ansible.builtin.command:
-    cmd: docker compose stop qbittorrent
-    chdir: "{{ docker_apps_compose_root }}/media"
-  when: qbittorrent_config_compare.rc != 0
-  failed_when: false
-  changed_when: true
-
-- name: Install managed qBittorrent configuration
-  ansible.builtin.copy:
-    src: /tmp/qBittorrent.conf.candidate
-    dest: /srv/homelab/docker-apps/qbittorrent/qBittorrent/qBittorrent.conf
-    remote_src: true
-    owner: "{{ service_uid }}"
-    group: "{{ service_gid }}"
-    mode: "0600"
-  when: qbittorrent_config_compare.rc != 0
-  no_log: true
-
 - name: Render Compose project environment files
   ansible.builtin.template:
     src: "{{ item.env_template }}"
@@ -277,6 +237,103 @@
     label: "{{ item.name }}"
   no_log: true
   notify: Restart Compose project
+
+- name: Require the direct qBittorrent peer port to be available
+  ansible.builtin.shell: |
+    set -eu
+    direct_container="$(docker compose ps -q qbittorrent 2>/dev/null || true)"
+    for owner in $(docker ps -q --filter "publish={{ qbittorrent_direct_peer_port }}"); do
+      test "${owner}" = "${direct_container}" || {
+        printf 'Peer port {{ qbittorrent_direct_peer_port }} is published by another container.\n' >&2
+        exit 1
+      }
+    done
+    if [ -n "${direct_container}" ] \
+      && docker port "${direct_container}" {{ qbittorrent_direct_peer_port }}/tcp >/dev/null 2>&1 \
+      && docker port "${direct_container}" {{ qbittorrent_direct_peer_port }}/udp >/dev/null 2>&1; then
+      exit 0
+    fi
+    python3 - "{{ qbittorrent_direct_peer_port }}" <<'PY'
+    import socket
+    import sys
+
+    port = int(sys.argv[1])
+    sockets = []
+    try:
+        for kind in (socket.SOCK_STREAM, socket.SOCK_DGRAM):
+            sock = socket.socket(socket.AF_INET, kind)
+            sock.bind(("0.0.0.0", port))
+            if kind == socket.SOCK_STREAM:
+                sock.listen(1)
+            sockets.append(sock)
+    finally:
+        for sock in sockets:
+            sock.close()
+    PY
+  args:
+    executable: /bin/sh
+    chdir: "{{ docker_apps_compose_root }}/media"
+  changed_when: false
+
+- name: Render qBittorrent configuration candidates
+  ansible.builtin.template:
+    src: qBittorrent.conf.j2
+    dest: "/tmp/{{ item.service_name }}.conf.candidate"
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    mode: "0600"
+  vars:
+    qbittorrent_instance: "{{ item }}"
+  loop: "{{ qbittorrent_instances }}"
+  loop_control:
+    label: "{{ item.service_name }}"
+  changed_when: false
+  no_log: true
+
+- name: Compare qBittorrent configuration candidates
+  ansible.builtin.shell: |
+    test -f "{{ item.config_root }}/qBittorrent/qBittorrent.conf" \
+      && cmp -s "/tmp/{{ item.service_name }}.conf.candidate" \
+        "{{ item.config_root }}/qBittorrent/qBittorrent.conf"
+  args:
+    executable: /bin/sh
+  loop: "{{ qbittorrent_instances }}"
+  loop_control:
+    label: "{{ item.service_name }}"
+  register: qbittorrent_config_compare
+  failed_when: qbittorrent_config_compare.rc not in [0, 1]
+  changed_when: false
+  no_log: true
+
+- name: Stop qBittorrent instances before replacing changed configuration
+  ansible.builtin.shell: |
+    set -eu
+    container_id="$(docker compose ps --all -q "{{ item.item.service_name }}")"
+    if [ -n "${container_id}" ]; then
+      docker compose stop "{{ item.item.service_name }}"
+    fi
+  args:
+    executable: /bin/sh
+    chdir: "{{ docker_apps_compose_root }}/media"
+  loop: "{{ qbittorrent_config_compare.results }}"
+  loop_control:
+    label: "{{ item.item.service_name }}"
+  when: item.rc != 0
+  changed_when: true
+
+- name: Install managed qBittorrent configurations
+  ansible.builtin.copy:
+    src: "/tmp/{{ item.item.service_name }}.conf.candidate"
+    dest: "{{ item.item.config_root }}/qBittorrent/qBittorrent.conf"
+    remote_src: true
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    mode: "0600"
+  loop: "{{ qbittorrent_config_compare.results }}"
+  loop_control:
+    label: "{{ item.item.service_name }}"
+  when: item.rc != 0
+  no_log: true
 
 - name: Render managed application configuration
   ansible.builtin.template:
@@ -314,3 +371,37 @@
     'Started' in docker_compose_up.stdout or
     'Removed orphan' in docker_compose_up.stdout or
     'Building' in docker_compose_up.stdout
+
+- name: Apply requested Compose project recreations
+  ansible.builtin.meta: flush_handlers
+
+- name: Reconcile Proton forwarded port with VPN qBittorrent
+  ansible.builtin.shell: |
+    set -eu
+    forwarded_port="$(docker compose exec -T gluetun cat /tmp/gluetun/forwarded_port)"
+    case "${forwarded_port}" in
+      ''|*[!0-9]*) exit 1 ;;
+    esac
+    test "${forwarded_port}" -gt 0
+    applied_state="$(
+      docker compose exec -T gluetun \
+        wget -qO- http://127.0.0.1:8080/api/v2/app/preferences \
+        | python3 -c 'import json, sys; p = json.load(sys.stdin); print(p.get("listen_port", 0), p.get("current_network_interface", ""))'
+    )"
+    if [ "${applied_state}" = "${forwarded_port} tun0" ]; then
+      echo changed=no
+      exit 0
+    fi
+    docker compose exec -T gluetun wget -qO- \
+      --post-data \
+      "json={\"listen_port\":${forwarded_port},\"current_network_interface\":\"tun0\",\"random_port\":false,\"upnp\":false}" \
+      http://127.0.0.1:8080/api/v2/app/setPreferences >/dev/null
+    echo changed=yes
+  args:
+    executable: /bin/sh
+    chdir: "{{ docker_apps_compose_root }}/media"
+  register: qbittorrent_vpn_forwarding_reconcile
+  changed_when: "'changed=yes' in qbittorrent_vpn_forwarding_reconcile.stdout"
+  retries: 12
+  delay: 10
+  until: qbittorrent_vpn_forwarding_reconcile.rc == 0

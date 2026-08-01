@@ -21,6 +21,35 @@ def test_compose_role_reconciles_projects_in_declared_order():
     assert variables.index("name: media") < variables.index("name: hermes")
 
 
+def test_compose_role_manages_both_qbittorrent_configs_before_startup():
+    tasks = (
+        REPO_ROOT
+        / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
+    ).read_text(encoding="utf-8")
+    variables = (
+        REPO_ROOT
+        / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "qbittorrent_instances" in variables
+    assert "service_name: qbittorrent" in variables
+    assert "service_name: qbittorrent-vpn" in variables
+    assert 'loop: "{{ qbittorrent_instances }}"' in tasks
+    assert "qbittorrent_config_compare.results" in tasks
+    assert tasks.index("Render Compose project environment files") < tasks.index(
+        "Stop qBittorrent instances before replacing changed configuration"
+    )
+    assert tasks.index("Require the direct qBittorrent peer port to be available") < tasks.index(
+        "Stop qBittorrent instances before replacing changed configuration"
+    )
+    assert 'docker ps -q --filter "publish={{ qbittorrent_direct_peer_port }}"' in tasks
+    assert tasks.index("Build and start Compose projects in dependency order") < tasks.index(
+        "Reconcile Proton forwarded port with VPN qBittorrent"
+    )
+    assert "flush_handlers" in tasks
+    assert "current_network_interface" in tasks
+
+
 def test_compose_role_removes_retired_backup_project_and_volumes():
     tasks = (REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml").read_text(encoding="utf-8")
     variables = (REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml").read_text(encoding="utf-8")

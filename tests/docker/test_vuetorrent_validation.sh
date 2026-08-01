@@ -27,6 +27,12 @@ case "$*" in
   *"RootFolder=/vuetorrent/public"*)
     test "${FAKE_DOCKER_SCENARIO}" != all_fail
     ;;
+  *"exec -T qbittorrent grep -Fx -- Connection\\Interface=tun0"*)
+    test "${FAKE_DOCKER_SCENARIO}" = all_fail
+    ;;
+  *"exec -T qbittorrent-vpn grep -Fx -- Connection\\Interface=tun0"*)
+    test "${FAKE_DOCKER_SCENARIO}" != all_fail
+    ;;
   *"printenv DOCKER_MODS")
     case "${FAKE_DOCKER_SCENARIO}" in
       success)
@@ -42,7 +48,8 @@ case "$*" in
         ;;
     esac
     ;;
-  "compose logs --no-color --tail 80 qbittorrent")
+  "compose logs --no-color --tail 80 qbittorrent"|\
+  "compose logs --no-color --tail 80 qbittorrent-vpn")
     if test "${FAKE_DOCKER_SCENARIO}" = command_fail; then
       printf '%s\n' 'logs-command-leak-z9Q7 ::error:: Bearer leaked-token' >&2
       exit 78
@@ -73,12 +80,26 @@ all_fail_status=$?
 set -e
 
 test "${all_fail_status}" -eq 1
+for service in qbittorrent qbittorrent-vpn; do
+  printf '%s\n' "${all_fail_output}" | grep -F \
+    "FAIL ${service} asset: /vuetorrent/public/index.html is missing or inaccessible"
+  printf '%s\n' "${all_fail_output}" | grep -F \
+    "FAIL ${service} config: exact WebUI\\AlternativeUIEnabled=true is missing"
+  printf '%s\n' "${all_fail_output}" | grep -F \
+    "FAIL ${service} config: exact WebUI\\RootFolder=/vuetorrent/public is missing"
+  printf '%s\n' "${all_fail_output}" | grep -F \
+    "FAIL ${service} environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>"
+  printf '%s\n' "${all_fail_output}" | grep -F \
+    "INFO ${service} init-log summary: VueTorrent mentioned=yes"
+  printf '%s\n' "${all_fail_output}" | grep -F \
+    "INFO ${service} init-log summary: Docker mod mentioned=yes"
+  printf '%s\n' "${all_fail_output}" | grep -F \
+    "INFO ${service} init-log summary: error/failure mentioned=yes"
+done
 printf '%s\n' "${all_fail_output}" | grep -F \
-  'FAIL asset: /vuetorrent/public/index.html is missing or inaccessible'
+  'FAIL qbittorrent config: direct instance is unexpectedly bound to tun0'
 printf '%s\n' "${all_fail_output}" | grep -F \
-  'FAIL config: exact WebUI\AlternativeUIEnabled=true is missing'
-printf '%s\n' "${all_fail_output}" | grep -F \
-  'FAIL config: exact WebUI\RootFolder=/vuetorrent/public is missing'
+  'FAIL qbittorrent-vpn config: exact Connection\Interface=tun0 is missing'
 
 for leaked_text in \
   'mod-leak-z9Q7' \
@@ -95,20 +116,14 @@ do
   fi
 done
 
-printf '%s\n' "${all_fail_output}" | grep -F \
-  'FAIL environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>'
-printf '%s\n' "${all_fail_output}" | grep -F \
-  'INFO qBittorrent init-log summary: VueTorrent mentioned=yes'
-printf '%s\n' "${all_fail_output}" | grep -F \
-  'INFO qBittorrent init-log summary: Docker mod mentioned=yes'
-printf '%s\n' "${all_fail_output}" | grep -F \
-  'INFO qBittorrent init-log summary: error/failure mentioned=yes'
-
-grep -F 'test -f /vuetorrent/public/index.html' "${calls}"
+for service in qbittorrent qbittorrent-vpn; do
+  grep -F "exec -T ${service} test -f /vuetorrent/public/index.html" "${calls}"
+  grep -F "exec -T ${service} printenv DOCKER_MODS" "${calls}"
+  grep -Fx "compose logs --no-color --tail 80 ${service}" "${calls}"
+done
 grep -F 'AlternativeUIEnabled=true' "${calls}"
 grep -F 'RootFolder=/vuetorrent/public' "${calls}"
-grep -F 'printenv DOCKER_MODS' "${calls}"
-grep -Fx 'compose logs --no-color --tail 80 qbittorrent' "${calls}"
+grep -F 'Connection\Interface=tun0' "${calls}"
 
 : > "${calls}"
 success_output="$({
@@ -118,14 +133,20 @@ success_output="$({
     sh "${validator}"
 } 2>&1)"
 
+for service in qbittorrent qbittorrent-vpn; do
+  printf '%s\n' "${success_output}" | grep -F \
+    "PASS ${service} asset: /vuetorrent/public/index.html exists"
+  printf '%s\n' "${success_output}" | grep -F \
+    "PASS ${service} config: exact WebUI\\AlternativeUIEnabled=true"
+  printf '%s\n' "${success_output}" | grep -F \
+    "PASS ${service} config: exact WebUI\\RootFolder=/vuetorrent/public"
+  printf '%s\n' "${success_output}" | grep -F \
+    "PASS ${service} environment: effective DOCKER_MODS=ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7"
+done
 printf '%s\n' "${success_output}" | grep -F \
-  'PASS asset: /vuetorrent/public/index.html exists'
+  'PASS qbittorrent config: direct instance is not bound to tun0'
 printf '%s\n' "${success_output}" | grep -F \
-  'PASS config: exact WebUI\AlternativeUIEnabled=true'
-printf '%s\n' "${success_output}" | grep -F \
-  'PASS config: exact WebUI\RootFolder=/vuetorrent/public'
-printf '%s\n' "${success_output}" | grep -F \
-  'PASS environment: effective DOCKER_MODS=ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7'
+  'PASS qbittorrent-vpn config: exact Connection\Interface=tun0'
 if grep -F 'compose logs' "${calls}" >/dev/null; then
   printf '%s\n' 'successful validation unexpectedly requested container logs' >&2
   exit 1
@@ -143,10 +164,12 @@ command_fail_status=$?
 set -e
 
 test "${command_fail_status}" -eq 1
-printf '%s\n' "${command_fail_output}" | grep -F \
-  'FAIL environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>; printenv command failed'
-printf '%s\n' "${command_fail_output}" | grep -F \
-  'INFO qBittorrent init-log summary unavailable (docker compose logs command failed)'
+for service in qbittorrent qbittorrent-vpn; do
+  printf '%s\n' "${command_fail_output}" | grep -F \
+    "FAIL ${service} environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>; printenv command failed"
+  printf '%s\n' "${command_fail_output}" | grep -F \
+    "INFO ${service} init-log summary unavailable (docker compose logs command failed)"
+done
 for leaked_text in \
   'printenv-command-leak-z9Q7' \
   'logs-command-leak-z9Q7' \

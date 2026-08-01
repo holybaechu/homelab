@@ -9,8 +9,10 @@ WebUI\RootFolder=/vuetorrent/public
 Downloads\SavePath=/downloads/complete/
 Downloads\TempPath=/downloads/incomplete/
 Downloads\TempPathEnabled=true
-Connection\Interface=tun0
-Connection\PortRangeMin=0
+{% if qbittorrent_instance.connection_interface | length > 0 %}
+Connection\Interface={{ qbittorrent_instance.connection_interface }}
+{% endif %}
+Connection\PortRangeMin={{ qbittorrent_instance.peer_port }}
 Connection\UPnP=false
 Connection\RandomPort=false
 

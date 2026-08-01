@@ -32,24 +32,53 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=homelab_proxy
-      - traefik.http.routers.qbt.rule=Host(`qbt.home.hchu.me`)
+      - traefik.http.routers.qbt-vpn.rule=Host(`qbt.home.hchu.me`)
+      - traefik.http.routers.qbt-vpn.entrypoints=websecure
+      - traefik.http.routers.qbt-vpn.middlewares=private-only@file,secure-headers@file
+      - traefik.http.services.qbt-vpn.loadbalancer.server.port=8080
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:5.2.3
+    restart: unless-stopped
+    environment:
+      DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.34.1
+      PGID: "${PGID}"
+      PUID: "${PUID}"
+      TORRENTING_PORT: "${QBT_DIRECT_PEER_PORT}"
+      TZ: "${TZ}"
+      WEBUI_PORT: "8080"
+    ports:
+      - "${QBT_DIRECT_PEER_PORT}:${QBT_DIRECT_PEER_PORT}/tcp"
+      - "${QBT_DIRECT_PEER_PORT}:${QBT_DIRECT_PEER_PORT}/udp"
+    volumes:
+      - /srv/homelab/docker-apps/qbittorrent:/config:rw
+      - /srv/homelab/downloads:/downloads:rw
+      - /srv/homelab/copyparty/public:/public:rw
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.qbt.rule=Host(`public.qbt.home.hchu.me`)
       - traefik.http.routers.qbt.entrypoints=websecure
       - traefik.http.routers.qbt.middlewares=private-only@file,secure-headers@file
       - traefik.http.services.qbt.loadbalancer.server.port=8080
 
-  qbittorrent:
+  qbittorrent-vpn:
     image: lscr.io/linuxserver/qbittorrent:5.2.3
     restart: unless-stopped
     network_mode: service:gluetun
     depends_on:
       gluetun:
         condition: service_healthy
-    env_file: .env
     environment:
       DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.34.1
+      PGID: "${PGID}"
+      PUID: "${PUID}"
+      TZ: "${TZ}"
       WEBUI_PORT: "8080"
     volumes:
-      - /srv/homelab/docker-apps/qbittorrent:/config:rw
+      - /srv/homelab/docker-apps/qbittorrent-vpn:/config:rw
       - /srv/homelab/downloads:/downloads:rw
       - /srv/homelab/copyparty/public:/public:rw
 

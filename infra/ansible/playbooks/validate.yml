@@ -128,6 +128,7 @@
       failed_when: docker_apps_ip not in adguard_private_query.stdout_lines
       loop:
         - qbt.home.hchu.me
+        - public.qbt.home.hchu.me
         - metube.home.hchu.me
 
     - name: Check private Traefik routes
@@ -148,6 +149,7 @@
       loop:
         - adguard.home.hchu.me
         - qbt.home.hchu.me
+        - public.qbt.home.hchu.me
         - metube.home.hchu.me
 
     - name: Check public Copyparty route
@@ -166,14 +168,48 @@
       delay: 10
       until: public_copyparty_route.rc == 0
 
-    - name: Check Gluetun and host use different public addresses
+    - name: Check direct and VPN qBittorrent use the intended public addresses
       ansible.builtin.shell: |
         set -eu
-        host_ip="$(curl -fsS https://api.ipify.org)"
-        vpn_ip="$(docker compose exec -T gluetun wget -qO- https://api.ipify.org)"
+        container_public_ip() {
+          docker compose exec -T "$1" sh -c '
+            if command -v curl >/dev/null 2>&1; then
+              exec curl -4fsS https://api.ipify.org
+            fi
+            exec wget -qO- https://api.ipify.org
+          '
+        }
+        host_ip="$(curl -4fsS https://api.ipify.org)"
+        direct_ip="$(container_public_ip qbittorrent)"
+        vpn_ip="$(container_public_ip qbittorrent-vpn)"
+        gluetun_ip="$(docker compose exec -T gluetun wget -qO- https://api.ipify.org)"
         test -n "$host_ip"
+        test -n "$direct_ip"
         test -n "$vpn_ip"
+        test -n "$gluetun_ip"
+        test "$host_ip" = "$direct_ip"
         test "$host_ip" != "$vpn_ip"
+        test "$vpn_ip" = "$gluetun_ip"
+      args:
+        executable: /bin/sh
+        chdir: "{{ docker_apps_compose_root }}/media"
+      changed_when: false
+
+    - name: Check direct qBittorrent peer port and Docker publications
+      ansible.builtin.shell: |
+        set -eu
+        direct_listen_port="$(
+          docker compose exec -T qbittorrent sh -c '
+            if command -v curl >/dev/null 2>&1; then
+              exec curl -fsS http://127.0.0.1:8080/api/v2/app/preferences
+            fi
+            exec wget -qO- http://127.0.0.1:8080/api/v2/app/preferences
+          ' | python3 -c 'import json, sys; print(json.load(sys.stdin).get("listen_port", 0))'
+        )"
+        test "${direct_listen_port}" = "{{ qbittorrent_direct_peer_port }}"
+        direct_container="$(docker compose ps -q qbittorrent)"
+        test -n "$(docker port "${direct_container}" {{ qbittorrent_direct_peer_port }}/tcp)"
+        test -n "$(docker port "${direct_container}" {{ qbittorrent_direct_peer_port }}/udp)"
       args:
         executable: /bin/sh
         chdir: "{{ docker_apps_compose_root }}/media"
@@ -188,6 +224,24 @@
       retries: 12
       delay: 10
       until: gluetun_forwarded_port.stdout | trim | int > 0
+
+    - name: Check Proton forwarded port is applied to VPN qBittorrent
+      ansible.builtin.shell: |
+        set -eu
+        applied_state="$(
+          docker compose exec -T gluetun \
+            wget -qO- http://127.0.0.1:8080/api/v2/app/preferences \
+            | python3 -c 'import json, sys; p = json.load(sys.stdin); print(p.get("listen_port", 0), p.get("current_network_interface", ""))'
+        )"
+        test "${applied_state}" = "{{ gluetun_forwarded_port.stdout | trim }} tun0"
+      args:
+        executable: /bin/sh
+        chdir: "{{ docker_apps_compose_root }}/media"
+      changed_when: false
+      register: qbittorrent_vpn_forwarded_port
+      retries: 12
+      delay: 10
+      until: qbittorrent_vpn_forwarded_port.rc == 0
 
     - name: Check Hermes gateway status
       ansible.builtin.command:

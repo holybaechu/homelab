@@ -17,6 +17,22 @@ def test_storage_permissions_are_migrated_once_for_consolidated_uid_map():
     assert "homelab_container_uid_offset + hermes_service_uid" in tasks
 
 
+def test_vpn_qbittorrent_storage_gets_mapped_ownership_after_v1_migration():
+    tasks = (
+        REPO_ROOT / "infra/ansible/roles/pve_homelab_storage/tasks/main.yml"
+    ).read_text(encoding="utf-8")
+    targeted_ownership = tasks.split('qbittorrent_vpn_path="', 1)[1].split(
+        'mounted_vmid=""', 1
+    )[0]
+
+    assert "docker-apps/qbittorrent-vpn/qBittorrent" in tasks
+    assert "stat -c '%u:%g'" in targeted_ownership
+    assert 'chown -R "${app_uid}:${app_uid}" "${qbittorrent_vpn_path}"' in targeted_ownership
+    assert tasks.index('qbittorrent_vpn_path="') < tasks.index(
+        'if [ ! -e "${permissions_marker}" ]'
+    )
+
+
 def test_legacy_lxcs_stop_before_shared_storage_is_reowned():
     bootstrap = (REPO_ROOT / "infra/ansible/playbooks/bootstrap.yml").read_text(encoding="utf-8")
     retire = (REPO_ROOT / "infra/ansible/roles/pve_retire_legacy_lxcs/tasks/main.yml").read_text(encoding="utf-8")
