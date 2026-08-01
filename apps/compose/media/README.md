@@ -10,7 +10,7 @@ separate clients:
   `/srv/homelab/docker-apps/qbittorrent-vpn`. It shares Gluetun's network
   namespace and is available at `https://qbt.home.hchu.me`.
 
-The direct instance publishes its configured peer port, `6881` by default,
+The direct instance publishes its configured peer port, `35435` by default,
 over both TCP and UDP on the Docker-apps host. For direct inbound connectivity,
 forward that same WAN port to the Docker-apps LXC. Its Web UI port is not
 published and remains reachable only through the private Traefik route.

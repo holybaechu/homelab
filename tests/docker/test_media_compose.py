@@ -121,7 +121,7 @@ def test_both_qbittorrent_instances_use_vuetorrent_and_managed_network_settings(
     assert "Connection\\PortRangeMin={{ qbittorrent_instance.peer_port }}" in config
     assert "connection_interface: \"\"" in variables
     assert "connection_interface: tun0" in variables
-    assert "qbittorrent_direct_peer_port: 6881" in variables
+    assert "qbittorrent_direct_peer_port: 35435" in variables
     assert (
         parsed_variables["qbittorrent_instances"][0]["peer_port"]
         == parsed_variables["qbittorrent_direct_peer_port"]
@@ -134,14 +134,14 @@ def test_both_qbittorrent_instances_use_vuetorrent_and_managed_network_settings(
     }
     direct_config = template.render(
         **shared,
-        qbittorrent_instance={"connection_interface": "", "peer_port": 6881},
+        qbittorrent_instance={"connection_interface": "", "peer_port": 35435},
     )
     vpn_config = template.render(
         **shared,
         qbittorrent_instance={"connection_interface": "tun0", "peer_port": 0},
     )
     assert "Connection\\Interface=tun0" not in direct_config
-    assert "Connection\\PortRangeMin=6881" in direct_config
+    assert "Connection\\PortRangeMin=35435" in direct_config
     assert "Connection\\Interface=tun0" in vpn_config
     assert "Connection\\PortRangeMin=0" in vpn_config
 

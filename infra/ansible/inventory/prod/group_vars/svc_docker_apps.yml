@@ -31,12 +31,12 @@ adguard_dns_filters:
 proton_server_country: Japan
 proton_wireguard_address: 10.2.0.2/32
 qbittorrent_webui_username: holybaechu
-qbittorrent_direct_peer_port: 6881
+qbittorrent_direct_peer_port: 35435
 qbittorrent_instances:
   - service_name: qbittorrent
     config_root: /srv/homelab/docker-apps/qbittorrent
     connection_interface: ""
-    peer_port: 6881
+    peer_port: 35435
   - service_name: qbittorrent-vpn
     config_root: /srv/homelab/docker-apps/qbittorrent-vpn
     connection_interface: tun0
