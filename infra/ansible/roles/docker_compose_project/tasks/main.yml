@@ -269,7 +269,7 @@
   ansible.builtin.shell: |
     set -eu
     direct_container="$(docker compose ps -q qbittorrent 2>/dev/null || true)"
-    for owner in $(docker ps -q --filter "publish={{ qbittorrent_direct_peer_port }}"); do
+    for owner in $(docker ps --no-trunc -q --filter "publish={{ qbittorrent_direct_peer_port }}"); do
       test "${owner}" = "${direct_container}" || {
         printf 'Peer port {{ qbittorrent_direct_peer_port }} is published by another container.\n' >&2
         exit 1

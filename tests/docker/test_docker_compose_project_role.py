@@ -44,7 +44,12 @@ def test_compose_role_manages_both_qbittorrent_configs_before_startup():
     assert tasks.index("Require the direct qBittorrent peer port to be available") < tasks.index(
         "Stop qBittorrent instances before replacing changed configuration"
     )
-    assert 'docker ps -q --filter "publish={{ qbittorrent_direct_peer_port }}"' in tasks
+    assert (
+        'docker ps --no-trunc -q --filter "publish={{ qbittorrent_direct_peer_port }}"'
+        in tasks
+    )
+    assert 'docker ps -q --filter "publish={{ qbittorrent_direct_peer_port }}"' not in tasks
+    assert 'test "${owner}" = "${direct_container}"' in tasks
     assert tasks.index("Build and start Compose projects in dependency order") < tasks.index(
         "Reconcile Proton forwarded port with VPN qBittorrent"
     )
