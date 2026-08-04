@@ -30,6 +30,18 @@ def test_arcane_secrets_are_included_only_after_shape_validation(monkeypatch):
     assert mapping["arcane_jwt_secret"] == "j" * 32
 
 
+def test_arcane_secret_transport_newlines_are_removed(monkeypatch):
+    module = runpy.run_path(str(SCRIPT))
+    seed_required_environment(monkeypatch, module)
+    monkeypatch.setenv("ARCANE_ENCRYPTION_KEY", f"{'ab' * 32}\r\n")
+    monkeypatch.setenv("ARCANE_JWT_SECRET", f"{'j' * 32}\n")
+
+    mapping = module["build_mapping"]()
+
+    assert mapping["arcane_encryption_key"] == "ab" * 32
+    assert mapping["arcane_jwt_secret"] == "j" * 32
+
+
 def test_retired_hermes_environment_is_not_mapped():
     module = runpy.run_path(str(SCRIPT))
     all_environment_names = set(module["REQUIRED_ENV"].values()) | set(

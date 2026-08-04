@@ -62,6 +62,11 @@ def load_copyparty_users() -> list[dict[str, Any]]:
 def build_mapping() -> dict[str, Any]:
     mapping = {var_name: require_env(env_name) for var_name, env_name in REQUIRED_ENV.items()}
 
+    # Secret-setting CLIs commonly read from stdin, where an accidental final
+    # CR/LF is transport framing rather than part of these generated values.
+    mapping["arcane_encryption_key"] = mapping["arcane_encryption_key"].strip()
+    mapping["arcane_jwt_secret"] = mapping["arcane_jwt_secret"].strip()
+
     if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["arcane_encryption_key"]) is None:
         raise SystemExit("ARCANE_ENCRYPTION_KEY must be exactly 64 hexadecimal characters")
     if len(mapping["arcane_jwt_secret"]) < 32:
