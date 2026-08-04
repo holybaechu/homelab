@@ -57,28 +57,11 @@
       "depNameTemplate": "proxmox-debian-13",
       "datasourceTemplate": "custom.proxmox-debian-13",
       "versioningTemplate": "loose"
-    },
-    {
-      "customType": "regex",
-      "description": "Update the pinned 1Password CLI package",
-      "managerFilePatterns": [
-        "/^apps\\/compose\\/hermes\\/Dockerfile$/"
-      ],
-      "matchStrings": [
-        "ARG OP_CLI_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
-      ],
-      "depNameTemplate": "onepassword-cli",
-      "datasourceTemplate": "custom.onepassword-cli",
-      "versioningTemplate": "semver"
     }
   ],
   "customDatasources": {
     "proxmox-debian-13": {
       "defaultRegistryUrlTemplate": "https://download.proxmox.com/images/system/",
-      "format": "html"
-    },
-    "onepassword-cli": {
-      "defaultRegistryUrlTemplate": "https://app-updates.agilebits.com/product_history/CLI2",
       "format": "html"
     }
   },
@@ -86,10 +69,6 @@
     {
       "matchDatasources": ["custom.proxmox-debian-13"],
       "extractVersion": "^debian-13-standard_(?<version>.+)_amd64\\.tar\\.zst$"
-    },
-    {
-      "matchDatasources": ["custom.onepassword-cli"],
-      "extractVersion": ".*op_linux_amd64_v(?<version>\\d+\\.\\d+\\.\\d+)\\.zip$"
     },
     {
       "description": "Order MeTube calendar-versioned Docker tags",
@@ -102,6 +81,16 @@
       "matchCurrentVersion": "!/^0/",
       "automerge": true,
       "platformAutomerge": true
+    },
+    {
+      "description": "Require review for the Arcane control plane",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "ghcr.io/getarcaneapp/manager",
+        "tecnativa/docker-socket-proxy"
+      ],
+      "automerge": false,
+      "platformAutomerge": false
     }
   ]
 }

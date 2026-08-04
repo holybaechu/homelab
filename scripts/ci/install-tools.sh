@@ -15,5 +15,7 @@ if [ -n "${GITHUB_PATH:-}" ]; then
 ' "${ANSIBLE_VENV}/bin" >> "${GITHUB_PATH}"
 fi
 
-./scripts/ci/install-opentofu.sh
+if [ "${INSTALL_OPENTOFU:-true}" = "true" ]; then
+  ./scripts/ci/install-opentofu.sh
+fi
 ansible --version

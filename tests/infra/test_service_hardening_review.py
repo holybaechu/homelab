@@ -14,7 +14,28 @@ def test_storage_permissions_are_migrated_once_for_consolidated_uid_map():
     assert "/var/lib/copyparty" in tasks
     assert "homelab_data_reconcile_permissions" in tasks
     assert "homelab_container_uid_offset + service_uid" in tasks
-    assert "homelab_container_uid_offset + hermes_service_uid" in tasks
+
+
+def test_retired_hermes_data_is_left_untouched():
+    storage_tasks = (
+        REPO_ROOT / "infra/ansible/roles/pve_homelab_storage/tasks/main.yml"
+    ).read_text(encoding="utf-8")
+    compose_tasks = (
+        REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
+    ).read_text(encoding="utf-8")
+    all_variables = (
+        REPO_ROOT / "infra/ansible/inventory/prod/group_vars/all.yml"
+    ).read_text(encoding="utf-8")
+    app_variables = (
+        REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
+    ).read_text(encoding="utf-8")
+
+    for managed_text in (storage_tasks, compose_tasks, app_variables):
+        assert "/srv/homelab/hermes" not in managed_text
+    assert "hermes_service_uid" not in storage_tasks
+    assert "hermes_service_uid" not in all_variables
+    assert "hermes_service_uid" not in app_variables
+    assert "retired_docker_data_paths" not in app_variables
 
 
 def test_vpn_qbittorrent_storage_gets_mapped_ownership_after_v1_migration():

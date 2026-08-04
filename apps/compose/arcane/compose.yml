@@ -1,0 +1,78 @@
+name: arcane-control
+
+services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.2@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476
+    restart: unless-stopped
+    environment:
+      AUTH: "0"
+      BUILD: "0"
+      COMMIT: "0"
+      CONFIGS: "0"
+      CONTAINERS: "1"
+      DISTRIBUTION: "1"
+      EVENTS: "1"
+      EXEC: "1"
+      IMAGES: "1"
+      INFO: "1"
+      NETWORKS: "1"
+      NODES: "0"
+      PING: "1"
+      PLUGINS: "0"
+      POST: "1"
+      SECRETS: "0"
+      SERVICES: "0"
+      SESSION: "0"
+      SWARM: "0"
+      SYSTEM: "0"
+      TASKS: "0"
+      VERSION: "1"
+      VOLUMES: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      - com.getarcaneapp.arcane.updater=false
+
+  arcane:
+    image: ghcr.io/getarcaneapp/manager:v2.6.0@sha256:2b7544497c99d766baaf204ed8d66e555352ef37714aab0b68b5713be0d204d3
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - docker-socket-proxy
+    ports:
+      - "127.0.0.1:3552:3552"
+    volumes:
+      - /srv/homelab/docker-apps/arcane/data:/app/data:rw
+      - /opt/homelab-compose:/opt/homelab-compose:rw
+      - /opt/homelab-control/arcane/secrets:/run/secrets:ro
+    networks:
+      - socket
+      - proxy
+    cgroup: host
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "./arcane", "health", "--timeout", "2s"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    labels:
+      - com.getarcaneapp.arcane.updater=false
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.arcane.rule=Host(`arcane.home.hchu.me`)
+      - traefik.http.routers.arcane.entrypoints=websecure
+      - traefik.http.routers.arcane.middlewares=private-only@file,secure-headers@file
+      - traefik.http.services.arcane.loadbalancer.server.port=3552
+
+networks:
+  socket:
+    internal: true
+  proxy:
+    external: true
+    name: homelab_proxy

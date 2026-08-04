@@ -11,8 +11,6 @@ service_user: homelab
 service_group: homelab
 service_uid: 1000
 service_gid: 1000
-hermes_service_uid: 1200
-hermes_service_gid: 1200
 
 homelab_data_lv_name: homelab-data
 homelab_data_lv_size: 896G

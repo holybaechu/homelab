@@ -17,6 +17,7 @@ repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 inventory="${repo_root}/infra/ansible/inventory/prod/hosts.yml"
 TARGETS="$(python3 "${repo_root}/scripts/ci/render_ansible_targets.py")"
 target_timeout_seconds="${ANSIBLE_TARGET_TIMEOUT_SECONDS:-1800}"
+deployment_scope="${ANSIBLE_DEPLOYMENT_SCOPE:-full}"
 
 case "${target_timeout_seconds}" in
   ''|*[!0-9]*|0)
@@ -39,7 +40,23 @@ case "${mode}" in
     ;;
 esac
 
-if [ "$mode" = "validate" ]; then
+case "${deployment_scope}" in
+  full)
+    ;;
+  arcane)
+    TARGETS="docker_apps:svc_docker_apps"
+    if [ "${mode}" = "site" ]; then
+      echo "Arcane scope deploys workloads through Arcane; Ansible site is disabled" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    echo "ANSIBLE_DEPLOYMENT_SCOPE must be full or arcane" >&2
+    exit 2
+    ;;
+esac
+
+if [ "$mode" = "validate" ] && [ "${deployment_scope}" = "full" ]; then
   TARGETS="pve:pve_hosts ${TARGETS}"
 fi
 
@@ -83,7 +100,7 @@ run_foreground_target() {
   return "${result}"
 }
 
-if [ "${mode}" = "site" ]; then
+if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
   tailnet_entry=""
   docker_apps_entry=""
   pve_entry=""

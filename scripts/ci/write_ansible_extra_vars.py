@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -16,19 +17,11 @@ REQUIRED_ENV = {
     "tailscale_auth_key": "TAILSCALE_AUTH_KEY",
     "proton_wireguard_private_key": "PROTON_WIREGUARD_PRIVATE_KEY",
     "qbittorrent_webui_password": "QBITTORRENT_WEBUI_PASSWORD",
-    "hermes_discord_bot_token": "HERMES_DISCORD_BOT_TOKEN",
-    "hermes_discord_allowed_users": "HERMES_DISCORD_ALLOWED_USERS",
-    "hermes_parallel_api_key": "PARALLEL_API_KEY",
-    "hermes_firecrawl_api_key": "FIRECRAWL_API_KEY",
-    "hermes_browserbase_api_key": "BROWSERBASE_API_KEY",
-    "hermes_browserbase_project_id": "BROWSERBASE_PROJECT_ID",
-    "hermes_1password_service_account_token": "OP_SERVICE_ACCOUNT_TOKEN",
+    "arcane_encryption_key": "ARCANE_ENCRYPTION_KEY",
+    "arcane_jwt_secret": "ARCANE_JWT_SECRET",
 }
 
-OPTIONAL_ENV = {
-    "hermes_discord_home_channel": "HERMES_DISCORD_HOME_CHANNEL",
-    "hermes_honcho_api_key": "HONCHO_API_KEY",
-}
+OPTIONAL_ENV: dict[str, str] = {}
 
 
 def require_env(name: str) -> str:
@@ -68,6 +61,12 @@ def load_copyparty_users() -> list[dict[str, Any]]:
 
 def build_mapping() -> dict[str, Any]:
     mapping = {var_name: require_env(env_name) for var_name, env_name in REQUIRED_ENV.items()}
+
+    if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["arcane_encryption_key"]) is None:
+        raise SystemExit("ARCANE_ENCRYPTION_KEY must be exactly 64 hexadecimal characters")
+    if len(mapping["arcane_jwt_secret"]) < 32:
+        raise SystemExit("ARCANE_JWT_SECRET must be at least 32 characters")
+
     for var_name, env_name in OPTIONAL_ENV.items():
         value = os.environ.get(env_name)
         if value:

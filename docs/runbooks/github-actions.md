@@ -13,13 +13,14 @@ want production deployment to pause for review.
 
 Renovate creates reviewed source-update pull requests for versions stored in
 Git. Minor and patch updates automerge only when the current version is not
-`0.x`; major updates and every `0.x` update require review.
+`0.x`; major updates and every `0.x` update require review. Arcane Manager and
+its Docker socket proxy are explicit control-plane exceptions: their updates
+always require review.
 
 Built-in managers cover supported package manifests. Custom regex managers
 also cover the shared `.opentofu-version`, the annotated Tailscale GitHub
 Action version, the pinned VueTorrent LinuxServer mod, Debian 13 Proxmox LXC
-template versions, and the pinned 1Password CLI package. The Proxmox template
-and 1Password CLI use their configured custom datasources.
+template versions. The Proxmox template uses its configured custom datasource.
 
 Packages installed from apt repositories are runtime dependencies, not
 Renovate dependencies when their versions are not recorded in Git. During each
@@ -58,15 +59,18 @@ version available from their configured apt repositories.
 - `TAILSCALE_AUTH_KEY`
 - `PROTON_WIREGUARD_PRIVATE_KEY`
 - `QBITTORRENT_WEBUI_PASSWORD`
-- `HERMES_DISCORD_BOT_TOKEN`
-- `HERMES_DISCORD_ALLOWED_USERS`
-- `PARALLEL_API_KEY`
-- `FIRECRAWL_API_KEY`
-- `BROWSERBASE_API_KEY`
-- `BROWSERBASE_PROJECT_ID`
-- `OP_SERVICE_ACCOUNT_TOKEN`
-- `HERMES_DISCORD_HOME_CHANNEL`, optional; overrides the default cron/home delivery target for Hermes Discord notifications
 - `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and plaintext `password`
+- `ARCANE_ENCRYPTION_KEY`, exactly 64 hexadecimal characters representing 32 bytes
+- `ARCANE_JWT_SECRET`, at least 32 characters
+
+The Arcane Ansible role renders these stable values as mode-`0600` files under
+`/opt/homelab-control/arcane/secrets`. Keep the GitHub values stable and
+recoverable: Arcane's persistent database must always be restored with the
+matching encryption key. The runtime files are not the recovery source and may
+be recreated with the same values during an LXC replacement.
+
+Generate the two values independently with `openssl rand -hex 32`; do not reuse
+one output for both secrets.
 
 Example `COPYPARTY_USERS_JSON`:
 
@@ -124,13 +128,50 @@ is active. Copy the complete lock UUID from the failed OpenTofu log, open the
 production backend, removes that confirmed stale lock, and then performs the
 normal plan and deployment. Leave the input empty for every normal deployment.
 
-## CD Parallelism
+## CD Scope and Parallelism
 
-The CD workflow keeps the low-ID preflight, OpenTofu, and bootstrap operations
-serial, then deploys and validates `tailnet` and `docker_apps`. All
-application services within `docker_apps` are ordered Compose projects.
+Pushes containing changes only under the known safe `platform` and `media`
+Compose files use the `arcane` fast path. Static `platform/traefik.yml` changes
+use the full path for forced recreation. After Tailscale
+connects, the runner pins `arcane.home.hchu.me` to `192.168.0.3` in its
+ephemeral hosts file because the Tailscale action uses `--accept-dns=false`.
+The Arcane request still uses the HTTPS hostname for correct SNI and certificate
+validation.
+
+The runner deploys only affected projects through Arcane and requires the
+expected commit before the normal Docker-host validation runs. Arcane
+control-plane files, mixed pushes, workflow dispatches, and every
+infrastructure change use the full deployment path.
+
+Before either path, the serialized workflow force-updates the dedicated
+`arcane-deploy` branch to the current `GITHUB_SHA` and verifies the remote ref.
+Arcane syncs this CI-owned branch rather than mutable `main`, so a newer queued
+push cannot change an older job's deployment source. The workflow has
+`contents: write` only for this branch update; do not update `arcane-deploy`
+outside this serialized workflow.
+
+Arcane authentication uses GitHub OIDC, not a stored Arcane API key. Trust only
+subject `repo:holybaechu/homelab:environment:prod` with audience
+`https://arcane.home.hchu.me`, and map it to an environment-scoped deployment
+role with only `gitops:list`, `gitops:read`, and `gitops:sync` permissions.
+
+The full path keeps the low-ID preflight, OpenTofu, and bootstrap operations
+serial, then deploys and validates `tailnet` and `docker_apps`. All application
+services within `docker_apps` are ordered Compose projects. Arcane is a
+separate Ansible-owned control project outside its managed workload directory.
+
+The full path remains the bootstrap and break-glass recovery route for every
+workload even though app-only pushes use Arcane.
 
 Each service run uses `ansible-playbook --limit <service>` through `scripts/ci/run-ansible-parallel.sh`. GitHub logs are grouped per service, and the step fails if any service deploy or validation process fails.
+
+## Arcane Bootstrap
+
+The first Arcane deployment must use the normal full path so OpenTofu, the
+shared data mount, Docker Engine, workload projects, and the Arcane control
+project are reconciled in order. After deployment, complete the private
+first-login flow and run the live validation gates in
+`docs/runbooks/arcane.md` before using Arcane for workload operations.
 
 ## First Deployment
 

@@ -9,26 +9,28 @@ Expected encrypted values:
 - `proton_wireguard_private_key`
 - `tailscale_auth_key`
 - `qbittorrent_webui_password`
-- `hermes_discord_bot_token`
-- `hermes_discord_allowed_users`
-- `hermes_discord_home_channel`, optional but recommended for cron/home delivery; defaults to the allowed user target in the current single-user deployment
-- `hermes_parallel_api_key`
-- `hermes_firecrawl_api_key`
-- `hermes_browserbase_api_key`
-- `hermes_browserbase_project_id`
-- `hermes_honcho_api_key`, optional Honcho Cloud API key; required only when `hermes_memory_provider` is explicitly set to `honcho`
-- `hermes_1password_service_account_token`
 - `copyparty_users`, as a list of account objects with `name` and `password`
 - `adguard_admin_password`, as plaintext; the AdGuard role hashes it before writing the service config
+- `arcane_encryption_key`, exactly 64 hexadecimal characters representing 32 bytes
+- `arcane_jwt_secret`, at least 32 characters
+
+GitHub Actions supplies the Arcane values as `ARCANE_ENCRYPTION_KEY` and
+`ARCANE_JWT_SECRET`. Ansible renders root-owned mode-`0640` runtime files readable
+only by Arcane's runtime GID under `/opt/homelab-control/arcane/secrets`, and
+Arcane mounts them read-only. Keep
+the GitHub values stable and preserve them with backups of
+`/srv/homelab/docker-apps/arcane/data`. Never restore an existing database with
+a new encryption key: encrypted registry credentials and other stored values
+require the original key. Rotating or losing the JWT secret invalidates active
+sessions.
 
 Non-secret deployment values:
 
 - `adguard_admin_username`, optional; defaults to `admin`
-- `hermes_newrrow_username_ref` and `hermes_newrrow_password_ref`, as 1Password secret references (for example `op://Hermes/Newrrow/username` and `op://Hermes/Newrrow/password`) read by the Hermes Newrrow browser-login plugin at runtime; these are references, not secret values
-- `hermes_memory_provider`, empty by default for built-in memory; set to `honcho` only when intentionally enabling Honcho-backed memory
-- `hermes_honcho_environment`, defaults to `production` and is rendered as `HONCHO_ENVIRONMENT`
 
-GitHub Actions secret names for the Hermes web, browser, Honcho, and 1Password backends are `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, optional `HONCHO_API_KEY`, and `OP_SERVICE_ACCOUNT_TOKEN`; the CD helper maps them to the matching Ansible variables.
+The CD helper validates both Arcane secrets before writing Ansible extra vars.
+It accepts only a 64-character hexadecimal encryption key and a JWT secret of
+at least 32 characters.
 
 Do not commit decrypted secret files.
 

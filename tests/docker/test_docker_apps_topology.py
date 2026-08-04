@@ -88,6 +88,7 @@ def test_source_pair_is_retired_only_after_a_failback_guarded_route_handoff():
 
 def test_legacy_application_lxcs_are_archived_before_final_retirement():
     tasks = read("infra/ansible/roles/pve_finalize_low_id_cutover/tasks/main.yml")
+    variables = read("infra/ansible/inventory/prod/group_vars/all.yml")
 
     archive = tasks.index("Archive stopped legacy application LXCs")
     retire = tasks.index("Destroy only archive-verified legacy application LXCs")
@@ -99,11 +100,27 @@ def test_legacy_application_lxcs_are_archived_before_final_retirement():
     assert 'vzdump "$vmid"' in legacy_tasks
     assert 'name "vzdump-lxc-${vmid}-*.tar.zst"' in legacy_tasks
     assert 'pct destroy "$vmid" --purge 1 --destroy-unreferenced-disks 1' in legacy_tasks
+    assert "{name: hermes, vmid: 116}" in variables
 
 
-def test_every_application_is_a_compose_project():
-    for project in ("platform", "media", "hermes"):
+def test_workloads_and_separate_arcane_control_plane_are_compose_projects():
+    for project in ("platform", "media"):
         root = REPO_ROOT / "apps" / "compose" / project
         assert (root / "compose.yml").exists()
         assert (root / ".env.example").exists()
+
+    assert not (REPO_ROOT / "apps/compose/hermes").exists()
+
+    arcane = REPO_ROOT / "apps" / "compose" / "arcane"
+    assert (arcane / "compose.yml").exists()
+    assert (arcane / ".env.example").exists()
+
+    variables = read(
+        "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
+    ).split("\ndocker_compose_projects:", 1)[1]
+    assert "name: arcane" not in variables
+    assert "name: hermes" not in variables
+    assert "arcane_control_root:" in read(
+        "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
+    )
     assert not (REPO_ROOT / "apps/compose/game").exists()

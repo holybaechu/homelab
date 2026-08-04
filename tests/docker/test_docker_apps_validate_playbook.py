@@ -22,12 +22,19 @@ def _posix_shell_command(script: str) -> list[str]:
     return [git_shell, git_path]
 
 
-def test_validation_checks_compose_dns_vpn_routes_and_hermes():
+def test_validation_checks_compose_dns_vpn_routes_and_arcane():
     validate = (REPO_ROOT / "infra/ansible/playbooks/validate.yml").read_text(encoding="utf-8")
 
     assert "Validate Docker Compose application host" in validate
     assert "docker compose config --quiet" in validate
     assert "docker compose ps --services --status running" in validate
+    assert "Validate the Arcane control project" in validate
+    assert "Check Arcane API health" in validate
+    assert "arcane.db" in validate
+    assert "docker-socket-proxy" in validate
+    assert "ADMIN_STATIC_API_KEY" in validate
+    assert "ADMIN_STATIC_API_KEY_FILE" in validate
+    assert "arcane.home.hchu.me" in validate or "arcane_hostname" in validate
     assert "dig +short @127.0.0.1" in validate
     assert "qbt.home.hchu.me" in validate
     assert validate.count("public.qbt.home.hchu.me") >= 2
@@ -39,7 +46,7 @@ def test_validation_checks_compose_dns_vpn_routes_and_hermes():
     assert 'test "$host_ip" != "$vpn_ip"' in validate
     assert "docker port" in validate
     assert "current_network_interface" in validate
-    assert "hermes status" in validate
+    assert "hermes status" not in validate
 
 
 def test_validation_proves_vuetorrent_assets_config_and_route():

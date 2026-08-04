@@ -3,6 +3,7 @@ import shutil
 import subprocess
 
 import pytest
+import yaml
 
 from tests.helpers import REPO_ROOT
 
@@ -17,8 +18,9 @@ def test_compose_role_reconciles_projects_in_declared_order():
     assert 'dest: "{{ item.dest }}/.env"' in tasks
     assert 'mode: "0600"' in tasks
     assert "no_log: true" in tasks
+    assert 'owner: "{{ service_uid }}"' in tasks
+    assert 'group: "{{ service_gid }}"' in tasks
     assert variables.index("name: platform") < variables.index("name: media")
-    assert variables.index("name: media") < variables.index("name: hermes")
 
 
 def test_compose_role_manages_both_qbittorrent_configs_before_startup():
@@ -50,15 +52,47 @@ def test_compose_role_manages_both_qbittorrent_configs_before_startup():
     assert "current_network_interface" in tasks
 
 
-def test_compose_role_removes_retired_backup_project_and_volumes():
+def test_compose_role_removes_retired_projects_and_hermes_image():
     tasks = (REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml").read_text(encoding="utf-8")
     variables = (REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml").read_text(encoding="utf-8")
     active_projects = variables.split("\ndocker_compose_projects:", 1)[1]
+    parsed_tasks = yaml.safe_load(tasks)
+    parsed_variables = yaml.safe_load(variables)
 
     assert "docker compose down --volumes --remove-orphans" in tasks
     assert "retired_docker_compose_projects" in tasks
     assert "name: backup" in variables
     assert "name: backup" not in active_projects
+    assert "name: hermes" not in active_projects
+    assert {"name": "hermes", "dest": "{{ docker_apps_compose_root }}/hermes"} in (
+        parsed_variables["retired_docker_compose_projects"]
+    )
+    assert parsed_variables["retired_docker_images"] == ["homelab/hermes-agent:local"]
+
+    remove_image = next(
+        task for task in parsed_tasks if task["name"] == "Remove retired local Docker images"
+    )
+    assert remove_image["ansible.builtin.command"]["argv"] == [
+        "docker",
+        "image",
+        "rm",
+        "{{ item.item }}",
+    ]
+
+    no_hermes = next(
+        task for task in parsed_tasks if task["name"] == "Assert no Hermes Compose containers remain"
+    )
+    assert no_hermes["ansible.builtin.command"]["argv"] == [
+        "docker",
+        "ps",
+        "--all",
+        "--quiet",
+        "--filter",
+        "label=com.docker.compose.project=hermes",
+    ]
+    assert no_hermes["failed_when"] == (
+        "retired_hermes_containers.stdout | trim | length > 0"
+    )
 
 
 def _posix_shell_command(script: str) -> list[str]:

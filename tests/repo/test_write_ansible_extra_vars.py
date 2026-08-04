@@ -1,0 +1,65 @@
+import json
+import runpy
+
+import pytest
+
+from tests.helpers import REPO_ROOT
+
+
+SCRIPT = REPO_ROOT / "scripts" / "ci" / "write_ansible_extra_vars.py"
+
+
+def seed_required_environment(monkeypatch, module):
+    for environment_name in module["REQUIRED_ENV"].values():
+        monkeypatch.setenv(environment_name, "test-value")
+    monkeypatch.setenv("ARCANE_ENCRYPTION_KEY", "ab" * 32)
+    monkeypatch.setenv("ARCANE_JWT_SECRET", "j" * 32)
+    monkeypatch.setenv(
+        "COPYPARTY_USERS_JSON",
+        json.dumps([{"name": "test", "password": "test-password"}]),
+    )
+
+
+def test_arcane_secrets_are_included_only_after_shape_validation(monkeypatch):
+    module = runpy.run_path(str(SCRIPT))
+    seed_required_environment(monkeypatch, module)
+
+    mapping = module["build_mapping"]()
+
+    assert mapping["arcane_encryption_key"] == "ab" * 32
+    assert mapping["arcane_jwt_secret"] == "j" * 32
+
+
+def test_retired_hermes_environment_is_not_mapped():
+    module = runpy.run_path(str(SCRIPT))
+    all_environment_names = set(module["REQUIRED_ENV"].values()) | set(
+        module["OPTIONAL_ENV"].values()
+    )
+
+    assert not {
+        "HERMES_DISCORD_BOT_TOKEN",
+        "HERMES_DISCORD_ALLOWED_USERS",
+        "HERMES_DISCORD_HOME_CHANNEL",
+        "PARALLEL_API_KEY",
+        "FIRECRAWL_API_KEY",
+        "BROWSERBASE_API_KEY",
+        "BROWSERBASE_PROJECT_ID",
+        "HONCHO_API_KEY",
+        "OP_SERVICE_ACCOUNT_TOKEN",
+    } & all_environment_names
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        ("ARCANE_ENCRYPTION_KEY", "not-hex", "64 hexadecimal characters"),
+        ("ARCANE_JWT_SECRET", "too-short", "at least 32 characters"),
+    ],
+)
+def test_invalid_arcane_secret_is_rejected(monkeypatch, name, value, message):
+    module = runpy.run_path(str(SCRIPT))
+    seed_required_environment(monkeypatch, module)
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(SystemExit, match=message):
+        module["build_mapping"]()

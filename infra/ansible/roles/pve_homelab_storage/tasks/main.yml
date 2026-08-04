@@ -44,9 +44,7 @@
       "${mount_path}/downloads/complete" \
       "${mount_path}/downloads/incomplete" \
       "${mount_path}/copyparty/public" \
-      "${mount_path}/copyparty/shared-readonly" \
-      "${mount_path}/hermes/home" \
-      "${mount_path}/hermes/workspace"
+      "${mount_path}/copyparty/shared-readonly"
 
     qbittorrent_vpn_path="${mount_path}/docker-apps/qbittorrent-vpn"
     if [ "$(stat -c '%u:%g' "${qbittorrent_vpn_path}")" != "${app_uid}:${app_uid}" ]; then
@@ -95,17 +93,14 @@
     fi
 
     if [ ! -e "${permissions_marker}" ] || [ "{{ homelab_data_reconcile_permissions | default(false) | lower }}" = "true" ]; then
-      hermes_uid={{ homelab_container_uid_offset + hermes_service_uid }}
       chown -R "${app_uid}:${app_uid}" \
         "${mount_path}/docker-apps" \
         "${mount_path}/downloads" \
         "${mount_path}/copyparty"
-      chown -R "${hermes_uid}:${hermes_uid}" "${mount_path}/hermes"
       find \
         "${mount_path}/docker-apps" \
         "${mount_path}/downloads" \
         "${mount_path}/copyparty" \
-        "${mount_path}/hermes" \
         -type d -exec chmod 0755 {} +
       touch "${permissions_marker}"
       changed=1

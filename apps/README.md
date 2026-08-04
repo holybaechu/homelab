@@ -5,7 +5,14 @@ All application services run through Docker Compose on the `docker_apps` LXC.
 - `compose/platform`: Traefik, AdGuard Home, Cloudflare DDNS.
 - `compose/media`: direct and Gluetun-routed qBittorrent instances, Copyparty,
   MeTube.
-- `compose/hermes`: Hermes Agent Discord gateway.
+- `compose/arcane`: the Ansible-owned Arcane Docker management control plane.
 
-Ansible copies these projects to `/opt/homelab-compose`, renders private `.env`
-and configuration files, and reconciles them automatically in CI/CD.
+Ansible bootstraps the two workload projects at `/opt/homelab-compose` and
+renders their private `.env` and configuration files. App-only pushes deploy
+the affected projects through Arcane; mixed, control-plane, and infrastructure
+changes use the full OpenTofu/Ansible path.
+
+Arcane is deployed separately at `/opt/homelab-control/arcane`, with persistent
+state under `/srv/homelab/docker-apps/arcane`. It is never one of its own
+managed projects; Ansible remains its deployment and break-glass recovery path.
+See `docs/runbooks/arcane.md` for the ownership, backup, and update policy.

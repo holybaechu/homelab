@@ -13,12 +13,18 @@ def test_ansible_renders_every_secret_environment():
     for name in (
         "platform.env.j2",
         "media.env.j2",
-        "hermes.env.j2",
         "copyparty.conf.j2",
         "qBittorrent.conf.j2",
         "AdGuardHome.yaml.j2",
     ):
         assert (template_dir / name).exists()
+
+    assert not (template_dir / "hermes.env.j2").exists()
+
+    assert (
+        REPO_ROOT
+        / "infra/ansible/roles/arcane_manager/templates/arcane.env.j2"
+    ).exists()
 
 
 def test_compose_files_do_not_contain_raw_secret_material():

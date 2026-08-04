@@ -1,0 +1,40 @@
+---
+- name: Trust and reach the Docker application LXC
+  hosts: pve_hosts
+  gather_facts: false
+  vars:
+    docker_apps_lxc: >-
+      {{ pve_lxc_access_bootstrap
+         | selectattr('name', 'equalto', 'docker_apps')
+         | first }}
+  tasks:
+    - name: Read the Docker application LXC SSH host key through Proxmox
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ docker_apps_lxc.vmid }}"
+          - --
+          - cat
+          - /etc/ssh/ssh_host_ed25519_key.pub
+      register: docker_apps_host_key
+      changed_when: false
+
+    - name: Trust the Docker application LXC SSH host key
+      ansible.builtin.known_hosts:
+        path: "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
+        name: "{{ hostvars['docker_apps'].ansible_host }}"
+        key: >-
+          {{ hostvars['docker_apps'].ansible_host }}
+          {{ docker_apps_host_key.stdout }}
+      delegate_to: localhost
+
+    - name: Wait for the Docker application LXC SSH port
+      ansible.builtin.wait_for:
+        host: "{{ hostvars['docker_apps'].ansible_host }}"
+        port: 22
+        state: started
+        connect_timeout: 5
+        delay: 1
+        timeout: 60
+      delegate_to: localhost

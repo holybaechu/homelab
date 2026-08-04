@@ -15,8 +15,10 @@ rollback. The cutover gate is:
   `/dev/pve/homelab-data` mount identity and rejects target/descendant mounts.
 - VMID 110 has `/dev/net/tun`, nesting/keyctl, and the single
   `/var/lib/homelab` bind mount.
-- The three active Compose projects (`platform`, `media`, and `hermes`) are
+- The two active Compose projects (`platform` and `media`) are
   running and Ansible live validation passes.
+- Hermes Agent is retired. Its former `/srv/homelab/hermes` data remains
+  preserved but unmanaged and VMID 116 must remain stopped.
 - Router TCP 80/443 and DHCP DNS point to `192.168.0.3`.
 - Gluetun's public IP differs from the host IP.
 

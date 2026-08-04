@@ -77,6 +77,87 @@
       ansible.builtin.command: systemctl is-active docker
       changed_when: false
 
+    - name: Validate the Arcane control project
+      ansible.builtin.command:
+        cmd: docker compose config --quiet
+        chdir: "{{ arcane_control_root }}"
+      changed_when: false
+
+    - name: Require every Arcane control service to be running
+      ansible.builtin.shell: |
+        set -eu
+        expected="$(printf '%s\n' {% for service in arcane_control_services %}'{{ service }}' {% endfor %}| sort)"
+        running="$(docker compose ps --services --status running | sort)"
+        test "$expected" = "$running" || {
+          printf 'Expected Arcane services:\n%s\nActual running services:\n%s\n' "$expected" "$running" >&2
+          docker compose ps >&2
+          exit 1
+        }
+      args:
+        executable: /bin/sh
+        chdir: "{{ arcane_control_root }}"
+      changed_when: false
+
+    - name: Check Arcane API health
+      ansible.builtin.uri:
+        url: "{{ arcane_health_url }}"
+        method: GET
+        status_code: 200
+        return_content: false
+      register: arcane_health_validation
+      changed_when: false
+      retries: 6
+      delay: 5
+      until: arcane_health_validation.status == 200
+
+    - name: Validate Arcane control-plane state and secret files
+      ansible.builtin.shell: |
+        set -eu
+        test -s "{{ arcane_data_root }}/arcane.db"
+        test "$(stat -c '%a' "{{ arcane_secret_root }}")" = 750
+        test "$(stat -c '%u:%g' "{{ arcane_secret_root }}")" = "0:{{ arcane_gid }}"
+        test "$(stat -c '%a' "{{ arcane_secret_root }}/encryption_key")" = 640
+        test "$(stat -c '%a' "{{ arcane_secret_root }}/jwt_secret")" = 640
+        test "$(stat -c '%u:%g' "{{ arcane_secret_root }}/encryption_key")" = "0:{{ arcane_gid }}"
+        test "$(stat -c '%u:%g' "{{ arcane_secret_root }}/jwt_secret")" = "0:{{ arcane_gid }}"
+        encryption_key="$(tr -d '\r\n' < "{{ arcane_secret_root }}/encryption_key")"
+        jwt_secret="$(tr -d '\r\n' < "{{ arcane_secret_root }}/jwt_secret")"
+        test "$(printf '%s' "$encryption_key" | wc -c)" -eq 64
+        printf '%s' "$encryption_key" | grep -Eq '^[0-9a-fA-F]{64}$'
+        test "$(printf '%s' "$jwt_secret" | wc -c)" -ge 32
+      args:
+        executable: /bin/sh
+      changed_when: false
+      no_log: true
+
+    - name: Validate Arcane uses only the private Docker socket proxy
+      ansible.builtin.shell: |
+        set -eu
+        arcane_container="$(docker compose ps -q arcane)"
+        proxy_container="$(docker compose ps -q docker-socket-proxy)"
+        test -n "$arcane_container"
+        test -n "$proxy_container"
+        docker inspect "$arcane_container" "$proxy_container" | python3 -c 'import json, sys; arcane, proxy = json.load(sys.stdin); socket_mounts = [mount for mount in proxy["Mounts"] if mount["Destination"] == "/var/run/docker.sock"]; valid = "DOCKER_HOST=tcp://docker-socket-proxy:2375" in arcane["Config"]["Env"] and not any(mount["Destination"] == "/var/run/docker.sock" for mount in arcane["Mounts"]) and len(socket_mounts) == 1 and not socket_mounts[0]["RW"]; raise SystemExit(0 if valid else 1)'
+      args:
+        executable: /bin/sh
+        chdir: "{{ arcane_control_root }}"
+      changed_when: false
+
+    - name: Require Arcane to run without a static admin API key
+      ansible.builtin.shell: |
+        set -eu
+        arcane_container="$(docker compose ps -q arcane)"
+        test -n "$arcane_container"
+        docker inspect "$arcane_container" | python3 -c 'import json, sys; environment = json.load(sys.stdin)[0]["Config"]["Env"]; forbidden = ("ADMIN_STATIC_API_KEY=", "ADMIN_STATIC_API_KEY_FILE="); raise SystemExit(1 if any(value.startswith(forbidden) for value in environment) else 0)'
+        ! grep -q '^ADMIN_STATIC_API_KEY=' .env
+        ! grep -q '^ADMIN_STATIC_API_KEY_FILE=' .env
+        test ! -e "{{ arcane_secret_root }}/bootstrap_admin_api_key"
+      args:
+        executable: /bin/sh
+        chdir: "{{ arcane_control_root }}"
+      changed_when: false
+      no_log: true
+
     - name: Validate rendered Compose projects
       ansible.builtin.command:
         cmd: docker compose config --quiet
@@ -130,6 +211,7 @@
         - qbt.home.hchu.me
         - public.qbt.home.hchu.me
         - metube.home.hchu.me
+        - "{{ arcane_hostname }}"
 
     - name: Check private Traefik routes
       ansible.builtin.command:
@@ -151,6 +233,7 @@
         - qbt.home.hchu.me
         - public.qbt.home.hchu.me
         - metube.home.hchu.me
+        - "{{ arcane_hostname }}"
 
     - name: Check public Copyparty route
       ansible.builtin.command:
@@ -242,9 +325,3 @@
       retries: 12
       delay: 10
       until: qbittorrent_vpn_forwarded_port.rc == 0
-
-    - name: Check Hermes gateway status
-      ansible.builtin.command:
-        cmd: docker compose exec -T hermes hermes status
-        chdir: "{{ docker_apps_compose_root }}/hermes"
-      changed_when: false

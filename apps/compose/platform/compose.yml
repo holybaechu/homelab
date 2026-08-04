@@ -20,6 +20,8 @@ services:
       - traefik_data:/data
     networks:
       - proxy
+    labels:
+      - com.getarcaneapp.arcane.updater=false
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 30s
@@ -34,6 +36,8 @@ services:
     volumes:
       - ./adguard:/opt/adguardhome/conf:rw
       - adguard_work:/opt/adguardhome/work
+    labels:
+      - com.getarcaneapp.arcane.updater=false
     healthcheck:
       test: ["CMD", "/opt/adguardhome/AdGuardHome", "--check-config", "-c", "/opt/adguardhome/conf/AdGuardHome.yaml"]
       interval: 30s
@@ -51,6 +55,8 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+    labels:
+      - com.getarcaneapp.arcane.updater=false
 
 networks:
   proxy:

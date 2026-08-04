@@ -19,7 +19,7 @@ on:
       - "scripts/ci/**"
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 concurrency:
@@ -37,6 +37,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Select deployment scope
+        id: scope
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before || '' }}
+        run: python3 scripts/ci/select-deployment-scope.py "${GITHUB_OUTPUT}"
+
+      - name: Pin the serialized Arcane deployment ref
+        run: |
+          git push --force origin "${GITHUB_SHA}:refs/heads/arcane-deploy"
+          remote_sha="$(git ls-remote --heads origin refs/heads/arcane-deploy | awk '{print $1}')"
+          test "${remote_sha}" = "${GITHUB_SHA}"
 
       - name: Connect Tailscale
         uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
@@ -49,7 +63,21 @@ jobs:
           args: --accept-dns=false
           ping: ${{ vars.PVE_TAILSCALE_IP }}
 
+      - name: Deploy changed workloads with Arcane
+        if: steps.scope.outputs.deployment_scope == 'arcane'
+        env:
+          ARCANE_PROJECTS: ${{ steps.scope.outputs.arcane_projects }}
+        run: |
+          printf '%s\n' '192.168.0.3 arcane.home.hchu.me' | sudo tee -a /etc/hosts >/dev/null
+          python3 scripts/ci/deploy-with-arcane.py \
+            --base-url https://arcane.home.hchu.me \
+            --audience https://arcane.home.hchu.me \
+            --projects "${ARCANE_PROJECTS}" \
+            --expected-commit "${GITHUB_SHA}"
+
       - name: Install tooling
+        env:
+          INSTALL_OPENTOFU: ${{ steps.scope.outputs.deployment_scope == 'full' }}
         run: ./scripts/ci/install-tools.sh
 
       - name: Configure SSH
@@ -62,6 +90,7 @@ jobs:
         run: ansible-galaxy collection install -r infra/ansible/requirements.yml
 
       - name: Validate and write Ansible service secrets
+        if: steps.scope.outputs.deployment_scope == 'full'
         env:
           ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
           CLOUDFLARE_TRAEFIK_TOKEN: ${{ secrets.CLOUDFLARE_TRAEFIK_TOKEN || secrets.CLOUDFLARE_CADDY_TOKEN }}
@@ -71,19 +100,13 @@ jobs:
           TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
           PROTON_WIREGUARD_PRIVATE_KEY: ${{ secrets.PROTON_WIREGUARD_PRIVATE_KEY }}
           QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
-          HERMES_DISCORD_BOT_TOKEN: ${{ secrets.HERMES_DISCORD_BOT_TOKEN }}
-          HERMES_DISCORD_ALLOWED_USERS: ${{ secrets.HERMES_DISCORD_ALLOWED_USERS }}
-          HERMES_DISCORD_HOME_CHANNEL: ${{ secrets.HERMES_DISCORD_HOME_CHANNEL }}
-          PARALLEL_API_KEY: ${{ secrets.PARALLEL_API_KEY }}
-          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
-          BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
-          BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
-          HONCHO_API_KEY: ${{ secrets.HONCHO_API_KEY }}
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
+          ARCANE_ENCRYPTION_KEY: ${{ secrets.ARCANE_ENCRYPTION_KEY }}
+          ARCANE_JWT_SECRET: ${{ secrets.ARCANE_JWT_SECRET }}
         run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Prepare one-time lowest-ID cutover
+        if: steps.scope.outputs.deployment_scope == 'full'
         env:
           LOW_ID_CUTOVER_CONFIRMED: ${{ vars.LOW_ID_CUTOVER_CONFIRMED }}
           ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
@@ -95,6 +118,7 @@ jobs:
           --extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: OpenTofu plan
+        if: steps.scope.outputs.deployment_scope == 'full'
         env:
           PROXMOX_ENDPOINT: ${{ secrets.PROXMOX_ENDPOINT }}
           PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
@@ -113,7 +137,7 @@ jobs:
         run: ./scripts/ci/tofu-plan.sh
 
       - name: OpenTofu apply
-        if: github.ref == 'refs/heads/main'
+        if: steps.scope.outputs.deployment_scope == 'full'
         env:
           PROXMOX_ENDPOINT: ${{ secrets.PROXMOX_ENDPOINT }}
           PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
@@ -131,22 +155,35 @@ jobs:
         run: ./scripts/ci/tofu-apply.sh
 
       - name: Bootstrap Proxmox and LXC access
+        if: steps.scope.outputs.deployment_scope == 'full'
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/bootstrap.yml
 
+      - name: Trust Docker application LXC access
+        if: steps.scope.outputs.deployment_scope == 'arcane'
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
+          infra/ansible/playbooks/trust-docker-apps.yml
+
       - name: Deploy services
+        if: steps.scope.outputs.deployment_scope == 'full'
         env:
           ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
+          ANSIBLE_DEPLOYMENT_SCOPE: ${{ steps.scope.outputs.deployment_scope }}
         run: sh ./scripts/ci/run-ansible-parallel.sh site --extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Validate services
+        env:
+          ANSIBLE_DEPLOYMENT_SCOPE: ${{ steps.scope.outputs.deployment_scope }}
         run: sh ./scripts/ci/run-ansible-parallel.sh validate
 
       - name: Arm failback and move the subnet route to VMID 111
+        if: steps.scope.outputs.deployment_scope == 'full'
         run: >-
           ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
           infra/ansible/playbooks/arm-low-id-retirement.yml
 
       - name: Prove Proxmox remains reachable after VMID 112 stops
+        if: steps.scope.outputs.deployment_scope == 'full'
         run: |
           set -eu
           for attempt in $(seq 1 48); do
@@ -161,6 +198,7 @@ jobs:
           exit 1
 
       - name: Retire the archived source pair
+        if: steps.scope.outputs.deployment_scope == 'full'
         run: >-
           ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
           infra/ansible/playbooks/finalize-low-id-retirement.yml

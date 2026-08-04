@@ -180,9 +180,15 @@
     argv:
       - systemctl
       - reset-failed
-      - tailscaled-ansible-restart.timer
-      - tailscaled-ansible-restart.service
+      - "{{ item }}"
   changed_when: false
+  failed_when: >-
+    tailscale_reset_failed.rc != 0
+    and 'not loaded' not in tailscale_reset_failed.stderr
+  register: tailscale_reset_failed
+  loop:
+    - tailscaled-ansible-restart.timer
+    - tailscaled-ansible-restart.service
   when: tailscale_restart_required
 
 - name: Remove the previous tailscaled restart completion proof

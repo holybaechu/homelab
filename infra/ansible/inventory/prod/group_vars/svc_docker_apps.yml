@@ -4,6 +4,36 @@ docker_apps_timezone: "{{ homelab_timezone }}"
 docker_apps_uid: "{{ service_uid }}"
 docker_apps_gid: "{{ service_gid }}"
 
+arcane_control_root: /opt/homelab-control/arcane
+arcane_data_root: /srv/homelab/docker-apps/arcane/data
+arcane_secret_root: "{{ arcane_control_root }}/secrets"
+arcane_projects_root: "{{ docker_apps_compose_root }}"
+arcane_uid: "{{ service_uid }}"
+arcane_gid: "{{ service_gid }}"
+arcane_hostname: arcane.home.hchu.me
+arcane_app_url: "https://{{ arcane_hostname }}"
+arcane_local_url: http://127.0.0.1:3552
+arcane_health_url: "{{ arcane_local_url }}/api/health"
+arcane_control_services:
+  - arcane
+  - docker-socket-proxy
+arcane_repository_name: homelab
+arcane_repository_url: https://github.com/holybaechu/homelab.git
+arcane_repository_branch: arcane-deploy
+arcane_ci_role_name: homelab-production-deployer
+arcane_ci_credential_name: github-actions-prod
+arcane_ci_oidc_issuer: https://token.actions.githubusercontent.com
+arcane_ci_oidc_audience: "{{ arcane_app_url }}"
+arcane_ci_oidc_subject: repo:holybaechu/homelab:environment:prod
+arcane_gitops_projects:
+  - name: platform
+    compose_path: apps/compose/platform/compose.yml
+  - name: media
+    compose_path: apps/compose/media/compose.yml
+arcane_retired_gitops_projects:
+  - name: hermes
+    compose_path: apps/compose/hermes/compose.yml
+
 traefik_acme_email: holybaechu@proton.me
 traefik_domain: hchu.me
 traefik_private_domain: home.hchu.me
@@ -43,20 +73,16 @@ qbittorrent_instances:
     peer_port: 0
 copyparty_listen_port: 3923
 
-hermes_uid: "{{ hermes_service_uid }}"
-hermes_gid: "{{ hermes_service_gid }}"
-hermes_discord_require_mention: true
-hermes_discord_ignore_no_mention: true
-hermes_discord_home_channel: "{{ hermes_discord_allowed_users }}"
-hermes_honcho_environment: production
-hermes_newrrow_username_ref: op://Hermes/Newrrow/username
-hermes_newrrow_password_ref: op://Hermes/Newrrow/password
-
 retired_docker_compose_projects:
   - name: backup
     dest: "{{ docker_apps_compose_root }}/backup"
   - name: game
     dest: "{{ docker_apps_compose_root }}/game"
+  - name: hermes
+    dest: "{{ docker_apps_compose_root }}/hermes"
+
+retired_docker_images:
+  - homelab/hermes-agent:local
 
 docker_compose_projects:
   - name: platform
@@ -75,7 +101,3 @@ docker_compose_projects:
       - src: copyparty.conf.j2
         dest: copyparty.conf
         mode: "0600"
-  - name: hermes
-    src: apps/compose/hermes
-    dest: "{{ docker_apps_compose_root }}/hermes"
-    env_template: hermes.env.j2

@@ -14,7 +14,6 @@ def test_operational_dependencies_do_not_use_latest_aliases():
         ".github/workflows/cd.yml",
         "scripts/ci/install-tools.sh",
         *[str(path.relative_to(REPO_ROOT)) for path in (REPO_ROOT / "apps/compose").rglob("compose.yml")],
-        "apps/compose/hermes/Dockerfile",
     ]
     contents = "\n".join(read(path) for path in paths)
     assert "ubuntu-latest" not in contents
@@ -57,44 +56,18 @@ def test_nonstandard_version_surfaces_have_focused_managers():
         "tailscale/tailscale",
         "vuetorrent-lsio-mod",
         "containers.auto.tfvars",
-        "OP_CLI_VERSION",
     ):
         assert marker in manager_text
     assert "download.proxmox.com/images/system" in datasource_text
-    assert "app-updates.agilebits.com/product_history/CLI2" in datasource_text
 
 
-def test_onepassword_cli_manager_tracks_upstream_semver():
+def test_renovate_has_no_retired_hermes_or_onepassword_cli_manager():
     config = json.loads(read("renovate.json"))
-    manager = next(
-        manager
-        for manager in config["customManagers"]
-        if manager.get("depNameTemplate") == "onepassword-cli"
-    )
-    datasource = config["customDatasources"]["onepassword-cli"]
-    package_rule = next(
-        rule
-        for rule in config["packageRules"]
-        if rule.get("matchDatasources") == ["custom.onepassword-cli"]
-    )
+    serialized = json.dumps(config).lower()
 
-    assert manager["managerFilePatterns"] == [
-        "/^apps\\/compose\\/hermes\\/Dockerfile$/"
-    ]
-    assert manager["matchStrings"] == [
-        "ARG OP_CLI_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
-    ]
-    assert manager["datasourceTemplate"] == "custom.onepassword-cli"
-    assert manager["versioningTemplate"] == "semver"
-    assert datasource == {
-        "defaultRegistryUrlTemplate": (
-            "https://app-updates.agilebits.com/product_history/CLI2"
-        ),
-        "format": "html",
-    }
-    assert package_rule["extractVersion"] == (
-        ".*op_linux_amd64_v(?<version>\\d+\\.\\d+\\.\\d+)\\.zip$"
-    )
+    assert "hermes" not in serialized
+    assert "onepassword-cli" not in serialized
+    assert "app-updates.agilebits.com" not in serialized
 
 
 def test_vuetorrent_mod_manager_tracks_official_semver():
@@ -131,16 +104,30 @@ def test_metube_image_uses_explicit_calendar_versioning():
     )
 
 
-def test_direct_requirements_are_exact_and_local_hermes_tag_is_constant():
+def test_direct_requirements_are_exact():
     requirements = read("requirements-dev.txt").splitlines()
     collection = read("infra/ansible/requirements.yml")
-    compose = read("apps/compose/hermes/compose.yml")
 
     assert requirements == ["pytest==9.1.1", "Jinja2==3.1.6", "PyYAML==6.0.3"]
     assert 'version: "13.2.0"' in collection
-    assert "image: homelab/hermes-agent:local" in compose
-    assert "homelab/hermes-agent:2026" not in compose
 
 
 def test_opentofu_updates_trigger_cd():
     assert '      - ".opentofu-version"' in read(".github/workflows/cd.yml")
+
+
+def test_arcane_control_plane_updates_never_automerge():
+    config = json.loads(read("renovate.json"))
+    rule = next(
+        rule
+        for rule in config["packageRules"]
+        if rule.get("description") == "Require review for the Arcane control plane"
+    )
+
+    assert rule["matchDatasources"] == ["docker"]
+    assert rule["matchPackageNames"] == [
+        "ghcr.io/getarcaneapp/manager",
+        "tecnativa/docker-socket-proxy",
+    ]
+    assert rule["automerge"] is False
+    assert rule["platformAutomerge"] is False

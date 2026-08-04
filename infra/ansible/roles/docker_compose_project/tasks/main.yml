@@ -8,13 +8,6 @@
       - proton_wireguard_private_key is defined and proton_wireguard_private_key | length > 0
       - qbittorrent_webui_password is defined and qbittorrent_webui_password | length > 0
       - copyparty_users is defined and copyparty_users | length > 0
-      - hermes_discord_bot_token is defined and hermes_discord_bot_token | length > 0
-      - hermes_discord_allowed_users is defined and hermes_discord_allowed_users | length > 0
-      - hermes_parallel_api_key is defined and hermes_parallel_api_key | length > 0
-      - hermes_firecrawl_api_key is defined and hermes_firecrawl_api_key | length > 0
-      - hermes_browserbase_api_key is defined and hermes_browserbase_api_key | length > 0
-      - hermes_browserbase_project_id is defined and hermes_browserbase_project_id | length > 0
-      - hermes_1password_service_account_token is defined and hermes_1password_service_account_token | length > 0
     fail_msg: Configure every required prod secret before deploying the consolidated Compose host.
   no_log: true
 
@@ -69,8 +62,8 @@
     group: "{{ item.group | default(service_gid) }}"
     mode: "{{ item.mode | default('0755') }}"
   loop:
-    - {path: "{{ docker_apps_compose_root }}", owner: root, group: root}
-    - {path: "{{ docker_apps_compose_root }}/platform/adguard", owner: root, group: root, mode: "0750"}
+    - {path: "{{ docker_apps_compose_root }}", owner: "{{ service_uid }}", group: "{{ service_gid }}"}
+    - {path: "{{ docker_apps_compose_root }}/platform/adguard", mode: "0750"}
     - {path: /srv/homelab/docker-apps/qbittorrent/qBittorrent, mode: "0700"}
     - {path: /srv/homelab/docker-apps/qbittorrent-vpn/qBittorrent, mode: "0700"}
     - {path: /srv/homelab/docker-apps/copyparty}
@@ -79,8 +72,6 @@
     - {path: /srv/homelab/copyparty/downloads}
     - {path: /srv/homelab/copyparty/public}
     - {path: /srv/homelab/copyparty/shared-readonly}
-    - {path: /srv/homelab/hermes/home, owner: "{{ hermes_uid }}", group: "{{ hermes_gid }}"}
-    - {path: /srv/homelab/hermes/workspace, owner: "{{ hermes_uid }}", group: "{{ hermes_gid }}"}
 
 - name: Inspect retired Compose projects
   ansible.builtin.stat:
@@ -108,6 +99,42 @@
   loop_control:
     label: "{{ item.name }}"
 
+- name: Inspect retired local Docker images
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - "{{ item }}"
+  loop: "{{ retired_docker_images | default([]) }}"
+  register: retired_docker_image_inspections
+  changed_when: false
+  failed_when: retired_docker_image_inspections.rc not in [0, 1]
+
+- name: Remove retired local Docker images
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - rm
+      - "{{ item.item }}"
+  loop: "{{ retired_docker_image_inspections.results }}"
+  when: item.rc == 0
+  changed_when: true
+
+- name: Assert no Hermes Compose containers remain
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - --all
+      - --quiet
+      - --filter
+      - label=com.docker.compose.project=hermes
+  register: retired_hermes_containers
+  changed_when: false
+  failed_when: retired_hermes_containers.stdout | trim | length > 0
+
 - name: Assert no game Compose containers remain
   ansible.builtin.script:
     cmd: >-
@@ -119,8 +146,8 @@
   ansible.builtin.file:
     path: "{{ item.dest }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
     mode: "0755"
   loop: "{{ docker_compose_projects }}"
   loop_control:
@@ -130,8 +157,8 @@
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../../../{{ item.src }}/"
     dest: "{{ item.dest }}/"
-    owner: root
-    group: root
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
     mode: preserve
   loop: "{{ docker_compose_projects }}"
   loop_control:
@@ -229,8 +256,8 @@
   ansible.builtin.template:
     src: "{{ item.env_template }}"
     dest: "{{ item.dest }}/.env"
-    owner: root
-    group: root
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
     mode: "0600"
   loop: "{{ docker_compose_projects }}"
   loop_control:

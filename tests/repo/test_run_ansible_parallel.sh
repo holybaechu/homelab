@@ -22,6 +22,10 @@ EOF
 cat > "${fake_bin}/ansible-playbook" <<'EOF'
 #!/bin/sh
 case "$*" in
+  *'validate.yml'*'--limit svc_docker_apps'*)
+    sleep "${FAKE_DOCKER_DELAY_SECONDS:-0}"
+    printf '%s\n' 'docker validation complete'
+    ;;
   *'--limit svc_tailnet'*)
     printf '%s\n' 'tailnet started'
     sleep "${FAKE_TAILNET_DELAY_SECONDS:-1}"
@@ -56,6 +60,35 @@ esac
 EOF
 
 chmod +x "${fake_bin}/python3" "${fake_bin}/ansible-playbook"
+
+set +e
+fast_site_output="$({
+  PATH="${fake_bin}:${PATH}" \
+  ANSIBLE_DEPLOYMENT_SCOPE=arcane \
+  ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
+    sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
+} 2>&1)"
+fast_site_status=$?
+set -e
+printf '%s\n' "${fast_site_output}"
+test "${fast_site_status}" -ne 0
+printf '%s\n' "${fast_site_output}" | grep -F \
+  'Arcane scope deploys workloads through Arcane; Ansible site is disabled'
+
+fast_path_output="$(
+  PATH="${fake_bin}:${PATH}" \
+  ANSIBLE_DEPLOYMENT_SCOPE=arcane \
+  TAILNET_COMPLETE_MARKER="${marker}" \
+  DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
+  PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
+  ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
+    sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" validate
+)"
+printf '%s\n' "${fast_path_output}"
+printf '%s\n' "${fast_path_output}" | grep -F '::group::validate docker_apps success'
+if printf '%s\n' "${fast_path_output}" | grep -F 'pve validation complete'; then
+  exit 1
+fi
 
 PATH="${fake_bin}:${PATH}" \
 TAILNET_COMPLETE_MARKER="${marker}" \

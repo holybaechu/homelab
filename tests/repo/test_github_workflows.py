@@ -3,6 +3,7 @@ import shutil
 import subprocess
 
 import pytest
+import yaml
 
 from tests.helpers import REPO_ROOT
 
@@ -31,6 +32,10 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     assert "${{ runner.temp }}/ansible-extra-vars.json" in workflow
     assert "ADGUARD_ADMIN_PASSWORD:" in workflow
     assert "COPYPARTY_USERS_JSON:" in workflow
+    assert "ARCANE_ENCRYPTION_KEY:" in workflow
+    assert "ARCANE_JWT_SECRET:" in workflow
+    assert "64 hexadecimal characters" in script
+    assert "at least 32 characters" in script
     assert "COPYPARTY_PASSWORD_HASH_SALT:" not in workflow
     assert "os.open" in script
     assert "0o600" in script
@@ -61,6 +66,93 @@ def test_cd_workflow_runs_bootstrap_before_site_deploy():
     assert bootstrap < site
 
 
+def test_cd_workflow_fast_tracks_known_workloads_through_arcane():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+    selector = (REPO_ROOT / "scripts" / "ci" / "select-deployment-scope.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "fetch-depth: 0" in workflow
+    assert "contents: write" in workflow
+    assert "select-deployment-scope.py" in workflow
+    assert "ANSIBLE_DEPLOYMENT_SCOPE:" in workflow
+    assert "infra/ansible/playbooks/trust-docker-apps.yml" in workflow
+    assert "steps.scope.outputs.deployment_scope == 'full'" in workflow
+    assert 'return "arcane"' in selector
+    assert "arcane_projects=" in selector
+    assert "arcane_build_projects=" not in selector
+    assert "deploy-with-arcane.py" in workflow
+    assert workflow.index("Deploy changed workloads with Arcane") < workflow.index(
+        "Install tooling"
+    )
+    arcane_step = workflow.split(
+        "- name: Deploy changed workloads with Arcane", maxsplit=1
+    )[1].split("- name: Install tooling", maxsplit=1)[0]
+    assert "steps.scope.outputs.deployment_scope == 'arcane'" in arcane_step
+    assert "ARCANE_API_KEY" not in arcane_step
+    assert "ARCANE_ADMIN_STATIC_API_KEY" not in workflow
+    assert "id-token: write" in workflow
+    assert "192.168.0.3 arcane.home.hchu.me" in arcane_step
+    assert "refs/heads/arcane-deploy" in workflow
+    assert workflow.index("Pin the serialized Arcane deployment ref") < workflow.index(
+        "Connect Tailscale"
+    )
+    secret_step = workflow.split(
+        "- name: Validate and write Ansible service secrets", maxsplit=1
+    )[1].split("- name: Prepare one-time lowest-ID cutover", maxsplit=1)[0]
+    assert "steps.scope.outputs.deployment_scope == 'full'" in secret_step
+    deploy_step = workflow.split("- name: Deploy services", maxsplit=1)[1].split(
+        "- name: Validate services", maxsplit=1
+    )[0]
+    assert "steps.scope.outputs.deployment_scope == 'full'" in deploy_step
+
+
+def test_cd_workflow_and_extra_vars_have_no_hermes_secret_dependencies():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+    script = (REPO_ROOT / "scripts" / "ci" / "write_ansible_extra_vars.py").read_text(
+        encoding="utf-8"
+    )
+
+    for removed_name in (
+        "HERMES_DISCORD_BOT_TOKEN",
+        "HERMES_DISCORD_ALLOWED_USERS",
+        "HERMES_DISCORD_HOME_CHANNEL",
+        "PARALLEL_API_KEY",
+        "FIRECRAWL_API_KEY",
+        "BROWSERBASE_API_KEY",
+        "BROWSERBASE_PROJECT_ID",
+        "HONCHO_API_KEY",
+        "OP_SERVICE_ACCOUNT_TOKEN",
+    ):
+        assert removed_name not in workflow
+        assert removed_name not in script
+
+
+def test_fast_path_trusts_only_the_docker_lxc_via_proxmox():
+    playbook = yaml.safe_load(
+        (REPO_ROOT / "infra" / "ansible" / "playbooks" / "trust-docker-apps.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    play = playbook[0]
+    by_name = {task["name"]: task for task in play["tasks"]}
+
+    assert play["hosts"] == "pve_hosts"
+    read_key = by_name["Read the Docker application LXC SSH host key through Proxmox"]
+    assert "{{ docker_apps_lxc.vmid }}" in read_key["ansible.builtin.command"]["argv"]
+    assert "pve_lxc_access_bootstrap" in play["vars"]["docker_apps_lxc"]
+    assert "/etc/ssh/ssh_host_ed25519_key.pub" in read_key["ansible.builtin.command"]["argv"]
+    trust = by_name["Trust the Docker application LXC SSH host key"]
+    assert trust["delegate_to"] == "localhost"
+    wait = by_name["Wait for the Docker application LXC SSH port"]
+    assert wait["delegate_to"] == "localhost"
+    assert wait["ansible.builtin.wait_for"]["timeout"] == 60
+
+
 def test_cd_workflow_parallelizes_service_deploy_and_validate():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"
@@ -87,6 +179,9 @@ def test_parallel_ansible_runner_derives_service_targets_from_topology():
     assert "wait" in runner
     assert "failed=1" in runner
     assert "load_containers" in target_renderer
+    assert 'ANSIBLE_DEPLOYMENT_SCOPE:-full' in runner
+    assert 'TARGETS="docker_apps:svc_docker_apps"' in runner
+    assert "Arcane scope deploys workloads through Arcane" in runner
 
 
 def test_parallel_validate_runner_includes_pve_drift_validation_target():

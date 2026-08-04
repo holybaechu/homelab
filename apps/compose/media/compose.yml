@@ -30,6 +30,7 @@ services:
       - default
       - proxy
     labels:
+      - com.getarcaneapp.arcane.updater=false
       - traefik.enable=true
       - traefik.docker.network=homelab_proxy
       - traefik.http.routers.qbt-vpn.rule=Host(`qbt.home.hchu.me`)
@@ -57,6 +58,7 @@ services:
     networks:
       - proxy
     labels:
+      - com.getarcaneapp.arcane.updater=false
       - traefik.enable=true
       - traefik.docker.network=homelab_proxy
       - traefik.http.routers.qbt.rule=Host(`public.qbt.home.hchu.me`)
@@ -81,6 +83,8 @@ services:
       - /srv/homelab/docker-apps/qbittorrent-vpn:/config:rw
       - /srv/homelab/downloads:/downloads:rw
       - /srv/homelab/copyparty/public:/public:rw
+    labels:
+      - com.getarcaneapp.arcane.updater=false
 
   copyparty:
     image: copyparty/ac:1.20.20
@@ -96,6 +100,7 @@ services:
     networks:
       - proxy
     labels:
+      - com.getarcaneapp.arcane.updater=false
       - traefik.enable=true
       - traefik.docker.network=homelab_proxy
       - traefik.http.routers.copyparty.rule=Host(`copyparty.hchu.me`)
@@ -114,6 +119,7 @@ services:
     networks:
       - proxy
     labels:
+      - com.getarcaneapp.arcane.updater=false
       - traefik.enable=true
       - traefik.docker.network=homelab_proxy
       - traefik.http.routers.metube.rule=Host(`metube.home.hchu.me`)

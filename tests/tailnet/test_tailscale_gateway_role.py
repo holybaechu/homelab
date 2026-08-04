@@ -225,6 +225,12 @@ def test_tailscale_upgrade_defers_self_restart_and_recovers_stale_binary():
     assert task_names.index("Reset the deterministic tailscaled restart units") < task_names.index(
         "Schedule the deterministic tailscaled restart"
     )
+    reset_failed = by_name["Reset the deterministic tailscaled restart units"]
+    assert reset_failed["loop"] == [
+        "tailscaled-ansible-restart.timer",
+        "tailscaled-ansible-restart.service",
+    ]
+    assert "not loaded" in reset_failed["failed_when"]
     assert task_names.index("Remove the previous tailscaled restart completion proof") < task_names.index(
         "Write the requested tailscaled restart identifier"
     ) < task_names.index("Schedule the deterministic tailscaled restart")
