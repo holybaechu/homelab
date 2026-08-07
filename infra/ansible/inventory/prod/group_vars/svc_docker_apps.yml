@@ -58,8 +58,6 @@ adguard_dns_filters:
     name: HaGeZi's Pro Blocklist
     id: 48
 
-proton_server_country: Japan
-proton_wireguard_address: 10.2.0.2/32
 qbittorrent_webui_username: holybaechu
 qbittorrent_direct_peer_port: 35435
 qbittorrent_instances:
@@ -67,10 +65,6 @@ qbittorrent_instances:
     config_root: /srv/homelab/docker-apps/qbittorrent
     connection_interface: ""
     peer_port: 35435
-  - service_name: qbittorrent-vpn
-    config_root: /srv/homelab/docker-apps/qbittorrent-vpn
-    connection_interface: tun0
-    peer_port: 0
 copyparty_listen_port: 3923
 
 retired_docker_compose_projects:
@@ -83,6 +77,19 @@ retired_docker_compose_projects:
 
 retired_docker_images:
   - homelab/hermes-agent:local
+  - qmcgaw/gluetun:v3.41.3
+
+retired_docker_volumes:
+  - homelab_gluetun_data
+
+retired_docker_networks:
+  - media_default
+
+retired_docker_compose_services:
+  - project: media
+    service: gluetun
+  - project: media
+    service: qbittorrent-vpn
 
 docker_compose_projects:
   - name: platform

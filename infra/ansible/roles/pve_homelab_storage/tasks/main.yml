@@ -9,6 +9,7 @@
     tmp_mount="/mnt/{{ homelab_data_lv_name }}-init"
     permissions_marker="${mount_path}/.homelab-two-lxc-permissions-v1"
     migration_marker="${mount_path}/.homelab-two-lxc-data-migrated-v1"
+    retired_qbittorrent_vpn_path="${mount_path}/docker-apps/qbittorrent-vpn"
 
     if [ ! -e "${lv_path}" ]; then
       lvcreate -V "{{ homelab_data_lv_size }}" -T pve/data -n "{{ homelab_data_lv_name }}"
@@ -39,19 +40,11 @@
 
     mkdir -p \
       "${mount_path}/docker-apps/qbittorrent/qBittorrent" \
-      "${mount_path}/docker-apps/qbittorrent-vpn/qBittorrent" \
       "${mount_path}/docker-apps/copyparty" \
       "${mount_path}/downloads/complete" \
       "${mount_path}/downloads/incomplete" \
       "${mount_path}/copyparty/public" \
       "${mount_path}/copyparty/shared-readonly"
-
-    qbittorrent_vpn_path="${mount_path}/docker-apps/qbittorrent-vpn"
-    if [ "$(stat -c '%u:%g' "${qbittorrent_vpn_path}")" != "${app_uid}:${app_uid}" ]; then
-      chown -R "${app_uid}:${app_uid}" "${qbittorrent_vpn_path}"
-      find "${qbittorrent_vpn_path}" -type d -exec chmod 0755 {} +
-      changed=1
-    fi
 
     mounted_vmid=""
     cleanup_lxc_mount() {
@@ -93,14 +86,19 @@
     fi
 
     if [ ! -e "${permissions_marker}" ] || [ "{{ homelab_data_reconcile_permissions | default(false) | lower }}" = "true" ]; then
+      chown "${app_uid}:${app_uid}" "${mount_path}/docker-apps"
+      find "${mount_path}/docker-apps" \
+        -mindepth 1 -maxdepth 1 \
+        ! -path "${retired_qbittorrent_vpn_path}" \
+        -exec chown -R "${app_uid}:${app_uid}" {} +
       chown -R "${app_uid}:${app_uid}" \
-        "${mount_path}/docker-apps" \
         "${mount_path}/downloads" \
         "${mount_path}/copyparty"
       find \
         "${mount_path}/docker-apps" \
         "${mount_path}/downloads" \
         "${mount_path}/copyparty" \
+        -path "${retired_qbittorrent_vpn_path}" -prune -o \
         -type d -exec chmod 0755 {} +
       touch "${permissions_marker}"
       changed=1

@@ -5,9 +5,14 @@
 `ansible` configures Tailscale directly on the tailnet appliance, Docker Engine
 and the two workload Compose projects (`platform` and `media`) on the
 application LXC, and the separate Arcane management control plane. It also
-applies root-only Proxmox settings
-such as `/dev/net/tun`, nesting, and the shared data bind mount.
+applies root-only Proxmox settings. VMID 111 retains `/dev/net/tun` for
+Tailscale. VMID 110 has no TUN passthrough; it retains only the Docker
+nesting/keyctl settings and shared data bind mount required by the application
+stack.
 The retired Hermes data at `/srv/homelab/hermes` is preserved but unmanaged.
+The retired VPN qBittorrent data at
+`/srv/homelab/docker-apps/qbittorrent-vpn` is likewise preserved but unmanaged
+for recovery.
 
 Arcane may perform fast day-to-day workload operations, but it does not own its
 own installation or the LXC. OpenTofu and Ansible remain the authoritative

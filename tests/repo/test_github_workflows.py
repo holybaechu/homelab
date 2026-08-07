@@ -132,6 +132,19 @@ def test_cd_workflow_and_extra_vars_have_no_hermes_secret_dependencies():
         assert removed_name not in script
 
 
+def test_cd_workflow_and_extra_vars_have_no_retired_proton_secret_dependency():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+    script = (REPO_ROOT / "scripts" / "ci" / "write_ansible_extra_vars.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "PROTON_WIREGUARD_PRIVATE_KEY" not in workflow
+    assert "PROTON_WIREGUARD_PRIVATE_KEY" not in script
+    assert "proton_wireguard_private_key" not in script
+
+
 def test_fast_path_trusts_only_the_docker_lxc_via_proxmox():
     playbook = yaml.safe_load(
         (REPO_ROOT / "infra" / "ansible" / "playbooks" / "trust-docker-apps.yml").read_text(

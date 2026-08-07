@@ -13,6 +13,12 @@
           exit 1
         }
         {% endfor %}
+        {% for setting in item.absent_settings | default([]) %}
+        if printf '%s\n' "$config" | grep -Eq '{{ setting.pattern }}'; then
+          printf 'Unexpected {{ setting.description }} on {{ item.name }} ({{ item.vmid }})\n' >&2
+          exit 1
+        fi
+        {% endfor %}
       args:
         executable: /bin/sh
       changed_when: false
@@ -196,6 +202,25 @@
         chdir: "{{ docker_apps_compose_root }}/media"
       changed_when: false
 
+    - name: Check AdGuard Safe Search is disabled
+      ansible.builtin.shell: |
+        set -eu
+        safe_search_enabled="$(
+          awk '
+            /^  safe_search:$/ { in_safe_search = 1; next }
+            in_safe_search && /^    enabled:/ { print $2; exit }
+            in_safe_search && /^  [^ ]/ { exit }
+          ' adguard/AdGuardHome.yaml
+        )"
+        test "${safe_search_enabled}" = false
+        docker compose exec -T adguard \
+          /opt/adguardhome/AdGuardHome --check-config \
+          -c /opt/adguardhome/conf/AdGuardHome.yaml
+      args:
+        executable: /bin/sh
+        chdir: "{{ docker_apps_compose_root }}/platform"
+      changed_when: false
+
     - name: Query AdGuard normal DNS
       ansible.builtin.command: dig +short @127.0.0.1 example.com A
       register: adguard_dns_query
@@ -209,7 +234,6 @@
       failed_when: docker_apps_ip not in adguard_private_query.stdout_lines
       loop:
         - qbt.home.hchu.me
-        - public.qbt.home.hchu.me
         - metube.home.hchu.me
         - "{{ arcane_hostname }}"
 
@@ -231,9 +255,31 @@
       loop:
         - adguard.home.hchu.me
         - qbt.home.hchu.me
-        - public.qbt.home.hchu.me
         - metube.home.hchu.me
         - "{{ arcane_hostname }}"
+
+    - name: Check retired public qBittorrent route is absent
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --silent
+          - --show-error
+          - --insecure
+          - --output
+          - /dev/null
+          - --write-out
+          - "%{http_code}"
+          - --resolve
+          - public.qbt.home.hchu.me:443:127.0.0.1
+          - https://public.qbt.home.hchu.me/
+      register: retired_public_qbittorrent_route
+      changed_when: false
+      failed_when: false
+      retries: 12
+      delay: 10
+      until: >-
+        retired_public_qbittorrent_route.rc == 0 and
+        retired_public_qbittorrent_route.stdout == '404'
 
     - name: Check public Copyparty route
       ansible.builtin.command:
@@ -251,28 +297,21 @@
       delay: 10
       until: public_copyparty_route.rc == 0
 
-    - name: Check direct and VPN qBittorrent use the intended public addresses
+    - name: Check qBittorrent uses the host public address
       ansible.builtin.shell: |
         set -eu
-        container_public_ip() {
-          docker compose exec -T "$1" sh -c '
+        host_ip="$(curl -4fsS https://api.ipify.org)"
+        qbittorrent_ip="$(
+          docker compose exec -T qbittorrent sh -c '
             if command -v curl >/dev/null 2>&1; then
               exec curl -4fsS https://api.ipify.org
             fi
             exec wget -qO- https://api.ipify.org
           '
-        }
-        host_ip="$(curl -4fsS https://api.ipify.org)"
-        direct_ip="$(container_public_ip qbittorrent)"
-        vpn_ip="$(container_public_ip qbittorrent-vpn)"
-        gluetun_ip="$(docker compose exec -T gluetun wget -qO- https://api.ipify.org)"
+        )"
         test -n "$host_ip"
-        test -n "$direct_ip"
-        test -n "$vpn_ip"
-        test -n "$gluetun_ip"
-        test "$host_ip" = "$direct_ip"
-        test "$host_ip" != "$vpn_ip"
-        test "$vpn_ip" = "$gluetun_ip"
+        test -n "$qbittorrent_ip"
+        test "$host_ip" = "$qbittorrent_ip"
       args:
         executable: /bin/sh
         chdir: "{{ docker_apps_compose_root }}/media"
@@ -298,30 +337,56 @@
         chdir: "{{ docker_apps_compose_root }}/media"
       changed_when: false
 
-    - name: Check Gluetun received a Proton forwarded port
+    - name: Assert retired Compose service containers are absent
       ansible.builtin.command:
-        cmd: docker compose exec -T gluetun cat /tmp/gluetun/forwarded_port
-        chdir: "{{ docker_apps_compose_root }}/media"
-      register: gluetun_forwarded_port
+        argv:
+          - docker
+          - ps
+          - --all
+          - --quiet
+          - --filter
+          - "label=com.docker.compose.project={{ item.project }}"
+          - --filter
+          - "label=com.docker.compose.service={{ item.service }}"
+      loop: "{{ retired_docker_compose_services | default([]) }}"
+      loop_control:
+        label: "{{ item.project }}:{{ item.service }}"
+      register: retired_docker_compose_service_validation
       changed_when: false
-      retries: 12
-      delay: 10
-      until: gluetun_forwarded_port.stdout | trim | int > 0
+      failed_when: retired_docker_compose_service_validation.stdout | trim | length > 0
 
-    - name: Check Proton forwarded port is applied to VPN qBittorrent
-      ansible.builtin.shell: |
-        set -eu
-        applied_state="$(
-          docker compose exec -T gluetun \
-            wget -qO- http://127.0.0.1:8080/api/v2/app/preferences \
-            | python3 -c 'import json, sys; p = json.load(sys.stdin); print(p.get("listen_port", 0), p.get("current_network_interface", ""))'
-        )"
-        test "${applied_state}" = "{{ gluetun_forwarded_port.stdout | trim }} tun0"
-      args:
-        executable: /bin/sh
-        chdir: "{{ docker_apps_compose_root }}/media"
+    - name: Assert retired Docker volumes are absent
+      ansible.builtin.command:
+        argv:
+          - docker
+          - volume
+          - inspect
+          - "{{ item }}"
+      loop: "{{ retired_docker_volumes | default([]) }}"
+      register: retired_docker_volume_validation
       changed_when: false
-      register: qbittorrent_vpn_forwarded_port
-      retries: 12
-      delay: 10
-      until: qbittorrent_vpn_forwarded_port.rc == 0
+      failed_when: retired_docker_volume_validation.rc != 1
+
+    - name: Assert retired Docker networks are absent
+      ansible.builtin.command:
+        argv:
+          - docker
+          - network
+          - inspect
+          - "{{ item }}"
+      loop: "{{ retired_docker_networks | default([]) }}"
+      register: retired_docker_network_validation
+      changed_when: false
+      failed_when: retired_docker_network_validation.rc != 1
+
+    - name: Assert retired local Docker images are absent
+      ansible.builtin.command:
+        argv:
+          - docker
+          - image
+          - inspect
+          - "{{ item }}"
+      loop: "{{ retired_docker_images | default([]) }}"
+      register: retired_docker_image_validation
+      changed_when: false
+      failed_when: retired_docker_image_validation.rc != 1

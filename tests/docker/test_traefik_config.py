@@ -42,3 +42,13 @@ def test_adguard_uses_host_network_only_for_plain_dns_and_private_admin():
     assert "address: 0.0.0.0:{{ adguard_admin_port }}" in template
     assert "enabled: false" in template.split("tls:", 1)[1]
     assert "port_dns_over_tls" not in template
+
+
+def test_adguard_safe_search_is_disabled():
+    template = (
+        REPO_ROOT
+        / "infra/ansible/roles/docker_compose_project/templates/AdGuardHome.yaml.j2"
+    ).read_text(encoding="utf-8")
+    safe_search = template.split("  safe_search:", 1)[1].split("querylog:", 1)[0]
+
+    assert "    enabled: false" in safe_search

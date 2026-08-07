@@ -5,7 +5,6 @@
       - cloudflare_traefik_token is defined and cloudflare_traefik_token | length > 0
       - cloudflare_ddns_token is defined and cloudflare_ddns_token | length > 0
       - adguard_admin_password is defined and adguard_admin_password | length > 0
-      - proton_wireguard_private_key is defined and proton_wireguard_private_key | length > 0
       - qbittorrent_webui_password is defined and qbittorrent_webui_password | length > 0
       - copyparty_users is defined and copyparty_users | length > 0
     fail_msg: Configure every required prod secret before deploying the consolidated Compose host.
@@ -65,7 +64,6 @@
     - {path: "{{ docker_apps_compose_root }}", owner: "{{ service_uid }}", group: "{{ service_gid }}"}
     - {path: "{{ docker_apps_compose_root }}/platform/adguard", mode: "0750"}
     - {path: /srv/homelab/docker-apps/qbittorrent/qBittorrent, mode: "0700"}
-    - {path: /srv/homelab/docker-apps/qbittorrent-vpn/qBittorrent, mode: "0700"}
     - {path: /srv/homelab/docker-apps/copyparty}
     - {path: /srv/homelab/downloads/complete}
     - {path: /srv/homelab/downloads/incomplete}
@@ -98,29 +96,6 @@
   loop: "{{ retired_docker_compose_projects | default([]) }}"
   loop_control:
     label: "{{ item.name }}"
-
-- name: Inspect retired local Docker images
-  ansible.builtin.command:
-    argv:
-      - docker
-      - image
-      - inspect
-      - "{{ item }}"
-  loop: "{{ retired_docker_images | default([]) }}"
-  register: retired_docker_image_inspections
-  changed_when: false
-  failed_when: retired_docker_image_inspections.rc not in [0, 1]
-
-- name: Remove retired local Docker images
-  ansible.builtin.command:
-    argv:
-      - docker
-      - image
-      - rm
-      - "{{ item.item }}"
-  loop: "{{ retired_docker_image_inspections.results }}"
-  when: item.rc == 0
-  changed_when: true
 
 - name: Assert no Hermes Compose containers remain
   ansible.builtin.command:
@@ -402,33 +377,107 @@
 - name: Apply requested Compose project recreations
   ansible.builtin.meta: flush_handlers
 
-- name: Reconcile Proton forwarded port with VPN qBittorrent
-  ansible.builtin.shell: |
-    set -eu
-    forwarded_port="$(docker compose exec -T gluetun cat /tmp/gluetun/forwarded_port)"
-    case "${forwarded_port}" in
-      ''|*[!0-9]*) exit 1 ;;
-    esac
-    test "${forwarded_port}" -gt 0
-    applied_state="$(
-      docker compose exec -T gluetun \
-        wget -qO- http://127.0.0.1:8080/api/v2/app/preferences \
-        | python3 -c 'import json, sys; p = json.load(sys.stdin); print(p.get("listen_port", 0), p.get("current_network_interface", ""))'
-    )"
-    if [ "${applied_state}" = "${forwarded_port} tun0" ]; then
-      echo changed=no
-      exit 0
-    fi
-    docker compose exec -T gluetun wget -qO- \
-      --post-data \
-      "json={\"listen_port\":${forwarded_port},\"current_network_interface\":\"tun0\",\"random_port\":false,\"upnp\":false}" \
-      http://127.0.0.1:8080/api/v2/app/setPreferences >/dev/null
-    echo changed=yes
-  args:
-    executable: /bin/sh
-    chdir: "{{ docker_apps_compose_root }}/media"
-  register: qbittorrent_vpn_forwarding_reconcile
-  changed_when: "'changed=yes' in qbittorrent_vpn_forwarding_reconcile.stdout"
+- name: Verify AdGuard runtime Safe Search is disabled
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ adguard_admin_port }}/control/safesearch/status"
+    method: GET
+    url_username: "{{ adguard_admin_username }}"
+    url_password: "{{ adguard_admin_password }}"
+    force_basic_auth: true
+    status_code: 200
+    return_content: true
+  register: adguard_safe_search_runtime
+  changed_when: false
   retries: 12
-  delay: 10
-  until: qbittorrent_vpn_forwarding_reconcile.rc == 0
+  delay: 5
+  until:
+    - adguard_safe_search_runtime.status == 200
+    - not (adguard_safe_search_runtime.json.enabled | default(true) | bool)
+  no_log: true
+
+- name: Assert retired Compose service containers are absent
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - --all
+      - --quiet
+      - --filter
+      - "label=com.docker.compose.project={{ item.project }}"
+      - --filter
+      - "label=com.docker.compose.service={{ item.service }}"
+  loop: "{{ retired_docker_compose_services | default([]) }}"
+  loop_control:
+    label: "{{ item.project }}:{{ item.service }}"
+  register: retired_docker_compose_service_containers
+  changed_when: false
+  failed_when: retired_docker_compose_service_containers.stdout | trim | length > 0
+
+- name: Inspect retired Docker volumes
+  ansible.builtin.command:
+    argv:
+      - docker
+      - volume
+      - inspect
+      - "{{ item }}"
+  loop: "{{ retired_docker_volumes | default([]) }}"
+  register: retired_docker_volume_inspections
+  changed_when: false
+  failed_when: retired_docker_volume_inspections.rc not in [0, 1]
+
+- name: Remove retired Docker volumes
+  ansible.builtin.command:
+    argv:
+      - docker
+      - volume
+      - rm
+      - "{{ item.item }}"
+  loop: "{{ retired_docker_volume_inspections.results }}"
+  when: item.rc == 0
+  changed_when: true
+
+- name: Inspect retired Docker networks
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - inspect
+      - "{{ item }}"
+  loop: "{{ retired_docker_networks | default([]) }}"
+  register: retired_docker_network_inspections
+  changed_when: false
+  failed_when: retired_docker_network_inspections.rc not in [0, 1]
+
+- name: Remove retired Docker networks
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - rm
+      - "{{ item.item }}"
+  loop: "{{ retired_docker_network_inspections.results }}"
+  when: item.rc == 0
+  changed_when: true
+
+- name: Inspect retired local Docker images
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - "{{ item }}"
+  loop: "{{ retired_docker_images | default([]) }}"
+  register: retired_docker_image_inspections
+  changed_when: false
+  failed_when: retired_docker_image_inspections.rc not in [0, 1]
+
+- name: Remove retired local Docker images
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - rm
+      - "{{ item.item }}"
+  loop: "{{ retired_docker_image_inspections.results }}"
+  when: item.rc == 0
+  changed_when: true

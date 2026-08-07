@@ -23,7 +23,7 @@ def test_compose_role_reconciles_projects_in_declared_order():
     assert variables.index("name: platform") < variables.index("name: media")
 
 
-def test_compose_role_manages_both_qbittorrent_configs_before_startup():
+def test_compose_role_manages_the_qbittorrent_config_before_startup():
     tasks = (
         REPO_ROOT
         / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
@@ -35,7 +35,7 @@ def test_compose_role_manages_both_qbittorrent_configs_before_startup():
 
     assert "qbittorrent_instances" in variables
     assert "service_name: qbittorrent" in variables
-    assert "service_name: qbittorrent-vpn" in variables
+    assert "service_name: qbittorrent-vpn" not in variables
     assert 'loop: "{{ qbittorrent_instances }}"' in tasks
     assert "qbittorrent_config_compare.results" in tasks
     assert tasks.index("Render Compose project environment files") < tasks.index(
@@ -51,10 +51,57 @@ def test_compose_role_manages_both_qbittorrent_configs_before_startup():
     assert 'docker ps -q --filter "publish={{ qbittorrent_direct_peer_port }}"' not in tasks
     assert 'test "${owner}" = "${direct_container}"' in tasks
     assert tasks.index("Build and start Compose projects in dependency order") < tasks.index(
-        "Reconcile Proton forwarded port with VPN qBittorrent"
+        "Assert retired Compose service containers are absent"
     )
     assert "flush_handlers" in tasks
-    assert "current_network_interface" in tasks
+    assert "current_network_interface" not in tasks
+
+
+def test_compose_role_removes_retired_vpn_runtime_artifacts_after_orphans():
+    tasks = (
+        REPO_ROOT
+        / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
+    ).read_text(encoding="utf-8")
+    variables = (
+        REPO_ROOT
+        / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
+    ).read_text(encoding="utf-8")
+    parsed_variables = yaml.safe_load(variables)
+
+    compose_up = tasks.index("Build and start Compose projects in dependency order")
+    assert compose_up < tasks.index("Assert retired Compose service containers are absent")
+    assert compose_up < tasks.index("Remove retired Docker volumes")
+    assert compose_up < tasks.index("Remove retired Docker networks")
+    assert compose_up < tasks.index("Remove retired local Docker images")
+    assert parsed_variables["retired_docker_compose_services"] == [
+        {"project": "media", "service": "gluetun"},
+        {"project": "media", "service": "qbittorrent-vpn"},
+    ]
+    assert parsed_variables["retired_docker_volumes"] == ["homelab_gluetun_data"]
+    assert parsed_variables["retired_docker_networks"] == ["media_default"]
+    assert "qmcgaw/gluetun:v3.41.3" in parsed_variables["retired_docker_images"]
+
+
+def test_compose_role_verifies_adguard_safe_search_runtime_without_logging_secrets():
+    tasks_path = REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
+    tasks_text = tasks_path.read_text(encoding="utf-8")
+    tasks = yaml.safe_load(tasks_text)
+    runtime_check = next(
+        task
+        for task in tasks
+        if task["name"] == "Verify AdGuard runtime Safe Search is disabled"
+    )
+
+    assert tasks_text.index("Apply requested Compose project recreations") < tasks_text.index(
+        "Verify AdGuard runtime Safe Search is disabled"
+    )
+    assert runtime_check["ansible.builtin.uri"]["url"].endswith(
+        "/control/safesearch/status"
+    )
+    assert runtime_check["ansible.builtin.uri"]["force_basic_auth"] is True
+    assert runtime_check["ansible.builtin.uri"]["url_password"] == "{{ adguard_admin_password }}"
+    assert runtime_check["no_log"] is True
+    assert any("json.enabled" in condition for condition in runtime_check["until"])
 
 
 def test_compose_role_removes_retired_projects_and_hermes_image():
@@ -72,7 +119,10 @@ def test_compose_role_removes_retired_projects_and_hermes_image():
     assert {"name": "hermes", "dest": "{{ docker_apps_compose_root }}/hermes"} in (
         parsed_variables["retired_docker_compose_projects"]
     )
-    assert parsed_variables["retired_docker_images"] == ["homelab/hermes-agent:local"]
+    assert parsed_variables["retired_docker_images"] == [
+        "homelab/hermes-agent:local",
+        "qmcgaw/gluetun:v3.41.3",
+    ]
 
     remove_image = next(
         task for task in parsed_tasks if task["name"] == "Remove retired local Docker images"

@@ -22,7 +22,7 @@ def _posix_shell_command(script: str) -> list[str]:
     return [git_shell, git_path]
 
 
-def test_validation_checks_compose_dns_vpn_routes_and_arcane():
+def test_validation_checks_compose_dns_qbittorrent_routes_and_arcane():
     validate = (REPO_ROOT / "infra/ansible/playbooks/validate.yml").read_text(encoding="utf-8")
 
     assert "Validate Docker Compose application host" in validate
@@ -37,15 +37,21 @@ def test_validation_checks_compose_dns_vpn_routes_and_arcane():
     assert "arcane.home.hchu.me" in validate or "arcane_hostname" in validate
     assert "dig +short @127.0.0.1" in validate
     assert "qbt.home.hchu.me" in validate
-    assert validate.count("public.qbt.home.hchu.me") >= 2
+    assert validate.count("public.qbt.home.hchu.me") == 2
     assert "qbt-vpn.home.hchu.me" not in validate
     assert validate.count("metube.home.hchu.me") >= 2
     assert "copyparty.hchu.me" in validate
-    assert "host_ip" in validate and "direct_ip" in validate and "vpn_ip" in validate
-    assert 'test "$host_ip" = "$direct_ip"' in validate
-    assert 'test "$host_ip" != "$vpn_ip"' in validate
+    assert "host_ip" in validate and "qbittorrent_ip" in validate
+    assert 'test "$host_ip" = "$qbittorrent_ip"' in validate
+    assert "vpn_ip" not in validate
     assert "docker port" in validate
-    assert "current_network_interface" in validate
+    assert "current_network_interface" not in validate
+    assert "Check AdGuard Safe Search is disabled" in validate
+    assert "safe_search_enabled" in validate
+    assert "Assert retired Compose service containers are absent" in validate
+    assert "Assert retired Docker volumes are absent" in validate
+    assert "Assert retired Docker networks are absent" in validate
+    assert "Assert retired local Docker images are absent" in validate
     assert "hermes status" not in validate
 
 
@@ -61,6 +67,8 @@ def test_validation_proves_vuetorrent_assets_config_and_route():
     assert "docker compose exec -T qbittorrent test -f" not in validation
     assert "qbt.home.hchu.me" in validation
     assert "public.qbt.home.hchu.me" in validation
+    assert "--insecure" in validation
+    assert "retired_public_qbittorrent_route.stdout == '404'" in validation
 
 
 def test_vuetorrent_validator_reports_every_internal_diagnostic_before_failing():

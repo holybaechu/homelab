@@ -4,6 +4,10 @@ from tests.helpers import REPO_ROOT
 def test_root_only_lxc_options_use_graceful_shutdown_before_stop():
     tasks = (REPO_ROOT / "infra/ansible/roles/pve_lxc_root_options/tasks/main.yml").read_text(encoding="utf-8")
     assert tasks.index("pct shutdown") < tasks.index("pct stop")
+    assert "item.absent_settings | default([])" in tasks
+    assert "pct set \"${vmid}\" {{ setting.pct_args }}" in tasks
+    assert tasks.index("trap restart_if_needed EXIT") < tasks.index("pct shutdown")
+    assert 'restart=0\n    fi\n    trap - EXIT' in tasks
 
 
 def test_storage_permissions_are_migrated_once_for_consolidated_uid_map():
@@ -38,20 +42,28 @@ def test_retired_hermes_data_is_left_untouched():
     assert "retired_docker_data_paths" not in app_variables
 
 
-def test_vpn_qbittorrent_storage_gets_mapped_ownership_after_v1_migration():
-    tasks = (
+def test_retired_vpn_qbittorrent_state_is_preserved_but_no_longer_managed():
+    storage_tasks = (
         REPO_ROOT / "infra/ansible/roles/pve_homelab_storage/tasks/main.yml"
     ).read_text(encoding="utf-8")
-    targeted_ownership = tasks.split('qbittorrent_vpn_path="', 1)[1].split(
-        'mounted_vmid=""', 1
-    )[0]
-
-    assert "docker-apps/qbittorrent-vpn/qBittorrent" in tasks
-    assert "stat -c '%u:%g'" in targeted_ownership
-    assert 'chown -R "${app_uid}:${app_uid}" "${qbittorrent_vpn_path}"' in targeted_ownership
-    assert tasks.index('qbittorrent_vpn_path="') < tasks.index(
-        'if [ ! -e "${permissions_marker}" ]'
+    compose_tasks = (
+        REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
+    ).read_text(encoding="utf-8")
+    compose = (REPO_ROOT / "apps/compose/media/compose.yml").read_text(
+        encoding="utf-8"
     )
+    docs = (REPO_ROOT / "apps/compose/media/README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'retired_qbittorrent_vpn_path="${mount_path}/docker-apps/qbittorrent-vpn"' in storage_tasks
+    assert '! -path "${retired_qbittorrent_vpn_path}"' in storage_tasks
+    assert '-path "${retired_qbittorrent_vpn_path}" -prune -o' in storage_tasks
+    assert 'chown -R "${app_uid}:${app_uid}" "${retired_qbittorrent_vpn_path}"' not in storage_tasks
+    assert "/srv/homelab/docker-apps/qbittorrent-vpn" not in compose_tasks
+    assert "/srv/homelab/docker-apps/qbittorrent-vpn" not in compose
+    assert "/srv/homelab/docker-apps/qbittorrent-vpn" in docs
+    assert "preserved but unmanaged" in docs
 
 
 def test_legacy_lxcs_stop_before_shared_storage_is_reowned():

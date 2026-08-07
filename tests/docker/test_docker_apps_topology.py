@@ -30,11 +30,16 @@ def test_retired_lxcs_are_forgotten_without_destruction():
     assert main.count("destroy = false") == 2
 
 
-def test_docker_lxc_gets_tun_and_one_data_root_mount():
+def test_only_tailnet_keeps_tun_and_docker_lxc_removes_its_retired_device():
     all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
+    tailnet = all_vars.split("  - vmid: 111", 1)[1].split("  - vmid: 110", 1)[0]
     docker = all_vars.split("  - vmid: 110", 1)[1].split("pve_lxc_access_bootstrap:", 1)[0]
 
-    assert "pass through tun device for Gluetun" in docker
+    assert "pass through tun device for Tailscale" in tailnet
+    assert "retired Gluetun TUN device" in docker
+    assert "absent_settings:" in docker
+    assert "pct_args: '-delete dev0'" in docker
+    assert "pass through tun device for Gluetun" not in docker
     assert "enable nesting for Docker Engine in LXC" in docker
     assert "-mp0 /var/lib/homelab,mp=/srv/homelab" in docker
     assert "-mp1" not in docker

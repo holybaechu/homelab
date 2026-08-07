@@ -11,7 +11,13 @@ The managed production topology contains exactly two LXCs:
 The Docker host runs two workload projects in dependency order:
 
 1. `platform`: Traefik, AdGuard Home, and Cloudflare DDNS.
-2. `media`: Gluetun, qBittorrent, and Copyparty.
+2. `media`: one direct qBittorrent instance, Copyparty, and MeTube. The
+   qBittorrent Web UI is private at `https://qbt.home.hchu.me`, while peer port
+   `35435` is published over TCP and UDP for direct inbound connectivity.
+
+VMID 111 retains `/dev/net/tun` for Tailscale. VMID 110 has no TUN
+passthrough because the application stack no longer contains Gluetun or any
+other VPN-routed service.
 
 Ansible also owns the separate `arcane-control` management project at
 `/opt/homelab-control/arcane`. Arcane manages the workload tree at
@@ -28,8 +34,12 @@ must migrate from an old service:
 - `/srv/homelab/docker-apps/copyparty`
 - `/srv/homelab/docker-apps/arcane/data`
 
-Use named volumes for opaque state owned by one application: Traefik ACME,
-AdGuard work data, and Gluetun state.
+Use named volumes for opaque state owned by one application: Traefik ACME and
+AdGuard work data.
+
+The retired VPN qBittorrent state at
+`/srv/homelab/docker-apps/qbittorrent-vpn` is intentionally preserved for
+manual recovery, but neither Ansible nor Arcane manages or mounts it.
 
 Hermes Agent is retired. `/srv/homelab/hermes` is intentionally preserved for
 manual recovery or later deletion, but neither Ansible nor Arcane manages it.
@@ -92,10 +102,11 @@ have the target hostnames.
 1. Change router TCP 80/443 forwards from the old edge IP to `192.168.0.3`.
 2. Keep router DHCP DNS at `192.168.0.3`.
 3. Renew a LAN DHCP lease and verify `dig @192.168.0.3 example.com`.
-4. Verify `copyparty.hchu.me`, private qBittorrent/AdGuard/Arcane routes, and
-   Tailscale routing.
-5. Confirm the qBittorrent public address differs from the Docker host address
-   and the forwarded port appears in Gluetun logs.
+4. Verify `copyparty.hchu.me`, `qbt.home.hchu.me`, the private AdGuard and
+   Arcane routes, and Tailscale routing.
+5. Confirm qBittorrent uses the Docker host's direct public address and that
+   TCP and UDP port `35435` are published. Keep the router forwarding WAN TCP
+   and UDP `35435` to `192.168.0.3:35435`.
 
 ## Data protection
 
@@ -108,6 +119,10 @@ that protect it must be preserved as one recovery unit. The database persists
 on the shared data mount; Ansible re-renders runtime-group-only secret files from
 the GitHub `prod` environment after an LXC root-filesystem replacement. This is
 not an off-host backup.
+
+The preserved `/srv/homelab/docker-apps/qbittorrent-vpn` tree is an unmanaged
+recovery artifact, not an active service or a backup. Protect or remove it
+manually according to the desired retention policy.
 
 ## Rollback
 

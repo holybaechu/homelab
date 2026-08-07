@@ -1,43 +1,6 @@
 name: media
 
 services:
-  gluetun:
-    image: qmcgaw/gluetun:v3.41.3
-    restart: unless-stopped
-    cap_add:
-      - NET_ADMIN
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    env_file: .env
-    environment:
-      VPN_PORT_FORWARDING: "on"
-      PORT_FORWARD_ONLY: "on"
-      HEALTH_SMALL_CHECK_TYPE: dns
-      HEALTH_TARGET_ADDRESSES: "cloudflare.com:443,github.com:443"
-      FIREWALL_INPUT_PORTS: "8080"
-      FIREWALL_OUTBOUND_SUBNETS: "192.168.0.0/24,100.64.0.0/10"
-      VPN_PORT_FORWARDING_UP_COMMAND: >-
-        /bin/sh -c 'wget -O- -nv --retry-connrefused --post-data
-        "json={\"listen_port\":{{PORT}},\"current_network_interface\":\"{{VPN_INTERFACE}}\",\"random_port\":false,\"upnp\":false}"
-        http://127.0.0.1:8080/api/v2/app/setPreferences'
-      VPN_PORT_FORWARDING_DOWN_COMMAND: >-
-        /bin/sh -c 'wget -O- -nv --retry-connrefused --post-data
-        "json={\"listen_port\":0,\"current_network_interface\":\"lo\"}"
-        http://127.0.0.1:8080/api/v2/app/setPreferences'
-    volumes:
-      - gluetun_data:/gluetun
-    networks:
-      - default
-      - proxy
-    labels:
-      - com.getarcaneapp.arcane.updater=false
-      - traefik.enable=true
-      - traefik.docker.network=homelab_proxy
-      - traefik.http.routers.qbt-vpn.rule=Host(`qbt.home.hchu.me`)
-      - traefik.http.routers.qbt-vpn.entrypoints=websecure
-      - traefik.http.routers.qbt-vpn.middlewares=private-only@file,secure-headers@file
-      - traefik.http.services.qbt-vpn.loadbalancer.server.port=8080
-
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:5.2.3
     restart: unless-stopped
@@ -61,30 +24,10 @@ services:
       - com.getarcaneapp.arcane.updater=false
       - traefik.enable=true
       - traefik.docker.network=homelab_proxy
-      - traefik.http.routers.qbt.rule=Host(`public.qbt.home.hchu.me`)
+      - traefik.http.routers.qbt.rule=Host(`qbt.home.hchu.me`)
       - traefik.http.routers.qbt.entrypoints=websecure
       - traefik.http.routers.qbt.middlewares=private-only@file,secure-headers@file
       - traefik.http.services.qbt.loadbalancer.server.port=8080
-
-  qbittorrent-vpn:
-    image: lscr.io/linuxserver/qbittorrent:5.2.3
-    restart: unless-stopped
-    network_mode: service:gluetun
-    depends_on:
-      gluetun:
-        condition: service_healthy
-    environment:
-      DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.34.1
-      PGID: "${PGID}"
-      PUID: "${PUID}"
-      TZ: "${TZ}"
-      WEBUI_PORT: "8080"
-    volumes:
-      - /srv/homelab/docker-apps/qbittorrent-vpn:/config:rw
-      - /srv/homelab/downloads:/downloads:rw
-      - /srv/homelab/copyparty/public:/public:rw
-    labels:
-      - com.getarcaneapp.arcane.updater=false
 
   copyparty:
     image: copyparty/ac:1.20.20
@@ -131,7 +74,3 @@ networks:
   proxy:
     external: true
     name: homelab_proxy
-
-volumes:
-  gluetun_data:
-    name: homelab_gluetun_data

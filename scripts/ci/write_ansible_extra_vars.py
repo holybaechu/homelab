@@ -15,7 +15,6 @@ REQUIRED_ENV = {
     "cloudflare_ddns_token": "CLOUDFLARE_DDNS_TOKEN",
     "adguard_admin_password": "ADGUARD_ADMIN_PASSWORD",
     "tailscale_auth_key": "TAILSCALE_AUTH_KEY",
-    "proton_wireguard_private_key": "PROTON_WIREGUARD_PRIVATE_KEY",
     "qbittorrent_webui_password": "QBITTORRENT_WEBUI_PASSWORD",
     "arcane_encryption_key": "ARCANE_ENCRYPTION_KEY",
     "arcane_jwt_secret": "ARCANE_JWT_SECRET",

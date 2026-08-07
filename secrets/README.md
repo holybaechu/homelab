@@ -6,7 +6,6 @@ Expected encrypted values:
 
 - `cloudflare_traefik_token`
 - `cloudflare_ddns_token`
-- `proton_wireguard_private_key`
 - `tailscale_auth_key`
 - `qbittorrent_webui_password`
 - `copyparty_users`, as a list of account objects with `name` and `password`
@@ -31,6 +30,9 @@ Non-secret deployment values:
 The CD helper validates both Arcane secrets before writing Ansible extra vars.
 It accepts only a 64-character hexadecimal encryption key and a JWT secret of
 at least 32 characters.
+
+The active topology has no Gluetun or Proton VPN service and requires no
+Proton or WireGuard credential.
 
 Do not commit decrypted secret files.
 

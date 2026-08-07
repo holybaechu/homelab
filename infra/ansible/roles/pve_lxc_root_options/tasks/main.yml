@@ -20,6 +20,11 @@
       needs_change=1
     fi
     {% endfor %}
+    {% for setting in item.absent_settings | default([]) %}
+    if printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
+      needs_change=1
+    fi
+    {% endfor %}
 
     if [ "${needs_change}" -eq 0 ]; then
       echo "changed=no"
@@ -27,6 +32,13 @@
     fi
 
     restart=0
+    restart_if_needed() {
+      if [ "${restart}" -eq 1 ]; then
+        pct start "${vmid}" >/dev/null 2>&1 || true
+      fi
+    }
+    trap restart_if_needed EXIT
+
     if pct status "${vmid}" | grep -Eq 'status: running'; then
       pct shutdown "${vmid}" --timeout 60 || pct stop "${vmid}"
       restart=1
@@ -37,10 +49,17 @@
       pct set "${vmid}" {{ setting.pct_args }}
     fi
     {% endfor %}
+    {% for setting in item.absent_settings | default([]) %}
+    if printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
+      pct set "${vmid}" {{ setting.pct_args }}
+    fi
+    {% endfor %}
 
     if [ "${restart}" -eq 1 ]; then
       pct start "${vmid}"
+      restart=0
     fi
+    trap - EXIT
 
     echo "changed=yes"
   args:

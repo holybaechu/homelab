@@ -57,11 +57,13 @@ version available from their configured apt repositories.
 - `CLOUDFLARE_DDNS_TOKEN`
 - `ADGUARD_ADMIN_PASSWORD`, as plaintext; Ansible hashes it before rendering or updating AdGuard Home config
 - `TAILSCALE_AUTH_KEY`
-- `PROTON_WIREGUARD_PRIVATE_KEY`
 - `QBITTORRENT_WEBUI_PASSWORD`
 - `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and plaintext `password`
 - `ARCANE_ENCRYPTION_KEY`, exactly 64 hexadecimal characters representing 32 bytes
 - `ARCANE_JWT_SECRET`, at least 32 characters
+
+The active topology has one direct qBittorrent instance and no Gluetun or
+Proton VPN service, so CD does not require a Proton or WireGuard secret.
 
 The Arcane Ansible role renders these stable values as mode-`0600` files under
 `/opt/homelab-control/arcane/secrets`. Keep the GitHub values stable and

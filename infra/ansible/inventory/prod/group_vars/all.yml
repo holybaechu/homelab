@@ -47,9 +47,6 @@ pve_lxc_root_options:
     bind_mount_sources:
       - /var/lib/homelab
     settings:
-      - description: pass through tun device for Gluetun
-        pattern: '^dev0: /dev/net/tun(,.*)?$'
-        pct_args: '-dev0 /dev/net/tun,mode=0666'
       - description: enable nesting for Docker Engine in LXC
         pattern: '^features:.*[ ,]nesting=1(,|$)'
         pct_args: '-features nesting=1,keyctl=1'
@@ -59,6 +56,10 @@ pve_lxc_root_options:
       - description: mount the homelab data root once
         pattern: '^mp0: /var/lib/homelab,mp=/srv/homelab(,.*)?$'
         pct_args: '-mp0 /var/lib/homelab,mp=/srv/homelab'
+    absent_settings:
+      - description: retired Gluetun TUN device
+        pattern: '^dev0: /dev/net/tun(,.*)?$'
+        pct_args: '-delete dev0'
 
 pve_lxc_access_bootstrap:
   - vmid: 111

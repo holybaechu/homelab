@@ -30,9 +30,6 @@ case "$*" in
   *"exec -T qbittorrent grep -Fx -- Connection\\Interface=tun0"*)
     test "${FAKE_DOCKER_SCENARIO}" = all_fail
     ;;
-  *"exec -T qbittorrent-vpn grep -Fx -- Connection\\Interface=tun0"*)
-    test "${FAKE_DOCKER_SCENARIO}" != all_fail
-    ;;
   *"printenv DOCKER_MODS")
     case "${FAKE_DOCKER_SCENARIO}" in
       success)
@@ -48,8 +45,7 @@ case "$*" in
         ;;
     esac
     ;;
-  "compose logs --no-color --tail 80 qbittorrent"|\
-  "compose logs --no-color --tail 80 qbittorrent-vpn")
+  "compose logs --no-color --tail 80 qbittorrent")
     if test "${FAKE_DOCKER_SCENARIO}" = command_fail; then
       printf '%s\n' 'logs-command-leak-z9Q7 ::error:: Bearer leaked-token' >&2
       exit 78
@@ -80,7 +76,7 @@ all_fail_status=$?
 set -e
 
 test "${all_fail_status}" -eq 1
-for service in qbittorrent qbittorrent-vpn; do
+for service in qbittorrent; do
   printf '%s\n' "${all_fail_output}" | grep -F \
     "FAIL ${service} asset: /vuetorrent/public/index.html is missing or inaccessible"
   printf '%s\n' "${all_fail_output}" | grep -F \
@@ -98,8 +94,6 @@ for service in qbittorrent qbittorrent-vpn; do
 done
 printf '%s\n' "${all_fail_output}" | grep -F \
   'FAIL qbittorrent config: direct instance is unexpectedly bound to tun0'
-printf '%s\n' "${all_fail_output}" | grep -F \
-  'FAIL qbittorrent-vpn config: exact Connection\Interface=tun0 is missing'
 
 for leaked_text in \
   'mod-leak-z9Q7' \
@@ -116,7 +110,7 @@ do
   fi
 done
 
-for service in qbittorrent qbittorrent-vpn; do
+for service in qbittorrent; do
   grep -F "exec -T ${service} test -f /vuetorrent/public/index.html" "${calls}"
   grep -F "exec -T ${service} printenv DOCKER_MODS" "${calls}"
   grep -Fx "compose logs --no-color --tail 80 ${service}" "${calls}"
@@ -133,7 +127,7 @@ success_output="$({
     sh "${validator}"
 } 2>&1)"
 
-for service in qbittorrent qbittorrent-vpn; do
+for service in qbittorrent; do
   printf '%s\n' "${success_output}" | grep -F \
     "PASS ${service} asset: /vuetorrent/public/index.html exists"
   printf '%s\n' "${success_output}" | grep -F \
@@ -145,8 +139,6 @@ for service in qbittorrent qbittorrent-vpn; do
 done
 printf '%s\n' "${success_output}" | grep -F \
   'PASS qbittorrent config: direct instance is not bound to tun0'
-printf '%s\n' "${success_output}" | grep -F \
-  'PASS qbittorrent-vpn config: exact Connection\Interface=tun0'
 if grep -F 'compose logs' "${calls}" >/dev/null; then
   printf '%s\n' 'successful validation unexpectedly requested container logs' >&2
   exit 1
@@ -164,7 +156,7 @@ command_fail_status=$?
 set -e
 
 test "${command_fail_status}" -eq 1
-for service in qbittorrent qbittorrent-vpn; do
+for service in qbittorrent; do
   printf '%s\n' "${command_fail_output}" | grep -F \
     "FAIL ${service} environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>; printenv command failed"
   printf '%s\n' "${command_fail_output}" | grep -F \

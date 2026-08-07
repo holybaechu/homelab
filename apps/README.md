@@ -3,8 +3,8 @@
 All application services run through Docker Compose on the `docker_apps` LXC.
 
 - `compose/platform`: Traefik, AdGuard Home, Cloudflare DDNS.
-- `compose/media`: direct and Gluetun-routed qBittorrent instances, Copyparty,
-  MeTube.
+- `compose/media`: one direct qBittorrent instance at
+  `https://qbt.home.hchu.me`, Copyparty, and MeTube.
 - `compose/arcane`: the Ansible-owned Arcane Docker management control plane.
 
 Ansible bootstraps the two workload projects at `/opt/homelab-compose` and

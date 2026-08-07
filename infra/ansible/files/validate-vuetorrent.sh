@@ -1,7 +1,7 @@
 #!/bin/sh
 
 failures=0
-qbittorrent_services='qbittorrent qbittorrent-vpn'
+qbittorrent_services='qbittorrent'
 
 pass() {
   printf 'PASS %s\n' "$1"
@@ -36,20 +36,12 @@ for service in ${qbittorrent_services}; do
     fail "${service} config: exact WebUI\RootFolder=/vuetorrent/public is missing"
   fi
 
-  if test "${service}" = qbittorrent; then
-    if docker compose exec -T "${service}" grep -Fx -- \
-      'Connection\Interface=tun0' \
-      /config/qBittorrent/qBittorrent.conf >/dev/null 2>&1; then
-      fail 'qbittorrent config: direct instance is unexpectedly bound to tun0'
-    else
-      pass 'qbittorrent config: direct instance is not bound to tun0'
-    fi
-  elif docker compose exec -T "${service}" grep -Fx -- \
+  if docker compose exec -T "${service}" grep -Fx -- \
     'Connection\Interface=tun0' \
     /config/qBittorrent/qBittorrent.conf >/dev/null 2>&1; then
-    pass 'qbittorrent-vpn config: exact Connection\Interface=tun0'
+    fail 'qbittorrent config: direct instance is unexpectedly bound to tun0'
   else
-    fail 'qbittorrent-vpn config: exact Connection\Interface=tun0 is missing'
+    pass 'qbittorrent config: direct instance is not bound to tun0'
   fi
 
   effective_mods="$(
