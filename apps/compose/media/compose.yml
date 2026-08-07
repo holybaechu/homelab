@@ -2,7 +2,7 @@ name: media
 
 services:
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:5.2.3
+    image: lscr.io/linuxserver/qbittorrent:20.04.1
     restart: unless-stopped
     environment:
       DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.34.1
