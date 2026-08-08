@@ -1,6 +1,6 @@
 FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS node-runtime
 
-FROM kalilinux/kali-rolling:latest@sha256:9331112510bb408aac17e606c920ff1623897887d85946e27aca8e55223fdcc7
+FROM kalilinux/kali-rolling:latest@sha256:7a8e05db54fbfa3891c35e11d6cdeac7d6f42efddb53c509b2a7b9c2764cad73
 
 ARG T3_VERSION=0.0.28
 
