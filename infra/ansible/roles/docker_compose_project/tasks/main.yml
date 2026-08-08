@@ -70,6 +70,8 @@
     - {path: /srv/homelab/copyparty/downloads}
     - {path: /srv/homelab/copyparty/public}
     - {path: /srv/homelab/copyparty/shared-readonly}
+    - {path: "{{ t3code_data_root }}", mode: "0700"}
+    - {path: "{{ t3code_workspace_root }}"}
 
 - name: Inspect retired Compose projects
   ansible.builtin.stat:

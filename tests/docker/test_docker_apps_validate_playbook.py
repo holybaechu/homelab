@@ -40,6 +40,7 @@ def test_validation_checks_compose_dns_qbittorrent_routes_and_arcane():
     assert validate.count("public.qbt.home.hchu.me") == 2
     assert "qbt-vpn.home.hchu.me" not in validate
     assert validate.count("metube.home.hchu.me") >= 2
+    assert "t3code_hostname" in validate
     assert "copyparty.hchu.me" in validate
     assert "host_ip" in validate and "qbittorrent_ip" in validate
     assert 'test "$host_ip" = "$qbittorrent_ip"' in validate

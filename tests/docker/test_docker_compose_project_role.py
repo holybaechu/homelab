@@ -21,6 +21,7 @@ def test_compose_role_reconciles_projects_in_declared_order():
     assert 'owner: "{{ service_uid }}"' in tasks
     assert 'group: "{{ service_gid }}"' in tasks
     assert variables.index("name: platform") < variables.index("name: media")
+    assert variables.index("name: media") < variables.index("name: code")
 
 
 def test_compose_role_manages_the_qbittorrent_config_before_startup():

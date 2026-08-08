@@ -235,6 +235,7 @@
       loop:
         - qbt.home.hchu.me
         - metube.home.hchu.me
+        - "{{ t3code_hostname }}"
         - "{{ arcane_hostname }}"
 
     - name: Check private Traefik routes
@@ -256,6 +257,7 @@
         - adguard.home.hchu.me
         - qbt.home.hchu.me
         - metube.home.hchu.me
+        - "{{ t3code_hostname }}"
         - "{{ arcane_hostname }}"
 
     - name: Check retired public qBittorrent route is absent

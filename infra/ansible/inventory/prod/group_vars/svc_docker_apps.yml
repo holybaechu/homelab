@@ -30,6 +30,8 @@ arcane_gitops_projects:
     compose_path: apps/compose/platform/compose.yml
   - name: media
     compose_path: apps/compose/media/compose.yml
+  - name: code
+    compose_path: apps/compose/code/compose.yml
 arcane_retired_gitops_projects:
   - name: hermes
     compose_path: apps/compose/hermes/compose.yml
@@ -66,6 +68,9 @@ qbittorrent_instances:
     connection_interface: ""
     peer_port: 35435
 copyparty_listen_port: 3923
+t3code_hostname: code.home.hchu.me
+t3code_data_root: /srv/homelab/docker-apps/t3code/home
+t3code_workspace_root: /srv/homelab/workspaces
 
 retired_docker_compose_projects:
   - name: backup
@@ -108,3 +113,7 @@ docker_compose_projects:
       - src: copyparty.conf.j2
         dest: copyparty.conf
         mode: "0600"
+  - name: code
+    src: apps/compose/code
+    dest: "{{ docker_apps_compose_root }}/code"
+    env_template: t3code.env.j2

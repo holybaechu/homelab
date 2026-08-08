@@ -65,9 +65,10 @@ def test_arcane_role_reconciles_exact_gitops_and_oidc_scope():
         "traefik_acme_email:", 1
     )[0]
 
-    assert active_projects.count("compose_path: apps/compose/") == 2
+    assert active_projects.count("compose_path: apps/compose/") == 3
     assert "name: platform" in active_projects
     assert "name: media" in active_projects
+    assert "name: code" in active_projects
     assert "name: hermes" not in active_projects
     assert "name: hermes" in retired_projects
     assert "compose_path: apps/compose/hermes/compose.yml" in retired_projects

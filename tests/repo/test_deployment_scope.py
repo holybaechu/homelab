@@ -10,7 +10,11 @@ def test_only_known_workload_paths_use_arcane_fast_path():
     classify_paths = selector["classify_paths"]
 
     assert classify_paths(
-        ["apps/compose/media/compose.yml", "apps/compose/platform/compose.yml"]
+        [
+            "apps/compose/media/compose.yml",
+            "apps/compose/platform/compose.yml",
+            "apps/compose/code/compose.yml",
+        ]
     ) == "arcane"
 
 
@@ -23,8 +27,9 @@ def test_selector_returns_only_changed_projects_in_dependency_order():
         [
             "apps/compose/platform/compose.yml",
             "apps/compose/media/compose.yml",
+            "apps/compose/code/Dockerfile",
         ]
-    ) == ["platform", "media"]
+    ) == ["platform", "media", "code"]
     assert "select_arcane_build_projects" not in selector
 
 
@@ -43,7 +48,7 @@ def test_mixed_empty_and_infrastructure_changes_use_full_path():
     assert classify_paths(["apps/compose/hermes/compose.yml"]) == "full"
 
 
-def test_safe_platform_and_media_changes_still_use_arcane():
+def test_safe_workload_changes_still_use_arcane():
     selector = runpy.run_path(
         str(REPO_ROOT / "scripts" / "ci" / "select-deployment-scope.py")
     )
@@ -51,3 +56,4 @@ def test_safe_platform_and_media_changes_still_use_arcane():
 
     assert classify_paths(["apps/compose/platform/dynamic.yml"]) == "arcane"
     assert classify_paths(["apps/compose/media/compose.yml"]) == "arcane"
+    assert classify_paths(["apps/compose/code/compose.yml"]) == "arcane"

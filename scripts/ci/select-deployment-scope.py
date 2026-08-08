@@ -15,6 +15,7 @@ COMMIT_SHA = re.compile(r"[0-9a-fA-F]{40}")
 ARCANE_WORKLOAD_PREFIXES = {
     "platform": "apps/compose/platform/",
     "media": "apps/compose/media/",
+    "code": "apps/compose/code/",
 }
 
 # These files need the full Ansible handler's force-recreate/build semantics.
