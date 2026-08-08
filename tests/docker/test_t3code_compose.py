@@ -27,7 +27,9 @@ def test_t3code_is_private_persistent_and_does_not_mount_docker_socket():
     assert service["security_opt"] == ["no-new-privileges:true"]
     assert service["networks"] == ["proxy"]
     assert "/srv/homelab/docker-apps/t3code/home:/home/t3code:rw" in volumes
-    assert "/srv/homelab/workspaces:/workspace:rw" in volumes
+    assert (
+        "/srv/homelab/docker-apps/t3code/workspaces:/workspace:rw" in volumes
+    )
     assert not any("docker.sock" in volume for volume in volumes)
     assert "traefik.http.routers.code.rule=Host(`code.home.hchu.me`)" in labels
     assert (

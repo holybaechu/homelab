@@ -12,7 +12,8 @@ Persistent paths:
 
 - `/srv/homelab/docker-apps/t3code/home` stores T3 state, pairing sessions,
   provider configuration, and provider credentials.
-- `/srv/homelab/workspaces` stores projects exposed to coding agents.
+- `/srv/homelab/docker-apps/t3code/workspaces` stores projects exposed to
+  coding agents.
 
 T3 Code does not bundle provider CLIs or credentials. Install and authenticate
 the required provider inside the persistent environment before starting its

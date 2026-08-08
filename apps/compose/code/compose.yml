@@ -13,7 +13,7 @@ services:
       TZ: "${TZ:-Asia/Seoul}"
     volumes:
       - /srv/homelab/docker-apps/t3code/home:/home/t3code:rw
-      - /srv/homelab/workspaces:/workspace:rw
+      - /srv/homelab/docker-apps/t3code/workspaces:/workspace:rw
     networks:
       - proxy
     security_opt:

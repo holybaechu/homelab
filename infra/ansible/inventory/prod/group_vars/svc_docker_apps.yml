@@ -70,7 +70,7 @@ qbittorrent_instances:
 copyparty_listen_port: 3923
 t3code_hostname: code.home.hchu.me
 t3code_data_root: /srv/homelab/docker-apps/t3code/home
-t3code_workspace_root: /srv/homelab/workspaces
+t3code_workspace_root: /srv/homelab/docker-apps/t3code/workspaces
 
 retired_docker_compose_projects:
   - name: backup
