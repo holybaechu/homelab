@@ -14,6 +14,7 @@ def seed_required_environment(monkeypatch, module):
         monkeypatch.setenv(environment_name, "test-value")
     monkeypatch.setenv("ARCANE_ENCRYPTION_KEY", "ab" * 32)
     monkeypatch.setenv("ARCANE_JWT_SECRET", "j" * 32)
+    monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "cd" * 32)
     monkeypatch.setenv(
         "COPYPARTY_USERS_JSON",
         json.dumps([{"name": "test", "password": "test-password"}]),
@@ -42,6 +43,16 @@ def test_arcane_secret_transport_newlines_are_removed(monkeypatch):
     assert mapping["arcane_jwt_secret"] == "j" * 32
 
 
+def test_openclaw_gateway_token_is_mapped_after_shape_validation(monkeypatch):
+    module = runpy.run_path(str(SCRIPT))
+    seed_required_environment(monkeypatch, module)
+    monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", f"{'cd' * 32}\r\n")
+
+    mapping = module["build_mapping"]()
+
+    assert mapping["openclaw_gateway_token"] == "cd" * 32
+
+
 def test_retired_hermes_environment_is_not_mapped():
     module = runpy.run_path(str(SCRIPT))
     all_environment_names = set(module["REQUIRED_ENV"].values()) | set(
@@ -66,6 +77,11 @@ def test_retired_hermes_environment_is_not_mapped():
     [
         ("ARCANE_ENCRYPTION_KEY", "not-hex", "64 hexadecimal characters"),
         ("ARCANE_JWT_SECRET", "too-short", "at least 32 characters"),
+        (
+            "OPENCLAW_GATEWAY_TOKEN",
+            "not-hex",
+            "OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters",
+        ),
     ],
 )
 def test_invalid_arcane_secret_is_rejected(monkeypatch, name, value, message):

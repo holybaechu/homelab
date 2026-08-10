@@ -65,10 +65,12 @@ def test_arcane_role_reconciles_exact_gitops_and_oidc_scope():
         "traefik_acme_email:", 1
     )[0]
 
-    assert active_projects.count("compose_path: apps/compose/") == 3
+    assert active_projects.count("compose_path: apps/compose/") == 4
     assert "name: platform" in active_projects
     assert "name: media" in active_projects
     assert "name: code" in active_projects
+    assert "name: openclaw" in active_projects
+    assert "compose_path: apps/compose/openclaw/compose.yml" in active_projects
     assert "name: hermes" not in active_projects
     assert "name: hermes" in retired_projects
     assert "compose_path: apps/compose/hermes/compose.yml" in retired_projects
@@ -84,8 +86,8 @@ def test_arcane_role_is_separate_and_runs_after_workload_bootstrap():
     workload_section = variables.split("\ndocker_compose_projects:", 1)[1]
 
     assert site.index("role: docker_compose_project") < site.index(
-        "role: arcane_manager"
-    )
+        "role: openclaw_foundation"
+    ) < site.index("role: arcane_manager")
     assert "name: arcane" not in workload_section
     assert "arcane_control_root: /opt/homelab-control/arcane" in variables
     assert "arcane_data_root: /srv/homelab/docker-apps/arcane/data" in variables

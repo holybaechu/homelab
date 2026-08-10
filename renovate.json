@@ -91,6 +91,13 @@
       ],
       "automerge": false,
       "platformAutomerge": false
+    },
+    {
+      "description": "Require review for OpenClaw",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/openclaw/openclaw"],
+      "automerge": false,
+      "platformAutomerge": false
     }
   ]
 }

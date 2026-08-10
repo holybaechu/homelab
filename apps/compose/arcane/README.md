@@ -8,7 +8,10 @@ update itself.
 - Private UI: `https://arcane.home.hchu.me`
 - Loopback recovery endpoint: `http://127.0.0.1:3552`
 - Persistent state: `/srv/homelab/docker-apps/arcane/data`
-- Managed projects: `/opt/homelab-compose/{platform,media}`
+- Managed projects: `/opt/homelab-compose/{platform,media,code,openclaw}`
+
+The sibling `/opt/homelab-compose/openclaw-setup` private repository is mounted
+read-only inside Arcane and is never registered as an Arcane project.
 
 The Docker socket is mounted only into the private socket-proxy container.
 The proxy reduces the exposed API surface, but Arcane can still create

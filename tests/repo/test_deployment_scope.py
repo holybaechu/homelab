@@ -14,6 +14,7 @@ def test_only_known_workload_paths_use_arcane_fast_path():
             "apps/compose/media/compose.yml",
             "apps/compose/platform/compose.yml",
             "apps/compose/code/compose.yml",
+            "apps/compose/openclaw/compose.yml",
         ]
     ) == "arcane"
 
@@ -28,8 +29,9 @@ def test_selector_returns_only_changed_projects_in_dependency_order():
             "apps/compose/platform/compose.yml",
             "apps/compose/media/compose.yml",
             "apps/compose/code/Dockerfile",
+            "apps/compose/openclaw/compose.yml",
         ]
-    ) == ["platform", "media", "code"]
+    ) == ["platform", "media", "code", "openclaw"]
     assert "select_arcane_build_projects" not in selector
 
 
@@ -57,3 +59,7 @@ def test_safe_workload_changes_still_use_arcane():
     assert classify_paths(["apps/compose/platform/dynamic.yml"]) == "arcane"
     assert classify_paths(["apps/compose/media/compose.yml"]) == "arcane"
     assert classify_paths(["apps/compose/code/compose.yml"]) == "arcane"
+    assert classify_paths(["apps/compose/openclaw/compose.yml"]) == "arcane"
+    assert classify_paths(
+        ["infra/ansible/roles/openclaw_foundation/tasks/main.yml"]
+    ) == "full"

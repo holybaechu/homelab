@@ -48,6 +48,7 @@ services:
     volumes:
       - /srv/homelab/docker-apps/arcane/data:/app/data:rw
       - /opt/homelab-compose:/opt/homelab-compose:rw
+      - /opt/homelab-compose/openclaw-setup:/opt/homelab-compose/openclaw-setup:ro
       - /opt/homelab-control/arcane/secrets:/run/secrets:ro
     networks:
       - socket

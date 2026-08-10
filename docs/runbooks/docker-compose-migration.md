@@ -8,12 +8,16 @@ The managed production topology contains exactly two LXCs:
 - `docker_apps` (`192.168.0.3`, VMID 110): every application, managed with
   Docker Compose.
 
-The Docker host runs two workload projects in dependency order:
+The Docker host runs these workload projects in dependency order:
 
 1. `platform`: Traefik, AdGuard Home, and Cloudflare DDNS.
 2. `media`: one direct qBittorrent instance, Copyparty, and MeTube. The
    qBittorrent Web UI is private at `https://qbt.home.hchu.me`, while peer port
    `35435` is published over TCP and UDP for direct inbound connectivity.
+3. `code`: the private T3 Code development environment.
+4. `openclaw`: the loopback-only OpenClaw Gateway. Its private config repo is
+   a separate read-only bind source, while runtime state and credentials stay
+   outside Git.
 
 VMID 111 retains `/dev/net/tun` for Tailscale. VMID 110 has no TUN
 passthrough because the application stack no longer contains Gluetun or any
@@ -33,6 +37,7 @@ must migrate from an old service:
 - `/srv/homelab/docker-apps/qbittorrent`
 - `/srv/homelab/docker-apps/copyparty`
 - `/srv/homelab/docker-apps/arcane/data`
+- `/srv/homelab/docker-apps/openclaw`
 
 Use named volumes for opaque state owned by one application: Traefik ACME and
 AdGuard work data.

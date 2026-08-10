@@ -1,0 +1,339 @@
+---
+- name: Require a stable OpenClaw Gateway token
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_token is defined
+      - openclaw_gateway_token is string
+      - openclaw_gateway_token | trim is match('^[0-9a-fA-F]{64}$')
+    fail_msg: >-
+      Configure OPENCLAW_GATEWAY_TOKEN as exactly 64 hexadecimal characters
+      in the production secret store.
+  no_log: true
+
+- name: Require separated absolute OpenClaw paths
+  ansible.builtin.assert:
+    that:
+      - openclaw_compose_root.startswith('/')
+      - openclaw_setup_root.startswith('/')
+      - openclaw_runtime_root.startswith('/')
+      - openclaw_control_root.startswith('/')
+      - openclaw_compose_root != openclaw_setup_root
+      - openclaw_compose_root != openclaw_runtime_root
+      - openclaw_compose_root != openclaw_control_root
+      - openclaw_setup_root != openclaw_runtime_root
+      - openclaw_setup_root != openclaw_control_root
+      - openclaw_runtime_root != openclaw_control_root
+      - not openclaw_compose_root.startswith(openclaw_setup_root + '/')
+      - not openclaw_setup_root.startswith(openclaw_compose_root + '/')
+      - not openclaw_compose_root.startswith(openclaw_runtime_root + '/')
+      - not openclaw_runtime_root.startswith(openclaw_compose_root + '/')
+      - not openclaw_compose_root.startswith(openclaw_control_root + '/')
+      - not openclaw_control_root.startswith(openclaw_compose_root + '/')
+      - not openclaw_runtime_root.startswith(openclaw_setup_root + '/')
+      - not openclaw_setup_root.startswith(openclaw_runtime_root + '/')
+      - not openclaw_control_root.startswith(openclaw_setup_root + '/')
+      - not openclaw_setup_root.startswith(openclaw_control_root + '/')
+      - not openclaw_runtime_root.startswith(openclaw_control_root + '/')
+      - not openclaw_control_root.startswith(openclaw_runtime_root + '/')
+      - openclaw_config_path == openclaw_setup_root + '/config/openclaw.json'
+      - openclaw_state_root == openclaw_runtime_root + '/state'
+      - openclaw_auth_profile_secret_root == openclaw_runtime_root + '/auth-profile-secrets'
+      - openclaw_secret_root == openclaw_control_root + '/secrets'
+      - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
+    fail_msg: OpenClaw deployment, private setup, runtime, and control paths must remain separated.
+
+- name: Require the persistent homelab mount before writing OpenClaw state
+  ansible.builtin.command: "mountpoint -q {{ docker_apps_data_root }}"
+  changed_when: false
+
+- name: Inspect the private OpenClaw repository
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ openclaw_setup_root }}"
+    - "{{ openclaw_setup_root }}/.git"
+    - "{{ openclaw_config_path }}"
+  register: openclaw_setup_paths
+
+- name: Require the protected private OpenClaw repository and regular config file
+  ansible.builtin.assert:
+    that:
+      - openclaw_setup_paths.results[0].stat.isdir | default(false)
+      - openclaw_setup_paths.results[0].stat.uid == 0
+      - openclaw_setup_paths.results[0].stat.gid == openclaw_gid | int
+      - openclaw_setup_paths.results[0].stat.mode == '0750'
+      - openclaw_setup_paths.results[1].stat.isdir | default(false)
+      - openclaw_setup_paths.results[1].stat.uid == 0
+      - openclaw_setup_paths.results[1].stat.gid == 0
+      - openclaw_setup_paths.results[1].stat.mode == '0700'
+      - openclaw_setup_paths.results[2].stat.isreg | default(false)
+      - not (openclaw_setup_paths.results[2].stat.islnk | default(false))
+      - openclaw_setup_paths.results[2].stat.uid == 0
+      - openclaw_setup_paths.results[2].stat.gid == openclaw_gid | int
+      - openclaw_setup_paths.results[2].stat.mode == '0640'
+    fail_msg: >-
+      The private openclaw-setup repository or active config has unexpected
+      type, ownership, or permissions; refusing to deploy it.
+
+- name: Reject deployment manifests in the private OpenClaw repository root
+  ansible.builtin.find:
+    paths: "{{ openclaw_setup_root }}"
+    recurse: false
+    file_type: file
+    patterns:
+      - compose.yml
+      - compose.yaml
+      - docker-compose.yml
+      - docker-compose.yaml
+  register: openclaw_private_deployment_manifests
+  failed_when: openclaw_private_deployment_manifests.matched > 0
+
+- name: Require a clean main branch in the private OpenClaw repository
+  ansible.builtin.shell: |
+    set -eu
+    test "$(git branch --show-current)" = main
+    git rev-parse --verify HEAD >/dev/null
+    test -z "$(git status --porcelain=v1)"
+    git ls-files --error-unmatch config/openclaw.json >/dev/null
+    test -z "$(git ls-files -- .env)"
+  args:
+    executable: /bin/sh
+    chdir: "{{ openclaw_setup_root }}"
+  changed_when: false
+
+- name: Read the active private OpenClaw revision
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ openclaw_setup_root }}"
+      - rev-parse
+      - HEAD
+  register: openclaw_setup_revision
+  changed_when: false
+
+- name: Inspect the existing OpenClaw deployment directory
+  ansible.builtin.stat:
+    path: "{{ openclaw_compose_root }}"
+  register: openclaw_compose_root_stat
+
+- name: Reject alternate OpenClaw deployment manifests
+  ansible.builtin.find:
+    paths: "{{ openclaw_compose_root }}"
+    recurse: false
+    file_type: file
+    patterns:
+      - compose.yaml
+      - docker-compose.yml
+      - docker-compose.yaml
+  register: openclaw_alternate_compose_files
+  failed_when: openclaw_alternate_compose_files.matched > 0
+  when: openclaw_compose_root_stat.stat.isdir | default(false)
+
+- name: Create OpenClaw deployment and runtime directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ openclaw_compose_root }}"
+      owner: "{{ openclaw_uid }}"
+      group: "{{ openclaw_gid }}"
+      mode: "0755"
+    - path: "{{ openclaw_control_root }}"
+      owner: root
+      group: root
+      mode: "0755"
+    - path: "{{ openclaw_secret_root }}"
+      owner: root
+      group: "{{ openclaw_gid }}"
+      mode: "0750"
+    - path: "{{ openclaw_runtime_root }}"
+      owner: "{{ openclaw_uid }}"
+      group: "{{ openclaw_gid }}"
+      mode: "0700"
+    - path: "{{ openclaw_state_root }}"
+      owner: "{{ openclaw_uid }}"
+      group: "{{ openclaw_gid }}"
+      mode: "0700"
+    - path: "{{ openclaw_state_root }}/workspace"
+      owner: "{{ openclaw_uid }}"
+      group: "{{ openclaw_gid }}"
+      mode: "0700"
+    - path: "{{ openclaw_auth_profile_secret_root }}"
+      owner: "{{ openclaw_uid }}"
+      group: "{{ openclaw_gid }}"
+      mode: "0700"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Install the OpenClaw Gateway token outside Git
+  ansible.builtin.copy:
+    content: "{{ openclaw_gateway_token | trim }}\n"
+    dest: "{{ openclaw_gateway_token_path }}"
+    owner: "{{ openclaw_uid }}"
+    group: "{{ openclaw_gid }}"
+    mode: "0600"
+  register: openclaw_gateway_token_install
+  no_log: true
+  diff: false
+
+- name: Copy the public OpenClaw Compose project
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../apps/compose/openclaw/"
+    dest: "{{ openclaw_compose_root }}/"
+    owner: "{{ openclaw_uid }}"
+    group: "{{ openclaw_gid }}"
+    mode: preserve
+
+- name: Render the non-secret OpenClaw deployment environment
+  ansible.builtin.template:
+    src: openclaw.env.j2
+    dest: "{{ openclaw_compose_root }}/.env"
+    owner: "{{ openclaw_uid }}"
+    group: "{{ openclaw_gid }}"
+    mode: "0600"
+
+- name: Validate the OpenClaw Compose project
+  ansible.builtin.command:
+    cmd: docker compose config --quiet
+    chdir: "{{ openclaw_compose_root }}"
+  changed_when: false
+
+- name: Read the immutable OpenClaw image from Compose
+  ansible.builtin.command:
+    cmd: docker compose config --images
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_rendered_image
+  changed_when: false
+  failed_when: >-
+    openclaw_rendered_image.rc != 0 or
+    openclaw_rendered_image.stdout_lines | length != 1 or
+    not (openclaw_rendered_image.stdout | trim is match(
+      '^ghcr\.io/openclaw/openclaw:[^@\s]+@sha256:[0-9a-f]{64}$'
+    ))
+
+- name: Require the loopback Gateway port to be available
+  ansible.builtin.shell: |
+    set -eu
+    current="$(docker compose ps --all -q openclaw-gateway 2>/dev/null || true)"
+    for owner in $(docker ps --no-trunc -q --filter 'publish={{ openclaw_gateway_port }}'); do
+      test -n "$current"
+      test "$owner" = "$current"
+    done
+    if test -z "$current"; then
+      python3 - "{{ openclaw_gateway_port }}" <<'PY'
+    import socket
+    import sys
+
+    port = int(sys.argv[1])
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", port))
+    finally:
+        sock.close()
+    PY
+    fi
+  args:
+    executable: /bin/sh
+    chdir: "{{ openclaw_compose_root }}"
+  changed_when: false
+
+- name: Pull the immutable OpenClaw image
+  ansible.builtin.command:
+    cmd: docker compose pull
+    chdir: "{{ openclaw_compose_root }}"
+  changed_when: false
+
+- name: Verify the pinned OpenClaw image runtime identity
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - --format
+      - "{% raw %}{{.Config.User}}{% endraw %}"
+      - "{{ openclaw_rendered_image.stdout | trim }}"
+  register: openclaw_image_user
+  changed_when: false
+  failed_when: openclaw_image_user.stdout | trim != 'node'
+
+- name: Verify the active OpenClaw config path before startup
+  ansible.builtin.command:
+    cmd: >-
+      docker compose run -T --rm --no-deps --entrypoint node
+      openclaw-gateway dist/index.js config file
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_config_file_preflight
+  changed_when: false
+  failed_when: openclaw_config_file_preflight.stdout | trim != '/etc/openclaw/openclaw.json'
+
+- name: Validate the active OpenClaw config before startup
+  ansible.builtin.command:
+    cmd: >-
+      docker compose run -T --rm --no-deps --entrypoint node
+      openclaw-gateway dist/index.js config validate --json
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_config_validation_preflight
+  changed_when: false
+  failed_when: >-
+    openclaw_config_validation_preflight.rc != 0 or
+    not (openclaw_config_validation_preflight.stdout | from_json).valid or
+    (openclaw_config_validation_preflight.stdout | from_json).warnings | length > 0
+
+- name: Audit OpenClaw secrets before startup
+  ansible.builtin.command:
+    cmd: >-
+      docker compose run -T --rm --no-deps --entrypoint node
+      openclaw-gateway dist/index.js secrets audit --check --json
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_secrets_audit_preflight
+  changed_when: false
+  failed_when: >-
+    openclaw_secrets_audit_preflight.rc != 0 or
+    (openclaw_secrets_audit_preflight.stdout | from_json).status != 'clean'
+  no_log: true
+
+- name: Start only the OpenClaw Compose project
+  ansible.builtin.command:
+    cmd: >-
+      docker compose up -d
+      {{ '--force-recreate' if openclaw_gateway_token_install.changed else '' }}
+      --remove-orphans
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_compose_up
+  changed_when: >-
+    'Creating' in (openclaw_compose_up.stdout ~ openclaw_compose_up.stderr) or
+    'Recreating' in (openclaw_compose_up.stdout ~ openclaw_compose_up.stderr) or
+    'Created' in (openclaw_compose_up.stdout ~ openclaw_compose_up.stderr) or
+    'Started' in (openclaw_compose_up.stdout ~ openclaw_compose_up.stderr) or
+    'Removed orphan' in (openclaw_compose_up.stdout ~ openclaw_compose_up.stderr)
+
+- name: Wait for the OpenClaw Gateway container to become healthy
+  ansible.builtin.shell: |
+    set -eu
+    container="$(docker compose ps -q openclaw-gateway)"
+    test -n "$container"
+    test "$(docker inspect --format '{% raw %}{{.State.Health.Status}}{% endraw %}' "$container")" = healthy
+  args:
+    executable: /bin/sh
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_gateway_health
+  changed_when: false
+  retries: 18
+  delay: 5
+  until: openclaw_gateway_health.rc == 0
+
+- name: Check the OpenClaw Gateway readiness endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ openclaw_gateway_port }}/readyz"
+    method: GET
+    status_code: 200
+    return_content: false
+  register: openclaw_gateway_readiness
+  changed_when: false
+  retries: 6
+  delay: 5
+  until: openclaw_gateway_readiness.status == 200

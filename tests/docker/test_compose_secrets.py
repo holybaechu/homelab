@@ -4,7 +4,7 @@ from tests.helpers import REPO_ROOT
 def test_real_compose_env_files_are_not_committed():
     compose_root = REPO_ROOT / "apps" / "compose"
     assert list(compose_root.rglob(".env")) == []
-    assert len(list(compose_root.rglob(".env.example"))) == 4
+    assert len(list(compose_root.rglob(".env.example"))) == 5
     assert "*.env" in (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
 
 
@@ -24,6 +24,10 @@ def test_ansible_renders_every_secret_environment():
     assert (
         REPO_ROOT
         / "infra/ansible/roles/arcane_manager/templates/arcane.env.j2"
+    ).exists()
+    assert (
+        REPO_ROOT
+        / "infra/ansible/roles/openclaw_foundation/templates/openclaw.env.j2"
     ).exists()
 
 

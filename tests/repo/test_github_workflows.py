@@ -24,6 +24,7 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
         "PROTON_WIREGUARD_PRIVATE_KEY",
         "HERMES_DISCORD_BOT_TOKEN",
         "COPYPARTY_USERS_JSON",
+        "OPENCLAW_GATEWAY_TOKEN",
     ):
         assert f"{secret_name}:" not in job_env
 
@@ -34,6 +35,13 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     assert "COPYPARTY_USERS_JSON:" in workflow
     assert "ARCANE_ENCRYPTION_KEY:" in workflow
     assert "ARCANE_JWT_SECRET:" in workflow
+    assert "OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}" in workflow
+    secret_step = workflow.split(
+        "- name: Validate and write Ansible service secrets", maxsplit=1
+    )[1].split("- name: Prepare one-time lowest-ID cutover", maxsplit=1)[0]
+    assert "OPENCLAW_GATEWAY_TOKEN:" in secret_step
+    assert workflow.count("OPENCLAW_GATEWAY_TOKEN:") == 1
+    assert "OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters" in script
     assert "64 hexadecimal characters" in script
     assert "at least 32 characters" in script
     assert "COPYPARTY_PASSWORD_HASH_SALT:" not in workflow

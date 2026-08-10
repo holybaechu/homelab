@@ -1,0 +1,64 @@
+name: openclaw
+
+services:
+  openclaw-gateway:
+    image: ghcr.io/openclaw/openclaw:2026.7.1-2@sha256:8789721d2e9b24b780a1504b56deb4c6bd5c7dbf96a1dd117e7c45c2ed72c8ac
+    platform: linux/amd64
+    user: "${PUID:?set PUID}:${PGID:?set PGID}"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    environment:
+      HOME: /home/node
+      OPENCLAW_HOME: /home/node
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_DIR: /etc/openclaw
+      OPENCLAW_CONFIG_PATH: /etc/openclaw/openclaw.json
+      OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
+      OPENCLAW_DISABLE_BONJOUR: "1"
+      OPENCLAW_CONFIG_REVISION: "${OPENCLAW_CONFIG_REVISION:?set OPENCLAW_CONFIG_REVISION}"
+      TERM: xterm-256color
+      TZ: "${TZ:-Asia/Seoul}"
+    volumes:
+      - type: bind
+        source: /opt/homelab-compose/openclaw-setup/config/openclaw.json
+        target: /etc/openclaw/openclaw.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/homelab/docker-apps/openclaw/state
+        target: /home/node/.openclaw
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/homelab/docker-apps/openclaw/auth-profile-secrets
+        target: /home/node/.config/openclaw
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /opt/homelab-control/openclaw/secrets/gateway_token
+        target: /run/secrets/openclaw_gateway_token
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,uid=1000,gid=1000,mode=1777
+    ports:
+      - "127.0.0.1:18789:18789"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - com.getarcaneapp.arcane.updater=false

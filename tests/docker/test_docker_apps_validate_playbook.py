@@ -54,6 +54,12 @@ def test_validation_checks_compose_dns_qbittorrent_routes_and_arcane():
     assert "Assert retired Docker networks are absent" in validate
     assert "Assert retired local Docker images are absent" in validate
     assert "hermes status" not in validate
+    assert "Check Docker Engine reboot persistence" in validate
+    assert "Check the OpenClaw CLI version" in validate
+    assert "Check the active OpenClaw config path" in validate
+    assert "Validate the active OpenClaw config schema" in validate
+    assert "Audit the active OpenClaw secrets" in validate
+    assert "Validate the OpenClaw host listener is loopback-only" in validate
 
 
 def test_validation_proves_vuetorrent_assets_config_and_route():

@@ -15,7 +15,7 @@ Renovate creates reviewed source-update pull requests for versions stored in
 Git. Minor and patch updates automerge only when the current version is not
 `0.x`; major updates and every `0.x` update require review. Arcane Manager and
 its Docker socket proxy are explicit control-plane exceptions: their updates
-always require review.
+always require review. OpenClaw image updates also always require review.
 
 Built-in managers cover supported package manifests. Custom regex managers
 also cover the shared `.opentofu-version`, the annotated Tailscale GitHub
@@ -61,6 +61,7 @@ version available from their configured apt repositories.
 - `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and plaintext `password`
 - `ARCANE_ENCRYPTION_KEY`, exactly 64 hexadecimal characters representing 32 bytes
 - `ARCANE_JWT_SECRET`, at least 32 characters
+- `OPENCLAW_GATEWAY_TOKEN`, exactly 64 hexadecimal characters representing 32 bytes
 
 The active topology has one direct qBittorrent instance and no Gluetun or
 Proton VPN service, so CD does not require a Proton or WireGuard secret.
@@ -73,6 +74,12 @@ be recreated with the same values during an LXC replacement.
 
 Generate the two values independently with `openssl rand -hex 32`; do not reuse
 one output for both secrets.
+
+Generate `OPENCLAW_GATEWAY_TOKEN` independently with the same command. Ansible
+writes it outside Git at
+`/opt/homelab-control/openclaw/secrets/gateway_token` as UID/GID 1000 mode
+`0600`. Keep the GitHub value stable and recoverable; rotating it invalidates
+existing Gateway clients.
 
 Example `COPYPARTY_USERS_JSON`:
 
@@ -132,8 +139,9 @@ normal plan and deployment. Leave the input empty for every normal deployment.
 
 ## CD Scope and Parallelism
 
-Pushes containing changes only under the known safe `platform` and `media`
-Compose files use the `arcane` fast path. Static `platform/traefik.yml` changes
+Pushes containing changes only under the known safe `platform`, `media`,
+`code`, and `openclaw` Compose trees use the `arcane` fast path. Static
+`platform/traefik.yml` changes
 use the full path for forced recreation. After Tailscale
 connects, the runner pins `arcane.home.hchu.me` to `192.168.0.3` in its
 ephemeral hosts file because the Tailscale action uses `--accept-dns=false`.
@@ -161,6 +169,11 @@ The full path keeps the low-ID preflight, OpenTofu, and bootstrap operations
 serial, then deploys and validates `tailnet` and `docker_apps`. All application
 services within `docker_apps` are ordered Compose projects. Arcane is a
 separate Ansible-owned control project outside its managed workload directory.
+
+OpenClaw is bootstrapped by its own Ansible role between the existing workload
+role and Arcane. This prevents the initial deployment from force-recreating
+platform, media, or code. Arcane manages only the public OpenClaw Compose
+project; the private `openclaw-setup` checkout is a read-only sibling mount.
 
 The full path remains the bootstrap and break-glass recovery route for every
 workload even though app-only pushes use Arcane.

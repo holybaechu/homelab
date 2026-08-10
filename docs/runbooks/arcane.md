@@ -8,7 +8,7 @@ plane. It does not replace the infrastructure recovery path:
 - OpenTofu owns the `docker_apps` LXC shape.
 - Ansible owns Docker Engine, the Arcane control Compose project, Arcane's
   bootstrap secrets, and the rendered workload files.
-- Arcane deploys and operates the `platform` and `media` Compose
+- Arcane deploys and operates the `platform`, `media`, `code`, and `openclaw` Compose
   projects under `/opt/homelab-compose` for app-only pushes.
 - Renovate and reviewed Git changes own container image versions. Arcane's
   image updater, automatic pruning, auto-heal, and lifecycle hooks remain
@@ -24,6 +24,7 @@ deploys that project separately at `/opt/homelab-control/arcane`.
 - Managed workload projects: `/opt/homelab-compose`
 - Persistent Arcane state: `/srv/homelab/docker-apps/arcane/data`
 - Runtime-group-only secrets: `/opt/homelab-control/arcane/secrets`
+- Private OpenClaw setup checkout: `/opt/homelab-compose/openclaw-setup` (read-only in Arcane)
 
 The UI is routed through Traefik's existing private-only middleware. Port 3552
 is bound only to loopback for recovery from the Docker host, and the Docker
@@ -41,7 +42,7 @@ socket proxy is not published on the host.
    container health check is healthy.
 3. Open `https://arcane.home.hchu.me` from the LAN or tailnet and complete the
    first-login flow. Replace the initial administrator password immediately.
-4. Confirm that Arcane discovers `platform` and `media` from
+4. Confirm that Arcane discovers `platform`, `media`, `code`, and `openclaw` from
    `/opt/homelab-compose` and does not list `arcane-control` as a managed
    project.
 5. Run the repository validation playbook before accepting Arcane as an
@@ -66,12 +67,14 @@ the LAN or internet as a workaround.
 
 The project directory is mounted into Arcane at the identical absolute path so
 Docker bind mounts and relative configuration files resolve consistently.
-Ansible owns each project's `.env` and generated configuration. Do not edit
-those files in Arcane; a later Ansible deployment will restore the declared
-values.
+Ansible owns each deployment project's `.env` and generated files. OpenClaw's
+active application config is the deliberate exception: it comes from the
+separate private `openclaw-setup` Git repository, which Arcane sees through a
+nested read-only mount. Do not edit either source in Arcane.
 
-For a push containing only safe files under `apps/compose/platform` or
-`apps/compose/media`, CD selects the `arcane` scope.
+For a push containing only safe files under `apps/compose/platform`,
+`apps/compose/media`, `apps/compose/code`, or `apps/compose/openclaw`, CD
+selects the `arcane` scope.
 `platform/traefik.yml` is a deliberate exception because it needs a forced
 Traefik recreation, so it uses the full Ansible path.
 After joining the tailnet, the runner pins `arcane.home.hchu.me` to
@@ -118,7 +121,7 @@ requests for them, but those two control-plane dependencies never automerge.
 
 Review Arcane release and migration notes before accepting an update. Deploy
 the update through Ansible, verify the control-plane health check and private
-route, and then verify both workload projects remain visible.
+route, and then verify every workload project remains visible.
 
 ## Backup and recovery
 

@@ -18,6 +18,7 @@ REQUIRED_ENV = {
     "qbittorrent_webui_password": "QBITTORRENT_WEBUI_PASSWORD",
     "arcane_encryption_key": "ARCANE_ENCRYPTION_KEY",
     "arcane_jwt_secret": "ARCANE_JWT_SECRET",
+    "openclaw_gateway_token": "OPENCLAW_GATEWAY_TOKEN",
 }
 
 OPTIONAL_ENV: dict[str, str] = {}
@@ -65,11 +66,14 @@ def build_mapping() -> dict[str, Any]:
     # CR/LF is transport framing rather than part of these generated values.
     mapping["arcane_encryption_key"] = mapping["arcane_encryption_key"].strip()
     mapping["arcane_jwt_secret"] = mapping["arcane_jwt_secret"].strip()
+    mapping["openclaw_gateway_token"] = mapping["openclaw_gateway_token"].strip()
 
     if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["arcane_encryption_key"]) is None:
         raise SystemExit("ARCANE_ENCRYPTION_KEY must be exactly 64 hexadecimal characters")
     if len(mapping["arcane_jwt_secret"]) < 32:
         raise SystemExit("ARCANE_JWT_SECRET must be at least 32 characters")
+    if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["openclaw_gateway_token"]) is None:
+        raise SystemExit("OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters")
 
     for var_name, env_name in OPTIONAL_ENV.items():
         value = os.environ.get(env_name)

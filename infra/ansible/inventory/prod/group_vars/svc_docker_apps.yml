@@ -4,6 +4,20 @@ docker_apps_timezone: "{{ homelab_timezone }}"
 docker_apps_uid: "{{ service_uid }}"
 docker_apps_gid: "{{ service_gid }}"
 
+openclaw_compose_root: "{{ docker_apps_compose_root }}/openclaw"
+openclaw_setup_root: "{{ docker_apps_compose_root }}/openclaw-setup"
+openclaw_config_path: "{{ openclaw_setup_root }}/config/openclaw.json"
+openclaw_runtime_root: "{{ docker_apps_data_root }}/docker-apps/openclaw"
+openclaw_state_root: "{{ openclaw_runtime_root }}/state"
+openclaw_auth_profile_secret_root: "{{ openclaw_runtime_root }}/auth-profile-secrets"
+openclaw_control_root: /opt/homelab-control/openclaw
+openclaw_secret_root: "{{ openclaw_control_root }}/secrets"
+openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
+openclaw_gateway_port: 18789
+openclaw_uid: "{{ service_uid }}"
+openclaw_gid: "{{ service_gid }}"
+openclaw_timezone: "{{ homelab_timezone }}"
+
 arcane_control_root: /opt/homelab-control/arcane
 arcane_data_root: /srv/homelab/docker-apps/arcane/data
 arcane_secret_root: "{{ arcane_control_root }}/secrets"
@@ -32,6 +46,8 @@ arcane_gitops_projects:
     compose_path: apps/compose/media/compose.yml
   - name: code
     compose_path: apps/compose/code/compose.yml
+  - name: openclaw
+    compose_path: apps/compose/openclaw/compose.yml
 arcane_retired_gitops_projects:
   - name: hermes
     compose_path: apps/compose/hermes/compose.yml

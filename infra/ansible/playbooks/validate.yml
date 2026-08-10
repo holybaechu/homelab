@@ -83,6 +83,10 @@
       ansible.builtin.command: systemctl is-active docker
       changed_when: false
 
+    - name: Check Docker Engine reboot persistence
+      ansible.builtin.command: systemctl is-enabled docker
+      changed_when: false
+
     - name: Validate the Arcane control project
       ansible.builtin.command:
         cmd: docker compose config --quiet
@@ -149,6 +153,17 @@
         chdir: "{{ arcane_control_root }}"
       changed_when: false
 
+    - name: Validate Arcane sees the private OpenClaw repository read-only
+      ansible.builtin.shell: |
+        set -eu
+        arcane_container="$(docker compose ps -q arcane)"
+        test -n "$arcane_container"
+        docker inspect "$arcane_container" | python3 -c 'import json, sys; container = json.load(sys.stdin)[0]; mounts = {(mount["Source"], mount["Destination"]): mount for mount in container["Mounts"]}; parent = mounts.get(("{{ docker_apps_compose_root }}", "{{ docker_apps_compose_root }}")); private = mounts.get(("{{ openclaw_setup_root }}", "{{ openclaw_setup_root }}")); raise SystemExit(0 if parent and parent["RW"] and private and not private["RW"] else 1)'
+      args:
+        executable: /bin/sh
+        chdir: "{{ arcane_control_root }}"
+      changed_when: false
+
     - name: Require Arcane to run without a static admin API key
       ansible.builtin.shell: |
         set -eu
@@ -194,6 +209,159 @@
       loop: "{{ docker_compose_projects }}"
       loop_control:
         label: "{{ item.name }}"
+
+    - name: Validate the OpenClaw Compose project
+      ansible.builtin.command:
+        cmd: docker compose config --quiet
+        chdir: "{{ openclaw_compose_root }}"
+      changed_when: false
+
+    - name: Read the immutable OpenClaw image from Compose
+      ansible.builtin.command:
+        cmd: docker compose config --images
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_rendered_image_validation
+      changed_when: false
+      failed_when: >-
+        openclaw_rendered_image_validation.rc != 0 or
+        openclaw_rendered_image_validation.stdout_lines | length != 1 or
+        not (openclaw_rendered_image_validation.stdout | trim is match(
+          '^ghcr\.io/openclaw/openclaw:[^@\s]+@sha256:[0-9a-f]{64}$'
+        ))
+
+    - name: Require the OpenClaw Gateway container to be running and healthy
+      ansible.builtin.shell: |
+        set -eu
+        container="$(docker compose ps -q openclaw-gateway)"
+        test -n "$container"
+        test "$(docker inspect --format '{% raw %}{{.State.Status}}{% endraw %}' "$container")" = running
+        test "$(docker inspect --format '{% raw %}{{.State.Health.Status}}{% endraw %}' "$container")" = healthy
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_compose_root }}"
+      changed_when: false
+      register: openclaw_running_validation
+      retries: 12
+      delay: 5
+      until: openclaw_running_validation.rc == 0
+
+    - name: Validate OpenClaw Git, path, and permission boundaries
+      ansible.builtin.shell: |
+        set -eu
+        test ! -L "{{ openclaw_config_path }}"
+        test "$(stat -c '%u:%g %a' "{{ openclaw_setup_root }}")" = "0:{{ openclaw_gid }} 750"
+        test "$(stat -c '%u:%g %a' "{{ openclaw_setup_root }}/.git")" = "0:0 700"
+        test "$(stat -c '%u:%g %a' "{{ openclaw_config_path }}")" = "0:{{ openclaw_gid }} 640"
+        test "$(stat -c '%u:%g %a' "{{ openclaw_gateway_token_path }}")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 600"
+        test "$(stat -c '%u:%g %a' "{{ openclaw_state_root }}")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(stat -c '%u:%g %a' "{{ openclaw_auth_profile_secret_root }}")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(git branch --show-current)" = main
+        git rev-parse --verify HEAD >/dev/null
+        test -z "$(git status --porcelain=v1)"
+        git ls-files --error-unmatch config/openclaw.json >/dev/null
+        git check-ignore -q .env
+        test -z "$(git ls-files -- .env)"
+        test -z "$(git ls-files | grep -E '(^|/)(state|runtime|auth|credentials|sessions|logs|cache|tmp|temp)(/|$)' || true)"
+        gateway_token="$(tr -d '\r\n' < "{{ openclaw_gateway_token_path }}")"
+        test "$(printf '%s' "$gateway_token" | wc -c)" -eq 64
+        printf '%s' "$gateway_token" | grep -Eq '^[0-9a-fA-F]{64}$'
+        test -z "$(git grep -F -- "$gateway_token" || true)"
+        setup="$(realpath "{{ openclaw_setup_root }}")"
+        runtime="$(realpath "{{ openclaw_runtime_root }}")"
+        case "$runtime" in
+          "$setup"|"$setup"/*) exit 1 ;;
+        esac
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_setup_root }}"
+      changed_when: false
+      no_log: true
+
+    - name: Validate OpenClaw container hardening and mount ownership
+      ansible.builtin.shell: |
+        set -eu
+        container="$(docker compose ps -q openclaw-gateway)"
+        test -n "$container"
+        docker inspect "$container" | python3 -c 'import json, sys; c = json.load(sys.stdin)[0]; h = c["HostConfig"]; cfg = c["Config"]; mounts = {m["Destination"]: m for m in c["Mounts"]}; ports = h["PortBindings"]; labels = cfg.get("Labels") or {}; valid = cfg["Image"] == "{{ openclaw_rendered_image_validation.stdout | trim }}" and cfg["User"] == "{{ openclaw_uid }}:{{ openclaw_gid }}" and cfg.get("Entrypoint") == ["tini", "-s", "--"] and h["ReadonlyRootfs"] and h["RestartPolicy"]["Name"] == "unless-stopped" and set(h.get("CapDrop") or []) == {"ALL"} and "no-new-privileges:true" in (h.get("SecurityOpt") or []) and h.get("NetworkMode") != "host" and set(ports) == {"18789/tcp"} and ports["18789/tcp"] == [{"HostIp": "127.0.0.1", "HostPort": "{{ openclaw_gateway_port }}"}] and "/tmp" in (h.get("Tmpfs") or {}) and labels.get("com.getarcaneapp.arcane.updater") == "false" and not any(key.startswith("traefik.") for key in labels) and mounts["/etc/openclaw/openclaw.json"]["Source"] == "{{ openclaw_config_path }}" and not mounts["/etc/openclaw/openclaw.json"]["RW"] and mounts["/home/node/.openclaw"]["Source"] == "{{ openclaw_state_root }}" and mounts["/home/node/.openclaw"]["RW"] and mounts["/home/node/.config/openclaw"]["Source"] == "{{ openclaw_auth_profile_secret_root }}" and mounts["/home/node/.config/openclaw"]["RW"] and mounts["/run/secrets/openclaw_gateway_token"]["Source"] == "{{ openclaw_gateway_token_path }}" and not mounts["/run/secrets/openclaw_gateway_token"]["RW"] and not any(m["Destination"] == "/var/run/docker.sock" for m in c["Mounts"]); raise SystemExit(0 if valid else 1)'
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_compose_root }}"
+      changed_when: false
+
+    - name: Validate the OpenClaw host listener is loopback-only
+      ansible.builtin.shell: |
+        set -eu
+        listeners="$(ss -H -ltn 'sport = :{{ openclaw_gateway_port }}')"
+        test "$(printf '%s\n' "$listeners" | sed '/^$/d' | wc -l)" -eq 1
+        printf '%s\n' "$listeners" | grep -Eq '127\.0\.0\.1:{{ openclaw_gateway_port }}([[:space:]]|$)'
+        ! printf '%s\n' "$listeners" | grep -Eq '0\.0\.0\.0:{{ openclaw_gateway_port }}|\[::\]:{{ openclaw_gateway_port }}'
+      args:
+        executable: /bin/sh
+      changed_when: false
+
+    - name: Check OpenClaw liveness and readiness endpoints
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ openclaw_gateway_port }}/{{ item }}"
+        method: GET
+        status_code: 200
+        return_content: false
+      loop:
+        - healthz
+        - readyz
+      register: openclaw_endpoint_validation
+      changed_when: false
+      retries: 6
+      delay: 5
+      until: openclaw_endpoint_validation.status == 200
+
+    - name: Check the OpenClaw CLI version
+      ansible.builtin.command:
+        cmd: docker compose exec -T openclaw-gateway node dist/index.js --version
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_cli_version_validation
+      changed_when: false
+      failed_when: >-
+        not (openclaw_cli_version_validation.stdout | trim is match(
+          '^OpenClaw [0-9]{4}\.[0-9]+\.[0-9]+$'
+        ))
+
+    - name: Check the active OpenClaw config path
+      ansible.builtin.command:
+        cmd: docker compose exec -T openclaw-gateway node dist/index.js config file
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_config_file_validation
+      changed_when: false
+      failed_when: openclaw_config_file_validation.stdout | trim != '/etc/openclaw/openclaw.json'
+
+    - name: Validate the active OpenClaw config schema
+      ansible.builtin.command:
+        cmd: docker compose exec -T openclaw-gateway node dist/index.js config validate --json
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_config_schema_validation
+      changed_when: false
+      failed_when: >-
+        openclaw_config_schema_validation.rc != 0 or
+        not (openclaw_config_schema_validation.stdout | from_json).valid or
+        (openclaw_config_schema_validation.stdout | from_json).warnings | length > 0
+
+    - name: Audit the active OpenClaw secrets
+      ansible.builtin.command:
+        cmd: docker compose exec -T openclaw-gateway node dist/index.js secrets audit --check --json
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_secrets_audit_validation
+      changed_when: false
+      failed_when: >-
+        openclaw_secrets_audit_validation.rc != 0 or
+        (openclaw_secrets_audit_validation.stdout | from_json).status != 'clean' or
+        (openclaw_secrets_audit_validation.stdout | from_json).summary.plaintextCount != 0 or
+        (openclaw_secrets_audit_validation.stdout | from_json).summary.unresolvedRefCount != 0
+      no_log: true
+
+    - name: Probe the running OpenClaw Gateway RPC endpoint
+      ansible.builtin.command:
+        cmd: docker compose exec -T openclaw-gateway node dist/index.js gateway probe --json
+        chdir: "{{ openclaw_compose_root }}"
+      changed_when: false
 
     - name: Validate VueTorrent assets and qBittorrent selection
       ansible.builtin.script:

@@ -16,6 +16,7 @@ ARCANE_WORKLOAD_PREFIXES = {
     "platform": "apps/compose/platform/",
     "media": "apps/compose/media/",
     "code": "apps/compose/code/",
+    "openclaw": "apps/compose/openclaw/",
 }
 
 # These files need the full Ansible handler's force-recreate/build semantics.

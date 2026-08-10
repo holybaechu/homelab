@@ -59,6 +59,12 @@ def test_deployment_moves_platform_last_without_reordering_other_projects():
 
     assert order(["platform", "media"]) == ["media", "platform"]
     assert order(["media", "platform"]) == ["media", "platform"]
+    assert order(["platform", "media", "code", "openclaw"]) == [
+        "media",
+        "code",
+        "openclaw",
+        "platform",
+    ]
 
 
 def test_sync_poll_waits_for_a_fresh_exact_commit_after_transient_proxy_loss():

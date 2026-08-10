@@ -109,7 +109,7 @@ def test_legacy_application_lxcs_are_archived_before_final_retirement():
 
 
 def test_workloads_and_separate_arcane_control_plane_are_compose_projects():
-    for project in ("platform", "media"):
+    for project in ("platform", "media", "code", "openclaw"):
         root = REPO_ROOT / "apps" / "compose" / project
         assert (root / "compose.yml").exists()
         assert (root / ".env.example").exists()

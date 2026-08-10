@@ -16,7 +16,7 @@ rollback. The cutover gate is:
 - VMID 111 retains `/dev/net/tun` for Tailscale.
 - VMID 110 has no TUN passthrough; it retains nesting/keyctl and the single
   `/var/lib/homelab` bind mount.
-- The two active Compose projects (`platform` and `media`) are
+- The active Compose projects (`platform`, `media`, `code`, and `openclaw`) are
   running and Ansible live validation passes.
 - The media project has one direct qBittorrent instance at
   `https://qbt.home.hchu.me`; TCP and UDP peer port `35435` remain published.

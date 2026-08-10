@@ -40,6 +40,10 @@ def test_arcane_control_plane_is_separate_persistent_and_private():
     assert arcane["ports"] == ["127.0.0.1:3552:3552"]
     assert "/srv/homelab/docker-apps/arcane/data:/app/data:rw" in arcane["volumes"]
     assert "/opt/homelab-compose:/opt/homelab-compose:rw" in arcane["volumes"]
+    assert (
+        "/opt/homelab-compose/openclaw-setup:"
+        "/opt/homelab-compose/openclaw-setup:ro"
+    ) in arcane["volumes"]
     assert "/opt/homelab-control/arcane/secrets:/run/secrets:ro" in arcane["volumes"]
     labels = set(arcane["labels"])
     assert "traefik.http.routers.arcane.rule=Host(`arcane.home.hchu.me`)" in labels
@@ -65,7 +69,7 @@ def test_arcane_never_receives_a_committed_static_admin_key():
 
 
 def test_every_managed_container_opts_out_of_arcane_auto_updates():
-    for project in ("platform", "media", "arcane"):
+    for project in ("platform", "media", "code", "openclaw", "arcane"):
         compose = load_compose(
             REPO_ROOT / "apps" / "compose" / project / "compose.yml"
         )

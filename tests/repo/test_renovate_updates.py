@@ -131,3 +131,17 @@ def test_arcane_control_plane_updates_never_automerge():
     ]
     assert rule["automerge"] is False
     assert rule["platformAutomerge"] is False
+
+
+def test_openclaw_image_updates_always_require_review():
+    config = json.loads(read("renovate.json"))
+    rule = next(
+        rule
+        for rule in config["packageRules"]
+        if rule.get("description") == "Require review for OpenClaw"
+    )
+
+    assert rule["matchDatasources"] == ["docker"]
+    assert rule["matchPackageNames"] == ["ghcr.io/openclaw/openclaw"]
+    assert rule["automerge"] is False
+    assert rule["platformAutomerge"] is False

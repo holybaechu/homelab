@@ -73,6 +73,8 @@
       tags: [docker_apps, docker_engine]
     - role: docker_compose_project
       tags: [docker_apps, compose]
+    - role: openclaw_foundation
+      tags: [docker_apps, openclaw]
     - role: arcane_manager
       tags: [docker_apps, arcane]
 
