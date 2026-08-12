@@ -140,7 +140,7 @@
   loop: "{{ docker_compose_projects }}"
   loop_control:
     label: "{{ item.name }}"
-  notify: Restart Compose project
+  register: docker_compose_project_file_copy
 
 - name: Read existing AdGuard admin password hash
   ansible.builtin.command:
@@ -239,8 +239,8 @@
   loop: "{{ docker_compose_projects }}"
   loop_control:
     label: "{{ item.name }}"
+  register: docker_compose_project_environment_render
   no_log: true
-  notify: Restart Compose project
 
 - name: Require the direct qBittorrent peer port to be available
   ansible.builtin.shell: |
@@ -349,8 +349,50 @@
   loop: "{{ docker_compose_projects | subelements('config_templates', skip_missing=True) }}"
   loop_control:
     label: "{{ item.0.name }}:{{ item.1.dest }}"
+  register: docker_compose_project_config_render
   no_log: true
-  notify: Restart Compose project
+
+- name: Select Compose projects that require forced recreation
+  ansible.builtin.set_fact:
+    docker_compose_force_recreate_projects: >-
+      {{
+        (
+          (
+            docker_compose_project_file_copy.results
+            | selectattr('changed')
+            | map(attribute='item.name')
+            | list
+          )
+          +
+          (
+            docker_compose_project_environment_render.results
+            | selectattr('changed')
+            | map(attribute='item.name')
+            | list
+          )
+          +
+          (
+            docker_compose_project_config_render.results
+            | selectattr('changed')
+            | map(attribute='item.0.name')
+            | list
+          )
+        ) | unique | list
+      }}
+  changed_when: false
+  no_log: true
+
+- name: Validate Compose project forced recreation selection
+  ansible.builtin.assert:
+    that:
+      - >-
+        docker_compose_force_recreate_projects | difference(
+          docker_compose_projects | map(attribute='name') | list
+        ) | length == 0
+      - >-
+        docker_compose_force_recreate_projects | unique | list | length
+        == docker_compose_force_recreate_projects | length
+    fail_msg: The forced recreation selection must contain unique declared Compose project names only.
 
 - name: Pull Compose project images
   ansible.builtin.command:
@@ -363,21 +405,28 @@
 
 - name: Build and start Compose projects in dependency order
   ansible.builtin.command:
-    cmd: docker compose up -d --build --remove-orphans
+    cmd: >-
+      docker compose up -d --build
+      {{ '--force-recreate'
+      if item.name in docker_compose_force_recreate_projects
+      else '' }}
+      --remove-orphans
     chdir: "{{ item.dest }}"
   loop: "{{ docker_compose_projects }}"
   loop_control:
     label: "{{ item.name }}"
   register: docker_compose_up
   changed_when: >-
-    'Creating' in docker_compose_up.stdout or
-    'Recreating' in docker_compose_up.stdout or
-    'Started' in docker_compose_up.stdout or
-    'Removed orphan' in docker_compose_up.stdout or
-    'Building' in docker_compose_up.stdout
-
-- name: Apply requested Compose project recreations
-  ansible.builtin.meta: flush_handlers
+    item.name in docker_compose_force_recreate_projects or
+    'Creating' in (docker_compose_up.stdout + docker_compose_up.stderr) or
+    'Created' in (docker_compose_up.stdout + docker_compose_up.stderr) or
+    'Recreating' in (docker_compose_up.stdout + docker_compose_up.stderr) or
+    'Recreated' in (docker_compose_up.stdout + docker_compose_up.stderr) or
+    'Starting' in (docker_compose_up.stdout + docker_compose_up.stderr) or
+    'Started' in (docker_compose_up.stdout + docker_compose_up.stderr) or
+    'Removing' in (docker_compose_up.stdout + docker_compose_up.stderr) or
+    'Removed' in (docker_compose_up.stdout + docker_compose_up.stderr) or
+    'Removed orphan' in (docker_compose_up.stdout + docker_compose_up.stderr)
 
 - name: Verify AdGuard runtime Safe Search is disabled
   ansible.builtin.uri:

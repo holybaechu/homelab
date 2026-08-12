@@ -13,7 +13,9 @@ def test_compose_role_reconciles_projects_in_declared_order():
     variables = (REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml").read_text(encoding="utf-8")
 
     assert "docker compose pull --ignore-buildable" in tasks
-    assert "docker compose up -d --build --remove-orphans" in tasks
+    assert "docker compose up -d --build" in tasks
+    assert "--force-recreate" in tasks
+    assert "docker_compose_force_recreate_projects" in tasks
     assert "config_templates" in tasks
     assert 'dest: "{{ item.dest }}/.env"' in tasks
     assert 'mode: "0600"' in tasks
@@ -54,8 +56,76 @@ def test_compose_role_manages_the_qbittorrent_config_before_startup():
     assert tasks.index("Build and start Compose projects in dependency order") < tasks.index(
         "Assert retired Compose service containers are absent"
     )
-    assert "flush_handlers" in tasks
+    assert "flush_handlers" not in tasks
     assert "current_network_interface" not in tasks
+
+
+def test_compose_role_recreates_only_projects_with_changed_inputs():
+    tasks_path = REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
+    tasks_text = tasks_path.read_text(encoding="utf-8")
+    tasks = yaml.safe_load(tasks_text)
+
+    assert not (
+        REPO_ROOT / "infra/ansible/roles/docker_compose_project/handlers/main.yml"
+    ).exists()
+    assert "notify: Restart Compose project" not in tasks_text
+
+    copy_task = next(
+        task for task in tasks if task["name"] == "Copy tracked Compose project files"
+    )
+    env_task = next(
+        task for task in tasks if task["name"] == "Render Compose project environment files"
+    )
+    config_task = next(
+        task for task in tasks if task["name"] == "Render managed application configuration"
+    )
+    assert copy_task["register"] == "docker_compose_project_file_copy"
+    assert env_task["register"] == "docker_compose_project_environment_render"
+    assert config_task["register"] == "docker_compose_project_config_render"
+
+    selection_task = next(
+        task
+        for task in tasks
+        if task["name"] == "Select Compose projects that require forced recreation"
+    )
+    selection = selection_task["ansible.builtin.set_fact"][
+        "docker_compose_force_recreate_projects"
+    ]
+    assert "docker_compose_project_file_copy.results" in selection
+    assert "docker_compose_project_environment_render.results" in selection
+    assert "docker_compose_project_config_render.results" in selection
+    assert "map(attribute='item.name')" in selection
+    assert "map(attribute='item.0.name')" in selection
+    assert "| unique | list" in selection
+    assert selection_task["changed_when"] is False
+    assert selection_task["no_log"] is True
+
+    validation_task = next(
+        task
+        for task in tasks
+        if task["name"] == "Validate Compose project forced recreation selection"
+    )
+    validation = "\n".join(validation_task["ansible.builtin.assert"]["that"])
+    assert "difference" in validation
+    assert "map(attribute='name')" in validation
+    assert "unique" in validation
+
+    start_task = next(
+        task
+        for task in tasks
+        if task["name"] == "Build and start Compose projects in dependency order"
+    )
+    command = start_task["ansible.builtin.command"]["cmd"]
+    assert "--force-recreate" in command
+    assert "item.name in docker_compose_force_recreate_projects" in command
+    assert start_task["loop"] == "{{ docker_compose_projects }}"
+    assert "docker_compose_up.stdout + docker_compose_up.stderr" in start_task[
+        "changed_when"
+    ]
+    assert "item.name in docker_compose_force_recreate_projects" in start_task[
+        "changed_when"
+    ]
+    assert "qbittorrent_config_compare" not in selection
 
 
 def test_compose_role_removes_retired_vpn_runtime_artifacts_after_orphans():
@@ -93,7 +163,7 @@ def test_compose_role_verifies_adguard_safe_search_runtime_without_logging_secre
         if task["name"] == "Verify AdGuard runtime Safe Search is disabled"
     )
 
-    assert tasks_text.index("Apply requested Compose project recreations") < tasks_text.index(
+    assert tasks_text.index("Build and start Compose projects in dependency order") < tasks_text.index(
         "Verify AdGuard runtime Safe Search is disabled"
     )
     assert runtime_check["ansible.builtin.uri"]["url"].endswith(
