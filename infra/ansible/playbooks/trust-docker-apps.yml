@@ -3,11 +3,40 @@
   hosts: pve_hosts
   gather_facts: false
   vars:
-    docker_apps_lxc: >-
+    docker_apps_lxc_candidates: >-
       {{ pve_lxc_access_bootstrap
          | selectattr('name', 'equalto', 'docker_apps')
-         | first }}
+         | list }}
+    docker_apps_host: "{{ hostvars['docker_apps'].ansible_host }}"
   tasks:
+    - name: Validate the Docker application LXC inventory mapping
+      ansible.builtin.assert:
+        that:
+          - docker_apps_lxc_candidates | length == 1
+
+    - name: Select the Docker application LXC inventory mapping
+      ansible.builtin.set_fact:
+        docker_apps_lxc: "{{ docker_apps_lxc_candidates | first }}"
+      changed_when: false
+
+    - name: Validate the Docker application LXC VMID
+      ansible.builtin.assert:
+        that:
+          - docker_apps_lxc.vmid | int > 0
+
+    - name: Validate the Docker application LXC address
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            import ipaddress, sys;
+            address = ipaddress.ip_address(sys.argv[1]);
+            raise SystemExit(0 if address.version == 4 and address.is_private else 1)
+          - "{{ docker_apps_host }}"
+      delegate_to: localhost
+      changed_when: false
+
     - name: Read the Docker application LXC SSH host key through Proxmox
       ansible.builtin.command:
         argv:
@@ -20,18 +49,43 @@
       register: docker_apps_host_key
       changed_when: false
 
+    - name: Validate the Docker application LXC SSH host key
+      ansible.builtin.assert:
+        that:
+          - docker_apps_host_key.stdout_lines | length == 1
+          - >-
+            docker_apps_host_key.stdout is match(
+              '^ssh-ed25519 [A-Za-z0-9+/]+={0,3}( [^\r\n]+)?$'
+            )
+
     - name: Trust the Docker application LXC SSH host key
       ansible.builtin.known_hosts:
         path: "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
-        name: "{{ hostvars['docker_apps'].ansible_host }}"
+        name: "{{ docker_apps_host }}"
         key: >-
-          {{ hostvars['docker_apps'].ansible_host }}
+          {{ docker_apps_host }}
           {{ docker_apps_host_key.stdout }}
       delegate_to: localhost
 
+    - name: Verify the Docker application LXC SSH host key trust entry
+      ansible.builtin.command:
+        argv:
+          - ssh-keygen
+          - -F
+          - "{{ docker_apps_host }}"
+          - -f
+          - "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
+      delegate_to: localhost
+      register: docker_apps_known_host_check
+      changed_when: false
+      failed_when: >-
+        docker_apps_known_host_check.rc != 0 or
+        (docker_apps_host ~ ' ' ~ docker_apps_host_key.stdout)
+        not in docker_apps_known_host_check.stdout_lines
+
     - name: Wait for the Docker application LXC SSH port
       ansible.builtin.wait_for:
-        host: "{{ hostvars['docker_apps'].ansible_host }}"
+        host: "{{ docker_apps_host }}"
         port: 22
         state: started
         connect_timeout: 5

@@ -94,6 +94,15 @@ jobs:
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r infra/ansible/requirements.yml
 
+      - name: Trust Docker application LXC access for identity proof
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.verify_workload_identity == true &&
+          steps.scope.outputs.deployment_scope == 'full'
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
+          infra/ansible/playbooks/trust-docker-apps.yml
+
       - name: Capture long-lived workload container identities
         id: workload_identity_capture
         if: >-

@@ -81,15 +81,19 @@ def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_push
 
     assert "verify_workload_identity:" in workflow
     assert "default: false" in workflow
+    configure_ssh = workflow.index("- name: Configure SSH")
+    install_collections = workflow.index("- name: Install Ansible collections")
+    trust = workflow.index("Trust Docker application LXC access for identity proof")
     capture = workflow.index("Capture long-lived workload container identities")
     deploy = workflow.index("- name: Deploy services")
     retire = workflow.index("- name: Retire the archived source pair")
     prove = workflow.index(
         "Prove long-lived workload container identities are unchanged"
     )
-    assert capture < deploy < retire < prove
+    assert configure_ssh < install_collections < trust < capture < deploy < retire < prove
 
     for step_name in (
+        "Trust Docker application LXC access for identity proof",
         "Capture long-lived workload container identities",
         "Prove long-lived workload container identities are unchanged",
     ):
@@ -99,6 +103,26 @@ def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_push
         assert "github.event_name == 'workflow_dispatch'" in step
         assert "inputs.verify_workload_identity == true" in step
         assert "steps.scope.outputs.deployment_scope == 'full'" in step
+
+    trust_step = workflow.split(
+        "- name: Trust Docker application LXC access for identity proof", maxsplit=1
+    )[1].split("      - name:", maxsplit=1)[0]
+    assert "infra/ansible/playbooks/trust-docker-apps.yml" in trust_step
+    trust_playbook = (
+        REPO_ROOT / "infra" / "ansible" / "playbooks" / "trust-docker-apps.yml"
+    ).read_text(encoding="utf-8")
+    assert "pct" in trust_playbook
+    assert "ssh_host_ed25519_key.pub" in trust_playbook
+    assert "ansible.builtin.known_hosts" in trust_playbook
+    assert "docker_apps_lxc_candidates | length == 1" in trust_playbook
+    assert "address.version == 4 and address.is_private" in trust_playbook
+    assert "docker_apps_host_key.stdout_lines | length == 1" in trust_playbook
+    assert "^ssh-ed25519 " in trust_playbook
+    assert "ssh-keygen" in trust_playbook
+    assert "docker_apps_known_host_check.stdout_lines" in trust_playbook
+    assert "ansible.builtin.shell" not in trust_playbook
+    assert "ansible.builtin.raw" not in trust_playbook
+    assert "ssh-keyscan" not in trust_playbook
 
     assert workflow.count("verify-compose-container-identities.sh") == 3
     assert "diff -u \"${WORKLOAD_IDENTITY_BASELINE}\"" in workflow
@@ -215,7 +239,9 @@ def test_fast_path_trusts_only_the_docker_lxc_via_proxmox():
     assert play["hosts"] == "pve_hosts"
     read_key = by_name["Read the Docker application LXC SSH host key through Proxmox"]
     assert "{{ docker_apps_lxc.vmid }}" in read_key["ansible.builtin.command"]["argv"]
-    assert "pve_lxc_access_bootstrap" in play["vars"]["docker_apps_lxc"]
+    assert "pve_lxc_access_bootstrap" in play["vars"]["docker_apps_lxc_candidates"]
+    select_mapping = by_name["Select the Docker application LXC inventory mapping"]
+    assert "docker_apps_lxc_candidates | first" in select_mapping["ansible.builtin.set_fact"]["docker_apps_lxc"]
     assert "/etc/ssh/ssh_host_ed25519_key.pub" in read_key["ansible.builtin.command"]["argv"]
     trust = by_name["Trust the Docker application LXC SSH host key"]
     assert trust["delegate_to"] == "localhost"

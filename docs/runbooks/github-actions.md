@@ -97,6 +97,8 @@ Do not include the Proxmox HTTP authorization prefix.
 
 `DEPLOY_SSH_KNOWN_HOSTS` is written directly to the GitHub runner's `~/.ssh/known_hosts` before Ansible connects to Proxmox. It only needs the Proxmox host SSH key; LXC SSH host keys are collected later through Proxmox with `pct exec` and added to `known_hosts` during `bootstrap.yml`.
 
+When the optional workload-identity proof is enabled, its read-only baseline runs before bootstrap. The workflow therefore reads the Docker LXC's current Ed25519 host key through the already pinned Proxmox connection and adds it only to the ephemeral runner's `known_hosts` before taking the baseline. It never uses `ssh-keyscan` or trusts a key obtained directly from the network.
+
 Generate the value from a trusted Proxmox console or an already-trusted SSH session:
 
 ```sh
