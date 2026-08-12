@@ -200,4 +200,13 @@ first-login flow and run the live validation gates in
    `OpenTofu apply`, `Bootstrap Proxmox and LXC access`, `Deploy services`,
    and `Validate services`.
 
-The AdGuard role only writes the baseline `AdGuardHome.yaml` when no migrated config exists, but it updates the existing `users:` block from `ADGUARD_ADMIN_USERNAME` and `ADGUARD_ADMIN_PASSWORD` on each deploy.
+The AdGuard role only writes the baseline `AdGuardHome.yaml` when no migrated
+config exists. AdGuard owns and rewrites the existing runtime file, so changing
+the administrator username, password, or template for an existing instance
+requires an explicit reviewed migration; routine deploys preserve runtime state.
+
+The qBittorrent role only bootstraps a missing configuration file. Existing
+application-owned preferences, credentials, and runtime fields are preserved;
+after startup, Ansible conditionally updates only VueTorrent's enabled state
+and `/vuetorrent` root through qBittorrent's loopback Web API. The mod's entry
+asset remains `/vuetorrent/public/index.html`.

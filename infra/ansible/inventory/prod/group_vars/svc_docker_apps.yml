@@ -116,14 +116,23 @@ docker_compose_projects:
   - name: platform
     src: apps/compose/platform
     dest: "{{ docker_apps_compose_root }}/platform"
+    runtime_files:
+      - compose.yml
+      - dynamic.yml
+      - traefik.yml
     env_template: platform.env.j2
     config_templates:
       - src: AdGuardHome.yaml.j2
         dest: adguard/AdGuardHome.yaml
         mode: "0600"
+        owner: root
+        group: root
+        force: false
   - name: media
     src: apps/compose/media
     dest: "{{ docker_apps_compose_root }}/media"
+    runtime_files:
+      - compose.yml
     env_template: media.env.j2
     config_templates:
       - src: copyparty.conf.j2
@@ -132,4 +141,7 @@ docker_compose_projects:
   - name: code
     src: apps/compose/code
     dest: "{{ docker_apps_compose_root }}/code"
+    runtime_files:
+      - compose.yml
+      - Dockerfile
     env_template: t3code.env.j2

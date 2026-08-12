@@ -74,6 +74,56 @@ def test_cd_workflow_runs_bootstrap_before_site_deploy():
     assert bootstrap < site
 
 
+def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_pushes():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "verify_workload_identity:" in workflow
+    assert "default: false" in workflow
+    capture = workflow.index("Capture long-lived workload container identities")
+    deploy = workflow.index("- name: Deploy services")
+    retire = workflow.index("- name: Retire the archived source pair")
+    prove = workflow.index(
+        "Prove long-lived workload container identities are unchanged"
+    )
+    assert capture < deploy < retire < prove
+
+    for step_name in (
+        "Capture long-lived workload container identities",
+        "Prove long-lived workload container identities are unchanged",
+    ):
+        step = workflow.split(f"- name: {step_name}", maxsplit=1)[1].split(
+            "      - name:", maxsplit=1
+        )[0]
+        assert "github.event_name == 'workflow_dispatch'" in step
+        assert "inputs.verify_workload_identity == true" in step
+        assert "steps.scope.outputs.deployment_scope == 'full'" in step
+
+    assert workflow.count("verify-compose-container-identities.sh") == 3
+    assert "diff -u \"${WORKLOAD_IDENTITY_BASELINE}\"" in workflow
+    assert workflow.count("StrictHostKeyChecking=yes") == 3
+    assert workflow.count("UserKnownHostsFile=") == 3
+    assert workflow.count("IdentitiesOnly=yes") == 3
+    assert workflow.count('-i "${HOME}/.ssh/id_ed25519"') == 3
+    assert workflow.count("timeout --signal=TERM --kill-after=10s 60s ssh") == 3
+    assert workflow.count("umask 077") >= 2
+    assert "ipaddress.ip_address(value)" in workflow
+    assert "address.version != 4 or not address.is_private" in workflow
+    assert "id: workload_identity_capture" in workflow
+    assert "id: workload_identity_proof" in workflow
+    assert "always()" in workflow
+    assert "steps.workload_identity_capture.outcome == 'success'" in workflow
+    assert "Require the requested workload identity proof to pass" in workflow
+    assert "WORKLOAD_IDENTITY_CAPTURE_OUTCOME:" in workflow
+    assert "WORKLOAD_IDENTITY_PROOF_OUTCOME:" in workflow
+    cleanup = workflow.split("- name: Remove Ansible extra vars", maxsplit=1)[1].split(
+        "      - name:", maxsplit=1
+    )[0]
+    assert "compose-identities.before.tsv" in cleanup
+    assert "compose-identities.after.tsv" in cleanup
+
+
 def test_cd_workflow_fast_tracks_known_workloads_through_arcane():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"

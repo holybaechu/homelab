@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 
@@ -26,11 +27,12 @@ def test_compose_role_reconciles_projects_in_declared_order():
     assert variables.index("name: media") < variables.index("name: code")
 
 
-def test_compose_role_manages_the_qbittorrent_config_before_startup():
-    tasks = (
+def test_compose_role_bootstraps_qbittorrent_and_live_reconciles_only_vuetorrent():
+    tasks_text = (
         REPO_ROOT
         / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
     ).read_text(encoding="utf-8")
+    tasks = yaml.safe_load(tasks_text)
     variables = (
         REPO_ROOT
         / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
@@ -39,25 +41,153 @@ def test_compose_role_manages_the_qbittorrent_config_before_startup():
     assert "qbittorrent_instances" in variables
     assert "service_name: qbittorrent" in variables
     assert "service_name: qbittorrent-vpn" not in variables
-    assert 'loop: "{{ qbittorrent_instances }}"' in tasks
-    assert "qbittorrent_config_compare.results" in tasks
-    assert tasks.index("Render Compose project environment files") < tasks.index(
-        "Stop qBittorrent instances before replacing changed configuration"
+    assert 'loop: "{{ qbittorrent_instances }}"' in tasks_text
+    assert "cmp -s" not in tasks_text
+    assert ".conf.candidate" not in tasks_text
+    assert "qbittorrent_config_compare" not in tasks_text
+    assert "community.general.ini_file" not in tasks_text
+    assert not any(
+        "qbittorrent" in str(task).lower()
+        and "docker compose stop" in str(task)
+        for task in tasks
     )
-    assert tasks.index("Require the direct qBittorrent peer port to be available") < tasks.index(
-        "Stop qBittorrent instances before replacing changed configuration"
+    assert "include_tasks: reconcile_qbittorrent.yml" not in tasks_text
+    assert not (
+        REPO_ROOT
+        / "infra/ansible/roles/docker_compose_project/tasks/reconcile_qbittorrent.yml"
+    ).exists()
+
+    bootstrap = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Bootstrap qBittorrent configuration without replacing application state"
+    )
+    bootstrap_template = bootstrap["ansible.builtin.template"]
+    assert bootstrap_template["src"] == "qBittorrent.conf.j2"
+    assert bootstrap_template["force"] is False
+    assert bootstrap_template["dest"].endswith(
+        "/qBittorrent/qBittorrent.conf"
+    )
+    assert bootstrap["no_log"] is True
+
+    read = next(
+        task
+        for task in tasks
+        if task["name"] == "Read effective qBittorrent Web UI preferences"
+    )
+    select = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Select VueTorrent through the live qBittorrent API when required"
+    )
+    verify_read = next(
+        task
+        for task in tasks
+        if task["name"] == "Re-read effective qBittorrent Web UI preferences"
+    )
+    api_command = " ".join(str(value) for value in select["ansible.builtin.command"]["argv"])
+    assert "/api/v2/app/setPreferences" in api_command
+    assert (
+        'json={"alternative_webui_enabled":true,'
+        '"alternative_webui_path":"/vuetorrent"}'
+    ) in api_command
+    assert "password" not in api_command.lower()
+    assert "listen_port" not in api_command
+    assert "save_path" not in api_command
+    assert set(re.findall(r'"([a-z_]+)"', api_command)) == {
+        "alternative_webui_enabled",
+        "alternative_webui_path",
+    }
+    assert "alternative_webui_enabled" in select["when"]
+    assert "alternative_webui_path" in select["when"]
+    assert select["changed_when"] is True
+    assert select["no_log"] is True
+    assert read["no_log"] is True
+    assert verify_read["no_log"] is True
+
+    assert tasks_text.index("Render Compose project environment files") < tasks_text.index(
+        bootstrap["name"]
+    )
+    assert tasks_text.index("Require the direct qBittorrent peer port to be available") < tasks_text.index(
+        bootstrap["name"]
     )
     assert (
         'docker ps --no-trunc -q --filter "publish={{ qbittorrent_direct_peer_port }}"'
-        in tasks
+        in tasks_text
     )
-    assert 'docker ps -q --filter "publish={{ qbittorrent_direct_peer_port }}"' not in tasks
-    assert 'test "${owner}" = "${direct_container}"' in tasks
-    assert tasks.index("Build and start Compose projects in dependency order") < tasks.index(
+    assert 'docker ps -q --filter "publish={{ qbittorrent_direct_peer_port }}"' not in tasks_text
+    assert 'test "${owner}" = "${direct_container}"' in tasks_text
+    assert tasks_text.index("Build and start Compose projects in dependency order") < tasks_text.index(
         "Assert retired Compose service containers are absent"
     )
-    assert "flush_handlers" not in tasks
-    assert "current_network_interface" not in tasks
+    assert tasks_text.index("Build and start Compose projects in dependency order") < tasks_text.index(
+        "Restrict qBittorrent configuration metadata after live reconciliation"
+    )
+    assert tasks_text.index("Build and start Compose projects in dependency order") < tasks_text.index(
+        read["name"]
+    )
+    assert tasks_text.index(read["name"]) < tasks_text.index(select["name"])
+    assert tasks_text.index(select["name"]) < tasks_text.index(verify_read["name"])
+    assert tasks_text.index(verify_read["name"]) < tasks_text.index(
+        "Restrict qBittorrent configuration metadata after live reconciliation"
+    )
+    assert "flush_handlers" not in tasks_text
+    assert "current_network_interface" not in tasks_text
+
+
+def test_adguard_config_is_root_owned_bootstrap_only_input():
+    tasks = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
+        ).read_text(encoding="utf-8")
+    )
+    variables = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
+        ).read_text(encoding="utf-8")
+    )
+
+    platform = next(
+        project
+        for project in variables["docker_compose_projects"]
+        if project["name"] == "platform"
+    )
+    adguard = next(
+        config
+        for config in platform["config_templates"]
+        if config["dest"] == "adguard/AdGuardHome.yaml"
+    )
+    assert adguard == {
+        "src": "AdGuardHome.yaml.j2",
+        "dest": "adguard/AdGuardHome.yaml",
+        "mode": "0600",
+        "owner": "root",
+        "group": "root",
+        "force": False,
+    }
+
+    render = next(
+        task
+        for task in tasks
+        if task["name"] == "Render managed application configuration"
+    )["ansible.builtin.template"]
+    assert render["force"] == "{{ item.1.force | default(true) }}"
+    assert render["owner"] == "{{ item.1.owner | default(service_uid) }}"
+    assert render["group"] == "{{ item.1.group | default(service_gid) }}"
+
+    metadata = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Restrict application-owned AdGuard configuration metadata"
+    )["ansible.builtin.file"]
+    assert metadata["owner"] == "root"
+    assert metadata["group"] == "root"
+    assert metadata["mode"] == "0600"
 
 
 def test_compose_role_recreates_only_projects_with_changed_inputs():
@@ -71,7 +201,7 @@ def test_compose_role_recreates_only_projects_with_changed_inputs():
     assert "notify: Restart Compose project" not in tasks_text
 
     copy_task = next(
-        task for task in tasks if task["name"] == "Copy tracked Compose project files"
+        task for task in tasks if task["name"] == "Copy tracked Compose runtime files"
     )
     env_task = next(
         task for task in tasks if task["name"] == "Render Compose project environment files"
@@ -80,6 +210,15 @@ def test_compose_role_recreates_only_projects_with_changed_inputs():
         task for task in tasks if task["name"] == "Render managed application configuration"
     )
     assert copy_task["register"] == "docker_compose_project_file_copy"
+    assert copy_task["loop"] == (
+        "{{ docker_compose_projects | subelements('runtime_files') }}"
+    )
+    assert copy_task["ansible.builtin.copy"]["src"].endswith(
+        "/{{ item.0.src }}/{{ item.1 }}"
+    )
+    assert copy_task["ansible.builtin.copy"]["dest"] == (
+        "{{ item.0.dest }}/{{ item.1 }}"
+    )
     assert env_task["register"] == "docker_compose_project_environment_render"
     assert config_task["register"] == "docker_compose_project_config_render"
 
@@ -94,7 +233,6 @@ def test_compose_role_recreates_only_projects_with_changed_inputs():
     assert "docker_compose_project_file_copy.results" in selection
     assert "docker_compose_project_environment_render.results" in selection
     assert "docker_compose_project_config_render.results" in selection
-    assert "map(attribute='item.name')" in selection
     assert "map(attribute='item.0.name')" in selection
     assert "| unique | list" in selection
     assert selection_task["changed_when"] is False
@@ -126,6 +264,27 @@ def test_compose_role_recreates_only_projects_with_changed_inputs():
         "changed_when"
     ]
     assert "qbittorrent_config_compare" not in selection
+
+
+def test_compose_role_copies_only_declared_runtime_files():
+    variables = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
+        ).read_text(encoding="utf-8")
+    )
+
+    projects = {
+        project["name"]: project["runtime_files"]
+        for project in variables["docker_compose_projects"]
+    }
+    assert projects == {
+        "platform": ["compose.yml", "dynamic.yml", "traefik.yml"],
+        "media": ["compose.yml"],
+        "code": ["compose.yml", "Dockerfile"],
+    }
+    assert all("README.md" not in files for files in projects.values())
+    assert all(".env.example" not in files for files in projects.values())
 
 
 def test_compose_role_removes_retired_vpn_runtime_artifacts_after_orphans():

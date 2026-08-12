@@ -110,7 +110,8 @@ def test_qbittorrent_uses_vuetorrent_and_managed_network_settings():
     assert ":latest" not in qbittorrent
 
     assert "WebUI\\AlternativeUIEnabled=true" in config
-    assert "WebUI\\RootFolder=/vuetorrent/public" in config
+    assert "WebUI\\RootFolder=/vuetorrent" in config
+    assert "WebUI\\RootFolder=/vuetorrent/public" not in config
     assert "qbittorrent_instance.connection_interface" in config
     assert "Connection\\PortRangeMin={{ qbittorrent_instance.peer_port }}" in config
     assert "connection_interface: \"\"" in variables

@@ -130,16 +130,16 @@
   loop_control:
     label: "{{ item.name }}"
 
-- name: Copy tracked Compose project files
+- name: Copy tracked Compose runtime files
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../../{{ item.src }}/"
-    dest: "{{ item.dest }}/"
+    src: "{{ playbook_dir }}/../../../{{ item.0.src }}/{{ item.1 }}"
+    dest: "{{ item.0.dest }}/{{ item.1 }}"
     owner: "{{ service_uid }}"
     group: "{{ service_gid }}"
     mode: preserve
-  loop: "{{ docker_compose_projects }}"
+  loop: "{{ docker_compose_projects | subelements('runtime_files') }}"
   loop_control:
-    label: "{{ item.name }}"
+    label: "{{ item.0.name }}:{{ item.1 }}"
   register: docker_compose_project_file_copy
 
 - name: Read existing AdGuard admin password hash
@@ -279,64 +279,19 @@
     chdir: "{{ docker_apps_compose_root }}/media"
   changed_when: false
 
-- name: Render qBittorrent configuration candidates
+- name: Bootstrap qBittorrent configuration without replacing application state
   ansible.builtin.template:
     src: qBittorrent.conf.j2
-    dest: "/tmp/{{ item.service_name }}.conf.candidate"
+    dest: "{{ item.config_root }}/qBittorrent/qBittorrent.conf"
     owner: "{{ service_uid }}"
     group: "{{ service_gid }}"
     mode: "0600"
+    force: false
   vars:
     qbittorrent_instance: "{{ item }}"
   loop: "{{ qbittorrent_instances }}"
   loop_control:
     label: "{{ item.service_name }}"
-  changed_when: false
-  no_log: true
-
-- name: Compare qBittorrent configuration candidates
-  ansible.builtin.shell: |
-    test -f "{{ item.config_root }}/qBittorrent/qBittorrent.conf" \
-      && cmp -s "/tmp/{{ item.service_name }}.conf.candidate" \
-        "{{ item.config_root }}/qBittorrent/qBittorrent.conf"
-  args:
-    executable: /bin/sh
-  loop: "{{ qbittorrent_instances }}"
-  loop_control:
-    label: "{{ item.service_name }}"
-  register: qbittorrent_config_compare
-  failed_when: qbittorrent_config_compare.rc not in [0, 1]
-  changed_when: false
-  no_log: true
-
-- name: Stop qBittorrent instances before replacing changed configuration
-  ansible.builtin.shell: |
-    set -eu
-    container_id="$(docker compose ps --all -q "{{ item.item.service_name }}")"
-    if [ -n "${container_id}" ]; then
-      docker compose stop "{{ item.item.service_name }}"
-    fi
-  args:
-    executable: /bin/sh
-    chdir: "{{ docker_apps_compose_root }}/media"
-  loop: "{{ qbittorrent_config_compare.results }}"
-  loop_control:
-    label: "{{ item.item.service_name }}"
-  when: item.rc != 0
-  changed_when: true
-
-- name: Install managed qBittorrent configurations
-  ansible.builtin.copy:
-    src: "/tmp/{{ item.item.service_name }}.conf.candidate"
-    dest: "{{ item.item.config_root }}/qBittorrent/qBittorrent.conf"
-    remote_src: true
-    owner: "{{ service_uid }}"
-    group: "{{ service_gid }}"
-    mode: "0600"
-  loop: "{{ qbittorrent_config_compare.results }}"
-  loop_control:
-    label: "{{ item.item.service_name }}"
-  when: item.rc != 0
   no_log: true
 
 - name: Render managed application configuration
@@ -346,11 +301,20 @@
     owner: "{{ item.1.owner | default(service_uid) }}"
     group: "{{ item.1.group | default(service_gid) }}"
     mode: "{{ item.1.mode | default('0644') }}"
+    force: "{{ item.1.force | default(true) }}"
   loop: "{{ docker_compose_projects | subelements('config_templates', skip_missing=True) }}"
   loop_control:
     label: "{{ item.0.name }}:{{ item.1.dest }}"
   register: docker_compose_project_config_render
   no_log: true
+
+- name: Restrict application-owned AdGuard configuration metadata
+  ansible.builtin.file:
+    path: "{{ docker_apps_compose_root }}/platform/adguard/AdGuardHome.yaml"
+    state: file
+    owner: root
+    group: root
+    mode: "0600"
 
 - name: Select Compose projects that require forced recreation
   ansible.builtin.set_fact:
@@ -360,7 +324,7 @@
           (
             docker_compose_project_file_copy.results
             | selectattr('changed')
-            | map(attribute='item.name')
+            | map(attribute='item.0.name')
             | list
           )
           +
@@ -427,6 +391,117 @@
     'Removing' in (docker_compose_up.stdout + docker_compose_up.stderr) or
     'Removed' in (docker_compose_up.stdout + docker_compose_up.stderr) or
     'Removed orphan' in (docker_compose_up.stdout + docker_compose_up.stderr)
+
+- name: Read effective qBittorrent Web UI preferences
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - exec
+      - -T
+      - "{{ item.service_name }}"
+      - sh
+      - -c
+      - >-
+        if command -v curl >/dev/null 2>&1; then
+          exec curl -fsS http://127.0.0.1:8080/api/v2/app/preferences;
+        fi;
+        exec wget -qO- http://127.0.0.1:8080/api/v2/app/preferences
+    chdir: "{{ docker_apps_compose_root }}/media"
+  loop: "{{ qbittorrent_instances }}"
+  loop_control:
+    label: "{{ item.service_name }}"
+  register: qbittorrent_effective_preferences
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: qbittorrent_effective_preferences.rc == 0
+  no_log: true
+
+- name: Select VueTorrent through the live qBittorrent API when required
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - exec
+      - -T
+      - "{{ item.item.service_name }}"
+      - sh
+      - -c
+      - |
+        if command -v curl >/dev/null 2>&1; then
+          exec curl -fsS \
+            -H 'Referer: http://127.0.0.1:8080' \
+            -H 'Origin: http://127.0.0.1:8080' \
+            --data-urlencode \
+            'json={"alternative_webui_enabled":true,"alternative_webui_path":"/vuetorrent"}' \
+            http://127.0.0.1:8080/api/v2/app/setPreferences
+        fi;
+        exec wget -qO- \
+          --header='Referer: http://127.0.0.1:8080' \
+          --header='Origin: http://127.0.0.1:8080' \
+          --post-data='json=%7B%22alternative_webui_enabled%22%3Atrue%2C%22alternative_webui_path%22%3A%22%2Fvuetorrent%22%7D' \
+          http://127.0.0.1:8080/api/v2/app/setPreferences
+    chdir: "{{ docker_apps_compose_root }}/media"
+  loop: "{{ qbittorrent_effective_preferences.results }}"
+  loop_control:
+    label: "{{ item.item.service_name }}"
+  when: >-
+    not ((item.stdout | from_json).alternative_webui_enabled | bool) or
+    (item.stdout | from_json).alternative_webui_path != '/vuetorrent'
+  changed_when: true
+  no_log: true
+
+- name: Re-read effective qBittorrent Web UI preferences
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - exec
+      - -T
+      - "{{ item.service_name }}"
+      - sh
+      - -c
+      - >-
+        if command -v curl >/dev/null 2>&1; then
+          exec curl -fsS http://127.0.0.1:8080/api/v2/app/preferences;
+        fi;
+        exec wget -qO- http://127.0.0.1:8080/api/v2/app/preferences
+    chdir: "{{ docker_apps_compose_root }}/media"
+  loop: "{{ qbittorrent_instances }}"
+  loop_control:
+    label: "{{ item.service_name }}"
+  register: qbittorrent_verified_preferences
+  changed_when: false
+  retries: 6
+  delay: 2
+  until: >-
+    qbittorrent_verified_preferences.rc == 0 and
+    (qbittorrent_verified_preferences.stdout | from_json).alternative_webui_enabled | bool and
+    (qbittorrent_verified_preferences.stdout | from_json).alternative_webui_path == '/vuetorrent'
+  no_log: true
+
+- name: Verify effective qBittorrent VueTorrent selection
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | from_json).alternative_webui_enabled | bool
+      - (item.stdout | from_json).alternative_webui_path == '/vuetorrent'
+    fail_msg: qBittorrent must use the VueTorrent Web UI rooted at /vuetorrent.
+  loop: "{{ qbittorrent_verified_preferences.results }}"
+  loop_control:
+    label: "{{ item.item.service_name }}"
+  no_log: true
+
+- name: Restrict qBittorrent configuration metadata after live reconciliation
+  ansible.builtin.file:
+    path: "{{ item.config_root }}/qBittorrent/qBittorrent.conf"
+    state: file
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    mode: "0600"
+  loop: "{{ qbittorrent_instances }}"
+  loop_control:
+    label: "{{ item.service_name }}"
 
 - name: Verify AdGuard runtime Safe Search is disabled
   ansible.builtin.uri:

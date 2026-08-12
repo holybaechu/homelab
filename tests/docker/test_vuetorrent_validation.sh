@@ -24,7 +24,7 @@ case "$*" in
   *"AlternativeUIEnabled=true"*)
     test "${FAKE_DOCKER_SCENARIO}" != all_fail
     ;;
-  *"RootFolder=/vuetorrent/public"*)
+  *"RootFolder=/vuetorrent /config/qBittorrent/qBittorrent.conf"*)
     test "${FAKE_DOCKER_SCENARIO}" != all_fail
     ;;
   *"exec -T qbittorrent grep -Fx -- Connection\\Interface=tun0"*)
@@ -82,7 +82,7 @@ for service in qbittorrent; do
   printf '%s\n' "${all_fail_output}" | grep -F \
     "FAIL ${service} config: exact WebUI\\AlternativeUIEnabled=true is missing"
   printf '%s\n' "${all_fail_output}" | grep -F \
-    "FAIL ${service} config: exact WebUI\\RootFolder=/vuetorrent/public is missing"
+    "FAIL ${service} config: exact WebUI\\RootFolder=/vuetorrent is missing"
   printf '%s\n' "${all_fail_output}" | grep -F \
     "FAIL ${service} environment: effective DOCKER_MODS=<invalid or unavailable; value suppressed>"
   printf '%s\n' "${all_fail_output}" | grep -F \
@@ -116,7 +116,7 @@ for service in qbittorrent; do
   grep -Fx "compose logs --no-color --tail 80 ${service}" "${calls}"
 done
 grep -F 'AlternativeUIEnabled=true' "${calls}"
-grep -F 'RootFolder=/vuetorrent/public' "${calls}"
+grep -F 'WebUI\RootFolder=/vuetorrent /config/qBittorrent/qBittorrent.conf' "${calls}"
 grep -F 'Connection\Interface=tun0' "${calls}"
 
 : > "${calls}"
@@ -133,7 +133,7 @@ for service in qbittorrent; do
   printf '%s\n' "${success_output}" | grep -F \
     "PASS ${service} config: exact WebUI\\AlternativeUIEnabled=true"
   printf '%s\n' "${success_output}" | grep -F \
-    "PASS ${service} config: exact WebUI\\RootFolder=/vuetorrent/public"
+    "PASS ${service} config: exact WebUI\\RootFolder=/vuetorrent"
   printf '%s\n' "${success_output}" | grep -F \
     "PASS ${service} environment: effective DOCKER_MODS=ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7"
 done

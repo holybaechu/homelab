@@ -7,6 +7,11 @@ on:
         description: Confirmed stale OpenTofu lock UUID to remove before planning
         required: false
         type: string
+      verify_workload_identity:
+        description: Prove long-lived workload containers do not restart or recreate
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -88,6 +93,49 @@ jobs:
 
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r infra/ansible/requirements.yml
+
+      - name: Capture long-lived workload container identities
+        id: workload_identity_capture
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.verify_workload_identity == true &&
+          steps.scope.outputs.deployment_scope == 'full'
+        env:
+          WORKLOAD_IDENTITY_BASELINE: ${{ runner.temp }}/compose-identities.before.tsv
+        run: |
+          set -eu
+          umask 077
+          docker_apps_host="$(
+            ansible-inventory \
+              -i infra/ansible/inventory/prod/hosts.yml \
+              --host docker_apps |
+              python3 -c '
+          import ipaddress
+          import json
+          import sys
+
+          value = json.load(sys.stdin).get("ansible_host")
+          try:
+              address = ipaddress.ip_address(value)
+          except (TypeError, ValueError) as exc:
+              raise SystemExit("docker_apps ansible_host must be an IP address") from exc
+          if address.version != 4 or not address.is_private:
+              raise SystemExit("docker_apps ansible_host must be a private IPv4 address")
+          print(address)
+          '
+          )"
+          printf 'DOCKER_APPS_SSH_HOST=%s\n' "${docker_apps_host}" >> "${GITHUB_ENV}"
+          timeout --signal=TERM --kill-after=10s 60s ssh \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${HOME}/.ssh/known_hosts" \
+            -i "${HOME}/.ssh/id_ed25519" \
+            "root@${docker_apps_host}" \
+            'sh -s -- snapshot' \
+            < scripts/ci/verify-compose-container-identities.sh \
+            > "${WORKLOAD_IDENTITY_BASELINE}"
+          test -s "${WORKLOAD_IDENTITY_BASELINE}"
 
       - name: Validate and write Ansible service secrets
         if: steps.scope.outputs.deployment_scope == 'full'
@@ -203,11 +251,68 @@ jobs:
           ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
           infra/ansible/playbooks/finalize-low-id-retirement.yml
 
+      - name: Prove long-lived workload container identities are unchanged
+        id: workload_identity_proof
+        if: >-
+          always() &&
+          github.event_name == 'workflow_dispatch' &&
+          inputs.verify_workload_identity == true &&
+          steps.scope.outputs.deployment_scope == 'full' &&
+          steps.workload_identity_capture.outcome == 'success'
+        env:
+          WORKLOAD_IDENTITY_BASELINE: ${{ runner.temp }}/compose-identities.before.tsv
+          WORKLOAD_IDENTITY_CURRENT: ${{ runner.temp }}/compose-identities.after.tsv
+        run: |
+          set -eu
+          umask 077
+          test -n "${DOCKER_APPS_SSH_HOST:-}"
+          test -s "${WORKLOAD_IDENTITY_BASELINE}"
+          timeout --signal=TERM --kill-after=10s 60s ssh \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${HOME}/.ssh/known_hosts" \
+            -i "${HOME}/.ssh/id_ed25519" \
+            "root@${DOCKER_APPS_SSH_HOST}" \
+            'sh -s -- snapshot' \
+            < scripts/ci/verify-compose-container-identities.sh \
+            > "${WORKLOAD_IDENTITY_CURRENT}"
+          diff -u "${WORKLOAD_IDENTITY_BASELINE}" "${WORKLOAD_IDENTITY_CURRENT}"
+          timeout --signal=TERM --kill-after=10s 60s ssh \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${HOME}/.ssh/known_hosts" \
+            -i "${HOME}/.ssh/id_ed25519" \
+            "root@${DOCKER_APPS_SSH_HOST}" \
+            'sh -s -- health' \
+            < scripts/ci/verify-compose-container-identities.sh
+
       - name: Remove Ansible extra vars
         if: always()
         env:
           ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
-        run: rm -f "${ANSIBLE_EXTRA_VARS_PATH}" infra/opentofu/envs/prod/ci.auto.tfvars.json
+          WORKLOAD_IDENTITY_BASELINE: ${{ runner.temp }}/compose-identities.before.tsv
+          WORKLOAD_IDENTITY_CURRENT: ${{ runner.temp }}/compose-identities.after.tsv
+        run: >-
+          rm -f
+          "${ANSIBLE_EXTRA_VARS_PATH}"
+          "${WORKLOAD_IDENTITY_BASELINE}"
+          "${WORKLOAD_IDENTITY_CURRENT}"
+          infra/opentofu/envs/prod/ci.auto.tfvars.json
+
+      - name: Require the requested workload identity proof to pass
+        if: >-
+          always() &&
+          github.event_name == 'workflow_dispatch' &&
+          inputs.verify_workload_identity == true
+        env:
+          WORKLOAD_IDENTITY_CAPTURE_OUTCOME: ${{ steps.workload_identity_capture.outcome }}
+          WORKLOAD_IDENTITY_PROOF_OUTCOME: ${{ steps.workload_identity_proof.outcome }}
+        run: |
+          set -eu
+          test "${WORKLOAD_IDENTITY_CAPTURE_OUTCOME}" = success
+          test "${WORKLOAD_IDENTITY_PROOF_OUTCOME}" = success
 
       - name: Disconnect Tailscale
         if: always()

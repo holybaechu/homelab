@@ -55,10 +55,16 @@ def test_t3code_is_registered_for_ansible_and_arcane():
     assert {"name": "code", "compose_path": "apps/compose/code/compose.yml"} in (
         variables["arcane_gitops_projects"]
     )
-    assert {
+    code_project = next(
+        project
+        for project in variables["docker_compose_projects"]
+        if project["name"] == "code"
+    )
+    assert code_project == {
         "name": "code",
         "src": "apps/compose/code",
         "dest": "{{ docker_apps_compose_root }}/code",
+        "runtime_files": ["compose.yml", "Dockerfile"],
         "env_template": "t3code.env.j2",
-    } in variables["docker_compose_projects"]
+    }
     assert variables["t3code_hostname"] == "code.home.hchu.me"

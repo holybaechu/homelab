@@ -29,11 +29,11 @@ for service in ${qbittorrent_services}; do
   fi
 
   if docker compose exec -T "${service}" grep -Fx -- \
-    'WebUI\RootFolder=/vuetorrent/public' \
+    'WebUI\RootFolder=/vuetorrent' \
     /config/qBittorrent/qBittorrent.conf >/dev/null 2>&1; then
-    pass "${service} config: exact WebUI\RootFolder=/vuetorrent/public"
+    pass "${service} config: exact WebUI\RootFolder=/vuetorrent"
   else
-    fail "${service} config: exact WebUI\RootFolder=/vuetorrent/public is missing"
+    fail "${service} config: exact WebUI\RootFolder=/vuetorrent is missing"
   fi
 
   if docker compose exec -T "${service}" grep -Fx -- \
