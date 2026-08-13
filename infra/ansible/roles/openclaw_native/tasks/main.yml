@@ -5,6 +5,7 @@
       - ansible_system == 'Linux'
       - ansible_architecture == 'x86_64'
       - openclaw_version is match('^[0-9]{4}\.[0-9]+\.[0-9]+(?:-[0-9]+)?$')
+      - openclaw_cli_version_output == 'OpenClaw ' + openclaw_version + ' (0790d9f)'
       - openclaw_package_url == 'https://registry.npmjs.org/openclaw/-/openclaw-' + openclaw_version + '.tgz'
       - openclaw_package_sha512 is match('^[0-9a-f]{128}$')
       - openclaw_node_url == 'https://nodejs.org/download/release/v' + openclaw_node_version + '/' + openclaw_node_archive
@@ -264,14 +265,17 @@
   changed_when: false
   failed_when: openclaw_package_version_check.stdout | trim != openclaw_version
 
-- name: Verify the installed OpenClaw CLI is executable
+- name: Verify the installed OpenClaw CLI version output
   ansible.builtin.command:
     argv:
       - "{{ openclaw_node_release_root }}/bin/node"
       - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
       - --version
   environment: *openclaw_install_environment
+  register: openclaw_installed_cli_version
   changed_when: false
+  failed_when: >-
+    openclaw_installed_cli_version.stdout | trim != openclaw_cli_version_output
 
 - name: Mark the fully verified OpenClaw release prefix complete
   ansible.builtin.copy:
@@ -313,7 +317,7 @@
   register: openclaw_published_cli_version
   changed_when: false
   failed_when: >-
-    openclaw_published_cli_version.stdout | trim != 'OpenClaw ' + openclaw_cli_version
+    openclaw_published_cli_version.stdout | trim != openclaw_cli_version_output
 
 - name: Render the dedicated OpenClaw nftables policy
   ansible.builtin.template:

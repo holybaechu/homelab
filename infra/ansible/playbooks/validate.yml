@@ -134,7 +134,7 @@
         test "$package_version" = '{{ openclaw_version }}'
         test -x '{{ openclaw_release_root }}/bin/openclaw'
         test "$(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-          /usr/local/bin/openclaw --version)" = 'OpenClaw {{ openclaw_cli_version }}'
+          /usr/local/bin/openclaw --version)" = '{{ openclaw_cli_version_output }}'
       args:
         executable: /bin/sh
       changed_when: false

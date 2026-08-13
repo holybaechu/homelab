@@ -6,6 +6,9 @@ from tests.helpers import REPO_ROOT
 ROLE = REPO_ROOT / "infra/ansible/roles/openclaw_native"
 VARS = REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_openclaw.yml"
 VALIDATE = REPO_ROOT / "infra/ansible/playbooks/validate.yml"
+STAGE_VALIDATE = (
+    REPO_ROOT / "infra/ansible/playbooks/validate-openclaw-native-stage.yml"
+)
 
 
 def read(path):
@@ -24,9 +27,10 @@ def test_native_openclaw_release_and_node_are_exactly_integrity_pinned():
     tasks = read(ROLE / "tasks/main.yml")
 
     assert variables["openclaw_version"] == "2026.7.1-2"
-    assert variables["openclaw_cli_version"] == (
-        "{{ openclaw_version | regex_replace('-[0-9]+$', '') }}"
+    assert variables["openclaw_cli_version_output"] == (
+        "OpenClaw 2026.7.1-2 (0790d9f)"
     )
+    assert "openclaw_cli_version" not in variables
     assert variables["openclaw_package_url"] == (
         "https://registry.npmjs.org/openclaw/-/openclaw-2026.7.1-2.tgz"
     )
@@ -50,6 +54,49 @@ def test_native_openclaw_release_and_node_are_exactly_integrity_pinned():
     ) in tasks
     assert "Verify the published OpenClaw CLI through a standard system path" in tasks
     assert "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" in tasks
+
+
+def test_native_openclaw_cli_version_output_is_exact_in_every_validation_path():
+    role_tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    role_contract = next(
+        task
+        for task in role_tasks
+        if task["name"] == "Require the pinned native OpenClaw deployment contract"
+    )
+    installed_check = next(
+        task
+        for task in role_tasks
+        if task["name"] == "Verify the installed OpenClaw CLI version output"
+    )
+    published_check = next(
+        task
+        for task in role_tasks
+        if task["name"]
+        == "Verify the published OpenClaw CLI through a standard system path"
+    )
+
+    assert (
+        "openclaw_cli_version_output == 'OpenClaw ' + openclaw_version + "
+        "' (0790d9f)'"
+        in role_contract["ansible.builtin.assert"]["that"]
+    )
+    assert installed_check["failed_when"] == (
+        "openclaw_installed_cli_version.stdout | trim != "
+        "openclaw_cli_version_output"
+    )
+    assert published_check["failed_when"] == (
+        "openclaw_published_cli_version.stdout | trim != "
+        "openclaw_cli_version_output"
+    )
+
+    expected_shell_assertion = (
+        "/usr/local/bin/openclaw --version)\" = "
+        "'{{ openclaw_cli_version_output }}'"
+    )
+    assert expected_shell_assertion in read(VALIDATE)
+    assert expected_shell_assertion in read(STAGE_VALIDATE)
+    assert "openclaw_cli_version }}" not in read(VALIDATE)
+    assert "openclaw_cli_version }}" not in read(STAGE_VALIDATE)
 
 
 def test_native_runtime_install_recovers_only_exact_incomplete_version_prefixes():

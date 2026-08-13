@@ -4,7 +4,7 @@ openclaw_native_transition_marker_value: homelab-openclaw-native-migration-v1
 common_debian_create_service_account: false
 
 openclaw_version: 2026.7.1-2
-openclaw_cli_version: "{{ openclaw_version | regex_replace('-[0-9]+$', '') }}"
+openclaw_cli_version_output: "OpenClaw 2026.7.1-2 (0790d9f)"
 openclaw_package_url: https://registry.npmjs.org/openclaw/-/openclaw-2026.7.1-2.tgz
 openclaw_package_sha512: c9c177c8f71b8cde9b50f79a531e8c87abf37b58505a80f7093ff059c983edaf316871c745468095aabe945c4c1dfd6cb0480e0d50308e5cd8aa9dadc24619ee
 
