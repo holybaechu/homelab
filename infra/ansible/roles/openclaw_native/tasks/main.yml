@@ -529,7 +529,11 @@
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
       register: openclaw_config_file_preflight
       changed_when: false
-      failed_when: openclaw_config_file_preflight.stdout | trim != openclaw_config_path
+      failed_when: >-
+        openclaw_config_file_preflight.rc != 0 or
+        (openclaw_config_file_preflight.stdout | trim |
+        regex_replace('^[$]OPENCLAW_HOME/', openclaw_home + '/')) !=
+        openclaw_config_path
 
     - name: Validate the native OpenClaw config schema
       ansible.builtin.command:

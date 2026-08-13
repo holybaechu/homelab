@@ -288,6 +288,45 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert "OPENCLAW_SUPERVISOR_MODE: external" in tasks
 
 
+def test_native_config_path_preflight_normalizes_only_the_cli_home_display_prefix():
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    preflight = next(
+        task
+        for task in walk_tasks(tasks)
+        if task["name"] == "Check the active native OpenClaw config path"
+    )
+
+    assert preflight["environment"]["OPENCLAW_HOME"] == "{{ openclaw_home }}"
+    assert preflight["environment"]["OPENCLAW_CONFIG_PATH"] == (
+        "{{ openclaw_config_path }}"
+    )
+    assert preflight["failed_when"] == (
+        "openclaw_config_file_preflight.rc != 0 or "
+        "(openclaw_config_file_preflight.stdout | trim | "
+        "regex_replace('^[$]OPENCLAW_HOME/', openclaw_home + '/')) != "
+        "openclaw_config_path"
+    )
+
+    home = "/home/openclaw"
+    canonical = f"{home}/openclaw-setup/config/openclaw.json"
+
+    def normalize(cli_output):
+        prefix = "$OPENCLAW_HOME/"
+        stripped = cli_output.strip()
+        if stripped.startswith(prefix):
+            return f"{home}/{stripped[len(prefix):]}"
+        return stripped
+
+    assert (
+        normalize("$OPENCLAW_HOME/openclaw-setup/config/openclaw.json\n")
+        == canonical
+    )
+    assert normalize(f"{canonical}\n") == canonical
+    assert normalize("$HOME/openclaw-setup/config/openclaw.json\n") != canonical
+    assert normalize("$OPENCLAW_HOME/other/openclaw.json\n") != canonical
+    assert normalize("openclaw-setup/config/openclaw.json\n") != canonical
+
+
 def test_active_native_validation_enforces_private_repository_boundaries():
     plays = yaml.safe_load(read(VALIDATE))
     native_play = next(play for play in plays if play.get("hosts") == "svc_openclaw")
