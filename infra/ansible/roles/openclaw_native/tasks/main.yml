@@ -415,6 +415,29 @@
     - not (openclaw_native_transition_marker.stat.exists | default(false))
     - "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
 
+- name: Classify retained staged OpenClaw application failure journal
+  ansible.builtin.include_tasks: classify_gateway_journal.yml
+  when:
+    - not (openclaw_native_activate | bool)
+    - not (openclaw_native_transition_marker.stat.exists | default(false))
+    - "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
+    - "'ExecMainCode=1' in openclaw_staged_systemd_state.stdout_lines"
+    - "'ExecMainStatus=1' in openclaw_staged_systemd_state.stdout_lines"
+
+- name: Preserve retained state when the staged OpenClaw journal query fails
+  ansible.builtin.assert:
+    that:
+      - "'journal-query-failed=0' in openclaw_journal_classification.stdout_lines"
+    fail_msg: >-
+      The bounded native OpenClaw journal query failed; no retained failure
+      state was reset.
+  when:
+    - not (openclaw_native_activate | bool)
+    - not (openclaw_native_transition_marker.stat.exists | default(false))
+    - "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
+    - "'ExecMainCode=1' in openclaw_staged_systemd_state.stdout_lines"
+    - "'ExecMainStatus=1' in openclaw_staged_systemd_state.stdout_lines"
+
 - name: Reset the retained staged OpenClaw failure state
   ansible.builtin.command:
     argv:
@@ -774,12 +797,16 @@
       ansible.builtin.debug:
         msg: "{{ openclaw_native_systemd_failure.stdout_lines }}"
 
+    - name: Classify native OpenClaw application failure journal safely
+      ansible.builtin.include_tasks: classify_gateway_journal.yml
+
     - name: Fail after the native OpenClaw readiness diagnostic
       ansible.builtin.fail:
         msg: >-
           The native OpenClaw Gateway did not become ready; the allowlisted
-          systemd state above contains no environment, command line, config,
-          journal, or credential material.
+          systemd state and fixed journal category counters above contain no
+          environment, command line, config, raw journal, or credential
+          material.
 
 - name: Probe native RPC through an isolated service-user credential
   when: openclaw_native_activate | bool

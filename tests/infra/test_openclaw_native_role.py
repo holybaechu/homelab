@@ -218,6 +218,35 @@ def test_native_openclaw_is_staged_then_explicitly_activated():
     assert report["ansible.builtin.debug"]["msg"] == (
         "{{ openclaw_staged_systemd_state.stdout_lines }}"
     )
+    journal = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Classify retained staged OpenClaw application failure journal"
+    )
+    exact_failed_application_when = staged_when + [
+        "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines",
+        "'ExecMainCode=1' in openclaw_staged_systemd_state.stdout_lines",
+        "'ExecMainStatus=1' in openclaw_staged_systemd_state.stdout_lines",
+    ]
+    assert journal["ansible.builtin.include_tasks"] == (
+        "classify_gateway_journal.yml"
+    )
+    assert journal["when"] == exact_failed_application_when
+    query_guard = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Preserve retained state when the staged OpenClaw journal query fails"
+    )
+    assert query_guard["when"] == exact_failed_application_when
+    assert query_guard["ansible.builtin.assert"]["that"] == [
+        "'journal-query-failed=0' in openclaw_journal_classification.stdout_lines"
+    ]
+    assert query_guard["ansible.builtin.assert"]["fail_msg"] == (
+        "The bounded native OpenClaw journal query failed; no retained failure "
+        "state was reset."
+    )
     reset = next(
         task
         for task in tasks
@@ -247,6 +276,8 @@ def test_native_openclaw_is_staged_then_explicitly_activated():
     assert stage_task_names.index(staged["name"]) < stage_task_names.index(
         diagnostic["name"]
     ) < stage_task_names.index(report["name"]) < stage_task_names.index(
+        journal["name"]
+    ) < stage_task_names.index(query_guard["name"]) < stage_task_names.index(
         reset["name"]
     ) < stage_task_names.index(proof["name"])
     preserve = next(
@@ -620,6 +651,7 @@ def test_native_readiness_failure_reports_only_allowlisted_systemd_properties():
     assert [task["name"] for task in readiness["rescue"]] == [
         "Read allowlisted native OpenClaw systemd failure properties",
         "Report allowlisted native OpenClaw systemd failure properties",
+        "Classify native OpenClaw application failure journal safely",
         "Fail after the native OpenClaw readiness diagnostic",
     ]
     diagnostic = readiness["rescue"][0]
@@ -633,6 +665,10 @@ def test_native_readiness_failure_reports_only_allowlisted_systemd_properties():
         "--property=ExecMainStatus",
         "--property=NRestarts",
     }
+    journal = readiness["rescue"][2]
+    assert journal["ansible.builtin.include_tasks"] == (
+        "classify_gateway_journal.yml"
+    )
     rendered = yaml.safe_dump(readiness)
     for forbidden in (
         "journalctl",
@@ -644,6 +680,55 @@ def test_native_readiness_failure_reports_only_allowlisted_systemd_properties():
     ):
         assert forbidden not in rendered
     assert readiness["rescue"][-1]["ansible.builtin.fail"]["msg"]
+
+
+def test_native_journal_classifier_never_reports_raw_journal_material():
+    tasks = yaml.safe_load(read(ROLE / "tasks/classify_gateway_journal.yml"))
+    scanner, validator, require_valid, report = tasks
+
+    assert scanner["ansible.builtin.script"] == {
+        "cmd": "classify_openclaw_journal.py",
+        "executable": "/usr/bin/python3",
+    }
+    assert scanner["register"] == "openclaw_journal_classification"
+    assert scanner["changed_when"] is False
+    assert scanner["failed_when"] is False
+    assert scanner["no_log"] is True
+
+    assert validator["register"] == (
+        "openclaw_journal_classification_validation"
+    )
+    assert validator["changed_when"] is False
+    assert validator["failed_when"] is False
+    assert validator["no_log"] is True
+    command = validator["ansible.builtin.command"]
+    assert command["stdin"] == "{{ openclaw_journal_classification.stdout }}"
+    assert command["stdin_add_newline"] is False
+    validator_source = command["argv"][2]
+    for contract in (
+        "if text.endswith('\\n')",
+        "raw.decode('ascii')",
+        "len(lines) != len(keys)",
+        "[0-9]{1,3}",
+        "value > 200",
+        "values['journal-query-failed'] > 1",
+        "values['journal-truncated'] > 1",
+        "values['journal-query-failed'] != 0",
+        "values['journal-records'] == 0",
+        "sum(values[key] for key in keys[3:]) == 0",
+    ):
+        assert contract in validator_source
+
+    assert require_valid["ansible.builtin.assert"]["that"] == [
+        "openclaw_journal_classification_validation.rc == 0"
+    ]
+    assert report["ansible.builtin.debug"] == {
+        "msg": "{{ openclaw_journal_classification.stdout_lines }}"
+    }
+    included = read(ROLE / "tasks/classify_gateway_journal.yml")
+    assert "MESSAGE" not in included
+    assert "journalctl" not in included
+    assert "openclaw_journal_classification.stdout_lines" in included
 
 
 def test_common_debian_leaves_uid_1000_for_the_dedicated_openclaw_account():
