@@ -684,22 +684,51 @@
   when: openclaw_docker_rollback_activate | bool
 
 - name: Wait for the native OpenClaw Gateway readiness endpoint
-  ansible.builtin.uri:
-    url: "http://{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}/readyz"
-    method: GET
-    status_code: 200
-    return_content: false
-  register: openclaw_native_readiness
-  changed_when: false
-  retries: 18
-  delay: 5
-  until: openclaw_native_readiness.status == 200
   when: >-
     not (openclaw_docker_rollback_activate | bool) and
     (
       openclaw_native_activate | bool or
       openclaw_native_transition_marker.stat.exists | default(false)
     )
+  block:
+    - name: Probe the native OpenClaw Gateway readiness endpoint
+      ansible.builtin.uri:
+        url: "http://{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}/readyz"
+        method: GET
+        status_code: 200
+        return_content: false
+      register: openclaw_native_readiness
+      changed_when: false
+      retries: 18
+      delay: 5
+      until: openclaw_native_readiness.status == 200
+  rescue:
+    - name: Read allowlisted native OpenClaw systemd failure properties
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - openclaw-gateway.service
+          - --property=ActiveState
+          - --property=SubState
+          - --property=Result
+          - --property=ExecMainCode
+          - --property=ExecMainStatus
+          - --property=NRestarts
+      register: openclaw_native_systemd_failure
+      changed_when: false
+      failed_when: false
+
+    - name: Report allowlisted native OpenClaw systemd failure properties
+      ansible.builtin.debug:
+        msg: "{{ openclaw_native_systemd_failure.stdout_lines }}"
+
+    - name: Fail after the native OpenClaw readiness diagnostic
+      ansible.builtin.fail:
+        msg: >-
+          The native OpenClaw Gateway did not become ready; the allowlisted
+          systemd state above contains no environment, command line, config,
+          journal, or credential material.
 
 - name: Probe native RPC through an isolated service-user credential
   when: openclaw_native_activate | bool

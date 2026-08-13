@@ -547,6 +547,43 @@ def test_native_openclaw_activation_validates_before_starting():
     )
 
 
+def test_native_readiness_failure_reports_only_allowlisted_systemd_properties():
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    readiness = next(
+        task
+        for task in tasks
+        if task["name"] == "Wait for the native OpenClaw Gateway readiness endpoint"
+    )
+
+    assert [task["name"] for task in readiness["rescue"]] == [
+        "Read allowlisted native OpenClaw systemd failure properties",
+        "Report allowlisted native OpenClaw systemd failure properties",
+        "Fail after the native OpenClaw readiness diagnostic",
+    ]
+    diagnostic = readiness["rescue"][0]
+    argv = diagnostic["ansible.builtin.command"]["argv"]
+    assert argv[:3] == ["systemctl", "show", "openclaw-gateway.service"]
+    assert set(argv[3:]) == {
+        "--property=ActiveState",
+        "--property=SubState",
+        "--property=Result",
+        "--property=ExecMainCode",
+        "--property=ExecMainStatus",
+        "--property=NRestarts",
+    }
+    rendered = yaml.safe_dump(readiness)
+    for forbidden in (
+        "journalctl",
+        "systemctl status",
+        "Environment",
+        "ExecStart",
+        "OPENCLAW_GATEWAY_TOKEN",
+        "cat ",
+    ):
+        assert forbidden not in rendered
+    assert readiness["rescue"][-1]["ansible.builtin.fail"]["msg"]
+
+
 def test_common_debian_leaves_uid_1000_for_the_dedicated_openclaw_account():
     debian_variables = yaml.safe_load(
         read(REPO_ROOT / "infra/ansible/inventory/prod/group_vars/debian.yml")
