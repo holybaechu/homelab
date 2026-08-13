@@ -512,11 +512,14 @@ case "$armed_present:$force_present" in
 esac
 
 for attempt in $(seq 1 90); do
-  if old_gateway_ready; then
-    test ! -e "$armed"
-    test ! -L "$armed"
-    test ! -e "$force"
-    test ! -L "$force"
+  # Readiness can become true just before the persistent helper removes its
+  # commit markers.  Keep marker absence inside the conditional predicate so
+  # that this normal overlap retries instead of escaping through `set -e`.
+  if old_gateway_ready \
+      && test ! -e "$armed" \
+      && test ! -L "$armed" \
+      && test ! -e "$force" \
+      && test ! -L "$force"; then
     exit 0
   fi
   sleep 2

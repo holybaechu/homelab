@@ -4,6 +4,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 
 import pytest
 import yaml
@@ -407,6 +409,57 @@ def test_migration_orchestration_is_explicit_fail_closed_and_secret_quiet():
     assert 'date +%s' not in failback
     assert 'rm -f -- "${armed}"' not in no_force_body
     assert "one behavior: continuously fence old" in failback
+
+
+def test_failback_verification_retries_until_readiness_and_marker_cleanup_are_atomic(
+    tmp_path,
+):
+    script = (REPO_ROOT / "scripts" / "ci" / "migrate-openclaw-native.sh").read_text(
+        encoding="utf-8"
+    )
+    forced_restore = script.split("<<'ROLLBACK'", maxsplit=1)[1].split(
+        "ROLLBACK", maxsplit=1
+    )[0]
+    poll_start = forced_restore.index("for attempt in $(seq 1 90); do")
+    poll_end = forced_restore.index("exit 1", poll_start) + len("exit 1")
+    poll = forced_restore[poll_start:poll_end]
+
+    assert 'if old_gateway_ready \\\n      && test ! -e "$armed"' in poll
+    assert '&& test ! -L "$force"; then' in poll
+
+    shell = shutil.which("sh")
+    if not shell:
+        shell = os.path.join(
+            os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "sh.exe"
+        )
+    if not os.path.exists(shell):
+        pytest.skip("POSIX shell is unavailable")
+
+    test_root = str(tmp_path)
+    if os.name == "nt":
+        drive, remainder = os.path.splitdrive(test_root)
+        test_root = f"/{drive[0].lower()}{remainder.replace(os.sep, '/')}"
+    harness = f'''set -eu
+test_root="$1"
+armed="$test_root/failback.armed"
+force="$test_root/failback.force"
+touch "$armed" "$force"
+old_gateway_ready() {{ return 0; }}
+sleep() {{ rm -f -- "$armed" "$force"; }}
+{poll}
+'''
+    result = subprocess.run(
+        [shell, "-c", harness, "failback-poll", test_root],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
+    assert not (tmp_path / "failback.armed").exists()
+    assert not (tmp_path / "failback.force").exists()
 
 
 def test_initial_migration_guards_publish_armed_only_after_persistent_prerequisites():
