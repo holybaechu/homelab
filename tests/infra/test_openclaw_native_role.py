@@ -704,12 +704,14 @@ def test_native_journal_classifier_never_reports_raw_journal_material():
     assert validator["failed_when"] is False
     assert validator["no_log"] is True
     command = validator["ansible.builtin.command"]
-    assert command["stdin"] == "{{ openclaw_journal_classification.stdout }}"
+    assert command["stdin"] == (
+        "{{ openclaw_journal_classification.stdout_lines | to_json }}"
+    )
     assert command["stdin_add_newline"] is False
     validator_source = command["argv"][2]
     for contract in (
-        "if text.endswith('\\n')",
-        "raw.decode('ascii')",
+        "json.loads(raw.decode('utf-8'))",
+        "line.encode('ascii')",
         "len(lines) != len(keys)",
         "[0-9]{1,3}",
         "value > 200",

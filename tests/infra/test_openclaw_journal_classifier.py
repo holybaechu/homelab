@@ -1,8 +1,11 @@
 import importlib.util
 import json
 import re
+import subprocess
+import sys
 
 import pytest
+import yaml
 
 from tests.helpers import REPO_ROOT
 
@@ -249,6 +252,42 @@ def test_classifier_output_is_exact_ascii_bounded_counter_grammar():
     assert [line.split("=", 1)[0] for line in lines] == list(CLASSIFIER.OUTPUT_KEYS)
     assert all(re.fullmatch(r"[a-z][a-z0-9-]*=[0-9]{1,3}", line) for line in lines)
     rendered.encode("ascii")
+
+
+def test_validator_uses_transport_stable_stdout_lines_and_fails_closed():
+    tasks_path = (
+        REPO_ROOT
+        / "infra/ansible/roles/openclaw_native/tasks/classify_gateway_journal.yml"
+    )
+    tasks = yaml.safe_load(tasks_path.read_text(encoding="utf-8"))
+    source = tasks[1]["ansible.builtin.command"]["argv"][2]
+    keys = list(CLASSIFIER.OUTPUT_KEYS)
+
+    def validate(lines, require_cause="0"):
+        return subprocess.run(
+            [sys.executable, "-c", source, "0", require_cause],
+            input=json.dumps(lines),
+            text=True,
+            capture_output=True,
+            check=False,
+        ).returncode
+
+    clean = [f"{key}=0" for key in keys]
+    assert validate(clean) == 0
+
+    query_failed = clean.copy()
+    query_failed[0] = "journal-query-failed=1"
+    assert validate(query_failed) == 0
+    assert validate(query_failed, "1") != 0
+
+    classified = clean.copy()
+    classified[2] = "journal-records=1"
+    classified[-1] = "uncategorized-application-error=1"
+    assert validate(classified, "1") == 0
+    assert validate(classified + ["OPENCLAW_GATEWAY_TOKEN=forbidden"]) != 0
+    hostile = classified.copy()
+    hostile[-1] = "uncategorized-application-error=1\N{SNOWMAN}"
+    assert validate(hostile) != 0
 
 
 def test_classifier_uses_only_the_bounded_reverse_json_journal_query():
