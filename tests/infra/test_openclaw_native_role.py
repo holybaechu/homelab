@@ -471,10 +471,24 @@ def test_staged_credential_probe_is_bounded_no_log_and_removes_all_residue():
     ]
     cleanup = probe["always"][-1]["ansible.builtin.shell"]
     assert "test ! -e /run/systemd/system/openclaw-credential-probe.service" in cleanup
+    assert "test ! -L /run/systemd/system/openclaw-credential-probe.service" in cleanup
     assert "test ! -e /run/openclaw-credential-probe" in cleanup
-    assert "list-unit-files openclaw-credential-probe.service" in cleanup
-    assert 'listed="$(systemctl list-unit-files' in cleanup
-    assert 'test -z "${listed}"' in cleanup
+    assert "test ! -L /run/openclaw-credential-probe" in cleanup
+    assert "LoadState --value)\" = not-found" in cleanup
+    assert "FragmentPath --value)\"" in cleanup
+    assert "ActiveState --value)\" = inactive" in cleanup
+    assert "SubState --value)\" = dead" in cleanup
+    assert "systemctl is-enabled openclaw-credential-probe.service" in cleanup
+    assert "list-unit-files" not in cleanup
+    assert "/etc/systemd/system/openclaw-credential-probe.service" in cleanup
+    assert (
+        "/etc/systemd/system/multi-user.target.wants/"
+        "openclaw-credential-probe.service" in cleanup
+    )
+    assert "find /etc/systemd/system /run/systemd/system -xdev -type l" in cleanup
+    assert "-lname '*openclaw-credential-probe.service'" in cleanup
+    assert "-print -quit" in cleanup
+    assert 'test -z "${links}"' in cleanup
     assert "openclaw-gateway.service" not in cleanup
 
 

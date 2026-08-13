@@ -407,9 +407,22 @@
       ansible.builtin.shell: |
         set -eu
         test ! -e /run/systemd/system/openclaw-credential-probe.service
+        test ! -L /run/systemd/system/openclaw-credential-probe.service
         test ! -e /run/openclaw-credential-probe
-        listed="$(systemctl list-unit-files openclaw-credential-probe.service --no-legend)"
-        test -z "${listed}"
+        test ! -L /run/openclaw-credential-probe
+        test ! -e /etc/systemd/system/openclaw-credential-probe.service
+        test ! -L /etc/systemd/system/openclaw-credential-probe.service
+        test ! -e /etc/systemd/system/multi-user.target.wants/openclaw-credential-probe.service
+        test ! -L /etc/systemd/system/multi-user.target.wants/openclaw-credential-probe.service
+        links="$(find /etc/systemd/system /run/systemd/system -xdev -type l \
+          \( -name 'openclaw-credential-probe.service' \
+          -o -lname '*openclaw-credential-probe.service' \) -print -quit)"
+        test -z "${links}"
+        test "$(systemctl show openclaw-credential-probe.service --property=LoadState --value)" = not-found
+        test -z "$(systemctl show openclaw-credential-probe.service --property=FragmentPath --value)"
+        test "$(systemctl show openclaw-credential-probe.service --property=ActiveState --value)" = inactive
+        test "$(systemctl show openclaw-credential-probe.service --property=SubState --value)" = dead
+        test "$(systemctl is-enabled openclaw-credential-probe.service 2>/dev/null || true)" = not-found
       args:
         executable: /bin/sh
       changed_when: false
