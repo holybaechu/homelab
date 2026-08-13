@@ -224,15 +224,15 @@ def test_native_openclaw_is_staged_then_explicitly_activated():
         if task["name"]
         == "Classify retained staged OpenClaw application failure journal"
     )
-    exact_failed_application_when = staged_when + [
-        "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines",
-        "'ExecMainCode=1' in openclaw_staged_systemd_state.stdout_lines",
-        "'ExecMainStatus=1' in openclaw_staged_systemd_state.stdout_lines",
-    ]
+    exact_failed_application_when = staged_when
     assert journal["ansible.builtin.include_tasks"] == (
         "classify_gateway_journal.yml"
     )
     assert journal["when"] == exact_failed_application_when
+    require_cause = journal["vars"]["openclaw_journal_require_cause"]
+    assert "'ActiveState=failed'" in require_cause
+    assert "'ExecMainCode=1'" in require_cause
+    assert "'ExecMainStatus=1'" in require_cause
     query_guard = next(
         task
         for task in tasks
@@ -252,7 +252,9 @@ def test_native_openclaw_is_staged_then_explicitly_activated():
         for task in tasks
         if task["name"] == "Reset the retained staged OpenClaw failure state"
     )
-    assert reset["when"] == staged_when
+    assert reset["when"] == staged_when + [
+        "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
+    ]
     assert reset["changed_when"] is False
     assert reset["ansible.builtin.command"]["argv"] == [
         "systemctl",
@@ -713,7 +715,8 @@ def test_native_journal_classifier_never_reports_raw_journal_material():
         "value > 200",
         "values['journal-query-failed'] > 1",
         "values['journal-truncated'] > 1",
-        "values['journal-query-failed'] != 0",
+        "sys.argv[2] not in ('0', '1')",
+        "sys.argv[2] == '1'",
         "values['journal-records'] == 0",
         "sum(values[key] for key in keys[3:]) == 0",
     ):

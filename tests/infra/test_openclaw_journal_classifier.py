@@ -69,6 +69,12 @@ def journal_bytes(*messages):
         ("[openclaw] Reason: ERR_MODULE_NOT_FOUND", "module-loader"),
         ("[openclaw] Reason: Cannot find package openclaw-addon", "module-loader"),
         (
+            "[openclaw] Reason: The requested module 'addon' does not provide "
+            "an export named 'default'",
+            "module-loader",
+        ),
+        ("[openclaw] Reason: Module did not self-register", "module-loader"),
+        (
             "[SECRETS_RELOADER_DEGRADED] SecretProviderResolutionError: "
             "provider unavailable",
             "credential-unavailable",

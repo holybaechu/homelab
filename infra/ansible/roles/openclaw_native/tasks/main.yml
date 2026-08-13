@@ -417,12 +417,16 @@
 
 - name: Classify retained staged OpenClaw application failure journal
   ansible.builtin.include_tasks: classify_gateway_journal.yml
+  vars:
+    openclaw_journal_require_cause: >-
+      {{
+        'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines and
+        'ExecMainCode=1' in openclaw_staged_systemd_state.stdout_lines and
+        'ExecMainStatus=1' in openclaw_staged_systemd_state.stdout_lines
+      }}
   when:
     - not (openclaw_native_activate | bool)
     - not (openclaw_native_transition_marker.stat.exists | default(false))
-    - "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
-    - "'ExecMainCode=1' in openclaw_staged_systemd_state.stdout_lines"
-    - "'ExecMainStatus=1' in openclaw_staged_systemd_state.stdout_lines"
 
 - name: Preserve retained state when the staged OpenClaw journal query fails
   ansible.builtin.assert:
@@ -434,9 +438,6 @@
   when:
     - not (openclaw_native_activate | bool)
     - not (openclaw_native_transition_marker.stat.exists | default(false))
-    - "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
-    - "'ExecMainCode=1' in openclaw_staged_systemd_state.stdout_lines"
-    - "'ExecMainStatus=1' in openclaw_staged_systemd_state.stdout_lines"
 
 - name: Reset the retained staged OpenClaw failure state
   ansible.builtin.command:
@@ -448,6 +449,7 @@
   when:
     - not (openclaw_native_activate | bool)
     - not (openclaw_native_transition_marker.stat.exists | default(false))
+    - "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
 
 - name: Prove the uncut staged OpenClaw service remains fenced
   ansible.builtin.shell: |

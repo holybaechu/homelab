@@ -63,7 +63,9 @@ _EADDRUNAVAILABLE = re.compile(
 _SQLITE = re.compile(r"\bSQLITE_|\bsqlite\b|\bdatabase\b", re.IGNORECASE)
 _MODULE_LOADER = re.compile(
     r"\bERR_(?:MODULE_NOT_FOUND|DLOPEN_FAILED)\b|"
-    r"cannot find (?:package|module)|invalid ELF header",
+    r"cannot find (?:package|module)|invalid ELF header|"
+    r"does not provide an export named|named export .* not found|"
+    r"module did not self-register",
     re.IGNORECASE,
 )
 

@@ -62,11 +62,15 @@
             values[key] = value
         if values['journal-query-failed'] > 1 or values['journal-truncated'] > 1:
             raise SystemExit(1)
-        if values['journal-query-failed'] != 0 or values['journal-records'] == 0:
+        if sys.argv[2] not in ('0', '1') or values['journal-query-failed'] != 0:
             raise SystemExit(1)
-        if sum(values[key] for key in keys[3:]) == 0:
+        if sys.argv[2] == '1' and (
+            values['journal-records'] == 0 or
+            sum(values[key] for key in keys[3:]) == 0
+        ):
             raise SystemExit(1)
       - "{{ openclaw_journal_classification.rc | string }}"
+      - "{{ (openclaw_journal_require_cause | default(false) | bool) | ternary('1', '0') }}"
     stdin: "{{ openclaw_journal_classification.stdout }}"
     stdin_add_newline: false
   register: openclaw_journal_classification_validation
