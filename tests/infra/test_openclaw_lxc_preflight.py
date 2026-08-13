@@ -191,7 +191,7 @@ def test_existing_target_rejects_a_second_arp_responder(config_root, allocation)
         )
 
 
-def test_pvesm_probe_requires_an_active_rootdir_store_with_enough_space(
+def test_pvesh_probe_requires_an_enabled_active_rootdir_store_with_enough_space(
     monkeypatch,
 ):
     observed = []
@@ -202,8 +202,9 @@ def test_pvesm_probe_requires_an_active_rootdir_store_with_enough_space(
             command,
             0,
             stdout=(
-                '[{"storage":"local-lvm","active":1,'
-                '"avail":68719476736}]'
+                '{"active":1,"avail":68719476736,'
+                '"content":"images,rootdir","enabled":1,"shared":0,'
+                '"total":137438953472,"type":"lvmthin","used":68719476736}'
             ),
             stderr="",
         )
@@ -213,23 +214,48 @@ def test_pvesm_probe_requires_an_active_rootdir_store_with_enough_space(
     result = PREFLIGHT.probe_storage("local-lvm", 32 * 1024**3)
 
     command = observed[0][0]
-    assert command[:2] == ["pvesm", "status"]
-    assert command[command.index("--storage") + 1] == "local-lvm"
-    assert command[command.index("--content") + 1] == "rootdir"
-    assert command[command.index("--enabled") + 1] == "1"
+    assert command == [
+        "pvesh",
+        "get",
+        "/nodes/localhost/storage/local-lvm/status",
+        "--output-format",
+        "json",
+    ]
     assert result["available_bytes"] == 64 * 1024**3
 
 
 @pytest.mark.parametrize(
     "stdout,error",
     [
-        ("[]", "exactly one"),
-        ('[{"storage":"local-lvm","active":0,"avail":68719476736}]', "not active"),
-        ('[{"storage":"local-lvm","active":1,"avail":1073741824}]', "is required"),
-        ('[{"storage":"other","active":1,"avail":68719476736}]', "unexpected datastore"),
+        ("[]", "one storage status object"),
+        (
+            '{"active":0,"avail":68719476736,'
+            '"content":"images,rootdir","enabled":1}',
+            "not active",
+        ),
+        (
+            '{"active":1,"avail":68719476736,'
+            '"content":"images,rootdir","enabled":0}',
+            "not enabled",
+        ),
+        (
+            '{"active":1,"avail":68719476736,'
+            '"content":"images","enabled":1}',
+            "does not allow rootdir",
+        ),
+        (
+            '{"active":1,"avail":1073741824,'
+            '"content":"rootdir","enabled":1}',
+            "is required",
+        ),
+        (
+            '{"storage":"other","active":1,"avail":68719476736,'
+            '"content":"rootdir","enabled":1}',
+            "unexpected datastore",
+        ),
     ],
 )
-def test_pvesm_probe_fails_closed_on_unusable_status(monkeypatch, stdout, error):
+def test_pvesh_probe_fails_closed_on_unusable_status(monkeypatch, stdout, error):
     monkeypatch.setattr(
         PREFLIGHT.subprocess,
         "run",
@@ -240,6 +266,27 @@ def test_pvesm_probe_fails_closed_on_unusable_status(monkeypatch, stdout, error)
 
     with pytest.raises(PREFLIGHT.PreflightError, match=error):
         PREFLIGHT.probe_storage("local-lvm", 32 * 1024**3)
+
+
+def test_pvesh_probe_accepts_an_api_wrapped_status_object(monkeypatch):
+    monkeypatch.setattr(
+        PREFLIGHT.subprocess,
+        "run",
+        lambda command, **kwargs: PREFLIGHT.subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(
+                '{"data":{"active":true,"avail":68719476736,'
+                '"content":"rootdir,images","enabled":true}}'
+            ),
+            stderr="",
+        ),
+    )
+
+    result = PREFLIGHT.probe_storage("local-lvm", 32 * 1024**3)
+
+    assert result["datastore_id"] == "local-lvm"
+    assert result["available_bytes"] == 64 * 1024**3
 
 
 def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():

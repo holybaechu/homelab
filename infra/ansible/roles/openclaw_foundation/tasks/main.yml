@@ -389,7 +389,7 @@
       - openclaw_setup_paths.results[2].stat.uid == 0
       - openclaw_setup_paths.results[2].stat.gid == openclaw_gid | int
       - openclaw_setup_paths.results[2].stat.mode == '0640'
-  fail_msg: >-
+    fail_msg: >-
       The private openclaw-setup repository or active config has unexpected
       type, ownership, or permissions; refusing to deploy it.
   when: not (openclaw_native_cutover_marker.stat.exists | default(false))

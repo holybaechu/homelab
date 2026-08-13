@@ -215,17 +215,18 @@ def find_config_claims(
 
 def probe_storage(datastore_id: str, required_bytes: int) -> dict[str, object]:
     """Prove the configured container datastore is active and has enough space."""
+    # `pvesm status` has a command-specific text formatter and does not accept
+    # the otherwise common `--output-format` option on supported PVE releases.
+    # Query the corresponding local-node API endpoint through pvesh instead.
+    # The per-datastore endpoint returns byte counts and the configuration
+    # fields needed to prove that the exact store is enabled for LXC rootfs use.
+    status_path = f"/nodes/localhost/storage/{datastore_id}/status"
     try:
         result = subprocess.run(
             [
-                "pvesm",
-                "status",
-                "--storage",
-                datastore_id,
-                "--content",
-                "rootdir",
-                "--enabled",
-                "1",
+                "pvesh",
+                "get",
+                status_path,
                 "--output-format",
                 "json",
             ],
@@ -243,16 +244,24 @@ def probe_storage(datastore_id: str, required_bytes: int) -> dict[str, object]:
         )
     try:
         payload = json.loads(result.stdout)
-        rows = payload.get("data") if isinstance(payload, dict) else payload
-        if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
-            raise ValueError("expected exactly one storage status row")
-        row = rows[0]
-        reported_id = row.get("storage", row.get("name"))
+        row = payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
+        if not isinstance(row, dict):
+            raise ValueError("expected one storage status object")
+        reported_id = row.get("storage", datastore_id)
         if reported_id != datastore_id:
             raise ValueError(f"unexpected datastore ID {reported_id!r}")
         active = row.get("active")
         if active not in (True, 1, "1", "true", "yes", "active"):
             raise ValueError("datastore is not active")
+        enabled = row.get("enabled")
+        if enabled not in (True, 1, "1", "true", "yes", "enabled"):
+            raise ValueError("datastore is not enabled")
+        content = row.get("content")
+        if not isinstance(content, str):
+            raise ValueError("invalid datastore content types")
+        content_types = {item.strip() for item in content.split(",") if item.strip()}
+        if "rootdir" not in content_types:
+            raise ValueError("datastore does not allow rootdir content")
         available_value = row.get("avail", row.get("available"))
         if isinstance(available_value, bool):
             raise ValueError("invalid available byte count")

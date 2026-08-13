@@ -525,3 +525,27 @@ def test_docker_host_has_a_minimal_native_cutover_finalizer():
     ]
     ci = read(REPO_ROOT / ".github/workflows/ci.yml")
     assert "finalize-openclaw-native-cutover.yml --syntax-check" in ci
+
+
+def test_docker_foundation_repository_guard_is_a_well_formed_assertion():
+    tasks = yaml.safe_load(
+        read(
+            REPO_ROOT
+            / "infra/ansible/roles/openclaw_foundation/tasks/main.yml"
+        )
+    )
+    task = next(
+        task
+        for task in walk_tasks(tasks)
+        if task["name"]
+        == "Require the protected private OpenClaw repository and regular config file"
+    )
+
+    assertion = task["ansible.builtin.assert"]
+    assert set(assertion) == {"that", "fail_msg"}
+    assert len(assertion["that"]) == 13
+    assert assertion["fail_msg"] == (
+        "The private openclaw-setup repository or active config has unexpected "
+        "type, ownership, or permissions; refusing to deploy it."
+    )
+    assert "fail_msg" not in task
