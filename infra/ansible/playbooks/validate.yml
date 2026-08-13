@@ -243,7 +243,7 @@
         git_safe diff --quiet --no-ext-diff --no-textconv
         git_safe diff --cached --quiet --no-ext-diff --no-textconv
         git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
-        test -z "$(git_safe --no-pager ls-files | grep -E '(^|/)(\.env([^/]*|$)|state|runtime|auth|auth-profile-secrets|secrets|credentials|sessions|logs|cache|tmp|temp)(/|$)' || true)"
+        test -z "$(git_safe --no-pager ls-files | grep -E '(^|/)(\.env([^/]*|$)|state|runtime|auth|auth-profile-secrets|secrets|credentials|sessions|logs|cache|tmp|temp)(/|$)' | grep -vxF '.env.example' || true)"
         token_pattern='{{ openclaw_gateway_token_path }}'
         test -f "$token_pattern"
         test ! -L "$token_pattern"

@@ -1,3 +1,5 @@
+import re
+
 import yaml
 
 from tests.helpers import REPO_ROOT
@@ -1096,6 +1098,45 @@ def test_active_native_validation_rechecks_git_secret_and_path_boundaries():
         assert contract in script
     assert 'gateway_token="$(' not in script
     assert "git_safe --no-pager grep -F --" not in script
+
+    tracked_path_guard = next(
+        line.strip()
+        for line in script.splitlines()
+        if "git_safe --no-pager ls-files | grep -E" in line
+    )
+    guard_match = re.fullmatch(
+        r'test -z "\$\(git_safe --no-pager ls-files \| grep -E '
+        r"'(?P<forbidden>[^']+)' \| grep -vxF '(?P<allowed>[^']+)' "
+        r'\|\| true\)"',
+        tracked_path_guard,
+    )
+    assert guard_match is not None
+    assert guard_match.group("allowed") == ".env.example"
+
+    forbidden_path = re.compile(guard_match.group("forbidden")).search
+    allowed_path = guard_match.group("allowed")
+
+    def rejected(path):
+        return forbidden_path(path) is not None and path != allowed_path
+
+    assert not rejected(".env.example")
+    for path in (
+        ".env",
+        ".env.prod",
+        "nested/.env.example",
+        "state/data.json",
+        "nested/runtime/gateway.pid",
+        "auth/device.json",
+        "auth-profile-secrets/provider.json",
+        "secrets/README",
+        "credentials/token",
+        "sessions/session.json",
+        "logs/gateway.log",
+        "cache/index",
+        "tmp/probe",
+        "temp/probe",
+    ):
+        assert rejected(path), path
 
 
 def test_docker_host_has_a_minimal_native_cutover_finalizer():
