@@ -1,4 +1,5 @@
 import os
+import runpy
 import shutil
 import subprocess
 
@@ -163,13 +164,13 @@ def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_push
     assert "ansible.builtin.raw" not in trust_playbook
     assert "ssh-keyscan" not in trust_playbook
 
-    assert workflow.count("verify-compose-container-identities.sh") == 6
+    assert workflow.count("verify-compose-container-identities.sh") == 3
     assert "diff -u \"${WORKLOAD_IDENTITY_BASELINE}\"" in workflow
-    assert workflow.count("StrictHostKeyChecking=yes") == 8
-    assert workflow.count("UserKnownHostsFile=") == 8
-    assert workflow.count("IdentitiesOnly=yes") == 8
-    assert workflow.count('-i "${HOME}/.ssh/id_ed25519"') == 8
-    assert workflow.count("timeout --signal=TERM --kill-after=10s 60s ssh") == 8
+    assert workflow.count("StrictHostKeyChecking=yes") == 3
+    assert workflow.count("UserKnownHostsFile=") == 3
+    assert workflow.count("IdentitiesOnly=yes") == 3
+    assert workflow.count('-i "${HOME}/.ssh/id_ed25519"') == 3
+    assert workflow.count("timeout --signal=TERM --kill-after=10s 60s ssh") == 3
     assert workflow.count("umask 077") >= 2
     assert "ipaddress.ip_address(value)" in workflow
     assert "address.version != 4 or not address.is_private" in workflow
@@ -178,6 +179,8 @@ def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_push
     assert "always()" in workflow
     assert "steps.workload_identity_capture.outcome == 'success'" in workflow
     assert "Require the requested workload identity proof to pass" in workflow
+    assert workflow.count("sh -s -- snapshot platform media code openclaw") == 2
+    assert "sh -s -- health platform media code" in workflow
     assert "WORKLOAD_IDENTITY_CAPTURE_OUTCOME:" in workflow
     assert "WORKLOAD_IDENTITY_PROOF_OUTCOME:" in workflow
     cleanup = workflow.split("- name: Remove Ansible extra vars", maxsplit=1)[1].split(
@@ -194,6 +197,9 @@ def test_cd_workflow_fast_tracks_known_workloads_through_arcane():
     selector = (REPO_ROOT / "scripts" / "ci" / "select-deployment-scope.py").read_text(
         encoding="utf-8"
     )
+    selector_module = runpy.run_path(
+        str(REPO_ROOT / "scripts" / "ci" / "select-deployment-scope.py")
+    )
 
     assert "fetch-depth: 0" in workflow
     assert "contents: write" in workflow
@@ -204,6 +210,12 @@ def test_cd_workflow_fast_tracks_known_workloads_through_arcane():
     assert 'return "arcane"' in selector
     assert "arcane_projects=" in selector
     assert "arcane_build_projects=" not in selector
+    assert "apps/compose/platform/dynamic/routes.yml" in selector_module[
+        "FULL_DEPLOYMENT_PATHS"
+    ]
+    assert selector_module["classify_paths"](
+        ["apps/compose/platform/dynamic/routes.yml"]
+    ) == "full"
     assert "deploy-with-arcane.py" in workflow
     assert workflow.index("Deploy changed workloads with Arcane") < workflow.index(
         "Install tooling"

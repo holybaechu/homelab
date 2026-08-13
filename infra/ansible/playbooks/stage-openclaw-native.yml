@@ -3,6 +3,8 @@
   hosts: svc_openclaw
   gather_facts: true
   any_errors_fatal: true
+  vars:
+    openclaw_native_role_stage_only: true
   pre_tasks:
     - name: Require the tracked staging phase to remain non-activating
       ansible.builtin.assert:

@@ -192,12 +192,12 @@ def test_native_runtime_install_recovers_only_exact_incomplete_version_prefixes(
     assert "creates: \"{{ openclaw_release_root }}/lib/node_modules/openclaw/package.json\"" not in raw_tasks
 
 
-def test_native_openclaw_is_staged_then_explicitly_activated():
+def test_native_openclaw_activation_is_an_explicit_tracked_owner():
     variables = yaml.safe_load(read(VARS))
     tasks_text = read(ROLE / "tasks/main.yml")
     tasks = yaml.safe_load(tasks_text)
 
-    assert variables["openclaw_native_activate"] is False
+    assert isinstance(variables["openclaw_native_activate"], bool)
     activation = next(
         task
         for task in tasks

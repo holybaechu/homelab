@@ -20,28 +20,43 @@
     - name: Require an exact permanent source hold before native reconciliation
       ansible.builtin.assert:
         that:
+          - openclaw_native_primary_source_hold.stat.exists | default(false)
           - openclaw_native_primary_source_hold.stat.isreg | default(false)
           - not (openclaw_native_primary_source_hold.stat.islnk | default(false))
-          - openclaw_native_primary_source_hold.stat.uid == 0
-          - openclaw_native_primary_source_hold.stat.gid == 0
-          - openclaw_native_primary_source_hold.stat.mode == '0600'
-          - (openclaw_native_primary_source_hold_content.content | b64decode) == openclaw_native_transition_marker_value + '\n'
+          - openclaw_native_primary_source_hold.stat.uid | default(-1) == 0
+          - openclaw_native_primary_source_hold.stat.gid | default(-1) == 0
+          - openclaw_native_primary_source_hold.stat.mode | default('') == '0600'
+          - >-
+            (openclaw_native_primary_source_hold_content.content | default('') | b64decode) ==
+            openclaw_native_transition_marker_value + '\n'
         fail_msg: >-
-          The permanent OpenClaw source hold is malformed; refusing to change
-          primary Gateway ownership.
-      when: openclaw_native_primary_source_hold.stat.exists | default(false)
+          The permanent OpenClaw source hold is absent or malformed; refusing
+          to change primary Gateway ownership.
       no_log: true
 
     - name: Require mutually exclusive tracked Gateway ownership
       ansible.builtin.assert:
         that:
           - hostvars['openclaw'].openclaw_native_activate is defined
+          - hostvars['openclaw'].openclaw_native_activate is boolean
           - openclaw_docker_rollback_activate is boolean
-          - not ((hostvars['openclaw'].openclaw_native_activate | bool) and (openclaw_docker_rollback_activate | bool))
+          - >-
+            (hostvars['openclaw'].openclaw_native_activate | bool) !=
+            (openclaw_docker_rollback_activate | bool)
+          - openclaw_tracked_route.http.routers.openclaw.rule == 'Host(`openclaw.home.hchu.me`)'
+          - openclaw_tracked_route.http.routers.openclaw.entryPoints == ['websecure']
+          - openclaw_tracked_route.http.routers.openclaw.middlewares == ['private-only', 'secure-headers']
+          - openclaw_tracked_route.http.routers.openclaw.service == 'openclaw'
+          - >-
+            openclaw_retained_gateway_identity_path ==
+            openclaw_control_root + '/retained-gateway-identity.json'
           - >-
             openclaw_tracked_route.http.services.openclaw.loadBalancer.servers ==
             [{'url': openclaw_traefik_backend_url}]
-        fail_msg: Native and Docker OpenClaw ownership cannot be active together.
+        fail_msg: >-
+          Exactly one tracked OpenClaw Gateway owner must be active and the
+          static route must match it; refusing an ownership gap, dual
+          ownership, or route drift.
       vars:
         openclaw_tracked_route: >-
           {{
@@ -51,37 +66,42 @@
             ) | from_yaml
           }}
 
-    - name: Stop the retained Docker Gateway before native-primary reconciliation
-      ansible.builtin.command:
-        argv:
-          - docker
-          - compose
-          - stop
-          - --timeout
-          - "30"
-          - openclaw-gateway
-      args:
-        chdir: "{{ openclaw_compose_root }}"
-      register: openclaw_native_primary_source_stop
-      changed_when: >-
-        'Stopped' in (openclaw_native_primary_source_stop.stdout ~ openclaw_native_primary_source_stop.stderr) or
-        'Stopping' in (openclaw_native_primary_source_stop.stdout ~ openclaw_native_primary_source_stop.stderr)
-      when:
-        - openclaw_native_primary_source_hold.stat.exists | default(false)
-        - hostvars['openclaw'].openclaw_native_activate | bool
-        - not (openclaw_docker_rollback_activate | bool)
+    - name: Inspect the retained Gateway identity checkpoint bootstrap boundary
+      ansible.builtin.stat:
+        path: "{{ openclaw_retained_gateway_identity_path }}"
+        follow: false
+      register: openclaw_pre_site_retained_gateway_checkpoint
 
-    - name: Prove the retained Docker Gateway is fenced before native starts
-      ansible.builtin.shell: |
-        set -eu
-        container="$(docker compose ps --all -q openclaw-gateway)"
-        test -n "$container"
-        test -z "$(docker compose ps --status running -q openclaw-gateway)"
-      args:
-        executable: /bin/sh
-        chdir: "{{ openclaw_compose_root }}"
-      changed_when: false
-      when:
-        - openclaw_native_primary_source_hold.stat.exists | default(false)
-        - hostvars['openclaw'].openclaw_native_activate | bool
-        - not (openclaw_docker_rollback_activate | bool)
+    - name: Inspect the persistent retained Gateway verifier bootstrap boundary
+      ansible.builtin.stat:
+        path: "{{ openclaw_retained_gateway_verifier_path }}"
+        follow: false
+      register: openclaw_pre_site_persistent_retained_gateway_verifier
+
+    - name: Verify retained rollback assets before any native-primary mutation
+      block:
+        - name: Allocate an ephemeral retained OpenClaw rollback verifier
+          ansible.builtin.tempfile:
+            path: /run
+            prefix: .openclaw-retained-gateway.
+            state: file
+          register: openclaw_pre_site_retained_gateway_verifier
+
+        - name: Install the ephemeral retained OpenClaw rollback verifier
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/../roles/openclaw_foundation/files/openclaw_retained_gateway.py"
+            dest: "{{ openclaw_pre_site_retained_gateway_verifier.path }}"
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Run the retained OpenClaw pre-site ownership transaction
+          ansible.builtin.include_tasks: fence-openclaw-retained-assets.yml
+      always:
+        - name: Remove the ephemeral retained OpenClaw rollback verifier
+          ansible.builtin.file:
+            path: "{{ openclaw_pre_site_retained_gateway_verifier.path }}"
+            state: absent
+          when:
+            - openclaw_pre_site_retained_gateway_verifier is defined
+            - openclaw_pre_site_retained_gateway_verifier.path is defined

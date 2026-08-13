@@ -1,13 +1,9 @@
 # OpenClaw Foundation
 
-OpenClaw is migrating from the current isolated Docker foundation on
-`docker_apps` to a native system Gateway in dedicated unprivileged LXC VMID
-118. See `openclaw-native-migration.md` for the staged cutover and rollback
-contract.
-
-During phase 1, the native service is staged but inactive and the Docker
-Gateway remains the guarded source. After the audited transfer and phase-2
-commit, native is primary and the exact Docker container and assets remain
+OpenClaw runs as a native system Gateway in dedicated unprivileged LXC VMID
+118. The audited migration from the isolated Docker foundation is complete;
+see `openclaw-native-migration.md` for the completed cutover and rollback
+contract. Native is primary and the exact Docker container and assets remain
 stopped under a permanent source hold. A tracked rollback never removes that
 hold or restores Arcane ownership.
 

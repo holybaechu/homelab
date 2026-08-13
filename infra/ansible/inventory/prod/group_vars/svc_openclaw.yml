@@ -1,4 +1,4 @@
-openclaw_native_activate: false
+openclaw_native_activate: true
 openclaw_native_transition_marker_path: /var/lib/.openclaw-native-migration-validated
 openclaw_native_transition_marker_value: homelab-openclaw-native-migration-v1
 common_debian_create_service_account: false

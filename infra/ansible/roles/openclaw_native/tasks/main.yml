@@ -31,8 +31,25 @@
       - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
       - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
       - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
+      - openclaw_native_activate is boolean
       - openclaw_docker_rollback_activate is boolean
-      - not ((openclaw_native_activate | bool) and (openclaw_docker_rollback_activate | bool))
+      - openclaw_native_role_stage_only | default(false) is boolean
+      - >-
+        (openclaw_native_activate | bool) !=
+        (openclaw_docker_rollback_activate | bool) or
+        (
+          openclaw_native_role_stage_only | default(false) | bool and
+          ansible_play_name == 'Stage the dedicated native OpenClaw Gateway without activation' and
+          not (openclaw_native_activate | bool) and
+          not (openclaw_docker_rollback_activate | bool)
+        )
+      - >-
+        not (openclaw_native_role_stage_only | default(false) | bool) or
+        (
+          ansible_play_name == 'Stage the dedicated native OpenClaw Gateway without activation' and
+          not (openclaw_native_activate | bool) and
+          not (openclaw_docker_rollback_activate | bool)
+        )
       - >-
         openclaw_traefik_backend_url ==
         (

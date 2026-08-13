@@ -113,7 +113,10 @@
       ansible.builtin.assert:
         that:
           - openclaw_docker_rollback_activate is boolean
-          - not ((openclaw_native_activate | bool) and (openclaw_docker_rollback_activate | bool))
+          - openclaw_native_activate is boolean
+          - >-
+            (openclaw_native_activate | bool) !=
+            (openclaw_docker_rollback_activate | bool)
           - >-
             openclaw_traefik_backend_url ==
             (
@@ -433,6 +436,113 @@
         openclaw_dynamic: >-
           {{ openclaw_traefik_dynamic_validation.content | b64decode | from_yaml }}
 
+    - name: Inspect the retained rollback verifier executable boundary
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+        checksum_algorithm: sha256
+      loop:
+        - /usr/local
+        - /usr/local/libexec
+        - "{{ openclaw_retained_gateway_verifier_path }}"
+      register: openclaw_retained_gateway_verifier_validation
+      when:
+        - openclaw_native_cutover_marker_validation.stat.exists | default(false)
+        - >-
+          (hostvars['openclaw'].openclaw_native_activate | bool) or
+          (openclaw_docker_rollback_activate | bool)
+
+    - name: Inspect the bundled retained rollback verifier for validation
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/../roles/openclaw_foundation/files/openclaw_retained_gateway.py"
+        checksum_algorithm: sha256
+      delegate_to: localhost
+      become: false
+      register: openclaw_retained_gateway_verifier_source_validation
+      when:
+        - openclaw_native_cutover_marker_validation.stat.exists | default(false)
+        - >-
+          (hostvars['openclaw'].openclaw_native_activate | bool) or
+          (openclaw_docker_rollback_activate | bool)
+
+    - name: Validate the exact retained rollback verifier executable boundary
+      ansible.builtin.assert:
+        that:
+          - openclaw_retained_gateway_verifier_validation.results[0].stat.isdir | default(false)
+          - not (openclaw_retained_gateway_verifier_validation.results[0].stat.islnk | default(false))
+          - openclaw_retained_gateway_verifier_validation.results[0].stat.uid | default(-1) == 0
+          - openclaw_retained_gateway_verifier_validation.results[0].stat.gid | default(-1) == 0
+          - openclaw_retained_gateway_verifier_validation.results[0].stat.mode | default('') == '0755'
+          - openclaw_retained_gateway_verifier_validation.results[1].stat.isdir | default(false)
+          - not (openclaw_retained_gateway_verifier_validation.results[1].stat.islnk | default(false))
+          - openclaw_retained_gateway_verifier_validation.results[1].stat.uid | default(-1) == 0
+          - openclaw_retained_gateway_verifier_validation.results[1].stat.gid | default(-1) == 0
+          - openclaw_retained_gateway_verifier_validation.results[1].stat.mode | default('') == '0755'
+          - openclaw_retained_gateway_verifier_validation.results[2].stat.isreg | default(false)
+          - not (openclaw_retained_gateway_verifier_validation.results[2].stat.islnk | default(false))
+          - openclaw_retained_gateway_verifier_validation.results[2].stat.uid | default(-1) == 0
+          - openclaw_retained_gateway_verifier_validation.results[2].stat.gid | default(-1) == 0
+          - openclaw_retained_gateway_verifier_validation.results[2].stat.mode | default('') == '0755'
+          - openclaw_retained_gateway_verifier_validation.results[2].stat.nlink | default(-1) == 1
+          - openclaw_retained_gateway_verifier_source_validation.stat.isreg | default(false)
+          - openclaw_retained_gateway_verifier_source_validation.stat.checksum | default('') | length == 64
+          - >-
+            openclaw_retained_gateway_verifier_validation.results[2].stat.checksum | default('') ==
+            openclaw_retained_gateway_verifier_source_validation.stat.checksum | default('')
+        fail_msg: >-
+          The retained rollback verifier or an executable-path ancestor is
+          redirected, writable, or malformed; refusing validate-only execution.
+      when:
+        - openclaw_native_cutover_marker_validation.stat.exists | default(false)
+        - >-
+          (hostvars['openclaw'].openclaw_native_activate | bool) or
+          (openclaw_docker_rollback_activate | bool)
+
+    - name: Validate retained rollback assets and their immutable identity checkpoint
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_retained_gateway_verifier_path }}"
+          - require
+          - --container-state
+          - "{{ 'running' if openclaw_docker_rollback_activate | bool else 'stopped' }}"
+          - --config-state
+          - "{{ 'rollback' if openclaw_docker_rollback_activate | bool else 'foundation-or-rollback' }}"
+          - --compose-root
+          - "{{ openclaw_compose_root }}"
+          - --setup-root
+          - "{{ openclaw_setup_root }}"
+          - --config
+          - "{{ openclaw_config_path }}"
+          - --runtime-root
+          - "{{ openclaw_runtime_root }}"
+          - --state-root
+          - "{{ openclaw_state_root }}"
+          - --auth-root
+          - "{{ openclaw_auth_profile_secret_root }}"
+          - --control-root
+          - "{{ openclaw_control_root }}"
+          - --token
+          - "{{ openclaw_gateway_token_path }}"
+          - --checkpoint
+          - "{{ openclaw_retained_gateway_identity_path }}"
+          - --expected-image
+          - "{{ openclaw_retained_image_ref }}"
+          - --hostname
+          - "{{ openclaw_hostname }}"
+          - --port
+          - "{{ openclaw_gateway_port | string }}"
+          - --uid
+          - "{{ openclaw_uid | string }}"
+          - --gid
+          - "{{ openclaw_gid | string }}"
+      changed_when: false
+      no_log: true
+      when:
+        - openclaw_native_cutover_marker_validation.stat.exists | default(false)
+        - >-
+          (hostvars['openclaw'].openclaw_native_activate | bool) or
+          (openclaw_docker_rollback_activate | bool)
+
     - name: Validate the completed native cutover keeps Docker OpenClaw stopped
       when:
         - openclaw_native_cutover_marker_validation.stat.exists | default(false)
@@ -523,6 +633,8 @@
             test "$(docker inspect --format '{% raw %}{{.State.Health.Status}}{% endraw %}' "$container")" = healthy
             test "$(docker inspect --format '{% raw %}{{index .Config.Labels "com.docker.compose.project"}}{% endraw %}' "$container")" = openclaw
             test "$(docker inspect --format '{% raw %}{{index .Config.Labels "com.docker.compose.service"}}{% endraw %}' "$container")" = openclaw-gateway
+            test "$(docker compose exec -T openclaw-gateway node dist/index.js --version)" = \
+              '{{ openclaw_retained_cli_version_output }}'
             docker inspect --format '{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}' "$container" |
               python3 -c '
             import json, sys
@@ -831,9 +943,8 @@
       register: openclaw_cli_version_validation
       changed_when: false
       failed_when: >-
-        not (openclaw_cli_version_validation.stdout | trim is match(
-          '^OpenClaw [0-9]{4}\.[0-9]+\.[0-9]+$'
-        ))
+        openclaw_cli_version_validation.stdout | trim !=
+        openclaw_retained_cli_version_output
       when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Check the active OpenClaw config path

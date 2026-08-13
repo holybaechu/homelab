@@ -128,6 +128,7 @@ def test_narrow_stage_never_invokes_broad_docker_or_arcane_roles():
     ]
     assert playbook[0]["roles"] == ["common_debian", "openclaw_native"]
     assert playbook[1]["roles"] == ["openclaw_traefik_route"]
+    assert playbook[0]["vars"] == {"openclaw_native_role_stage_only": True}
     phase_guard = task_by_name(
         playbook[0]["pre_tasks"],
         "Require the tracked staging phase to remain non-activating",
@@ -143,23 +144,13 @@ def test_narrow_stage_never_invokes_broad_docker_or_arcane_roles():
         assert forbidden not in rendered
 
 
-def test_every_transition_run_refreshes_openclaw_ssh_trust_through_proxmox():
+def test_retained_openclaw_trust_playbook_is_strict_but_not_in_steady_state_cd():
     workflow = read(REPO_ROOT / ".github" / "workflows" / "cd.yml")
     trust_playbook = yaml.safe_load(
         read(PLAYBOOK_ROOT / "trust-openclaw-native.yml")
     )
-    trust_step = workflow.split(
-        "- name: Trust dedicated native OpenClaw LXC access", maxsplit=1
-    )[1].split("      - name:", maxsplit=1)[0]
-
-    assert "env.OPENCLAW_NATIVE_TRANSITION == 'true'" in trust_step
-    assert "infra/ansible/playbooks/trust-openclaw-native.yml" in trust_step
-    assert workflow.index("Bootstrap only the dedicated native OpenClaw LXC") < (
-        workflow.index("Trust dedicated native OpenClaw LXC access")
-    )
-    assert workflow.index("Trust dedicated native OpenClaw LXC access") < (
-        workflow.index("Recover an interrupted native OpenClaw migration")
-    )
+    assert "Trust dedicated native OpenClaw LXC access" not in workflow
+    assert "infra/ansible/playbooks/trust-openclaw-native.yml" not in workflow
 
     play = trust_playbook[0]
     by_name = {task["name"]: task for task in play["tasks"]}
@@ -299,17 +290,27 @@ def test_traefik_runtime_contract_retries_every_crash_prefix_without_restarting_
     )[1]
 
 
-def test_transition_workflow_bypasses_every_broad_mutation_and_proves_identities():
+def test_steady_state_workflow_removes_the_transition_lane_and_runs_full_cd():
     workflow = read(REPO_ROOT / ".github" / "workflows" / "cd.yml")
     topology = read(
         REPO_ROOT / "infra" / "opentofu" / "envs" / "prod" / "containers.auto.tfvars"
     )
 
-    assert 'OPENCLAW_NATIVE_TRANSITION: "true"' in workflow
-    assert "OPENCLAW_NATIVE_STAGE_ONLY:" in workflow
-    assert "infra/ansible/playbooks/bootstrap-openclaw-native.yml" in workflow
-    assert "infra/ansible/playbooks/stage-openclaw-native.yml" in workflow
-    assert "infra/ansible/playbooks/validate-openclaw-native-stage.yml" in workflow
+    for removed in (
+        "OPENCLAW_NATIVE_TRANSITION",
+        "OPENCLAW_NATIVE_STAGE_ONLY",
+        "migrate_openclaw_native",
+        "MIGRATE_OPENCLAW_NATIVE",
+        "infra/ansible/playbooks/bootstrap-openclaw-native.yml",
+        "infra/ansible/playbooks/trust-openclaw-native.yml",
+        "infra/ansible/playbooks/stage-openclaw-native.yml",
+        "infra/ansible/playbooks/validate-openclaw-native-stage.yml",
+        "Capture unaffected transition workload identities",
+        "Prove unrelated transition workloads retained their identities",
+        "Transfer and activate native OpenClaw",
+        "Recover an interrupted native OpenClaw migration",
+    ):
+        assert removed not in workflow
     assert "OPENCLAW_LXC_DHCP_RESERVATION_CONFIRMED" not in workflow
     assert 'ip_address       = "192.168.0.5/24"' in topology
     assert 'mac_address      = "02:00:00:BA:EC:05"' in topology
@@ -330,36 +331,17 @@ def test_transition_workflow_bypasses_every_broad_mutation_and_proves_identities
         step = workflow.split(f"- name: {step_name}", maxsplit=1)[1].split(
             "      - name:", maxsplit=1
         )[0]
-        assert "env.OPENCLAW_NATIVE_TRANSITION != 'true'" in step
+        assert "OPENCLAW_NATIVE_TRANSITION" not in step
 
-    capture = workflow.split(
-        "- name: Capture unaffected transition workload identities", maxsplit=1
-    )[1].split("      - name:", maxsplit=1)[0]
-    proof = workflow.split(
-        "- name: Prove unrelated transition workloads retained their identities",
-        maxsplit=1,
-    )[1].split("      - name:", maxsplit=1)[0]
-    for step in (capture, proof):
-        assert "snapshot platform media code openclaw arcane-control" in step
-        assert '$1 == "platform" && $2 == "traefik"' in step
-        assert '$1 == "openclaw" && $2 == "openclaw-gateway"' in step
-        assert '$1 == "arcane-control" && $2 == "arcane"' in step
-        assert '$2 == "docker-socket-proxy"' not in step
-    assert "always()" in proof
-    assert "diff -u" in proof
-    assert "{{.Id}}\\t{{.Created}}\\t{{.Image}}\\t{{.Config.Image}}" in workflow
-    assert workflow.index("Capture unaffected transition workload identities") < (
-        workflow.index("- name: OpenTofu plan")
-    )
-    assert workflow.index("Validate the narrow native OpenClaw stage") < (
-        workflow.index("Transfer and activate native OpenClaw")
-    )
-    assert workflow.index("Transfer and activate native OpenClaw") < workflow.index(
-        "Prove unrelated transition workloads retained their identities"
-    )
+    assert workflow.index("Preflight dedicated OpenClaw LXC allocation") < workflow.index(
+        "- name: OpenTofu plan"
+    ) < workflow.index("- name: OpenTofu apply")
+    assert workflow.index("Fence retained Docker OpenClaw before native reconciliation") < (
+        workflow.index("- name: Deploy services")
+    ) < workflow.index("- name: Validate services")
 
 
-def test_ci_syntax_checks_every_narrow_transition_playbook():
+def test_ci_keeps_retained_narrow_playbooks_syntax_checked():
     ci = read(REPO_ROOT / ".github" / "workflows" / "ci.yml")
 
     for playbook in (

@@ -735,47 +735,39 @@ def test_cleanup_recovers_only_structurally_safe_guard_transaction_prefixes():
     assert ".failback.force.*" in source_stale
 
 
-def test_cd_migration_is_dispatch_only_after_narrow_stage_validation():
+def test_cd_has_retired_the_one_shot_migration_dispatch_lane():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"
     )
-    docker_vars = (
-        REPO_ROOT
-        / "infra"
-        / "ansible"
-        / "inventory"
-        / "prod"
-        / "group_vars"
-        / "svc_docker_apps.yml"
-    ).read_text(encoding="utf-8")
-    assert "migrate_openclaw_native:" in workflow
-    recovery_step = workflow.split(
-        "- name: Recover an interrupted native OpenClaw migration", maxsplit=1
-    )[1].split("      - name:", maxsplit=1)[0]
-    assert "github.event_name == 'workflow_dispatch'" in recovery_step
-    assert "inputs.migrate_openclaw_native == true" in recovery_step
-    assert "migrate-openclaw-native.sh recover-only" in recovery_step
-    migration_step = workflow.split(
-        "- name: Transfer and activate native OpenClaw", maxsplit=1
-    )[1].split("      - name:", maxsplit=1)[0]
-    assert "github.event_name == 'workflow_dispatch'" in migration_step
-    assert "inputs.migrate_openclaw_native == true" in migration_step
-    assert "steps.scope.outputs.deployment_scope == 'full'" in migration_step
-    assert "migrate-openclaw-native.sh" in migration_step
-    assert workflow.index("- name: Validate the narrow native OpenClaw stage") < workflow.index(
-        "- name: Transfer and activate native OpenClaw"
-    )
+    for removed in (
+        "migrate_openclaw_native",
+        "MIGRATE_OPENCLAW_NATIVE",
+        "OPENCLAW_NATIVE_TRANSITION",
+        "OPENCLAW_NATIVE_STAGE_ONLY",
+        "migrate-openclaw-native.sh",
+        "bootstrap-openclaw-native.yml",
+        "trust-openclaw-native.yml",
+        "stage-openclaw-native.yml",
+        "validate-openclaw-native-stage.yml",
+        "Recover an interrupted native OpenClaw migration",
+        "Transfer and activate native OpenClaw",
+        "transition_identity",
+        "TRANSITION_IDENTITY",
+        "RETAINED_GATEWAY_BASELINE",
+        "RETAINED_GATEWAY_CURRENT",
+    ):
+        assert removed not in workflow
+    assert workflow.index("- name: OpenTofu plan") < workflow.index(
+        "- name: OpenTofu apply"
+    ) < workflow.index("- name: Bootstrap Proxmox and LXC access")
     assert workflow.index(
-        "- name: Recover an interrupted native OpenClaw migration"
-    ) < workflow.index("- name: Stage only native OpenClaw and its Traefik route")
-    assert workflow.index("- name: Transfer and activate native OpenClaw") < workflow.index(
-        "- name: Prove unrelated transition workloads retained their identities"
+        "- name: Fence retained Docker OpenClaw before native reconciliation"
+    ) < workflow.index("- name: Deploy services") < workflow.index(
+        "- name: Validate services"
     )
-    assert 'OPENCLAW_NATIVE_TRANSITION: "true"' in workflow
-    assert "Require the automatic transition identity proof to pass" in workflow
 
 
-def test_native_activation_phase_and_one_shot_migration_workflow_are_coupled():
+def test_native_steady_state_and_retired_migration_workflow_are_coupled():
     phase_vars = yaml.safe_load((
         REPO_ROOT
         / "infra"
@@ -850,48 +842,40 @@ def test_native_activation_phase_and_one_shot_migration_workflow_are_coupled():
         "Prove unrelated transition workloads retained their identities",
     )
 
-    transition_lane_present = 'OPENCLAW_NATIVE_TRANSITION: "true"' in workflow
     assert not (
         phase_vars["openclaw_native_activate"]
         and all_vars["openclaw_docker_rollback_activate"]
     )
-
-    if not transition_lane_present:
-        assert all(token not in workflow for token in migration_surface)
-        assert "runtime_file_force_recreate_services" not in platform
-        assert '"openclaw": "apps/compose/openclaw/"' not in selector
-        assert selector_module["classify_paths"](
-            ["apps/compose/openclaw/compose.yml"]
-        ) == "full"
-        assert selector_module["select_arcane_projects"](
-            ["apps/compose/openclaw/compose.yml"]
-        ) == []
-        if all_vars["openclaw_docker_rollback_activate"] is True:
-            assert phase_vars["openclaw_native_activate"] is False
-            assert route_url == "http://openclaw-rollback:18789"
-        else:
-            assert phase_vars["openclaw_native_activate"] is True
-            assert route_url == "http://192.168.0.5:18789"
-        assert "Fence retained Docker OpenClaw before native reconciliation" in workflow
-        assert workflow.index(
-            "Fence retained Docker OpenClaw before native reconciliation"
-        ) < workflow.index("- name: Deploy services")
-        for ordinary_step in (
-            "Deploy changed workloads with Arcane",
-            "OpenTofu plan",
-            "OpenTofu apply",
-            "Bootstrap Proxmox and LXC access",
-            "Deploy services",
-            "Validate services",
-        ):
-            assert f"- name: {ordinary_step}" in workflow
-    else:
-        assert phase_vars["openclaw_native_activate"] is False
-        assert all(token in workflow for token in migration_surface)
-        assert platform["runtime_file_force_recreate_services"] == ["traefik"]
-        assert '"openclaw": "apps/compose/openclaw/"' in selector
-        assert all_vars["openclaw_docker_rollback_activate"] is False
-        assert route_url == "http://192.168.0.5:18789"
+    assert all(token not in workflow for token in migration_surface)
+    assert "runtime_file_force_recreate_services" not in platform
+    assert '"openclaw": "apps/compose/openclaw/"' not in selector
+    assert selector_module.classify_paths(
+        ["apps/compose/openclaw/compose.yml"]
+    ) == "full"
+    assert selector_module.select_arcane_projects(
+        ["apps/compose/openclaw/compose.yml"]
+    ) == []
+    assert (
+        phase_vars["openclaw_native_activate"],
+        all_vars["openclaw_docker_rollback_activate"],
+        route_url,
+    ) in {
+        (True, False, "http://192.168.0.5:18789"),
+        (False, True, "http://openclaw-rollback:18789"),
+    }
+    assert "Fence retained Docker OpenClaw before native reconciliation" in workflow
+    assert workflow.index(
+        "Fence retained Docker OpenClaw before native reconciliation"
+    ) < workflow.index("- name: Deploy services")
+    for ordinary_step in (
+        "Deploy changed workloads with Arcane",
+        "OpenTofu plan",
+        "OpenTofu apply",
+        "Bootstrap Proxmox and LXC access",
+        "Deploy services",
+        "Validate services",
+    ):
+        assert f"- name: {ordinary_step}" in workflow
 
     docker_role = (
         REPO_ROOT

@@ -102,10 +102,9 @@ Do not include the Proxmox HTTP authorization prefix.
 
 `DEPLOY_SSH_KNOWN_HOSTS` is written directly to the GitHub runner's
 `~/.ssh/known_hosts` before Ansible connects to Proxmox. It only needs the
-Proxmox host SSH key. LXC SSH host keys are collected later through Proxmox
-with `pct exec`; the native-transition lane refreshes the exact VMID118 key on
-every runner before recovery or staging, so a later migration dispatch does
-not depend on a stale or manually copied guest key.
+Proxmox host SSH key. During the normal full bootstrap, LXC SSH host keys are
+collected through the pinned Proxmox connection with `pct exec` before the
+runner connects to the guests.
 
 When the optional workload-identity proof is enabled, its read-only baseline runs before bootstrap. The workflow therefore reads the Docker LXC's current Ed25519 host key through the already pinned Proxmox connection and adds it only to the ephemeral runner's `known_hosts` before taking the baseline. It never uses `ssh-keyscan` or trusts a key obtained directly from the network.
 
@@ -133,9 +132,9 @@ The `tag:ci` ACL should only reach:
 - LXC SSH targets at `192.168.0.4:22` (tailnet), `192.168.0.3:22`
   (Docker apps), and `192.168.0.5:22` (the dedicated OpenClaw LXC)
 
-Before the native migration dispatch, verify the ephemeral CI node can reach
-all three SSH targets. The workflow fails closed during bootstrap if the ACL
-does not permit the new OpenClaw address.
+Verify the ephemeral CI node can reach all three SSH targets. The normal full
+workflow fails closed during bootstrap if the ACL does not permit the OpenClaw
+address.
 
 ## OpenTofu State
 
@@ -157,12 +156,14 @@ normal plan and deployment. Leave the input empty for every normal deployment.
 ## CD Scope and Parallelism
 
 Pushes containing changes only under the known safe `platform`, `media`, and
-`code` Compose trees use the `arcane` fast path. OpenClaw also uses that path
-only during its native-LXC transition; the phase-2 commit removes its selector
-after the finalizer retires the OpenClaw Arcane sync. Static
-`platform/traefik.yml` changes use the full path for forced recreation. After Tailscale
-connects, the runner pins `arcane.home.hchu.me` to `192.168.0.3` in its
-ephemeral hosts file because the Tailscale action uses `--accept-dns=false`.
+`code` Compose trees use the `arcane` fast path. OpenClaw changes use the full,
+marker-aware Ansible path because its Arcane sync is retired. Static
+`platform/traefik.yml` changes use the full path for forced recreation. The
+exact `platform/dynamic/routes.yml` ownership tuple also uses the full path so
+the pre-site OpenClaw source-hold, exclusive-owner, and route checks run before
+any service mutation. After Tailscale connects, the runner pins
+`arcane.home.hchu.me` to `192.168.0.3` in its ephemeral hosts file because the
+Tailscale action uses `--accept-dns=false`.
 The Arcane request still uses the HTTPS hostname for correct SNI and certificate
 validation.
 
@@ -190,12 +191,10 @@ precedes the new host and a future Traefik route cannot precede a ready native
 Gateway. All applications within `docker_apps` remain ordered Compose projects;
 Arcane is a separate Ansible-owned control project.
 
-During migration, the native OpenClaw role first stages VMID 118 with its
-integrity-pinned runtime, nftables policy, and disabled system service. The
-existing Docker Gateway and Arcane project remain authoritative until the
-separate audited cutover succeeds. A later tracked steady-state change enables
-native activation, adds the Traefik route, retires the Arcane sync, and keeps
-the stopped Docker assets as rollback material.
+The native OpenClaw role reconciles VMID 118 with its integrity-pinned runtime,
+nftables policy, and active system service. The tracked Traefik route points to
+that LXC. The former Docker Gateway stays stopped as exact rollback material,
+and its Arcane sync remains retired behind the permanent source hold.
 
 The full path remains the bootstrap and break-glass recovery route for every
 workload even though app-only pushes use Arcane.

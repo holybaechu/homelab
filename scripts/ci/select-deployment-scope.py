@@ -16,20 +16,22 @@ ARCANE_WORKLOAD_PREFIXES = {
     "platform": "apps/compose/platform/",
     "media": "apps/compose/media/",
     "code": "apps/compose/code/",
-    "openclaw": "apps/compose/openclaw/",
 }
 
-# These files need the full Ansible handler's force-recreate/build semantics.
-# Arcane's normal Git sync redeploy does not force-recreate a container whose
-# bind-mounted static configuration changed.
+# These paths need the full pre-site safety checks or Ansible handler semantics.
+# The tracked route participates in the OpenClaw ownership tuple, while Arcane's
+# normal Git sync cannot force-recreate Traefik for static configuration drift.
 FULL_DEPLOYMENT_PATHS = {
+    "apps/compose/platform/dynamic/routes.yml",
     "apps/compose/platform/traefik.yml",
 }
 
 
 def classify_paths(paths: list[str]) -> str:
     changed = [path for path in paths if path]
-    if changed and not any(path in FULL_DEPLOYMENT_PATHS for path in changed) and all(
+    if any(path in FULL_DEPLOYMENT_PATHS for path in changed):
+        return "full"
+    if changed and all(
         any(path.startswith(prefix) for prefix in ARCANE_WORKLOAD_PREFIXES.values())
         for path in changed
     ):
@@ -62,7 +64,7 @@ def deployment_scope(repo_root: Path) -> tuple[str, list[str]]:
 
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", before, current, "--"],
+            ["git", "diff", "--no-renames", "--name-only", before, current, "--"],
             cwd=repo_root,
             check=True,
             capture_output=True,

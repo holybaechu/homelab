@@ -26,7 +26,11 @@ def test_private_routes_and_headers_preserve_edge_policy():
     assert "adguard.home.hchu.me" in dynamic
     assert "rule: Host(`openclaw.home.hchu.me`)" in dynamic
     assert "middlewares: [private-only, secure-headers]" in dynamic
-    assert "url: http://192.168.0.5:18789" in dynamic
+    openclaw_backends = (
+        "url: http://192.168.0.5:18789",
+        "url: http://openclaw-rollback:18789",
+    )
+    assert sum(backend in dynamic for backend in openclaw_backends) == 1
     assert "pve.home.hchu.me" in dynamic
     assert "customFrameOptionsValue: SAMEORIGIN" in dynamic
     assert "/etc/ssl/certs/homelab-pve-root-ca.pem" in dynamic

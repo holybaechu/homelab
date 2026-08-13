@@ -1,0 +1,270 @@
+---
+- name: Inspect whether the retained Gateway is running before native-primary fencing
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - ps
+      - --status
+      - running
+      - -q
+      - openclaw-gateway
+  args:
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_pre_site_retained_gateway_running
+  changed_when: false
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+
+- name: Require a checkpoint-matching running rollback Gateway before stopping it
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_pre_site_retained_gateway_verifier.path }}"
+      - require
+      - --container-state
+      - rollback
+      - --config-state
+      - rollback
+      - --compose-root
+      - "{{ openclaw_compose_root }}"
+      - --setup-root
+      - "{{ openclaw_setup_root }}"
+      - --config
+      - "{{ openclaw_config_path }}"
+      - --runtime-root
+      - "{{ openclaw_runtime_root }}"
+      - --state-root
+      - "{{ openclaw_state_root }}"
+      - --auth-root
+      - "{{ openclaw_auth_profile_secret_root }}"
+      - --control-root
+      - "{{ openclaw_control_root }}"
+      - --token
+      - "{{ openclaw_gateway_token_path }}"
+      - --checkpoint
+      - "{{ openclaw_retained_gateway_identity_path }}"
+      - --expected-image
+      - "{{ openclaw_retained_image_ref }}"
+      - --hostname
+      - "{{ openclaw_hostname }}"
+      - --port
+      - "{{ openclaw_gateway_port | string }}"
+      - --uid
+      - "{{ openclaw_uid | string }}"
+      - --gid
+      - "{{ openclaw_gid | string }}"
+      - --require-expected-token
+  args:
+    stdin: "{{ openclaw_gateway_token | trim }}\n"
+    stdin_add_newline: false
+  changed_when: false
+  no_log: true
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+    - openclaw_pre_site_retained_gateway_running.stdout | trim | length > 0
+
+- name: Stop the retained Docker Gateway before native-primary reconciliation
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - stop
+      - --timeout
+      - "30"
+      - openclaw-gateway
+  args:
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_native_primary_source_stop
+  changed_when: >-
+    'Stopped' in (openclaw_native_primary_source_stop.stdout ~ openclaw_native_primary_source_stop.stderr) or
+    'Stopping' in (openclaw_native_primary_source_stop.stdout ~ openclaw_native_primary_source_stop.stderr)
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+
+- name: Prove the retained Docker Gateway is fenced before native starts
+  ansible.builtin.shell: |
+    set -eu
+    container="$(docker compose ps --all -q openclaw-gateway)"
+    test -n "$container"
+    test -z "$(docker compose ps --status running -q openclaw-gateway)"
+  args:
+    executable: /bin/sh
+    chdir: "{{ openclaw_compose_root }}"
+  changed_when: false
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+
+- name: Disconnect the stopped retained Gateway before checkpoint verification
+  ansible.builtin.shell: |
+    set -eu
+    container="$(docker compose ps --all -q openclaw-gateway)"
+    test -n "$container"
+    if docker inspect --format '{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}' "$container" |
+        python3 -c 'import json, sys; raise SystemExit(0 if "homelab_proxy" in json.load(sys.stdin) else 1)'; then
+      docker network disconnect -f homelab_proxy "$container"
+      printf '%s\n' changed
+    fi
+  args:
+    executable: /bin/sh
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_pre_site_retained_gateway_disconnect
+  changed_when: "'changed' in openclaw_pre_site_retained_gateway_disconnect.stdout_lines"
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+
+- name: Re-require the exact stopped Gateway after leaving rollback
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_pre_site_retained_gateway_verifier.path }}"
+      - require
+      - --container-state
+      - stopped
+      - --config-state
+      - rollback
+      - --compose-root
+      - "{{ openclaw_compose_root }}"
+      - --setup-root
+      - "{{ openclaw_setup_root }}"
+      - --config
+      - "{{ openclaw_config_path }}"
+      - --runtime-root
+      - "{{ openclaw_runtime_root }}"
+      - --state-root
+      - "{{ openclaw_state_root }}"
+      - --auth-root
+      - "{{ openclaw_auth_profile_secret_root }}"
+      - --control-root
+      - "{{ openclaw_control_root }}"
+      - --token
+      - "{{ openclaw_gateway_token_path }}"
+      - --checkpoint
+      - "{{ openclaw_retained_gateway_identity_path }}"
+      - --expected-image
+      - "{{ openclaw_retained_image_ref }}"
+      - --hostname
+      - "{{ openclaw_hostname }}"
+      - --port
+      - "{{ openclaw_gateway_port | string }}"
+      - --uid
+      - "{{ openclaw_uid | string }}"
+      - --gid
+      - "{{ openclaw_gid | string }}"
+      - --require-expected-token
+  args:
+    stdin: "{{ openclaw_gateway_token | trim }}\n"
+    stdin_add_newline: false
+  changed_when: false
+  no_log: true
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+    - openclaw_pre_site_retained_gateway_running.stdout | trim | length > 0
+
+- name: Bootstrap the stopped retained identity checkpoint once or require it thereafter
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_pre_site_retained_gateway_verifier.path }}"
+      - >-
+        {{
+          'seed'
+          if (
+            not (openclaw_pre_site_retained_gateway_checkpoint.stat.exists | default(false))
+            and not (openclaw_pre_site_retained_gateway_checkpoint.stat.islnk | default(false))
+            and not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.exists | default(false))
+            and not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.islnk | default(false))
+          )
+          else 'require'
+        }}
+      - --container-state
+      - stopped
+      - --config-state
+      - foundation-or-rollback
+      - --compose-root
+      - "{{ openclaw_compose_root }}"
+      - --setup-root
+      - "{{ openclaw_setup_root }}"
+      - --config
+      - "{{ openclaw_config_path }}"
+      - --runtime-root
+      - "{{ openclaw_runtime_root }}"
+      - --state-root
+      - "{{ openclaw_state_root }}"
+      - --auth-root
+      - "{{ openclaw_auth_profile_secret_root }}"
+      - --control-root
+      - "{{ openclaw_control_root }}"
+      - --token
+      - "{{ openclaw_gateway_token_path }}"
+      - --checkpoint
+      - "{{ openclaw_retained_gateway_identity_path }}"
+      - --expected-image
+      - "{{ openclaw_retained_image_ref }}"
+      - --hostname
+      - "{{ openclaw_hostname }}"
+      - --port
+      - "{{ openclaw_gateway_port | string }}"
+      - --uid
+      - "{{ openclaw_uid | string }}"
+      - --gid
+      - "{{ openclaw_gid | string }}"
+      - --require-expected-token
+  args:
+    stdin: "{{ openclaw_gateway_token | trim }}\n"
+    stdin_add_newline: false
+  register: openclaw_pre_site_retained_gateway_checkpoint_proof
+  changed_when: "'changed=true' in openclaw_pre_site_retained_gateway_checkpoint_proof.stdout_lines"
+  no_log: true
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+    - openclaw_pre_site_retained_gateway_running.stdout | trim | length == 0
+
+- name: Require the exact retained identity checkpoint before tracked rollback
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_pre_site_retained_gateway_verifier.path }}"
+      - require
+      - --container-state
+      - rollback
+      - --config-state
+      - rollback
+      - --compose-root
+      - "{{ openclaw_compose_root }}"
+      - --setup-root
+      - "{{ openclaw_setup_root }}"
+      - --config
+      - "{{ openclaw_config_path }}"
+      - --runtime-root
+      - "{{ openclaw_runtime_root }}"
+      - --state-root
+      - "{{ openclaw_state_root }}"
+      - --auth-root
+      - "{{ openclaw_auth_profile_secret_root }}"
+      - --control-root
+      - "{{ openclaw_control_root }}"
+      - --token
+      - "{{ openclaw_gateway_token_path }}"
+      - --checkpoint
+      - "{{ openclaw_retained_gateway_identity_path }}"
+      - --expected-image
+      - "{{ openclaw_retained_image_ref }}"
+      - --hostname
+      - "{{ openclaw_hostname }}"
+      - --port
+      - "{{ openclaw_gateway_port | string }}"
+      - --uid
+      - "{{ openclaw_uid | string }}"
+      - --gid
+      - "{{ openclaw_gid | string }}"
+      - --require-expected-token
+  args:
+    stdin: "{{ openclaw_gateway_token | trim }}\n"
+    stdin_add_newline: false
+  changed_when: false
+  no_log: true
+  when: openclaw_docker_rollback_activate | bool

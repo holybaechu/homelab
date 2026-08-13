@@ -17,6 +17,10 @@ openclaw_gateway_port: 18789
 openclaw_hostname: openclaw.home.hchu.me
 openclaw_native_cutover_marker_path: /opt/homelab-control/openclaw/native-cutover-validated
 openclaw_native_transition_marker_value: homelab-openclaw-native-migration-v1
+openclaw_retained_gateway_identity_path: "{{ openclaw_control_root }}/retained-gateway-identity.json"
+openclaw_retained_gateway_verifier_path: /usr/local/libexec/openclaw-retained-gateway
+openclaw_retained_image_ref: ghcr.io/openclaw/openclaw:2026.7.1-2@sha256:8789721d2e9b24b780a1504b56deb4c6bd5c7dbf96a1dd117e7c45c2ed72c8ac
+openclaw_retained_cli_version_output: "OpenClaw 2026.7.1-2 (0790d9f)"
 openclaw_traefik_runtime_contract_marker_path: /opt/homelab-control/openclaw/traefik-runtime-contract.sha256
 openclaw_uid: "{{ service_uid }}"
 openclaw_gid: "{{ service_gid }}"
@@ -123,8 +127,6 @@ docker_compose_projects:
     runtime_files:
       - compose.yml
       - traefik.yml
-    runtime_file_force_recreate_services:
-      - traefik
     hot_reload_files:
       - dynamic/routes.yml
     env_template: platform.env.j2

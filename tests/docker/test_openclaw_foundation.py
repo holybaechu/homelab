@@ -15,6 +15,26 @@ def read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
+def test_retained_cli_version_contract_matches_the_pinned_image_release():
+    variables = yaml.safe_load(
+        read("infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml")
+    )
+    assert variables["openclaw_retained_cli_version_output"] == (
+        "OpenClaw 2026.7.1-2 (0790d9f)"
+    )
+    assert variables["openclaw_retained_image_ref"] == IMAGE
+    assert variables["openclaw_retained_gateway_identity_path"] == (
+        "{{ openclaw_control_root }}/retained-gateway-identity.json"
+    )
+    assert variables["openclaw_retained_gateway_verifier_path"] == (
+        "/usr/local/libexec/openclaw-retained-gateway"
+    )
+    assert ":2026.7.1-2@sha256:" in IMAGE
+    assert "openclaw_retained_cli_version_output" in ROLE_PATH.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_openclaw_compose_is_pinned_local_only_and_hardened():
     compose = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
     gateway = compose["services"]["openclaw-gateway"]

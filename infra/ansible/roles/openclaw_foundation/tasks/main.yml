@@ -42,11 +42,16 @@
       - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
       - openclaw_native_cutover_marker_path == openclaw_control_root + '/native-cutover-validated'
       - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
+      - openclaw_retained_gateway_identity_path == openclaw_control_root + '/retained-gateway-identity.json'
+      - openclaw_retained_gateway_verifier_path == '/usr/local/libexec/openclaw-retained-gateway'
+      - openclaw_retained_image_ref == 'ghcr.io/openclaw/openclaw:2026.7.1-2@sha256:8789721d2e9b24b780a1504b56deb4c6bd5c7dbf96a1dd117e7c45c2ed72c8ac'
+      - openclaw_retained_cli_version_output == 'OpenClaw 2026.7.1-2 (0790d9f)'
       - openclaw_docker_rollback_activate is boolean
       - hostvars['openclaw'].openclaw_native_activate is defined
+      - hostvars['openclaw'].openclaw_native_activate is boolean
       - >-
-        not (openclaw_docker_rollback_activate | bool) or
-        not (hostvars['openclaw'].openclaw_native_activate | bool)
+        (hostvars['openclaw'].openclaw_native_activate | bool) !=
+        (openclaw_docker_rollback_activate | bool)
       - >-
         openclaw_traefik_backend_url ==
         (
@@ -96,6 +101,105 @@
       Docker rollback is allowed only from a completed native cutover with its
       exact permanent source hold marker intact.
   when: openclaw_docker_rollback_activate | bool
+
+- name: Inspect the retained verifier executable path after validated cutover
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /usr/local
+    - /usr/local/libexec
+    - "{{ openclaw_retained_gateway_verifier_path }}"
+  register: openclaw_retained_gateway_verifier_directories
+  when: openclaw_native_cutover_marker.stat.exists | default(false)
+
+- name: Require a real root-owned retained verifier executable path
+  ansible.builtin.assert:
+    that:
+      - openclaw_retained_gateway_verifier_directories.results[0].stat.isdir | default(false)
+      - not (openclaw_retained_gateway_verifier_directories.results[0].stat.islnk | default(false))
+      - openclaw_retained_gateway_verifier_directories.results[0].stat.uid | default(-1) == 0
+      - openclaw_retained_gateway_verifier_directories.results[0].stat.gid | default(-1) == 0
+      - openclaw_retained_gateway_verifier_directories.results[0].stat.mode | default('') == '0755'
+      - >-
+        not (openclaw_retained_gateway_verifier_directories.results[1].stat.exists | default(false)) or
+        (
+          openclaw_retained_gateway_verifier_directories.results[1].stat.isdir | default(false) and
+          not (openclaw_retained_gateway_verifier_directories.results[1].stat.islnk | default(false)) and
+          openclaw_retained_gateway_verifier_directories.results[1].stat.uid | default(-1) == 0 and
+          openclaw_retained_gateway_verifier_directories.results[1].stat.gid | default(-1) == 0 and
+          openclaw_retained_gateway_verifier_directories.results[1].stat.mode | default('') == '0755'
+        )
+      - >-
+        not (openclaw_retained_gateway_verifier_directories.results[2].stat.exists | default(false)) or
+        (
+          openclaw_retained_gateway_verifier_directories.results[2].stat.isreg | default(false) and
+          not (openclaw_retained_gateway_verifier_directories.results[2].stat.islnk | default(false)) and
+          openclaw_retained_gateway_verifier_directories.results[2].stat.uid | default(-1) == 0 and
+          openclaw_retained_gateway_verifier_directories.results[2].stat.gid | default(-1) == 0 and
+          openclaw_retained_gateway_verifier_directories.results[2].stat.mode | default('') == '0755' and
+          openclaw_retained_gateway_verifier_directories.results[2].stat.nlink | default(-1) == 1
+        )
+    fail_msg: >-
+      The retained verifier executable path must remain real, root-owned, and
+      mode 0755; refusing a redirected or writable executable boundary.
+  when: openclaw_native_cutover_marker.stat.exists | default(false)
+
+- name: Create the root-owned local executable directory after validated cutover
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+    follow: false
+  when: openclaw_native_cutover_marker.stat.exists | default(false)
+
+- name: Install the retained OpenClaw rollback verifier after validated cutover
+  ansible.builtin.copy:
+    src: openclaw_retained_gateway.py
+    dest: "{{ openclaw_retained_gateway_verifier_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+    follow: false
+  when: openclaw_native_cutover_marker.stat.exists | default(false)
+
+- name: Inspect the bundled retained OpenClaw rollback verifier
+  ansible.builtin.stat:
+    path: "{{ role_path }}/files/openclaw_retained_gateway.py"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  register: openclaw_retained_gateway_verifier_source
+  when: openclaw_native_cutover_marker.stat.exists | default(false)
+
+- name: Inspect the installed retained OpenClaw rollback verifier
+  ansible.builtin.stat:
+    path: "{{ openclaw_retained_gateway_verifier_path }}"
+    follow: false
+    checksum_algorithm: sha256
+  register: openclaw_retained_gateway_verifier_install
+  when: openclaw_native_cutover_marker.stat.exists | default(false)
+
+- name: Require the exact installed retained OpenClaw rollback verifier
+  ansible.builtin.assert:
+    that:
+      - openclaw_retained_gateway_verifier_install.stat.isreg | default(false)
+      - not (openclaw_retained_gateway_verifier_install.stat.islnk | default(false))
+      - openclaw_retained_gateway_verifier_install.stat.uid | default(-1) == 0
+      - openclaw_retained_gateway_verifier_install.stat.gid | default(-1) == 0
+      - openclaw_retained_gateway_verifier_install.stat.mode | default('') == '0755'
+      - openclaw_retained_gateway_verifier_install.stat.nlink | default(-1) == 1
+      - openclaw_retained_gateway_verifier_source.stat.isreg | default(false)
+      - openclaw_retained_gateway_verifier_source.stat.checksum | default('') | length == 64
+      - >-
+        openclaw_retained_gateway_verifier_install.stat.checksum | default('') ==
+        openclaw_retained_gateway_verifier_source.stat.checksum | default('')
+    fail_msg: >-
+      The installed retained verifier must be a single-linked root-owned mode
+      0755 regular file before any execution.
+  when: openclaw_native_cutover_marker.stat.exists | default(false)
 
 - name: Check for a half-committed native OpenClaw listener
   ansible.builtin.wait_for:
@@ -176,6 +280,51 @@
       changed_when: "'changed' in openclaw_retained_gateway_proxy_disconnect.stdout"
       register: openclaw_retained_gateway_proxy_disconnect
 
+    - name: Require retained rollback assets and their immutable identity checkpoint
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_retained_gateway_verifier_path }}"
+          - require
+          - --container-state
+          - stopped
+          - --config-state
+          - foundation-or-rollback
+          - --compose-root
+          - "{{ openclaw_compose_root }}"
+          - --setup-root
+          - "{{ openclaw_setup_root }}"
+          - --config
+          - "{{ openclaw_config_path }}"
+          - --runtime-root
+          - "{{ openclaw_runtime_root }}"
+          - --state-root
+          - "{{ openclaw_state_root }}"
+          - --auth-root
+          - "{{ openclaw_auth_profile_secret_root }}"
+          - --control-root
+          - "{{ openclaw_control_root }}"
+          - --token
+          - "{{ openclaw_gateway_token_path }}"
+          - --checkpoint
+          - "{{ openclaw_retained_gateway_identity_path }}"
+          - --expected-image
+          - "{{ openclaw_retained_image_ref }}"
+          - --hostname
+          - "{{ openclaw_hostname }}"
+          - --port
+          - "{{ openclaw_gateway_port | string }}"
+          - --uid
+          - "{{ openclaw_uid | string }}"
+          - --gid
+          - "{{ openclaw_gid | string }}"
+          - --require-expected-token
+      args:
+        stdin: "{{ openclaw_gateway_token | trim }}\n"
+        stdin_add_newline: false
+      changed_when: false
+      no_log: true
+      when: hostvars['openclaw'].openclaw_native_activate | bool
+
 - name: Activate the exact retained Docker Gateway for tracked rollback
   when: openclaw_docker_rollback_activate | bool
   block:
@@ -224,6 +373,50 @@
       vars:
         openclaw_rollback_config: >-
           {{ openclaw_docker_rollback_config.content | b64decode | from_json }}
+      no_log: true
+
+    - name: Require the exact retained rollback assets and immutable identity checkpoint
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_retained_gateway_verifier_path }}"
+          - require
+          - --container-state
+          - rollback
+          - --config-state
+          - rollback
+          - --compose-root
+          - "{{ openclaw_compose_root }}"
+          - --setup-root
+          - "{{ openclaw_setup_root }}"
+          - --config
+          - "{{ openclaw_config_path }}"
+          - --runtime-root
+          - "{{ openclaw_runtime_root }}"
+          - --state-root
+          - "{{ openclaw_state_root }}"
+          - --auth-root
+          - "{{ openclaw_auth_profile_secret_root }}"
+          - --control-root
+          - "{{ openclaw_control_root }}"
+          - --token
+          - "{{ openclaw_gateway_token_path }}"
+          - --checkpoint
+          - "{{ openclaw_retained_gateway_identity_path }}"
+          - --expected-image
+          - "{{ openclaw_retained_image_ref }}"
+          - --hostname
+          - "{{ openclaw_hostname }}"
+          - --port
+          - "{{ openclaw_gateway_port | string }}"
+          - --uid
+          - "{{ openclaw_uid | string }}"
+          - --gid
+          - "{{ openclaw_gid | string }}"
+          - --require-expected-token
+      args:
+        stdin: "{{ openclaw_gateway_token | trim }}\n"
+        stdin_add_newline: false
+      changed_when: false
       no_log: true
 
     - name: Prove the exact retained Docker Gateway identity and assets
@@ -353,6 +546,8 @@
     - name: Validate and audit the retained rollback Gateway
       ansible.builtin.shell: |
         set -eu
+        test "$(docker compose exec -T openclaw-gateway node dist/index.js --version)" = \
+          '{{ openclaw_retained_cli_version_output }}'
         docker compose exec -T openclaw-gateway node dist/index.js config validate --json |
           python3 -c 'import json, sys; value=json.load(sys.stdin); raise SystemExit(0 if value.get("valid") and not value.get("warnings") else 1)'
         docker compose exec -T openclaw-gateway node dist/index.js secrets audit --check --json |

@@ -1,10 +1,11 @@
 # OpenClaw Native LXC Migration
 
-The migration is deliberately split into two public IaC deployments and one
-audited transfer. Do not add model credentials, agents, channels, skills, or
-browser state during this process.
+The completed migration used two public IaC deployments and one audited
+transfer. This document records that transaction and the current rollback
+contract. Do not add model credentials, agents, channels, skills, or browser
+state as part of foundation maintenance.
 
-## Phase 1: inactive staging
+## Completed phase 1: inactive staging
 
 Hard precondition: the router must reserve `192.168.0.5` to
 `02:00:00:BA:EC:05`, or exclude that address from dynamic allocation. This
@@ -14,8 +15,8 @@ preflight. An ARP non-response proves only momentary vacancy; verify the
 router's authoritative reservation table whenever this tracked identity is
 changed. No separate GitHub environment variable duplicates the IaC value.
 
-The first CD run uses the temporary tracked `OPENCLAW_NATIVE_TRANSITION` lane.
-It creates unprivileged VMID 118 (`openclaw`, `192.168.0.5`) after proving its
+The first CD run used a temporary tracked transition lane. It created
+unprivileged VMID 118 (`openclaw`, `192.168.0.5`) after proving its
 VMID, IP, MAC, and datastore allocation are safe. The stage-only OpenTofu guard
 rejects every action except an exact create of VMID 118 (or no-op resources),
 so drift in an existing LXC cannot be applied accidentally.
@@ -40,12 +41,12 @@ certificate-valid `502` while the native backend is deliberately unavailable.
 The existing Docker Gateway on VMID 110 remains running and Arcane continues
 to manage it.
 
-Phase 1 is safe to repeat. Validation requires no Docker engine, socket,
-nesting, TUN device, or Proxmox bind mount in VMID 118.
+That stage established that VMID 118 requires no Docker engine, socket,
+nesting, TUN device, or Proxmox bind mount.
 
-## Audited transfer
+## Completed audited transfer
 
-Only the manual migration workflow may stop the Docker Gateway. It transfers
+The one-time manual migration workflow alone stopped the Docker Gateway. It transferred
 the clean private checkout, runtime state, and auth-profile directory directly
 between the two hosts through the pinned CI SSH trust chain. Archives are not
 persisted on the runner. The converter changes only `config/openclaw.json` and
@@ -75,8 +76,8 @@ paired root-owned validation markers
 atomically, retires only the OpenClaw Arcane sync, and verifies that the old
 Gateway remains stopped and retained.
 
-The manual workflow does not rerun OpenTofu or broad bootstrap. It has an early
-recovery-only gate before the same narrow, idempotent stage and keeps the
+The manual workflow did not rerun OpenTofu or broad bootstrap. It had an early
+recovery-only gate before the same narrow, idempotent stage and kept the
 actual transfer as its final mutating deployment step. A fresh identity
 baseline protects Traefik, every platform sibling, media, code, and the Arcane
 socket proxy throughout migration. Only the old Gateway's lifecycle and the
@@ -90,34 +91,76 @@ keyless start run exactly `docker compose up -d --force-recreate --no-deps
 arcane`; the socket proxy is neither recreated nor orphan-pruned. Ordinary
 Arcane reconciliation keeps its existing whole-project behavior.
 
-## Phase 2: tracked cutover
+## Current steady state: tracked native cutover
 
-After the native Gateway and the real HTTPS path through Traefik host
-`192.168.0.3` are healthy, commit the steady state in the public repository:
+The public repository now records the validated native steady state as one
+atomic ownership contract:
 
-1. atomically commit the three ownership fields: set
-   `openclaw_native_activate: true`, keep
-   `openclaw_docker_rollback_activate: false`, and keep the static tracked
-   `apps/compose/platform/dynamic/routes.yml` backend exactly
-   `http://192.168.0.5:18789`. Never merge or deploy a partial tuple;
-2. keep the old Docker Gateway stopped without removing its checkout, state,
+1. `openclaw_native_activate: true`,
+   `openclaw_docker_rollback_activate: false`, and the static tracked
+   `apps/compose/platform/dynamic/routes.yml` backend
+   `http://192.168.0.5:18789` are committed together. Never merge or deploy a
+   partial tuple;
+2. the old Docker Gateway remains stopped without removing its checkout, state,
    token, image, Compose files, or container;
-3. retain the already-deployed Traefik route to `http://192.168.0.5:18789`;
-4. remove the phase-1 `runtime_file_force_recreate_services` override after
-   the Traefik directory mount has landed, restoring normal whole-project
-   reconciliation semantics for future shared Compose-file changes;
-5. remove the one-time `migrate_openclaw_native` workflow input, recovery step,
-   terminal transfer step, `OPENCLAW_NATIVE_TRANSITION` gate, and narrow
-   bootstrap/stage workflow lane after the tracked steady state validates. The
+3. Traefik retains the backend `http://192.168.0.5:18789`;
+4. normal whole-project reconciliation semantics apply to future shared
+   platform Compose-file changes; the phase-1 isolated Traefik recreation
+   override is gone;
+5. the one-time migration input, recovery and terminal-transfer steps,
+   transition gate, narrow bootstrap/stage workflow lane, and temporary
+   identity-proof surface are absent from CD. The
    active native role removes only its destination transition marker; retain
    the Docker-host `native-cutover-validated` marker as the durable rollback
    hold that keeps the old Gateway stopped and its Arcane sync retired; and
-6. remove the `apps/compose/openclaw/` Arcane fast-path prefix from
-   `select-deployment-scope.py`. After the finalizer retires that sync, later
-   rollback-manifest or README changes must take the full, marker-aware path
-   rather than request a missing Arcane project; and
-7. run native, proxy, firewall, private-repository, and rollback-retention
-   validation.
+6. `apps/compose/openclaw/` is absent from the Arcane fast-path selector, and
+   the exact `apps/compose/platform/dynamic/routes.yml` ownership tuple is a
+   full-deployment path. Rollback-manifest, README, and route-owner changes
+   therefore run the marker-aware pre-site fence rather than request a missing
+   Arcane project or bypass the exclusive-owner check; and
+7. every normal full deployment runs native, proxy, firewall,
+   private-repository, and rollback-retention validation; and
+8. the first native-primary full deployment creates
+   `/opt/homelab-control/openclaw/retained-gateway-identity.json` on the
+   Docker host. It is a canonical, root-owned mode `0600` checkpoint containing
+   only the schema, full container ID, container creation time, local image ID,
+   and immutable image reference. Later deployments compare it byte-for-byte;
+   they never overwrite, remove, or regenerate it. The one-time bootstrap is
+   authorized only while both this checkpoint and the persistent verifier at
+   `/usr/local/libexec/openclaw-retained-gateway` are absent. If either object
+   already exists, the fence uses require-only comparison, so deletion of the
+   checkpoint after bootstrap fails closed.
+
+Before either steady-state owner can be reconciled, CD checks the exact source
+marker, mutually exclusive ownership flags, complete router contract, and
+backend. It then transfers a bundled verifier to a random file under `/run`,
+strictly checks the retained Compose asset, deployment environment, private
+Git repository, current Gateway token, config, image, container hardening,
+mounts, loopback publication, and rollback network, and removes the temporary
+verifier in an `always` cleanup. The persistent foundation copy and final
+validation repeat the retained proof after site reconciliation.
+
+Native-primary checkpoint seeding is allowed exactly once, by the pre-site
+fence, while both bootstrap artifacts are absent and only from the exact
+stopped and proxy-disconnected retained container. Foundation and validation
+are require-only. Its config may be either the original foundation form or the
+exact hardened rollback form. The mutable private
+config, runtime state, auth-profile state, and token are deliberately not
+embedded in the identity checkpoint; their live boundaries are revalidated on
+every full deployment. Replacing the retained container or image is therefore
+not an ordinary repair: it requires a separately reviewed migration contract,
+not deletion or regeneration of this checkpoint.
+
+This retained-host proof assumes the Docker host's root account, the homelab
+service UID/GID, Docker daemon, and the locally administered Arcane control
+plane remain trusted. UID 1000 owns the retained Compose and mutable runtime
+trees by design, and Arcane retains its broader compose-root management mount;
+the verifier detects drift at each fence but is not a sandbox against a
+simultaneously compromised local service principal. Root-owned setup/config,
+secret, control-marker, checkpoint, and verifier boundaries protect the
+authorization material. Treat compromise of any named trusted principal as a
+host incident and do not use the ordinary rollback procedure until the host
+and retained assets have been rebuilt under a separately reviewed recovery.
 
 The native Gateway binds its LXC address because Traefik is on another host.
 Guest nftables accepts port 18789 only from `192.168.0.3`; the Gateway retains
@@ -126,14 +169,18 @@ disabled terminal. The Control UI is never published directly to the LAN.
 
 ## Rollback
 
-Before the final public cutover, workflow failures trigger guarded rollback in
-the cleanup handler. If the runner is lost, rerunning the manual workflow
-performs the same recovery transaction; the source guard never starts Docker
-from local timeout or native HTTP failure alone.
+During the one-time transfer, workflow failures triggered guarded rollback in
+the cleanup handler and a rerun performed the same recovery transaction. Those
+transition-only workflow paths are now retired; the source guard still never
+starts Docker from local timeout or native HTTP failure alone.
 
 Afterward, rollback is a tracked, mutually exclusive full deployment. Do not
 delete `/opt/homelab-control/openclaw/native-cutover-validated` from the Docker
 host: it is the permanent source hold and rollback authorization.
+Also do not edit or delete
+`/opt/homelab-control/openclaw/retained-gateway-identity.json`; a missing or
+mismatched checkpoint intentionally blocks rollback while native is still
+serving.
 Do not re-register OpenClaw with Arcane.
 
 First stop unrelated changes and decide explicitly whether the native or
@@ -143,8 +190,20 @@ active. Before changing the public repository, verify that normal steady-state
 validation passes and that the retained source config has the exact HTTPS
 origin, file-backed token, rate limit, disabled terminal, disabled Tailscale
 auth, empty trusted-proxy list, and no real-IP fallback. The rollback role
-fails closed if any retained asset, container identity, image, source marker,
-or config contract differs.
+fails closed if any retained asset, container identity, image, current token,
+source marker, hardened config contract, rollback network, or proxy-alias
+ownership differs.
+
+The pre-site fence performs this proof before the native role can stop native
+OpenClaw. A rollback rerun may find the checkpoint-matching retained container
+already running and healthy but not yet attached with its proxy alias; that
+specific interrupted state is resumable only when the alias is unowned. Final
+validation still requires the unique `openclaw-rollback` alias. In the reverse
+rollback-to-native direction, when the retained container is running, the fence
+first requires its hardened config and existing checkpoint, then stops and
+disconnects it and repeats the stopped proof before native can be reconciled.
+Thus identity or asset drift never causes the currently serving owner to be
+stopped first.
 
 On VMID 110, with the retained Gateway still stopped, prepare and commit the
 Docker-specific private config before the public ownership commit. This edit
@@ -156,8 +215,12 @@ set -eu
 setup=/opt/homelab-compose/openclaw-setup
 config="$setup/config/openclaw.json"
 compose=/opt/homelab-compose/openclaw
+checkpoint=/opt/homelab-control/openclaw/retained-gateway-identity.json
 test "$(cat /opt/homelab-control/openclaw/native-cutover-validated)" = \
   homelab-openclaw-native-migration-v1
+test -f "$checkpoint"
+test ! -L "$checkpoint"
+test "$(stat -c '%u:%g %a %h' "$checkpoint")" = '0:0 600 1'
 cd "$compose"
 test -n "$(docker compose ps --all -q openclaw-gateway)"
 test -z "$(docker compose ps --status running -q openclaw-gateway)"
@@ -303,14 +366,15 @@ git commit -m 'Activate retained Docker OpenClaw rollback'
 git push
 ```
 
-The normal full CD run validates the tuple before mutation, stops and disables
-native OpenClaw and proves its listener absent, starts only the exact retained
-container without pull or recreation, attaches it to `homelab_proxy` with the
-unique `openclaw-rollback` alias, hot-reloads the static route, and proves the
-certificate-valid HTTPS Control UI. It also proves that the source hold remains
-root-owned mode `0600` and that Arcane's OpenClaw sync remains retired. If CD
-fails, do not manually start either Gateway; inspect the failed proof and rerun
-the same commit after correcting the tracked or retained-state precondition.
+The normal full CD run validates the tuple and retained checkpoint while native
+still serves, then stops and disables native OpenClaw and proves its listener
+absent. It starts only the checkpointed container without pull or recreation,
+attaches it to `homelab_proxy` with the unique `openclaw-rollback` alias,
+hot-reloads the static route, and proves the certificate-valid HTTPS Control
+UI. It also proves that the source hold remains root-owned mode `0600` and that
+Arcane's OpenClaw sync remains retired. If CD fails, do not manually start
+either Gateway; inspect the failed proof and rerun the same commit after
+correcting the tracked or retained-state precondition.
 
 Run the complete proof again from an authorized checkout if needed:
 
@@ -323,8 +387,10 @@ curl --fail --show-error --silent \
 
 To restore native service, first reconcile any state that advanced on Docker
 into the native destination while maintaining single-writer ownership. Then
-make the exact reverse three-file commit; the pre-site fence stops Docker
-before the native role can start:
+make the exact reverse three-file commit. The pre-site fence requires the
+existing checkpoint and exact running retained assets before it stops and
+disconnects Docker, then revalidates the stopped container before the native
+role can start:
 
 ```sh
 set -eu

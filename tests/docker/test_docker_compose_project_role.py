@@ -353,12 +353,10 @@ def test_compose_role_copies_only_declared_runtime_files():
         "media": {"runtime": ["compose.yml"], "hot_reload": []},
         "code": {"runtime": ["compose.yml", "Dockerfile"], "hot_reload": []},
     }
-    platform = next(
-        project
+    assert all(
+        "runtime_file_force_recreate_services" not in project
         for project in variables["docker_compose_projects"]
-        if project["name"] == "platform"
     )
-    assert platform["runtime_file_force_recreate_services"] == ["traefik"]
     for files in projects.values():
         combined = files["runtime"] + files["hot_reload"]
         assert "README.md" not in combined
