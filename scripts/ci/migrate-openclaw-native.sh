@@ -1502,21 +1502,27 @@ systemctl is-active --quiet openclaw-gateway.service
 curl -fsS http://192.168.0.5:18789/healthz >/dev/null
 curl -fsS http://192.168.0.5:18789/readyz >/dev/null
 plugin_skills=/var/lib/openclaw/plugin-skills
-test -d "$plugin_skills"
-test ! -L "$plugin_skills"
-test "$(stat -c '%u:%g %a' "$plugin_skills")" = "1000:1000 700"
-test "$(find "$plugin_skills" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)" = \
-  "$(printf '%s\n' browser-automation canvas)"
-for plugin_skill in browser-automation canvas; do
-  plugin_link="$plugin_skills/$plugin_skill"
-  test -L "$plugin_link"
-  test "$(stat -c '%u:%g %a' "$plugin_link")" = "1000:1000 777"
-  plugin_target="$(readlink -f "$plugin_link")"
-  case "$plugin_target" in /opt/openclaw/*) ;; *) exit 1 ;; esac
-  test -d "$plugin_target"
-  test -f "$plugin_target/SKILL.md"
-  test ! -L "$plugin_target/SKILL.md"
-done
+plugin_skill_target_root=/opt/openclaw
+# Plugin skill links are a lazy, generated cache. A newly started Gateway can
+# validly omit the cache until an agent first resolves skills; if it has been
+# published already, constrain it to the exact native generated shape.
+if test -e "$plugin_skills" || test -L "$plugin_skills"; then
+  test -d "$plugin_skills"
+  test ! -L "$plugin_skills"
+  test "$(stat -c '%u:%g %a' "$plugin_skills")" = "1000:1000 700"
+  test "$(find "$plugin_skills" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)" = \
+    "$(printf '%s\n' browser-automation canvas)"
+  for plugin_skill in browser-automation canvas; do
+    plugin_link="$plugin_skills/$plugin_skill"
+    test -L "$plugin_link"
+    test "$(stat -c '%u:%g %a' "$plugin_link")" = "1000:1000 777"
+    plugin_target="$(readlink -f "$plugin_link")"
+    case "$plugin_target" in "$plugin_skill_target_root"/*) ;; *) exit 1 ;; esac
+    test -d "$plugin_target"
+    test -f "$plugin_target/SKILL.md"
+    test ! -L "$plugin_target/SKILL.md"
+  done
+fi
 cd /home/openclaw/openclaw-setup
 hooks=/root/openclaw-migration-empty-hooks
 install -d -o root -g root -m 0700 "$hooks"

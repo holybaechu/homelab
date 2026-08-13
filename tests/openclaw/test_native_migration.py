@@ -234,10 +234,105 @@ def test_migration_excludes_only_validated_ephemeral_plugin_skill_links():
         assert target in source_preflight
 
     assert 'plugin_skills=/var/lib/openclaw/plugin-skills' in final_native_proof
+    assert 'plugin_skill_target_root=/opt/openclaw' in final_native_proof
+    assert 'if test -e "$plugin_skills" || test -L "$plugin_skills"; then' in (
+        final_native_proof
+    )
+    assert 'test ! -L "$plugin_skills"' in final_native_proof
     assert '"1000:1000 700"' in final_native_proof
+    assert "-mindepth 1 -maxdepth 1 -printf '%f\\n'" in final_native_proof
     assert 'for plugin_skill in browser-automation canvas; do' in final_native_proof
-    assert 'case "$plugin_target" in /opt/openclaw/*)' in final_native_proof
+    assert 'test -L "$plugin_link"' in final_native_proof
+    assert '"1000:1000 777"' in final_native_proof
+    assert 'case "$plugin_target" in "$plugin_skill_target_root"/*)' in (
+        final_native_proof
+    )
+    assert 'test -d "$plugin_target"' in final_native_proof
     assert 'test -f "$plugin_target/SKILL.md"' in final_native_proof
+    assert 'test ! -L "$plugin_target/SKILL.md"' in final_native_proof
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX ownership and symlinks")
+@pytest.mark.parametrize(
+    ("scenario", "expected_returncode"),
+    [
+        ("absent", 0),
+        ("valid", 0),
+        ("root_symlink", 1),
+        ("dangling_root_symlink", 1),
+        ("wrong_mode", 1),
+        ("extra_entry", 1),
+        ("wrong_target", 1),
+        ("target_not_directory", 1),
+        ("missing_skill_file", 1),
+        ("skill_file_symlink", 1),
+    ],
+)
+def test_final_native_proof_accepts_only_absent_or_strict_plugin_skill_cache(
+    tmp_path, scenario, expected_returncode
+):
+    script = (REPO_ROOT / "scripts" / "ci" / "migrate-openclaw-native.sh").read_text(
+        encoding="utf-8"
+    )
+    proof = script.split("<<'FINAL_NATIVE_PROOF'", maxsplit=1)[1].split(
+        "FINAL_NATIVE_PROOF", maxsplit=1
+    )[0]
+    plugin_proof = proof.split(
+        "plugin_skills=/var/lib/openclaw/plugin-skills", maxsplit=1
+    )[1].split("cd /home/openclaw/openclaw-setup", maxsplit=1)[0]
+
+    plugin_skills = tmp_path / "plugin-skills"
+    target_root = tmp_path / "openclaw"
+    target_root.mkdir()
+    plugin_proof = (
+        f"plugin_skills='{plugin_skills}'\n"
+        f"plugin_skill_target_root='{target_root}'\n"
+        + plugin_proof.split("\n", maxsplit=2)[2]
+    )
+    plugin_proof = plugin_proof.replace(
+        '"1000:1000 700"', f'"{os.getuid()}:{os.getgid()} 700"'
+    ).replace('"1000:1000 777"', f'"{os.getuid()}:{os.getgid()} 777"')
+
+    if scenario == "dangling_root_symlink":
+        os.symlink(tmp_path / "missing-plugin-skills", plugin_skills)
+    elif scenario != "absent":
+        cache_root = plugin_skills
+        if scenario == "root_symlink":
+            cache_root = tmp_path / "plugin-skills-target"
+        cache_root.mkdir(mode=0o700)
+        os.chmod(cache_root, 0o755 if scenario == "wrong_mode" else 0o700)
+        for name in ("browser-automation", "canvas"):
+            target = target_root / name
+            if scenario == "target_not_directory" and name == "canvas":
+                target.write_text("not a directory\n", encoding="utf-8")
+            else:
+                target.mkdir()
+            if scenario == "skill_file_symlink" and name == "canvas":
+                skill_target = target_root / "external-skill.md"
+                skill_target.write_text("# test\n", encoding="utf-8")
+                os.symlink(skill_target, target / "SKILL.md")
+            elif not (
+                scenario in {"missing_skill_file", "target_not_directory"}
+                and name == "canvas"
+            ):
+                (target / "SKILL.md").write_text("# test\n", encoding="utf-8")
+            if scenario == "wrong_target" and name == "canvas":
+                target = tmp_path / "outside"
+                target.mkdir()
+                (target / "SKILL.md").write_text("# test\n", encoding="utf-8")
+            os.symlink(target, cache_root / name)
+        if scenario == "extra_entry":
+            (cache_root / "unexpected").write_text("not generated\n", encoding="utf-8")
+        if scenario == "root_symlink":
+            os.symlink(cache_root, plugin_skills)
+
+    completed = subprocess.run(
+        ["sh", "-eu", "-c", plugin_proof],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == expected_returncode, completed.stderr
 
 
 def test_migration_orchestration_is_explicit_fail_closed_and_secret_quiet():
