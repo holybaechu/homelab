@@ -1,0 +1,75 @@
+[Unit]
+Description=OpenClaw Gateway {{ openclaw_version }}
+Documentation=https://docs.openclaw.ai/gateway
+Wants=network-online.target
+Requires=nftables.service
+After=network-online.target nftables.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{ openclaw_user }}
+Group={{ openclaw_group }}
+WorkingDirectory={{ openclaw_state_root }}
+UMask=0077
+
+Environment=HOME={{ openclaw_home }}
+Environment=PATH={{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TZ={{ openclaw_timezone }}
+Environment=NODE_COMPILE_CACHE={{ openclaw_compile_cache_root }}
+Environment=NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+Environment=NODE_OPTIONS=--max-old-space-size=2048
+Environment=OPENCLAW_HOME={{ openclaw_home }}
+Environment=OPENCLAW_STATE_DIR={{ openclaw_state_root }}
+Environment=OPENCLAW_CONFIG_PATH={{ openclaw_config_path }}
+Environment=OPENCLAW_WORKSPACE_DIR={{ openclaw_workspace_root }}
+Environment=OPENCLAW_DISABLE_BONJOUR=1
+Environment=OPENCLAW_NO_AUTO_UPDATE=1
+Environment=OPENCLAW_NO_RESPAWN=1
+Environment=OPENCLAW_SERVICE_REPAIR_POLICY=external
+Environment=OPENCLAW_SUPERVISOR_MODE=external
+Environment=OPENCLAW_GATEWAY_TOKEN_FILE=%d/openclaw_gateway_token
+
+LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}
+
+ExecStart={{ openclaw_node_current_root }}/bin/node {{ openclaw_entrypoint }} gateway --port {{ openclaw_gateway_port }}
+Restart=always
+RestartSec=5
+RestartPreventExitStatus=78
+TimeoutStartSec=90
+TimeoutStopSec=30
+SuccessExitStatus=0 143
+KillMode=control-group
+OOMPolicy=continue
+
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=read-only
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadOnlyPaths={{ openclaw_config_path }}
+ReadWritePaths={{ openclaw_runtime_root }}
+ReadWritePaths={{ openclaw_cache_root }}
+ReadWritePaths={{ openclaw_auth_profile_secret_root }}
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=openclaw-gateway
+
+[Install]
+WantedBy=multi-user.target

@@ -219,6 +219,37 @@ def test_compose_role_recreates_only_projects_with_changed_inputs():
     assert copy_task["ansible.builtin.copy"]["dest"] == (
         "{{ item.0.dest }}/{{ item.1 }}"
     )
+    hot_reload_task = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Copy tracked Compose hot-reload files without forcing recreation"
+    )
+    assert hot_reload_task["loop"] == (
+        "{{ docker_compose_projects | "
+        "subelements('hot_reload_files', skip_missing=True) }}"
+    )
+    hot_reload_directory = next(
+        task
+        for task in tasks
+        if task["name"] == "Create tracked Compose hot-reload directories"
+    )
+    assert hot_reload_directory["ansible.builtin.file"]["path"] == (
+        "{{ item.0.dest }}/{{ item.1 | dirname }}"
+    )
+    assert hot_reload_directory["ansible.builtin.file"]["follow"] is False
+    hot_reload_directory_inspect = next(
+        task
+        for task in tasks
+        if task["name"] == "Inspect tracked Compose hot-reload directories"
+    )
+    assert hot_reload_directory_inspect["ansible.builtin.stat"]["follow"] is False
+    hot_reload_directory_guard = next(
+        task
+        for task in tasks
+        if task["name"] == "Reject redirected tracked Compose hot-reload directories"
+    )
+    assert "stat.islnk" in yaml.safe_dump(hot_reload_directory_guard)
     assert env_task["register"] == "docker_compose_project_environment_render"
     assert config_task["register"] == "docker_compose_project_config_render"
 
@@ -231,6 +262,7 @@ def test_compose_role_recreates_only_projects_with_changed_inputs():
         "docker_compose_force_recreate_projects"
     ]
     assert "docker_compose_project_file_copy.results" in selection
+    assert "rejectattr('item.0.runtime_file_force_recreate_services', 'defined')" in selection
     assert "docker_compose_project_environment_render.results" in selection
     assert "docker_compose_project_config_render.results" in selection
     assert "map(attribute='item.0.name')" in selection
@@ -265,6 +297,38 @@ def test_compose_role_recreates_only_projects_with_changed_inputs():
     ]
     assert "qbittorrent_config_compare" not in selection
 
+    service_selection_task = next(
+        task
+        for task in tasks
+        if task["name"] == "Select Compose projects that require isolated service recreation"
+    )
+    service_selection = service_selection_task["ansible.builtin.set_fact"][
+        "docker_compose_force_recreate_service_projects"
+    ]
+    assert "selectattr('item.0.runtime_file_force_recreate_services', 'defined')" in service_selection
+    assert "map(attribute='item.0.name')" in service_selection
+    targeted = next(
+        task
+        for task in tasks
+        if task["name"] == "Recreate only services with changed service-specific runtime inputs"
+    )
+    targeted_command = targeted["ansible.builtin.command"]["cmd"]
+    assert "--force-recreate --no-deps" in targeted_command
+    assert targeted["when"] == (
+        "item.0.name in docker_compose_force_recreate_service_projects"
+    )
+    declaration_check = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Validate isolated recreation services exist in their Compose projects"
+    )
+    assert declaration_check["ansible.builtin.command"]["cmd"] == (
+        "docker compose config --services"
+    )
+    assert "difference" in declaration_check["failed_when"]
+    assert tasks_text.index(targeted["name"]) < tasks_text.index(start_task["name"])
+
 
 def test_compose_role_copies_only_declared_runtime_files():
     variables = yaml.safe_load(
@@ -275,16 +339,30 @@ def test_compose_role_copies_only_declared_runtime_files():
     )
 
     projects = {
-        project["name"]: project["runtime_files"]
+        project["name"]: {
+            "runtime": project["runtime_files"],
+            "hot_reload": project.get("hot_reload_files", []),
+        }
         for project in variables["docker_compose_projects"]
     }
     assert projects == {
-        "platform": ["compose.yml", "dynamic.yml", "traefik.yml"],
-        "media": ["compose.yml"],
-        "code": ["compose.yml", "Dockerfile"],
+        "platform": {
+            "runtime": ["compose.yml", "traefik.yml"],
+            "hot_reload": ["dynamic/routes.yml"],
+        },
+        "media": {"runtime": ["compose.yml"], "hot_reload": []},
+        "code": {"runtime": ["compose.yml", "Dockerfile"], "hot_reload": []},
     }
-    assert all("README.md" not in files for files in projects.values())
-    assert all(".env.example" not in files for files in projects.values())
+    platform = next(
+        project
+        for project in variables["docker_compose_projects"]
+        if project["name"] == "platform"
+    )
+    assert platform["runtime_file_force_recreate_services"] == ["traefik"]
+    for files in projects.values():
+        combined = files["runtime"] + files["hot_reload"]
+        assert "README.md" not in combined
+        assert ".env.example" not in combined
 
 
 def test_compose_role_removes_retired_vpn_runtime_artifacts_after_orphans():

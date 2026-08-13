@@ -1,3 +1,5 @@
+import yaml
+
 from tests.helpers import REPO_ROOT
 
 
@@ -17,7 +19,7 @@ def test_arcane_role_bootstraps_with_an_ephemeral_key_and_removes_it():
     assert "changed=true" in tasks
     assert "always:" in tasks
     assert tasks.index("Remove the Arcane bootstrap key file") < tasks.index(
-        "Force Arcane into its final keyless state"
+        "Force ordinary Arcane into its final keyless state"
     )
     assert "--force-recreate arcane" in tasks
     assert "ADMIN_STATIC_API_KEY_FILE=/run/secrets/bootstrap_admin_api_key" in template
@@ -37,6 +39,66 @@ def test_arcane_role_bootstraps_with_an_ephemeral_key_and_removes_it():
     assert 'mode: "0750"' in secret_directory
     assert 'mode: "0640"' in persistent_secrets
     assert 'mode: "0640"' in bootstrap_secret
+
+
+def test_arcane_cutover_recreates_only_arcane_and_preserves_ordinary_semantics():
+    tasks = yaml.safe_load(
+        read("infra/ansible/roles/arcane_manager/tasks/main.yml")
+    )
+    reconciliation = next(
+        task
+        for task in tasks
+        if task["name"] == "Reconcile Arcane resources through a temporary static key"
+    )
+
+    ordinary_bootstrap = next(
+        task
+        for task in reconciliation["block"]
+        if task["name"]
+        == "Start the ordinary Arcane project with the temporary bootstrap key"
+    )
+    cutover_bootstrap = next(
+        task
+        for task in reconciliation["block"]
+        if task["name"]
+        == "Recreate only Arcane with the temporary cutover bootstrap key"
+    )
+    ordinary_keyless = next(
+        task
+        for task in reconciliation["always"]
+        if task["name"] == "Force ordinary Arcane into its final keyless state"
+    )
+    cutover_keyless = next(
+        task
+        for task in reconciliation["always"]
+        if task["name"]
+        == "Recreate only Arcane into its final cutover keyless state"
+    )
+
+    assert ordinary_bootstrap["ansible.builtin.command"]["cmd"] == (
+        "docker compose up -d --force-recreate --remove-orphans"
+    )
+    assert ordinary_keyless["ansible.builtin.command"]["cmd"] == (
+        "docker compose up -d --force-recreate arcane"
+    )
+    for task in (ordinary_bootstrap, ordinary_keyless):
+        assert task["when"].startswith("not (")
+        assert "arcane_openclaw_cutover_only" in task["when"]
+    for task in (cutover_bootstrap, cutover_keyless):
+        assert task["ansible.builtin.command"]["cmd"] == (
+            "docker compose up -d --force-recreate --no-deps arcane"
+        )
+        assert "arcane_openclaw_cutover_only" in task["when"]
+
+    cutover_guard = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Require a validated marker for cutover-only Arcane reconciliation"
+    )
+    assert "arcane_openclaw_cutover_marker.stat.exists" in (
+        cutover_guard["ansible.builtin.assert"]["that"][0]
+    )
 
 
 def test_arcane_role_reconciles_exact_gitops_and_oidc_scope():

@@ -56,7 +56,7 @@ def test_safe_workload_changes_still_use_arcane():
     )
     classify_paths = selector["classify_paths"]
 
-    assert classify_paths(["apps/compose/platform/dynamic.yml"]) == "arcane"
+    assert classify_paths(["apps/compose/platform/dynamic/routes.yml"]) == "arcane"
     assert classify_paths(["apps/compose/media/compose.yml"]) == "arcane"
     assert classify_paths(["apps/compose/code/compose.yml"]) == "arcane"
     assert classify_paths(["apps/compose/openclaw/compose.yml"]) == "arcane"

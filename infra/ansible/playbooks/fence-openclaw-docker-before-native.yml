@@ -1,0 +1,87 @@
+---
+- name: Fence retained Docker OpenClaw before native-primary reconciliation
+  hosts: svc_docker_apps
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Inspect the permanent native cutover source hold
+      ansible.builtin.stat:
+        path: "{{ openclaw_native_cutover_marker_path }}"
+        follow: false
+      register: openclaw_native_primary_source_hold
+
+    - name: Read the permanent native cutover source hold
+      ansible.builtin.slurp:
+        src: "{{ openclaw_native_cutover_marker_path }}"
+      register: openclaw_native_primary_source_hold_content
+      when: openclaw_native_primary_source_hold.stat.exists | default(false)
+      no_log: true
+
+    - name: Require an exact permanent source hold before native reconciliation
+      ansible.builtin.assert:
+        that:
+          - openclaw_native_primary_source_hold.stat.isreg | default(false)
+          - not (openclaw_native_primary_source_hold.stat.islnk | default(false))
+          - openclaw_native_primary_source_hold.stat.uid == 0
+          - openclaw_native_primary_source_hold.stat.gid == 0
+          - openclaw_native_primary_source_hold.stat.mode == '0600'
+          - (openclaw_native_primary_source_hold_content.content | b64decode) == openclaw_native_transition_marker_value + '\n'
+        fail_msg: >-
+          The permanent OpenClaw source hold is malformed; refusing to change
+          primary Gateway ownership.
+      when: openclaw_native_primary_source_hold.stat.exists | default(false)
+      no_log: true
+
+    - name: Require mutually exclusive tracked Gateway ownership
+      ansible.builtin.assert:
+        that:
+          - hostvars['openclaw'].openclaw_native_activate is defined
+          - openclaw_docker_rollback_activate is boolean
+          - not ((hostvars['openclaw'].openclaw_native_activate | bool) and (openclaw_docker_rollback_activate | bool))
+          - >-
+            openclaw_tracked_route.http.services.openclaw.loadBalancer.servers ==
+            [{'url': openclaw_traefik_backend_url}]
+        fail_msg: Native and Docker OpenClaw ownership cannot be active together.
+      vars:
+        openclaw_tracked_route: >-
+          {{
+            lookup(
+              'file',
+              playbook_dir + '/../../../apps/compose/platform/dynamic/routes.yml'
+            ) | from_yaml
+          }}
+
+    - name: Stop the retained Docker Gateway before native-primary reconciliation
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - stop
+          - --timeout
+          - "30"
+          - openclaw-gateway
+      args:
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_native_primary_source_stop
+      changed_when: >-
+        'Stopped' in (openclaw_native_primary_source_stop.stdout ~ openclaw_native_primary_source_stop.stderr) or
+        'Stopping' in (openclaw_native_primary_source_stop.stdout ~ openclaw_native_primary_source_stop.stderr)
+      when:
+        - openclaw_native_primary_source_hold.stat.exists | default(false)
+        - hostvars['openclaw'].openclaw_native_activate | bool
+        - not (openclaw_docker_rollback_activate | bool)
+
+    - name: Prove the retained Docker Gateway is fenced before native starts
+      ansible.builtin.shell: |
+        set -eu
+        container="$(docker compose ps --all -q openclaw-gateway)"
+        test -n "$container"
+        test -z "$(docker compose ps --status running -q openclaw-gateway)"
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_compose_root }}"
+      changed_when: false
+      when:
+        - openclaw_native_primary_source_hold.stat.exists | default(false)
+        - hostvars['openclaw'].openclaw_native_activate | bool
+        - not (openclaw_docker_rollback_activate | bool)

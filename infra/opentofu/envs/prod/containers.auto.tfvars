@@ -32,4 +32,21 @@ containers = {
     swap_mb          = 2048
     startup_order    = 2
   }
+
+  openclaw = {
+    vmid             = 118
+    hostname         = "openclaw"
+    description      = "Dedicated native OpenClaw Gateway managed by OpenTofu and Ansible"
+    tags             = ["homelab", "managed-by-opentofu", "role-openclaw"]
+    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+    os_type          = "debian"
+    ip_address       = "192.168.0.5/24"
+    mac_address      = "02:00:00:BA:EC:05"
+    gateway          = "192.168.0.1"
+    root_disk_gb     = 32
+    cores            = 4
+    memory_mb        = 4096
+    swap_mb          = 1024
+    startup_order    = 3
+  }
 }

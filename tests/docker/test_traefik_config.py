@@ -13,14 +13,20 @@ def test_traefik_replaces_caddy_and_defaults_to_no_container_exposure():
     assert "/var/run/docker.sock:/var/run/docker.sock:ro" in compose
     assert "exposedByDefault: false" in static
     assert "certResolver: cloudflare" in static
+    assert "./dynamic:/etc/traefik/dynamic:ro" in compose
+    assert "directory: /etc/traefik/dynamic" in static
+    assert "filename: /etc/traefik/dynamic.yml" not in static
 
 
 def test_private_routes_and_headers_preserve_edge_policy():
-    dynamic = read("dynamic.yml")
+    dynamic = read("dynamic/routes.yml")
 
     assert "192.168.0.0/24" in dynamic
     assert "100.64.0.0/10" in dynamic
     assert "adguard.home.hchu.me" in dynamic
+    assert "rule: Host(`openclaw.home.hchu.me`)" in dynamic
+    assert "middlewares: [private-only, secure-headers]" in dynamic
+    assert "url: http://192.168.0.5:18789" in dynamic
     assert "pve.home.hchu.me" in dynamic
     assert "customFrameOptionsValue: SAMEORIGIN" in dynamic
     assert "/etc/ssl/certs/homelab-pve-root-ca.pem" in dynamic

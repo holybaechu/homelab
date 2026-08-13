@@ -6,6 +6,7 @@ test_root="$(mktemp -d)"
 fake_bin="${test_root}/bin"
 marker="${test_root}/tailnet-complete"
 docker_marker="${test_root}/docker-retirement-complete"
+openclaw_marker="${test_root}/openclaw-complete"
 pve_marker="${test_root}/pve-cleanup-started"
 mkdir -p "${fake_bin}"
 
@@ -16,7 +17,7 @@ trap cleanup EXIT
 
 cat > "${fake_bin}/python3" <<'EOF'
 #!/bin/sh
-printf '%s\n' 'tailnet:svc_tailnet docker_apps:svc_docker_apps'
+printf '%s\n' 'tailnet:svc_tailnet docker_apps:svc_docker_apps openclaw:svc_openclaw'
 EOF
 
 cat > "${fake_bin}/ansible-playbook" <<'EOF'
@@ -37,6 +38,10 @@ case "$*" in
       printf '%s\n' 'docker started before tailnet completed' >&2
       exit 91
     fi
+    if [ ! -f "${OPENCLAW_COMPLETE_MARKER}" ]; then
+      printf '%s\n' 'docker started before OpenClaw completed' >&2
+      exit 94
+    fi
     if [ "${FAKE_DOCKER_FAIL:-0}" = "1" ]; then
       printf '%s\n' 'docker retirement failed deliberately' >&2
       exit 93
@@ -44,6 +49,14 @@ case "$*" in
     sleep "${FAKE_DOCKER_DELAY_SECONDS:-0}"
     : > "${DOCKER_RETIREMENT_COMPLETE_MARKER}"
     printf '%s\n' 'docker started after tailnet'
+    ;;
+  *'--limit svc_openclaw'*)
+    if [ ! -f "${TAILNET_COMPLETE_MARKER}" ]; then
+      printf '%s\n' 'OpenClaw started before tailnet completed' >&2
+      exit 95
+    fi
+    : > "${OPENCLAW_COMPLETE_MARKER}"
+    printf '%s\n' 'OpenClaw completed after tailnet'
     ;;
   *'site.yml'*'--limit pve_hosts'*)
     if [ ! -f "${DOCKER_RETIREMENT_COMPLETE_MARKER}" ]; then
@@ -81,6 +94,7 @@ fast_path_output="$(
   TAILNET_COMPLETE_MARKER="${marker}" \
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
   PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
+  OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" validate
 )"
@@ -94,16 +108,18 @@ PATH="${fake_bin}:${PATH}" \
 TAILNET_COMPLETE_MARKER="${marker}" \
 DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
 PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
+OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
 ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
   sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
 
-rm -f "${marker}" "${docker_marker}" "${pve_marker}"
+rm -f "${marker}" "${docker_marker}" "${openclaw_marker}" "${pve_marker}"
 set +e
 docker_failure_output="$({
   PATH="${fake_bin}:${PATH}" \
   TAILNET_COMPLETE_MARKER="${marker}" \
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
   PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
+  OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
   FAKE_DOCKER_FAIL=1 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
@@ -121,13 +137,14 @@ if printf '%s\n' "${docker_failure_output}" | grep -F \
   exit 1
 fi
 
-rm -f "${marker}" "${docker_marker}"
+rm -f "${marker}" "${docker_marker}" "${openclaw_marker}"
 set +e
 timeout_output="$({
   PATH="${fake_bin}:${PATH}" \
   TAILNET_COMPLETE_MARKER="${marker}" \
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
   PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
+  OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
   FAKE_TAILNET_DELAY_SECONDS=3 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=1 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
@@ -140,12 +157,14 @@ test "${timeout_status}" -ne 0
 printf '%s\n' "${timeout_output}" | grep -F 'timed out after 1 seconds'
 
 : > "${marker}"
+: > "${openclaw_marker}"
 set +e
 background_timeout_output="$({
   PATH="${fake_bin}:${PATH}" \
   TAILNET_COMPLETE_MARKER="${marker}" \
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
   PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
+  OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
   FAKE_TAILNET_DELAY_SECONDS=0 \
   FAKE_DOCKER_DELAY_SECONDS=3 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=1 \

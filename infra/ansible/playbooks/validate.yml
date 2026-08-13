@@ -75,6 +75,226 @@
       changed_when: false
       when: tailscale_auth_key is defined
 
+- name: Validate the dedicated native OpenClaw host
+  hosts: svc_openclaw
+  gather_facts: false
+  tasks:
+    - name: Check dedicated OpenClaw LXC isolation
+      ansible.builtin.shell: |
+        set -eu
+        test "$(hostname)" = openclaw
+        test "$(id -u openclaw)" = "{{ openclaw_uid }}"
+        test "$(id -g openclaw)" = "{{ openclaw_gid }}"
+        test "$(getent passwd openclaw | cut -d: -f7)" = /usr/sbin/nologin
+        test ! -e /var/run/docker.sock
+        ! command -v docker >/dev/null 2>&1
+      args:
+        executable: /bin/sh
+      changed_when: false
+
+    - name: Check native OpenClaw runtime and firewall staging
+      ansible.builtin.shell: |
+        set -eu
+        test "$(stat -c '%u:%g %a' '{{ openclaw_runtime_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_auth_profile_secret_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_secret_root }}')" = "0:0 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_gateway_token_path }}')" = "0:0 600"
+        test "$(wc -c < '{{ openclaw_gateway_token_path }}')" -eq 65
+        grep -Eq '^[0-9a-fA-F]{64}$' '{{ openclaw_gateway_token_path }}'
+        systemctl is-active --quiet nftables
+        systemctl is-enabled --quiet nftables
+        nft list chain inet filter input | grep -F 'ip saddr {{ openclaw_proxy_ip }} tcp dport {{ openclaw_gateway_port }} accept'
+      args:
+        executable: /bin/sh
+      changed_when: false
+      no_log: true
+
+    - name: Require mutually exclusive tracked OpenClaw ownership and route
+      ansible.builtin.assert:
+        that:
+          - openclaw_docker_rollback_activate is boolean
+          - not ((openclaw_native_activate | bool) and (openclaw_docker_rollback_activate | bool))
+          - >-
+            openclaw_traefik_backend_url ==
+            (
+              'http://openclaw-rollback:18789'
+              if openclaw_docker_rollback_activate | bool
+              else 'http://' + openclaw_ip + ':18789'
+            )
+        fail_msg: OpenClaw primary ownership and the Traefik backend must change atomically.
+
+    - name: Check pinned native OpenClaw artifacts
+      ansible.builtin.shell: |
+        set -eu
+        test "$({{ openclaw_node_release_root }}/bin/node --version)" = 'v{{ openclaw_node_version }}'
+        package_version="$(
+          {{ openclaw_node_release_root }}/bin/node -p \
+            "require('{{ openclaw_release_root }}/lib/node_modules/openclaw/package.json').version"
+        )"
+        test "$package_version" = '{{ openclaw_version }}'
+        test -x '{{ openclaw_release_root }}/bin/openclaw'
+        test "$(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+          /usr/local/bin/openclaw --version)" = 'OpenClaw {{ openclaw_cli_version }}'
+      args:
+        executable: /bin/sh
+      changed_when: false
+
+    - name: Validate the active native OpenClaw private repository boundary
+      ansible.builtin.shell: |
+        set -eu
+        hooks=/run/openclaw-native-empty-hooks
+        test -d "$hooks"
+        test "$(stat -c '%u:%g %a' "$hooks")" = '0:0 700'
+        test ! -e .gitattributes && test ! -L .gitattributes
+        test ! -e .git/info/attributes && test ! -L .git/info/attributes
+        test ! -x .git/config
+        git_safe() {
+          git \
+            -c core.hooksPath="$hooks" \
+            -c core.fsmonitor=false \
+            -c core.attributesFile=/dev/null \
+            -c diff.external= \
+            -c pager.status=false \
+            "$@"
+        }
+        test "$(git_safe branch --show-current)" = main
+        git_safe rev-parse --verify HEAD >/dev/null
+        test -z "$(git_safe status --porcelain=v1 --no-ahead-behind)"
+        git_safe diff --quiet --no-ext-diff --no-textconv
+        git_safe diff --cached --quiet --no-ext-diff --no-textconv
+        git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
+        test -z "$(
+          git_safe --no-pager ls-files |
+            grep -E '(^|/)(state|runtime|auth|credentials|sessions|logs|cache|tmp|temp)(/|$)' || true
+        )"
+        set +e
+        git_safe --no-pager grep --quiet -F -f '{{ openclaw_gateway_token_path }}' --
+        tracked_token_status=$?
+        set -e
+        test "$tracked_token_status" -eq 1
+        setup="$(realpath '{{ openclaw_setup_root }}')"
+        runtime="$(realpath '{{ openclaw_runtime_root }}')"
+        case "$runtime" in "$setup"|"$setup"/*) exit 1 ;; esac
+        case "$setup" in "$runtime"|"$runtime"/*) exit 1 ;; esac
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_setup_root }}"
+      environment:
+        GIT_CONFIG_NOSYSTEM: "1"
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_PAGER: cat
+        GIT_TERMINAL_PROMPT: "0"
+      changed_when: false
+      no_log: true
+      when: openclaw_native_activate | bool
+
+    - name: Inspect the native transition marker for validation
+      ansible.builtin.stat:
+        path: "{{ openclaw_native_transition_marker_path }}"
+        follow: false
+      register: openclaw_native_transition_marker_validation
+
+    - name: Read the native transition marker for validation
+      ansible.builtin.slurp:
+        src: "{{ openclaw_native_transition_marker_path }}"
+      register: openclaw_native_transition_marker_content_validation
+      when: openclaw_native_transition_marker_validation.stat.exists | default(false)
+      no_log: true
+
+    - name: Reject an ambiguous native transition marker
+      ansible.builtin.assert:
+        that:
+          - not (openclaw_native_activate | bool)
+          - openclaw_native_transition_marker_validation.stat.isreg | default(false)
+          - not (openclaw_native_transition_marker_validation.stat.islnk | default(false))
+          - openclaw_native_transition_marker_validation.stat.uid == 0
+          - openclaw_native_transition_marker_validation.stat.gid == 0
+          - openclaw_native_transition_marker_validation.stat.mode == '0600'
+          - (openclaw_native_transition_marker_content_validation.content | b64decode) == openclaw_native_transition_marker_value + '\n'
+        fail_msg: >-
+          The native marker conflicts with tracked activation or is malformed;
+          refusing to accept an ambiguous Gateway state.
+      when: openclaw_native_transition_marker_validation.stat.exists | default(false)
+      no_log: true
+
+    - name: Validate active native OpenClaw Git and secret boundaries
+      ansible.builtin.shell: |
+        set -eu
+        hooks=/run/openclaw-native-empty-hooks
+        test -d "$hooks"
+        test "$(stat -c '%u:%g %a' "$hooks")" = '0:0 700'
+        test -z "$(find "$hooks" -mindepth 1 -print -quit)"
+        test ! -e .gitattributes && test ! -L .gitattributes
+        test ! -e .git/info/attributes && test ! -L .git/info/attributes
+        test ! -x .git/config
+        git_safe() {
+          git \
+            -c core.hooksPath="$hooks" \
+            -c core.fsmonitor=false \
+            -c core.attributesFile=/dev/null \
+            -c diff.external= \
+            -c pager.status=false \
+            "$@"
+        }
+        test "$(git_safe branch --show-current)" = main
+        git_safe rev-parse --verify HEAD >/dev/null
+        test -z "$(git_safe status --porcelain=v1 --no-ahead-behind)"
+        git_safe diff --quiet --no-ext-diff --no-textconv
+        git_safe diff --cached --quiet --no-ext-diff --no-textconv
+        git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
+        test -z "$(git_safe --no-pager ls-files | grep -E '(^|/)(\.env([^/]*|$)|state|runtime|auth|auth-profile-secrets|secrets|credentials|sessions|logs|cache|tmp|temp)(/|$)' || true)"
+        token_pattern='{{ openclaw_gateway_token_path }}'
+        test -f "$token_pattern"
+        test ! -L "$token_pattern"
+        test "$(stat -c '%u:%g %a' "$token_pattern")" = '0:0 600'
+        test "$(wc -c < "$token_pattern")" -eq 65
+        grep -Eq '^[0-9a-fA-F]{64}$' "$token_pattern"
+        set +e
+        git_safe --no-pager grep --quiet -F -f "$token_pattern" --
+        tracked_token_status=$?
+        set -e
+        test "$tracked_token_status" -eq 1
+        setup="$(realpath -e '{{ openclaw_setup_root }}')"
+        runtime="$(realpath -e '{{ openclaw_runtime_root }}')"
+        auth="$(realpath -e '{{ openclaw_auth_profile_secret_root }}')"
+        case "$runtime" in "$setup"|"$setup"/*) exit 1 ;; esac
+        case "$setup" in "$runtime"|"$runtime"/*) exit 1 ;; esac
+        case "$auth" in "$setup"|"$setup"/*) exit 1 ;; esac
+        case "$setup" in "$auth"|"$auth"/*) exit 1 ;; esac
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_setup_root }}"
+      environment:
+        GIT_CONFIG_NOSYSTEM: "1"
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_PAGER: cat
+        GIT_TERMINAL_PROMPT: "0"
+      changed_when: false
+      no_log: true
+      when: openclaw_native_activate | bool
+
+    - name: Check native Gateway staged, transitional, or active state
+      ansible.builtin.shell: |
+        set -eu
+        {% if openclaw_docker_rollback_activate | bool %}
+        ! systemctl is-enabled --quiet openclaw-gateway.service
+        ! systemctl is-active --quiet openclaw-gateway.service
+        ! ss -H -ltn 'sport = :{{ openclaw_gateway_port }}' | grep -q .
+        {% elif openclaw_native_activate | bool or openclaw_native_transition_marker_validation.stat.exists | default(false) %}
+        systemctl is-enabled --quiet openclaw-gateway.service
+        systemctl is-active --quiet openclaw-gateway.service
+        curl -fsS 'http://{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}/readyz' >/dev/null
+        {% else %}
+        test "$(systemctl is-enabled openclaw-gateway.service 2>/dev/null || true)" = disabled
+        test "$(systemctl is-active openclaw-gateway.service 2>/dev/null || true)" = inactive
+        test ! -e '{{ openclaw_setup_root }}' || test -d '{{ openclaw_setup_root }}/.git'
+        {% endif %}
+      args:
+        executable: /bin/sh
+      changed_when: false
+
 - name: Validate Docker Compose application host
   hosts: svc_docker_apps
   gather_facts: false
@@ -86,6 +306,187 @@
     - name: Check Docker Engine reboot persistence
       ansible.builtin.command: systemctl is-enabled docker
       changed_when: false
+
+    - name: Inspect the validated native OpenClaw cutover marker
+      ansible.builtin.stat:
+        path: "{{ openclaw_native_cutover_marker_path }}"
+        follow: false
+      register: openclaw_native_cutover_marker_validation
+
+    - name: Read the validated native OpenClaw cutover marker
+      ansible.builtin.slurp:
+        src: "{{ openclaw_native_cutover_marker_path }}"
+      register: openclaw_native_cutover_marker_content_validation
+      when: openclaw_native_cutover_marker_validation.stat.exists | default(false)
+      no_log: true
+
+    - name: Reject an ambiguous Docker-to-native OpenClaw cutover marker
+      ansible.builtin.assert:
+        that:
+          - openclaw_native_cutover_marker_validation.stat.isreg | default(false)
+          - not (openclaw_native_cutover_marker_validation.stat.islnk | default(false))
+          - openclaw_native_cutover_marker_validation.stat.uid == 0
+          - openclaw_native_cutover_marker_validation.stat.gid == 0
+          - openclaw_native_cutover_marker_validation.stat.mode == '0600'
+          - (openclaw_native_cutover_marker_content_validation.content | b64decode) == openclaw_native_transition_marker_value + '\n'
+        fail_msg: >-
+          The Docker-host native cutover marker is malformed; refusing to
+          accept either Gateway state.
+      when: openclaw_native_cutover_marker_validation.stat.exists | default(false)
+      no_log: true
+
+    - name: Read the staged OpenClaw Traefik route
+      ansible.builtin.slurp:
+        src: "{{ docker_apps_compose_root }}/platform/dynamic/routes.yml"
+      register: openclaw_traefik_dynamic_validation
+
+    - name: Validate the exact staged OpenClaw Traefik route
+      ansible.builtin.assert:
+        that:
+          - openclaw_dynamic.http.routers.openclaw.rule == 'Host(`openclaw.home.hchu.me`)'
+          - openclaw_dynamic.http.routers.openclaw.entryPoints == ['websecure']
+          - openclaw_dynamic.http.routers.openclaw.middlewares == ['private-only', 'secure-headers']
+          - openclaw_dynamic.http.routers.openclaw.service == 'openclaw'
+          - >-
+            openclaw_dynamic.http.services.openclaw.loadBalancer.servers
+            == [{'url': openclaw_traefik_backend_url}]
+      vars:
+        openclaw_dynamic: >-
+          {{ openclaw_traefik_dynamic_validation.content | b64decode | from_yaml }}
+
+    - name: Validate the completed native cutover keeps Docker OpenClaw stopped
+      when:
+        - openclaw_native_cutover_marker_validation.stat.exists | default(false)
+        - not (openclaw_docker_rollback_activate | bool)
+      block:
+        - name: Check the cut-over native OpenClaw Gateway readiness endpoint
+          ansible.builtin.uri:
+            url: "http://{{ openclaw_ip }}:{{ openclaw_gateway_port }}/readyz"
+            method: GET
+            status_code: 200
+            return_content: false
+          register: openclaw_native_cutover_readiness_validation
+          changed_when: false
+          retries: 6
+          delay: 5
+          until: openclaw_native_cutover_readiness_validation.status == 200
+
+        - name: Require the retained Docker OpenClaw Gateway to be stopped
+          ansible.builtin.shell: |
+            set -eu
+            container="$(docker compose ps --all -q openclaw-gateway)"
+            test -n "$container"
+            test -z "$(docker compose ps --status running -q openclaw-gateway)"
+            test -f compose.yml
+            test -f .env
+            test -d '{{ openclaw_setup_root }}/.git'
+            test -f '{{ openclaw_config_path }}'
+            test -d '{{ openclaw_state_root }}'
+            test -d '{{ openclaw_auth_profile_secret_root }}'
+            test -f '{{ openclaw_gateway_token_path }}'
+            image="$(docker inspect --format '{% raw %}{{.Config.Image}}{% endraw %}' "$container")"
+            docker image inspect "$image" >/dev/null
+          args:
+            executable: /bin/sh
+            chdir: "{{ openclaw_compose_root }}"
+          changed_when: false
+
+        - name: Require Arcane to have retired only the OpenClaw GitOps sync
+          ansible.builtin.shell: |
+            set -eu
+            test -f '{{ arcane_data_root }}/arcane.db'
+            count="$(
+              python3 - '{{ arcane_data_root }}/arcane.db' <<'PY'
+            import sqlite3
+            import sys
+
+            with sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True) as database:
+                print(
+                    database.execute(
+                        "SELECT COUNT(*) FROM gitops_syncs WHERE name = ?",
+                        ("openclaw",),
+                    ).fetchone()[0]
+                )
+            PY
+            )"
+            test "$count" = 0
+          args:
+            executable: /bin/sh
+          changed_when: false
+
+        - name: Check the cut-over OpenClaw HTTPS route through Traefik
+          ansible.builtin.command:
+            argv:
+              - curl
+              - --fail
+              - --silent
+              - --show-error
+              - --resolve
+              - "{{ openclaw_hostname }}:443:127.0.0.1"
+              - "https://{{ openclaw_hostname }}/"
+          changed_when: false
+          register: openclaw_native_traefik_route_validation
+          retries: 12
+          delay: 5
+          until: openclaw_native_traefik_route_validation.rc == 0
+
+    - name: Validate tracked Docker rollback while preserving native cutover holds
+      when: openclaw_docker_rollback_activate | bool
+      block:
+        - name: Require the permanent source marker and exact retained rollback container
+          ansible.builtin.shell: |
+            set -eu
+            test "$(stat -c '%u:%g %a' '{{ openclaw_native_cutover_marker_path }}')" = '0:0 600'
+            test "$(cat '{{ openclaw_native_cutover_marker_path }}')" = '{{ openclaw_native_transition_marker_value }}'
+            container="$(docker compose ps --status running -q openclaw-gateway)"
+            test -n "$container"
+            test "$(printf '%s\n' "$container" | sed '/^$/d' | wc -l)" -eq 1
+            test "$(docker inspect --format '{% raw %}{{.State.Health.Status}}{% endraw %}' "$container")" = healthy
+            test "$(docker inspect --format '{% raw %}{{index .Config.Labels "com.docker.compose.project"}}{% endraw %}' "$container")" = openclaw
+            test "$(docker inspect --format '{% raw %}{{index .Config.Labels "com.docker.compose.service"}}{% endraw %}' "$container")" = openclaw-gateway
+            docker inspect --format '{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}' "$container" |
+              python3 -c '
+            import json, sys
+            network = json.load(sys.stdin).get("homelab_proxy")
+            aliases = [] if network is None else network.get("Aliases") or []
+            raise SystemExit(0 if "openclaw-rollback" in aliases else 1)
+            '
+            curl -fsS http://127.0.0.1:{{ openclaw_gateway_port }}/readyz >/dev/null
+          args:
+            executable: /bin/sh
+            chdir: "{{ openclaw_compose_root }}"
+          changed_when: false
+
+        - name: Require Arcane OpenClaw sync to remain retired during rollback
+          ansible.builtin.shell: |
+            set -eu
+            test -f '{{ arcane_data_root }}/arcane.db'
+            test "$(python3 - '{{ arcane_data_root }}/arcane.db' <<'PY'
+            import sqlite3
+            import sys
+            with sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True) as database:
+                print(database.execute("SELECT COUNT(*) FROM gitops_syncs WHERE name = ?", ("openclaw",)).fetchone()[0])
+            PY
+            )" = 0
+          args:
+            executable: /bin/sh
+          changed_when: false
+
+        - name: Check the certificate-valid Docker rollback path through Traefik
+          ansible.builtin.command:
+            argv:
+              - curl
+              - --fail
+              - --silent
+              - --show-error
+              - --resolve
+              - "{{ openclaw_hostname }}:443:127.0.0.1"
+              - "https://{{ openclaw_hostname }}/"
+          changed_when: false
+          register: openclaw_docker_rollback_traefik_validation
+          retries: 12
+          delay: 5
+          until: openclaw_docker_rollback_traefik_validation.rc == 0
 
     - name: Validate the Arcane control project
       ansible.builtin.command:
@@ -215,6 +616,7 @@
         cmd: docker compose config --quiet
         chdir: "{{ openclaw_compose_root }}"
       changed_when: false
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Read the immutable OpenClaw image from Compose
       ansible.builtin.command:
@@ -228,6 +630,7 @@
         not (openclaw_rendered_image_validation.stdout | trim is match(
           '^ghcr\.io/openclaw/openclaw:[^@\s]+@sha256:[0-9a-f]{64}$'
         ))
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Require the OpenClaw Gateway container to be running and healthy
       ansible.builtin.shell: |
@@ -244,10 +647,23 @@
       retries: 12
       delay: 5
       until: openclaw_running_validation.rc == 0
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Validate OpenClaw Git, path, and permission boundaries
       ansible.builtin.shell: |
         set -eu
+        hooks="$(mktemp -d /run/openclaw-validation-empty-hooks.XXXXXX)"
+        chmod 0700 "$hooks"
+        trap 'rmdir "$hooks"' EXIT
+        git_safe() {
+          git \
+            -c core.hooksPath="$hooks" \
+            -c core.fsmonitor=false \
+            -c core.attributesFile=/dev/null \
+            -c diff.external= \
+            -c pager.status=false \
+            "$@"
+        }
         test ! -L "{{ openclaw_config_path }}"
         test "$(stat -c '%u:%g %a' "{{ openclaw_setup_root }}")" = "0:{{ openclaw_gid }} 750"
         test "$(stat -c '%u:%g %a' "{{ openclaw_setup_root }}/.git")" = "0:0 700"
@@ -255,17 +671,22 @@
         test "$(stat -c '%u:%g %a' "{{ openclaw_gateway_token_path }}")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 600"
         test "$(stat -c '%u:%g %a' "{{ openclaw_state_root }}")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
         test "$(stat -c '%u:%g %a' "{{ openclaw_auth_profile_secret_root }}")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
-        test "$(git branch --show-current)" = main
-        git rev-parse --verify HEAD >/dev/null
-        test -z "$(git status --porcelain=v1)"
-        git ls-files --error-unmatch config/openclaw.json >/dev/null
-        git check-ignore -q .env
-        test -z "$(git ls-files -- .env)"
-        test -z "$(git ls-files | grep -E '(^|/)(state|runtime|auth|credentials|sessions|logs|cache|tmp|temp)(/|$)' || true)"
+        test ! -e .gitattributes && test ! -L .gitattributes
+        test ! -e .git/info/attributes && test ! -L .git/info/attributes
+        test ! -x .git/config
+        test "$(git_safe branch --show-current)" = main
+        git_safe rev-parse --verify HEAD >/dev/null
+        test -z "$(git_safe status --porcelain=v1 --no-ahead-behind)"
+        git_safe diff --quiet --no-ext-diff --no-textconv
+        git_safe diff --cached --quiet --no-ext-diff --no-textconv
+        git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
+        git_safe --no-pager check-ignore -q .env
+        test -z "$(git_safe --no-pager ls-files -- .env)"
+        test -z "$(git_safe --no-pager ls-files | grep -E '(^|/)(state|runtime|auth|credentials|sessions|logs|cache|tmp|temp)(/|$)' || true)"
         gateway_token="$(tr -d '\r\n' < "{{ openclaw_gateway_token_path }}")"
         test "$(printf '%s' "$gateway_token" | wc -c)" -eq 64
         printf '%s' "$gateway_token" | grep -Eq '^[0-9a-fA-F]{64}$'
-        test -z "$(git grep -F -- "$gateway_token" || true)"
+        test -z "$(git_safe --no-pager grep -F -- "$gateway_token" || true)"
         setup="$(realpath "{{ openclaw_setup_root }}")"
         runtime="$(realpath "{{ openclaw_runtime_root }}")"
         case "$runtime" in
@@ -274,8 +695,15 @@
       args:
         executable: /bin/sh
         chdir: "{{ openclaw_setup_root }}"
+      environment:
+        GIT_CONFIG_NOSYSTEM: "1"
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_PAGER: cat
+        GIT_TERMINAL_PROMPT: "0"
       changed_when: false
       no_log: true
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Validate OpenClaw container hardening and mount ownership
       ansible.builtin.shell: |
@@ -287,6 +715,7 @@
         executable: /bin/sh
         chdir: "{{ openclaw_compose_root }}"
       changed_when: false
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Validate the OpenClaw host listener is loopback-only
       ansible.builtin.shell: |
@@ -298,6 +727,7 @@
       args:
         executable: /bin/sh
       changed_when: false
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Check OpenClaw liveness and readiness endpoints
       ansible.builtin.uri:
@@ -313,6 +743,7 @@
       retries: 6
       delay: 5
       until: openclaw_endpoint_validation.status == 200
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Check the OpenClaw CLI version
       ansible.builtin.command:
@@ -324,6 +755,7 @@
         not (openclaw_cli_version_validation.stdout | trim is match(
           '^OpenClaw [0-9]{4}\.[0-9]+\.[0-9]+$'
         ))
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Check the active OpenClaw config path
       ansible.builtin.command:
@@ -332,6 +764,7 @@
       register: openclaw_config_file_validation
       changed_when: false
       failed_when: openclaw_config_file_validation.stdout | trim != '/etc/openclaw/openclaw.json'
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Validate the active OpenClaw config schema
       ansible.builtin.command:
@@ -343,6 +776,7 @@
         openclaw_config_schema_validation.rc != 0 or
         not (openclaw_config_schema_validation.stdout | from_json).valid or
         (openclaw_config_schema_validation.stdout | from_json).warnings | length > 0
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Audit the active OpenClaw secrets
       ansible.builtin.command:
@@ -356,12 +790,14 @@
         (openclaw_secrets_audit_validation.stdout | from_json).summary.plaintextCount != 0 or
         (openclaw_secrets_audit_validation.stdout | from_json).summary.unresolvedRefCount != 0
       no_log: true
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Probe the running OpenClaw Gateway RPC endpoint
       ansible.builtin.command:
         cmd: docker compose exec -T openclaw-gateway node dist/index.js gateway probe --json
         chdir: "{{ openclaw_compose_root }}"
       changed_when: false
+      when: not (openclaw_native_cutover_marker_validation.stat.exists | default(false))
 
     - name: Validate VueTorrent assets and qBittorrent selection
       ansible.builtin.script:
@@ -405,6 +841,7 @@
         - metube.home.hchu.me
         - "{{ t3code_hostname }}"
         - "{{ arcane_hostname }}"
+        - "{{ openclaw_hostname }}"
 
     - name: Check private Traefik routes
       ansible.builtin.command:

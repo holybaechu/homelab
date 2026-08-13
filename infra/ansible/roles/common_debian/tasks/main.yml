@@ -14,6 +14,7 @@
     name: "{{ service_group }}"
     gid: "{{ service_gid }}"
     state: present
+  when: common_debian_create_service_account | default(true) | bool
 
 - name: Create service user
   ansible.builtin.user:
@@ -23,6 +24,7 @@
     shell: /usr/sbin/nologin
     create_home: false
     state: present
+  when: common_debian_create_service_account | default(true) | bool
 
 - name: Configure Debian SSH hardening
   ansible.builtin.lineinfile:

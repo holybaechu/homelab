@@ -42,6 +42,11 @@ version available from their configured apt repositories.
 - `LOW_ID_CUTOVER_CONFIRMED`: set to `true` only for the first 117/112 to
   110/111 renumber after reviewing the plan
 
+The native OpenClaw reservation is not duplicated as a GitHub variable. Its
+exact production identity (`192.168.0.5`, `02:00:00:BA:EC:05`) is hardcoded in
+the tracked OpenTofu topology and enforced by the LXC preflight. Keep the
+router reservation aligned with that tracked contract.
+
 ## `prod` Environment Secrets
 
 - `PROXMOX_ENDPOINT`
@@ -95,7 +100,12 @@ Example `COPYPARTY_USERS_JSON`:
 
 Do not include the Proxmox HTTP authorization prefix.
 
-`DEPLOY_SSH_KNOWN_HOSTS` is written directly to the GitHub runner's `~/.ssh/known_hosts` before Ansible connects to Proxmox. It only needs the Proxmox host SSH key; LXC SSH host keys are collected later through Proxmox with `pct exec` and added to `known_hosts` during `bootstrap.yml`.
+`DEPLOY_SSH_KNOWN_HOSTS` is written directly to the GitHub runner's
+`~/.ssh/known_hosts` before Ansible connects to Proxmox. It only needs the
+Proxmox host SSH key. LXC SSH host keys are collected later through Proxmox
+with `pct exec`; the native-transition lane refreshes the exact VMID118 key on
+every runner before recovery or staging, so a later migration dispatch does
+not depend on a stale or manually copied guest key.
 
 When the optional workload-identity proof is enabled, its read-only baseline runs before bootstrap. The workflow therefore reads the Docker LXC's current Ed25519 host key through the already pinned Proxmox connection and adds it only to the ephemeral runner's `known_hosts` before taking the baseline. It never uses `ssh-keyscan` or trusts a key obtained directly from the network.
 
@@ -120,7 +130,12 @@ Create a Tailscale federated identity for GitHub Actions and allow it to create 
 The `tag:ci` ACL should only reach:
 
 - Proxmox SSH/API
-- LXC SSH targets at `192.168.0.4` (tailnet) and `192.168.0.3` (Docker apps)
+- LXC SSH targets at `192.168.0.4:22` (tailnet), `192.168.0.3:22`
+  (Docker apps), and `192.168.0.5:22` (the dedicated OpenClaw LXC)
+
+Before the native migration dispatch, verify the ephemeral CI node can reach
+all three SSH targets. The workflow fails closed during bootstrap if the ACL
+does not permit the new OpenClaw address.
 
 ## OpenTofu State
 
@@ -141,10 +156,11 @@ normal plan and deployment. Leave the input empty for every normal deployment.
 
 ## CD Scope and Parallelism
 
-Pushes containing changes only under the known safe `platform`, `media`,
-`code`, and `openclaw` Compose trees use the `arcane` fast path. Static
-`platform/traefik.yml` changes
-use the full path for forced recreation. After Tailscale
+Pushes containing changes only under the known safe `platform`, `media`, and
+`code` Compose trees use the `arcane` fast path. OpenClaw also uses that path
+only during its native-LXC transition; the phase-2 commit removes its selector
+after the finalizer retires the OpenClaw Arcane sync. Static
+`platform/traefik.yml` changes use the full path for forced recreation. After Tailscale
 connects, the runner pins `arcane.home.hchu.me` to `192.168.0.3` in its
 ephemeral hosts file because the Tailscale action uses `--accept-dns=false`.
 The Arcane request still uses the HTTPS hostname for correct SNI and certificate
@@ -167,15 +183,19 @@ subject `repo:holybaechu/homelab:environment:prod` with audience
 `https://arcane.home.hchu.me`, and map it to an environment-scoped deployment
 role with only `gitops:list`, `gitops:read`, and `gitops:sync` permissions.
 
-The full path keeps the low-ID preflight, OpenTofu, and bootstrap operations
-serial, then deploys and validates `tailnet` and `docker_apps`. All application
-services within `docker_apps` are ordered Compose projects. Arcane is a
-separate Ansible-owned control project outside its managed workload directory.
+The full path keeps allocation preflights, OpenTofu, and bootstrap operations
+serial. Service reconciliation is fail-fast in the order `tailnet`, native
+`openclaw`, `docker_apps`, then Proxmox cleanup. This ensures tailnet recovery
+precedes the new host and a future Traefik route cannot precede a ready native
+Gateway. All applications within `docker_apps` remain ordered Compose projects;
+Arcane is a separate Ansible-owned control project.
 
-OpenClaw is bootstrapped by its own Ansible role between the existing workload
-role and Arcane. This prevents the initial deployment from force-recreating
-platform, media, or code. Arcane manages only the public OpenClaw Compose
-project; the private `openclaw-setup` checkout is a read-only sibling mount.
+During migration, the native OpenClaw role first stages VMID 118 with its
+integrity-pinned runtime, nftables policy, and disabled system service. The
+existing Docker Gateway and Arcane project remain authoritative until the
+separate audited cutover succeeds. A later tracked steady-state change enables
+native activation, adds the Traefik route, retires the Arcane sync, and keeps
+the stopped Docker assets as rollback material.
 
 The full path remains the bootstrap and break-glass recovery route for every
 workload even though app-only pushes use Arcane.

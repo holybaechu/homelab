@@ -1,0 +1,120 @@
+---
+- name: Trust and reach the dedicated native OpenClaw LXC
+  hosts: pve_hosts
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    openclaw_lxc_candidates: >-
+      {{ pve_lxc_access_bootstrap
+         | selectattr('name', 'equalto', 'openclaw')
+         | list }}
+    openclaw_host: "{{ hostvars['openclaw'].ansible_host }}"
+  tasks:
+    - name: Require exactly one dedicated OpenClaw inventory mapping
+      ansible.builtin.assert:
+        that:
+          - openclaw_lxc_candidates | length == 1
+
+    - name: Select the dedicated OpenClaw inventory mapping
+      ansible.builtin.set_fact:
+        openclaw_lxc: "{{ openclaw_lxc_candidates | first }}"
+      changed_when: false
+
+    - name: Require the approved dedicated OpenClaw VMID
+      ansible.builtin.assert:
+        that:
+          - openclaw_lxc.vmid | int == 118
+          - openclaw_lxc_allocation.vmid | int == 118
+          - openclaw_lxc.name == 'openclaw'
+          - openclaw_lxc.os_family == 'debian'
+          - openclaw_lxc_allocation.hostname == 'openclaw'
+          - openclaw_host == '192.168.0.5'
+          - openclaw_lxc_allocation.ip_address == '192.168.0.5/24'
+          - openclaw_lxc_allocation.mac_address == '02:00:00:BA:EC:05'
+
+    - name: Validate the dedicated OpenClaw address
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            import ipaddress, sys;
+            address = ipaddress.ip_address(sys.argv[1]);
+            raise SystemExit(0 if address.version == 4 and address.is_private else 1)
+          - "{{ openclaw_host }}"
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Read the dedicated OpenClaw SSH host key through Proxmox
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ openclaw_lxc.vmid }}"
+          - --
+          - cat
+          - /etc/ssh/ssh_host_ed25519_key.pub
+      register: openclaw_host_key
+      changed_when: false
+
+    - name: Validate the dedicated OpenClaw SSH host key
+      ansible.builtin.assert:
+        that:
+          - openclaw_host_key.stdout_lines | length == 1
+          - >-
+            openclaw_host_key.stdout is match(
+              '^ssh-ed25519 [A-Za-z0-9+/]+={0,2}( [^\r\n]+)?$'
+            )
+
+    - name: Require an exact 32-byte ed25519 public-key payload
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            import base64, struct, sys;
+            raw = base64.b64decode(sys.argv[1], validate=True);
+            size = struct.unpack('>I', raw[:4])[0];
+            name = raw[4:4 + size];
+            offset = 4 + size;
+            key_size = struct.unpack('>I', raw[offset:offset + 4])[0];
+            key = raw[offset + 4:];
+            raise SystemExit(0 if name == b'ssh-ed25519' and key_size == 32 and len(key) == 32 else 1)
+          - "{{ openclaw_host_key.stdout.split()[1] }}"
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Trust the dedicated OpenClaw SSH host key
+      ansible.builtin.known_hosts:
+        path: "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
+        name: "{{ openclaw_host }}"
+        key: >-
+          {{ openclaw_host }}
+          {{ openclaw_host_key.stdout }}
+      delegate_to: localhost
+
+    - name: Verify the dedicated OpenClaw SSH host key trust entry
+      ansible.builtin.command:
+        argv:
+          - ssh-keygen
+          - -F
+          - "{{ openclaw_host }}"
+          - -f
+          - "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
+      delegate_to: localhost
+      register: openclaw_known_host_check
+      changed_when: false
+      failed_when: >-
+        openclaw_known_host_check.rc != 0 or
+        (openclaw_host ~ ' ' ~ openclaw_host_key.stdout)
+        not in openclaw_known_host_check.stdout_lines
+
+    - name: Wait for the dedicated OpenClaw SSH port
+      ansible.builtin.wait_for:
+        host: "{{ openclaw_host }}"
+        port: 22
+        state: started
+        connect_timeout: 5
+        delay: 1
+        timeout: 60
+      delegate_to: localhost

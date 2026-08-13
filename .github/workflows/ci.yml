@@ -52,6 +52,27 @@ jobs:
       - name: Check Ansible bootstrap syntax
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/bootstrap.yml --syntax-check
 
+      - name: Check Ansible OpenClaw allocation preflight syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/preflight-openclaw-lxc.yml --syntax-check
+
+      - name: Check narrow Ansible OpenClaw bootstrap syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/bootstrap-openclaw-native.yml --syntax-check
+
+      - name: Check dedicated OpenClaw trust refresh syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/trust-openclaw-native.yml --syntax-check
+
+      - name: Check narrow Ansible OpenClaw stage syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/stage-openclaw-native.yml --syntax-check
+
+      - name: Check narrow Ansible OpenClaw stage validation syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/validate-openclaw-native-stage.yml --syntax-check
+
+      - name: Check Ansible OpenClaw native cutover finalizer syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/finalize-openclaw-native-cutover.yml --syntax-check
+
+      - name: Check retained Docker OpenClaw fencing syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/fence-openclaw-docker-before-native.yml --syntax-check
+
       - name: Check Ansible lowest-ID cutover syntax
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/prepare-low-id-cutover.yml --syntax-check
 

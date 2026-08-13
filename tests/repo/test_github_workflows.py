@@ -74,6 +74,45 @@ def test_cd_workflow_runs_bootstrap_before_site_deploy():
     assert bootstrap < site
 
 
+def test_cd_workflow_fail_closes_openclaw_allocation_before_cutover_and_tofu():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+
+    collections = workflow.index("- name: Install Ansible collections")
+    preflight = workflow.index("- name: Preflight dedicated OpenClaw LXC allocation")
+    cutover = workflow.index("- name: Prepare one-time lowest-ID cutover")
+    plan = workflow.index("- name: OpenTofu plan")
+    apply = workflow.index("- name: OpenTofu apply")
+
+    assert collections < preflight < cutover < plan < apply
+    preflight_step = workflow[preflight:].split(
+        "- name: Trust Docker application LXC access for identity proof", maxsplit=1
+    )[0]
+    assert "steps.scope.outputs.deployment_scope == 'full'" in preflight_step
+    assert "infra/ansible/playbooks/preflight-openclaw-lxc.yml" in preflight_step
+    assert "PVE_ROOT_DATASTORE_ID: ${{ vars.PVE_ROOT_DATASTORE_ID }}" in preflight_step
+    assert '"openclaw_root_datastore_id=${PVE_ROOT_DATASTORE_ID}"' in preflight_step
+    assert "ANSIBLE_EXTRA_VARS_PATH" not in preflight_step
+    for secret_name in (
+        "PROXMOX_API_TOKEN",
+        "OPENCLAW_GATEWAY_TOKEN",
+        "CLOUDFLARE_TRAEFIK_TOKEN",
+    ):
+        assert secret_name not in preflight_step
+
+
+def test_ci_syntax_checks_the_native_openclaw_cutover_finalizer():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        "infra/ansible/playbooks/finalize-openclaw-native-cutover.yml "
+        "--syntax-check"
+    ) in workflow
+
+
 def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_pushes():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"
@@ -124,13 +163,13 @@ def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_push
     assert "ansible.builtin.raw" not in trust_playbook
     assert "ssh-keyscan" not in trust_playbook
 
-    assert workflow.count("verify-compose-container-identities.sh") == 3
+    assert workflow.count("verify-compose-container-identities.sh") == 6
     assert "diff -u \"${WORKLOAD_IDENTITY_BASELINE}\"" in workflow
-    assert workflow.count("StrictHostKeyChecking=yes") == 3
-    assert workflow.count("UserKnownHostsFile=") == 3
-    assert workflow.count("IdentitiesOnly=yes") == 3
-    assert workflow.count('-i "${HOME}/.ssh/id_ed25519"') == 3
-    assert workflow.count("timeout --signal=TERM --kill-after=10s 60s ssh") == 3
+    assert workflow.count("StrictHostKeyChecking=yes") == 8
+    assert workflow.count("UserKnownHostsFile=") == 8
+    assert workflow.count("IdentitiesOnly=yes") == 8
+    assert workflow.count('-i "${HOME}/.ssh/id_ed25519"') == 8
+    assert workflow.count("timeout --signal=TERM --kill-after=10s 60s ssh") == 8
     assert workflow.count("umask 077") >= 2
     assert "ipaddress.ip_address(value)" in workflow
     assert "address.version != 4 or not address.is_private" in workflow
@@ -279,6 +318,11 @@ def test_parallel_ansible_runner_derives_service_targets_from_topology():
     assert 'ANSIBLE_DEPLOYMENT_SCOPE:-full' in runner
     assert 'TARGETS="docker_apps:svc_docker_apps"' in runner
     assert "Arcane scope deploys workloads through Arcane" in runner
+    assert 'f"{name}:svc_{name}"' in target_renderer
+    assert runner.index('tailnet_entry=""') < runner.index('openclaw_entry=""')
+    assert runner.index('"${tailnet_entry}"') < runner.index('"${openclaw_entry}"')
+    assert runner.index('"${openclaw_entry}"') < runner.index('"${docker_apps_entry}"')
+    assert runner.index('"${docker_apps_entry}"') < runner.index('"${pve_entry}"')
 
 
 def test_parallel_validate_runner_includes_pve_drift_validation_target():
@@ -307,7 +351,7 @@ def _posix_shell_command(script: str) -> list[str]:
     return [git_shell, git_path]
 
 
-def test_parallel_ansible_runner_orders_tailnet_docker_then_pve_cleanup():
+def test_parallel_ansible_runner_orders_tailnet_openclaw_docker_then_pve_cleanup():
     script = str(REPO_ROOT / "tests" / "repo" / "test_run_ansible_parallel.sh")
     env = os.environ.copy()
     if os.name == "nt":
@@ -334,6 +378,9 @@ def test_parallel_ansible_runner_orders_tailnet_docker_then_pve_cleanup():
 
     assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
     assert result.stdout.index("tailnet complete") < result.stdout.index(
+        "OpenClaw completed after tailnet"
+    )
+    assert result.stdout.index("OpenClaw completed after tailnet") < result.stdout.index(
         "docker started after tailnet"
     )
     assert result.stdout.index("docker started after tailnet") < result.stdout.index(
@@ -536,7 +583,7 @@ def test_inventory_uses_service_group_names_to_avoid_host_group_warnings():
     inventory = (REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "hosts.yml").read_text(encoding="utf-8")
     site = (REPO_ROOT / "infra" / "ansible" / "playbooks" / "site.yml").read_text(encoding="utf-8")
 
-    for group in ("svc_tailnet", "svc_docker_apps"):
+    for group in ("svc_tailnet", "svc_openclaw", "svc_docker_apps"):
         assert f"    {group}:" in inventory
         assert f"hosts: {group}" in site
     for old_group in ("edge", "dns", "downloads", "hermes", "minecraft", "tailnet", "files"):

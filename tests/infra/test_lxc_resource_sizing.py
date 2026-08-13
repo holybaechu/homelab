@@ -16,11 +16,30 @@ def value(body: str, key: str) -> int:
     return int(match.group(1))
 
 
-def test_two_lxcs_match_consolidated_capacity_plan():
+def test_three_lxcs_match_capacity_plan():
     text = (REPO_ROOT / "infra/opentofu/envs/prod/containers.auto.tfvars").read_text(encoding="utf-8")
     expected = {
-        "tailnet": {"root_disk_gb": 4, "cores": 1, "memory_mb": 512},
-        "docker_apps": {"root_disk_gb": 32, "cores": 6, "memory_mb": 8192},
+        "tailnet": {
+            "root_disk_gb": 4,
+            "cores": 1,
+            "memory_mb": 512,
+            "swap_mb": 0,
+            "startup_order": 1,
+        },
+        "docker_apps": {
+            "root_disk_gb": 32,
+            "cores": 6,
+            "memory_mb": 8192,
+            "swap_mb": 2048,
+            "startup_order": 2,
+        },
+        "openclaw": {
+            "root_disk_gb": 32,
+            "cores": 4,
+            "memory_mb": 4096,
+            "swap_mb": 1024,
+            "startup_order": 3,
+        },
     }
     for name, sizing in expected.items():
         body = container_body(text, name)

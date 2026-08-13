@@ -1,0 +1,758 @@
+---
+- name: Require the pinned native OpenClaw deployment contract
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Linux'
+      - ansible_architecture == 'x86_64'
+      - openclaw_version is match('^[0-9]{4}\.[0-9]+\.[0-9]+(?:-[0-9]+)?$')
+      - openclaw_package_url == 'https://registry.npmjs.org/openclaw/-/openclaw-' + openclaw_version + '.tgz'
+      - openclaw_package_sha512 is match('^[0-9a-f]{128}$')
+      - openclaw_node_url == 'https://nodejs.org/download/release/v' + openclaw_node_version + '/' + openclaw_node_archive
+      - openclaw_node_sha256 is match('^[0-9a-f]{64}$')
+      - openclaw_gateway_port | int == 18789
+      - openclaw_proxy_ip is match('^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$')
+      - openclaw_bind_host is match('^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$')
+      - openclaw_bind_host == openclaw_ip
+      - openclaw_proxy_ip == docker_apps_ip
+      - openclaw_bind_host != openclaw_proxy_ip
+      - openclaw_control_ui_origin == 'https://' + openclaw_hostname
+      - openclaw_setup_root.startswith('/')
+      - openclaw_runtime_root.startswith('/')
+      - openclaw_node_release_root == openclaw_node_install_root + '/node-v' + openclaw_node_version + '-linux-x64'
+      - openclaw_release_root == openclaw_install_root + '/releases/' + openclaw_version
+      - openclaw_setup_root != openclaw_runtime_root
+      - not openclaw_runtime_root.startswith(openclaw_setup_root + '/')
+      - not openclaw_setup_root.startswith(openclaw_runtime_root + '/')
+      - openclaw_config_path == openclaw_setup_root + '/config/openclaw.json'
+      - openclaw_state_root == openclaw_runtime_root
+      - openclaw_workspace_root == openclaw_state_root + '/workspace'
+      - openclaw_auth_profile_secret_root == openclaw_home + '/.config/openclaw'
+      - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
+      - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
+      - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
+      - openclaw_docker_rollback_activate is boolean
+      - not ((openclaw_native_activate | bool) and (openclaw_docker_rollback_activate | bool))
+      - >-
+        openclaw_traefik_backend_url ==
+        (
+          'http://openclaw-rollback:18789'
+          if openclaw_docker_rollback_activate | bool
+          else 'http://' + openclaw_ip + ':18789'
+        )
+    fail_msg: The native OpenClaw version, network, or path contract is invalid.
+
+- name: Require the stable OpenClaw Gateway token
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_token is defined
+      - openclaw_gateway_token is string
+      - openclaw_gateway_token | trim is match('^[0-9a-fA-F]{64}$')
+    fail_msg: >-
+      Configure OPENCLAW_GATEWAY_TOKEN as exactly 64 hexadecimal characters
+      in the production secret store.
+  no_log: true
+
+- name: Install native OpenClaw operating-system prerequisites
+  ansible.builtin.apt:
+    name:
+      - git
+      - nftables
+      - xz-utils
+    state: present
+    update_cache: true
+
+- name: Create the dedicated OpenClaw group
+  ansible.builtin.group:
+    name: "{{ openclaw_group }}"
+    gid: "{{ openclaw_gid }}"
+    system: true
+    state: present
+
+- name: Create the dedicated OpenClaw user
+  ansible.builtin.user:
+    name: "{{ openclaw_user }}"
+    uid: "{{ openclaw_uid }}"
+    group: "{{ openclaw_group }}"
+    home: "{{ openclaw_home }}"
+    shell: /usr/sbin/nologin
+    create_home: true
+    system: true
+    password_lock: true
+    state: present
+
+- name: Create native OpenClaw installation and runtime directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ openclaw_node_install_root }}", owner: root, group: root, mode: "0755"}
+    - {path: "{{ openclaw_install_root }}", owner: root, group: root, mode: "0755"}
+    - {path: "{{ openclaw_install_root }}/releases", owner: root, group: root, mode: "0755"}
+    - {path: "{{ openclaw_release_root }}", owner: root, group: root, mode: "0755"}
+    - {path: "{{ openclaw_home }}", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
+    - {path: "{{ openclaw_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_cache_root }}/downloads", owner: root, group: root, mode: "0755"}
+    - {path: "{{ openclaw_compile_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_runtime_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_home }}/.config", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
+    - {path: "{{ openclaw_auth_profile_secret_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: /run/openclaw-native-empty-hooks, owner: root, group: root, mode: "0700"}
+    - {path: /etc/openclaw, owner: root, group: root, mode: "0755"}
+    - {path: "{{ openclaw_secret_root }}", owner: root, group: root, mode: "0700"}
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Install the OpenClaw Gateway token outside Git
+  ansible.builtin.copy:
+    content: "{{ openclaw_gateway_token | trim }}\n"
+    dest: "{{ openclaw_gateway_token_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+  notify: Restart OpenClaw Gateway
+
+- name: Download the pinned official Node.js archive
+  ansible.builtin.get_url:
+    url: "{{ openclaw_node_url }}"
+    dest: "{{ openclaw_node_cache_path }}"
+    checksum: "sha256:{{ openclaw_node_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Inspect the complete pinned Node.js runtime
+  ansible.builtin.shell: |
+    set -eu
+    test -x '{{ openclaw_node_release_root }}/bin/node'
+    test -x '{{ openclaw_node_release_root }}/bin/npm'
+    test -f '{{ openclaw_node_release_root }}/lib/node_modules/npm/bin/npm-cli.js'
+    test "$(cat '{{ openclaw_node_release_root }}/.homelab-install-complete')" = \
+      'node-v{{ openclaw_node_version }}-linux-x64'
+    test "$('{{ openclaw_node_release_root }}/bin/node' --version)" = 'v{{ openclaw_node_version }}'
+    '{{ openclaw_node_release_root }}/bin/node' \
+      '{{ openclaw_node_release_root }}/lib/node_modules/npm/bin/npm-cli.js' \
+      --version >/dev/null
+  args:
+    executable: /bin/sh
+  register: openclaw_node_install_probe
+  changed_when: false
+  failed_when: false
+
+- name: Remove only an incomplete pinned Node.js prefix
+  ansible.builtin.file:
+    path: "{{ openclaw_node_release_root }}"
+    state: absent
+  when: openclaw_node_install_probe.rc != 0
+
+- name: Extract the pinned official Node.js runtime
+  ansible.builtin.unarchive:
+    src: "{{ openclaw_node_cache_path }}"
+    dest: "{{ openclaw_node_install_root }}"
+    remote_src: true
+    owner: root
+    group: root
+  when: openclaw_node_install_probe.rc != 0
+  notify: Restart OpenClaw Gateway
+
+- name: Verify the complete pinned Node.js runtime
+  ansible.builtin.shell: |
+    set -eu
+    test -x '{{ openclaw_node_release_root }}/bin/node'
+    test -x '{{ openclaw_node_release_root }}/bin/npm'
+    test -f '{{ openclaw_node_release_root }}/lib/node_modules/npm/bin/npm-cli.js'
+    test "$('{{ openclaw_node_release_root }}/bin/node' --version)" = 'v{{ openclaw_node_version }}'
+    '{{ openclaw_node_release_root }}/bin/node' \
+      '{{ openclaw_node_release_root }}/lib/node_modules/npm/bin/npm-cli.js' \
+      --version >/dev/null
+  args:
+    executable: /bin/sh
+  changed_when: false
+
+- name: Mark the fully verified Node.js prefix complete
+  ansible.builtin.copy:
+    content: "node-v{{ openclaw_node_version }}-linux-x64\n"
+    dest: "{{ openclaw_node_release_root }}/.homelab-install-complete"
+    owner: root
+    group: root
+    mode: "0444"
+
+- name: Activate the pinned native Node.js runtime
+  ansible.builtin.file:
+    src: "{{ openclaw_node_release_root }}"
+    dest: "{{ openclaw_node_current_root }}"
+    state: link
+    owner: root
+    group: root
+    force: true
+  notify: Restart OpenClaw Gateway
+
+- name: Download the integrity-pinned OpenClaw npm package
+  ansible.builtin.get_url:
+    url: "{{ openclaw_package_url }}"
+    dest: "{{ openclaw_package_cache_path }}"
+    checksum: "sha512:{{ openclaw_package_sha512 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Inspect the complete pinned OpenClaw release
+  ansible.builtin.shell: |
+    set -eu
+    test -x '{{ openclaw_release_root }}/bin/openclaw'
+    test "$(cat '{{ openclaw_release_root }}/.homelab-install-complete')" = \
+      'openclaw-{{ openclaw_version }}'
+    test "$({{ openclaw_node_release_root }}/bin/node -p \
+      "require('{{ openclaw_release_root }}/lib/node_modules/openclaw/package.json').version")" \
+      = '{{ openclaw_version }}'
+    {{ openclaw_node_release_root }}/bin/node \
+      '{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs' \
+      --version >/dev/null
+  args:
+    executable: /bin/sh
+  environment: &openclaw_install_environment
+    HOME: /root
+    PATH: "{{ openclaw_node_release_root }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    NPM_CONFIG_AUDIT: "false"
+    NPM_CONFIG_FUND: "false"
+    NPM_CONFIG_UPDATE_NOTIFIER: "false"
+  register: openclaw_release_install_probe
+  changed_when: false
+  failed_when: false
+
+- name: Remove only an incomplete pinned OpenClaw release prefix
+  ansible.builtin.file:
+    path: "{{ openclaw_release_root }}"
+    state: absent
+  when: openclaw_release_install_probe.rc != 0
+
+- name: Recreate the exact pinned OpenClaw release prefix
+  ansible.builtin.file:
+    path: "{{ openclaw_release_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: openclaw_release_install_probe.rc != 0
+
+- name: Install the pinned OpenClaw release into its immutable prefix
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_node_release_root }}/bin/npm"
+      - install
+      - --global
+      - --prefix
+      - "{{ openclaw_release_root }}"
+      - --omit=dev
+      - "{{ openclaw_package_cache_path }}"
+  environment: *openclaw_install_environment
+  when: openclaw_release_install_probe.rc != 0
+  notify: Restart OpenClaw Gateway
+
+- name: Verify the installed OpenClaw package version
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_node_release_root }}/bin/node"
+      - -p
+      - "require('{{ openclaw_release_root }}/lib/node_modules/openclaw/package.json').version"
+  register: openclaw_package_version_check
+  changed_when: false
+  failed_when: openclaw_package_version_check.stdout | trim != openclaw_version
+
+- name: Verify the installed OpenClaw CLI is executable
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_node_release_root }}/bin/node"
+      - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
+      - --version
+  environment: *openclaw_install_environment
+  changed_when: false
+
+- name: Mark the fully verified OpenClaw release prefix complete
+  ansible.builtin.copy:
+    content: "openclaw-{{ openclaw_version }}\n"
+    dest: "{{ openclaw_release_root }}/.homelab-install-complete"
+    owner: root
+    group: root
+    mode: "0444"
+
+- name: Activate the pinned native OpenClaw release
+  ansible.builtin.file:
+    src: "{{ openclaw_release_root }}"
+    dest: "{{ openclaw_current_root }}"
+    state: link
+    owner: root
+    group: root
+    force: true
+  notify: Restart OpenClaw Gateway
+
+- name: Publish the pinned OpenClaw CLI wrapper
+  ansible.builtin.copy:
+    content: |
+      #!/bin/sh
+      exec {{ openclaw_node_current_root }}/bin/node {{ openclaw_entrypoint }} "$@"
+    dest: /usr/local/bin/openclaw
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart OpenClaw Gateway
+
+- name: Verify the published OpenClaw CLI through a standard system path
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - -i
+      - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - /usr/local/bin/openclaw
+      - --version
+  register: openclaw_published_cli_version
+  changed_when: false
+  failed_when: >-
+    openclaw_published_cli_version.stdout | trim != 'OpenClaw ' + openclaw_cli_version
+
+- name: Render the dedicated OpenClaw nftables policy
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/nft --check --file %s
+  notify: Reload OpenClaw nftables policy
+
+- name: Enable the dedicated OpenClaw nftables policy
+  ansible.builtin.systemd_service:
+    name: nftables
+    enabled: true
+    state: started
+
+- name: Render the externally managed OpenClaw system service
+  ansible.builtin.template:
+    src: openclaw-gateway.service.j2
+    dest: /etc/systemd/system/openclaw-gateway.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd for OpenClaw
+    - Restart OpenClaw Gateway
+
+- name: Inspect the validated native OpenClaw transition marker
+  ansible.builtin.stat:
+    path: "{{ openclaw_native_transition_marker_path }}"
+    follow: false
+  register: openclaw_native_transition_marker
+  when: not (openclaw_native_activate | bool)
+
+- name: Read the validated native OpenClaw transition marker
+  ansible.builtin.slurp:
+    src: "{{ openclaw_native_transition_marker_path }}"
+  register: openclaw_native_transition_marker_content
+  when:
+    - not (openclaw_native_activate | bool)
+    - openclaw_native_transition_marker.stat.exists | default(false)
+  no_log: true
+
+- name: Require the exact validated native OpenClaw transition marker
+  ansible.builtin.assert:
+    that:
+      - openclaw_native_transition_marker.stat.isreg | default(false)
+      - not (openclaw_native_transition_marker.stat.islnk | default(false))
+      - openclaw_native_transition_marker.stat.uid == 0
+      - openclaw_native_transition_marker.stat.gid == 0
+      - openclaw_native_transition_marker.stat.mode == '0600'
+      - (openclaw_native_transition_marker_content.content | b64decode) == openclaw_native_transition_marker_value + '\n'
+    fail_msg: >-
+      The native transition marker exists but is malformed; refusing to stop
+      or preserve either Gateway until an operator resolves the ambiguity.
+  when:
+    - not (openclaw_native_activate | bool)
+    - openclaw_native_transition_marker.stat.exists | default(false)
+  no_log: true
+
+- name: Keep an uncut staged native OpenClaw service stopped
+  ansible.builtin.systemd_service:
+    name: openclaw-gateway.service
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when:
+    - not (openclaw_native_activate | bool)
+    - not (openclaw_native_transition_marker.stat.exists | default(false))
+
+- name: Inspect the transferred private OpenClaw repository
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ openclaw_setup_root }}"
+    - "{{ openclaw_setup_root }}/.git"
+    - "{{ openclaw_config_path }}"
+  register: openclaw_setup_paths
+  when: openclaw_native_activate | bool
+
+- name: Require the protected private OpenClaw repository and regular config
+  ansible.builtin.assert:
+    that:
+      - openclaw_setup_paths.results[0].stat.isdir | default(false)
+      - openclaw_setup_paths.results[0].stat.uid == 0
+      - openclaw_setup_paths.results[0].stat.gid == openclaw_gid | int
+      - openclaw_setup_paths.results[0].stat.mode == '0750'
+      - openclaw_setup_paths.results[1].stat.isdir | default(false)
+      - openclaw_setup_paths.results[1].stat.uid == 0
+      - openclaw_setup_paths.results[1].stat.gid == 0
+      - openclaw_setup_paths.results[1].stat.mode == '0700'
+      - openclaw_setup_paths.results[2].stat.isreg | default(false)
+      - not (openclaw_setup_paths.results[2].stat.islnk | default(false))
+      - openclaw_setup_paths.results[2].stat.uid == 0
+      - openclaw_setup_paths.results[2].stat.gid == openclaw_gid | int
+      - openclaw_setup_paths.results[2].stat.mode == '0640'
+    fail_msg: >-
+      Transfer the clean, protected openclaw-setup checkout and its regular
+      native config before activating the Gateway.
+  when: openclaw_native_activate | bool
+
+- name: Require a clean tracked native OpenClaw config on main
+  ansible.builtin.shell: |
+    set -eu
+    hooks=/run/openclaw-native-empty-hooks
+    test -d "$hooks"
+    test "$(stat -c '%u:%g %a' "$hooks")" = '0:0 700'
+    test ! -e .gitattributes && test ! -L .gitattributes
+    test ! -e .git/info/attributes && test ! -L .git/info/attributes
+    test ! -x .git/config
+    git_safe() {
+      git \
+        -c core.hooksPath="$hooks" \
+        -c core.fsmonitor=false \
+        -c core.attributesFile=/dev/null \
+        -c diff.external= \
+        -c pager.status=false \
+        "$@"
+    }
+    test "$(git_safe branch --show-current)" = main
+    git_safe rev-parse --verify HEAD >/dev/null
+    test -z "$(git_safe status --porcelain=v1 --no-ahead-behind)"
+    git_safe diff --quiet --no-ext-diff --no-textconv
+    git_safe diff --cached --quiet --no-ext-diff --no-textconv
+    git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
+    test -z "$(git_safe --no-pager ls-files -- .env)"
+  args:
+    executable: /bin/sh
+    chdir: "{{ openclaw_setup_root }}"
+  environment:
+    GIT_CONFIG_NOSYSTEM: "1"
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_PAGER: cat
+    GIT_TERMINAL_PROMPT: "0"
+  changed_when: false
+  when: openclaw_native_activate | bool
+
+- name: Read the transferred native OpenClaw config
+  ansible.builtin.slurp:
+    src: "{{ openclaw_config_path }}"
+  register: openclaw_native_config
+  no_log: true
+  when: openclaw_native_activate | bool
+
+- name: Reject stale container paths in the native OpenClaw config
+  ansible.builtin.assert:
+    that:
+      - "'/home/node' not in (openclaw_native_config.content | b64decode)"
+      - "'/run/secrets/openclaw_gateway_token' not in (openclaw_native_config.content | b64decode)"
+      - "'/srv/homelab/docker-apps/openclaw' not in (openclaw_native_config.content | b64decode)"
+      - "'/opt/homelab-compose/openclaw-setup' not in (openclaw_native_config.content | b64decode)"
+    fail_msg: Replace every Docker-only path in the private config before native activation.
+  no_log: true
+  when: openclaw_native_activate | bool
+
+- name: Validate native config through an isolated service-user credential
+  when: openclaw_native_activate | bool
+  block:
+    - name: Create a temporary native OpenClaw credential directory
+      ansible.builtin.tempfile:
+        state: directory
+        path: /run
+        prefix: openclaw-validation-credential-
+      register: openclaw_validation_credential_dir
+      no_log: true
+
+    - name: Protect the temporary native OpenClaw credential directory
+      ansible.builtin.file:
+        path: "{{ openclaw_validation_credential_dir.path }}"
+        state: directory
+        owner: root
+        group: "{{ openclaw_group }}"
+        mode: "0750"
+
+    - name: Materialize a read-only service-user Gateway credential
+      ansible.builtin.copy:
+        src: "{{ openclaw_gateway_token_path }}"
+        dest: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
+        remote_src: true
+        owner: "{{ openclaw_user }}"
+        group: "{{ openclaw_group }}"
+        mode: "0400"
+      no_log: true
+      diff: false
+
+    - name: Check the active native OpenClaw config path
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_release_root }}/bin/node"
+          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
+          - config
+          - file
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: &openclaw_native_cli_environment
+        HOME: "{{ openclaw_home }}"
+        PATH: "{{ openclaw_node_release_root }}/bin:{{ openclaw_release_root }}/bin:/usr/local/bin:/usr/bin:/bin"
+        OPENCLAW_HOME: "{{ openclaw_home }}"
+        OPENCLAW_STATE_DIR: "{{ openclaw_state_root }}"
+        OPENCLAW_CONFIG_PATH: "{{ openclaw_config_path }}"
+        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_workspace_root }}"
+        OPENCLAW_DISABLE_BONJOUR: "1"
+        OPENCLAW_NO_AUTO_UPDATE: "1"
+        OPENCLAW_NO_RESPAWN: "1"
+        OPENCLAW_SERVICE_REPAIR_POLICY: external
+        OPENCLAW_SUPERVISOR_MODE: external
+        OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
+      register: openclaw_config_file_preflight
+      changed_when: false
+      failed_when: openclaw_config_file_preflight.stdout | trim != openclaw_config_path
+
+    - name: Validate the native OpenClaw config schema
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_release_root }}/bin/node"
+          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
+          - config
+          - validate
+          - --json
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: *openclaw_native_cli_environment
+      register: openclaw_config_validation_preflight
+      changed_when: false
+      failed_when: >-
+        openclaw_config_validation_preflight.rc != 0 or
+        not (openclaw_config_validation_preflight.stdout | from_json).valid or
+        (openclaw_config_validation_preflight.stdout | from_json).warnings | length > 0
+
+    - name: Require the proxy-only native OpenClaw config values
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_release_root }}/bin/node"
+          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
+          - config
+          - get
+          - "{{ item.path }}"
+          - --json
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: *openclaw_native_cli_environment
+      register: openclaw_native_config_values
+      changed_when: false
+      failed_when: >-
+        openclaw_native_config_values.rc != 0 or
+        (openclaw_native_config_values.stdout | from_json) != item.value
+      loop:
+        - {path: secrets.providers.gateway_token_file.source, value: file}
+        - {path: secrets.providers.gateway_token_file.path, value: "${OPENCLAW_GATEWAY_TOKEN_FILE}"}
+        - {path: secrets.providers.gateway_token_file.mode, value: singleValue}
+        - {path: gateway.mode, value: local}
+        - {path: gateway.port, value: "{{ openclaw_gateway_port | int }}"}
+        - {path: gateway.bind, value: custom}
+        - {path: gateway.customBindHost, value: "{{ openclaw_bind_host }}"}
+        - {path: gateway.controlUi.enabled, value: true}
+        - {path: gateway.terminal.enabled, value: false}
+        - {path: gateway.auth.mode, value: token}
+        - {path: gateway.auth.allowTailscale, value: false}
+        - path: gateway.auth.rateLimit
+          value: {maxAttempts: 10, windowMs: 60000, lockoutMs: 300000, exemptLoopback: true}
+        - {path: gateway.controlUi.allowedOrigins, value: ["{{ openclaw_control_ui_origin }}"]}
+        - {path: gateway.trustedProxies, value: ["{{ openclaw_proxy_ip }}"]}
+        - {path: gateway.allowRealIpFallback, value: false}
+        - {path: gateway.tailscale.mode, value: "off"}
+        - {path: gateway.tailscale.resetOnExit, value: false}
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Audit native OpenClaw secrets before startup
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_release_root }}/bin/node"
+          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
+          - secrets
+          - audit
+          - --check
+          - --json
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: *openclaw_native_cli_environment
+      register: openclaw_secrets_audit_preflight
+      changed_when: false
+      failed_when: >-
+        openclaw_secrets_audit_preflight.rc != 0 or
+        (openclaw_secrets_audit_preflight.stdout | from_json).status != 'clean' or
+        (openclaw_secrets_audit_preflight.stdout | from_json).summary.plaintextCount != 0 or
+        (openclaw_secrets_audit_preflight.stdout | from_json).summary.unresolvedRefCount != 0
+      no_log: true
+  always:
+    - name: Remove the temporary native OpenClaw credential directory
+      ansible.builtin.file:
+        path: "{{ openclaw_validation_credential_dir.path }}"
+        state: absent
+      when: openclaw_validation_credential_dir.path is defined
+      no_log: true
+
+- name: Flush validated OpenClaw handlers before activation
+  ansible.builtin.meta: flush_handlers
+
+- name: Preserve the validated transitional native OpenClaw service
+  ansible.builtin.systemd_service:
+    name: openclaw-gateway.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - not (openclaw_native_activate | bool)
+    - not (openclaw_docker_rollback_activate | bool)
+    - openclaw_native_transition_marker.stat.exists | default(false)
+
+- name: Activate only the native OpenClaw system service
+  ansible.builtin.systemd_service:
+    name: openclaw-gateway.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+
+- name: Stop and disable native OpenClaw for tracked Docker rollback
+  ansible.builtin.systemd_service:
+    name: openclaw-gateway.service
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when: openclaw_docker_rollback_activate | bool
+
+- name: Prove tracked Docker rollback has no native OpenClaw listener
+  ansible.builtin.shell: |
+    set -eu
+    ! systemctl is-enabled --quiet openclaw-gateway.service
+    ! systemctl is-active --quiet openclaw-gateway.service
+    ! ss -H -ltn 'sport = :{{ openclaw_gateway_port }}' | grep -q .
+  args:
+    executable: /bin/sh
+  changed_when: false
+  when: openclaw_docker_rollback_activate | bool
+
+- name: Wait for the native OpenClaw Gateway readiness endpoint
+  ansible.builtin.uri:
+    url: "http://{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}/readyz"
+    method: GET
+    status_code: 200
+    return_content: false
+  register: openclaw_native_readiness
+  changed_when: false
+  retries: 18
+  delay: 5
+  until: openclaw_native_readiness.status == 200
+  when: >-
+    not (openclaw_docker_rollback_activate | bool) and
+    (
+      openclaw_native_activate | bool or
+      openclaw_native_transition_marker.stat.exists | default(false)
+    )
+
+- name: Probe native RPC through an isolated service-user credential
+  when: openclaw_native_activate | bool
+  block:
+    - name: Create a temporary native RPC credential directory
+      ansible.builtin.tempfile:
+        state: directory
+        path: /run
+        prefix: openclaw-rpc-credential-
+      register: openclaw_validation_credential_dir
+      no_log: true
+
+    - name: Protect the temporary native RPC credential directory
+      ansible.builtin.file:
+        path: "{{ openclaw_validation_credential_dir.path }}"
+        state: directory
+        owner: root
+        group: "{{ openclaw_group }}"
+        mode: "0750"
+
+    - name: Materialize a read-only service-user RPC credential
+      ansible.builtin.copy:
+        src: "{{ openclaw_gateway_token_path }}"
+        dest: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
+        remote_src: true
+        owner: "{{ openclaw_user }}"
+        group: "{{ openclaw_group }}"
+        mode: "0400"
+      no_log: true
+      diff: false
+
+    # Pinned 2026.7.1-2 resolves the local gateway.auth.token SecretRef for an
+    # explicit probe target, so no raw credential is needed in process argv.
+    - name: Probe the active native OpenClaw Gateway RPC endpoint
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_release_root }}/bin/node"
+          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
+          - gateway
+          - probe
+          - --url
+          - "ws://{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}"
+          - --json
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: *openclaw_native_cli_environment
+      register: openclaw_native_rpc_probe
+      changed_when: false
+      failed_when: >-
+        openclaw_native_rpc_probe.rc != 0 or
+        not (openclaw_native_rpc_probe.stdout | from_json).ok or
+        (openclaw_native_rpc_probe.stdout | from_json).primaryTargetId != 'explicit' or
+        (openclaw_native_rpc_probe.stdout | from_json).targets | length < 1 or
+        (openclaw_native_rpc_probe.stdout | from_json).targets[0].id != 'explicit' or
+        (openclaw_native_rpc_probe.stdout | from_json).targets[0].url !=
+          'ws://' + openclaw_bind_host + ':' + (openclaw_gateway_port | string) or
+        not (openclaw_native_rpc_probe.stdout | from_json).targets[0].connect.rpcOk
+      no_log: true
+  always:
+    - name: Remove the temporary native RPC credential directory
+      ansible.builtin.file:
+        path: "{{ openclaw_validation_credential_dir.path }}"
+        state: absent
+      when: openclaw_validation_credential_dir.path is defined
+      no_log: true
+
+- name: Validate native OpenClaw listener and firewall ownership
+  ansible.builtin.shell: |
+    set -eu
+    listeners="$(ss -H -ltn 'sport = :{{ openclaw_gateway_port }}')"
+    test -n "$listeners"
+    printf '%s\n' "$listeners" | grep -F '{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}'
+    nft list chain inet filter input | grep -F 'ip saddr {{ openclaw_proxy_ip }} tcp dport {{ openclaw_gateway_port }} accept'
+    ! nft list chain inet filter input | grep -E 'ip saddr ([^ ]+ )?tcp dport {{ openclaw_gateway_port }} accept' | grep -vF 'ip saddr {{ openclaw_proxy_ip }} tcp dport {{ openclaw_gateway_port }} accept'
+  args:
+    executable: /bin/sh
+  changed_when: false
+  when: openclaw_native_activate | bool
+
+- name: Remove the completed native OpenClaw transition marker
+  ansible.builtin.file:
+    path: "{{ openclaw_native_transition_marker_path }}"
+    state: absent
+  when: openclaw_native_activate | bool

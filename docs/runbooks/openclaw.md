@@ -1,129 +1,103 @@
 # OpenClaw Foundation
 
+OpenClaw is migrating from the current isolated Docker foundation on
+`docker_apps` to a native system Gateway in dedicated unprivileged LXC VMID
+118. See `openclaw-native-migration.md` for the staged cutover and rollback
+contract.
+
+During phase 1, the native service is staged but inactive and the Docker
+Gateway remains the guarded source. After the audited transfer and phase-2
+commit, native is primary and the exact Docker container and assets remain
+stopped under a permanent source hold. A tracked rollback never removes that
+hold or restores Arcane ownership.
+
 ## Ownership and paths
 
-OpenClaw is intentionally split across one public deployment repository, one
-private configuration repository, and non-Git runtime storage:
+The steady-state foundation separates public deployment code, one private
+content repository, and mutable runtime material:
 
 | Concern | Location |
 | --- | --- |
-| Public Compose and Ansible deployment | `apps/compose/openclaw` in `homelab` |
-| Deployed Compose project | `/opt/homelab-compose/openclaw` |
-| Private OpenClaw repository | `/opt/homelab-compose/openclaw-setup` |
-| Active host config | `/opt/homelab-compose/openclaw-setup/config/openclaw.json` |
-| Active container config | `/etc/openclaw/openclaw.json` |
-| Persistent runtime state | `/srv/homelab/docker-apps/openclaw/state` |
-| Future auth-profile state | `/srv/homelab/docker-apps/openclaw/auth-profile-secrets` |
-| Gateway token | `/opt/homelab-control/openclaw/secrets/gateway_token` |
+| Public IaC, systemd, firewall, and Traefik deployment | `homelab` repository |
+| Private OpenClaw repository | `/home/openclaw/openclaw-setup` on VMID 118 |
+| Active native config | `/home/openclaw/openclaw-setup/config/openclaw.json` |
+| Runtime state | `/var/lib/openclaw` |
+| Future auth-profile state | `/home/openclaw/.config/openclaw` |
+| Gateway token | `/etc/openclaw/secrets/gateway_token` |
 
-The private repo contains config plus inert scaffolding for future agents,
-workspaces, and shared skills. It contains no deployment manifest. Runtime
-state, credentials, sessions, databases, logs, and caches belong in neither
-Git repository.
+The private repository contains config plus inert scaffolding for future
+agents, workspaces, and shared skills. Runtime credentials, sessions,
+databases, logs, caches, and model authentication belong in neither Git
+repository. The config is a regular root-owned file, not a symlink.
 
-## Deployment contract
+## Native service contract
 
-The Gateway uses the immutable official
-`ghcr.io/openclaw/openclaw:2026.7.1-2` image index digest recorded in Compose.
-It runs as UID/GID 1000 with a read-only root filesystem, all Linux
-capabilities dropped, and `no-new-privileges`. The image already enters through
-`tini`, so Compose does not add a second init process.
+Ansible installs integrity-pinned Node.js and `openclaw` npm releases under
+versioned root-owned prefixes and runs the Gateway as the nologin `openclaw`
+UID/GID 1000 account. A system-level `openclaw-gateway.service` supplies
+reboot/logout persistence; OpenClaw's service repair and automatic update paths
+are disabled because IaC is the external supervisor.
 
-Docker publishes only `127.0.0.1:18789:18789`. OpenClaw binds `lan` inside the
-container because Docker bridge forwarding cannot reach an in-container
-loopback listener. The host remains loopback-only. There is no Traefik route,
-firewall change, or Docker socket mount.
+The service depends on nftables and cannot start without the firewall. The
+Gateway binds `192.168.0.5:18789`; guest nftables accepts that port only from
+Traefik at `192.168.0.3`. Traefik terminates HTTPS for
+`openclaw.home.hchu.me`. Token authentication remains mandatory, the exact
+HTTPS origin is allowlisted, proxy trust is limited to `192.168.0.3`, real-IP
+fallback and Tailscale authentication are disabled, and the web terminal is
+disabled.
 
-Gateway authentication is mandatory. The tracked config holds only a file
-SecretRef; Ansible installs the 64-hex token outside Git as UID/GID 1000 mode
-`0600`, and Docker mounts it read-only. OpenClaw rejects group-readable secret
-files, so mode `0640` is not sufficient for this provider.
+Control UI access uses HTTPS. A new browser must receive the Gateway token out
+of band and may require explicit device approval. Do not enable insecure auth,
+device-auth bypasses, wildcard origins, or trusted-proxy authentication.
 
-The Docker systemd service supplies reboot/logout persistence, and the
-Gateway container uses `restart: unless-stopped`. There is no host-native
-OpenClaw systemd unit because Docker/Arcane was the selected deployment mode.
+## Configuration updates
 
-## Bootstrap and updates
-
-The first deployment must use the full homelab CD path. Its order is:
-
-1. Reconcile the existing Compose workloads.
-2. Run the isolated `openclaw_foundation` role.
-3. Register/adopt the public `openclaw` project in Arcane.
-4. Run the live validation playbook.
-
-The OpenClaw role never loops over or force-recreates platform, media, or code.
-After bootstrap, changes solely below `apps/compose/openclaw` use the Arcane
-fast path. Updates to the private repo are deliberately manual: commit the
-config, validate it, and restart only `openclaw-gateway`. Do not configure
-automatic Git pull or push.
-
-Before committing a private config change:
+Edit only the private checkout and inspect the staged files as root. Then make
+a temporary service-user credential copy outside Git and run the published,
+pinned CLI as the service account before committing:
 
 ```sh
-cd /opt/homelab-compose/openclaw
-docker compose run -T --rm --no-deps --entrypoint node \
-  openclaw-gateway dist/index.js config file
-docker compose run -T --rm --no-deps --entrypoint node \
-  openclaw-gateway dist/index.js config validate --json
-docker compose run -T --rm --no-deps --entrypoint node \
-  openclaw-gateway dist/index.js secrets audit --check --json
+set -eu
+credential_dir="$(mktemp -d /run/openclaw-config-audit.XXXXXX)"
+trap 'rm -rf -- "$credential_dir"' EXIT HUP INT TERM
+chown root:openclaw "$credential_dir"
+chmod 0750 "$credential_dir"
+install -o openclaw -g openclaw -m 0400 \
+  /etc/openclaw/secrets/gateway_token \
+  "$credential_dir/openclaw_gateway_token"
+sudo -u openclaw -H env \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
+  OPENCLAW_STATE_DIR=/var/lib/openclaw \
+  OPENCLAW_GATEWAY_TOKEN_FILE="$credential_dir/openclaw_gateway_token" \
+  /usr/local/bin/openclaw config validate --json
+sudo -u openclaw -H env \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
+  OPENCLAW_STATE_DIR=/var/lib/openclaw \
+  OPENCLAW_GATEWAY_TOKEN_FILE="$credential_dir/openclaw_gateway_token" \
+  /usr/local/bin/openclaw secrets audit --check --json
 ```
 
-The `config file` command intentionally has no `--json` flag in this release.
-After the private commit, restart only the Gateway:
-
-```sh
-cd /opt/homelab-compose/openclaw
-docker compose restart openclaw-gateway
-```
+Commit through the private repo, then reconcile the public Ansible role. Do not
+configure automatic Git pull or push, and do not use Control UI/Doctor config
+writers against the protected file.
 
 ## Verification
 
-Run the production validation playbook, or verify directly:
+The production validation must prove:
 
-```sh
-cd /opt/homelab-compose/openclaw
-docker compose ps
-docker compose exec -T openclaw-gateway node dist/index.js --version
-docker compose exec -T openclaw-gateway node dist/index.js config file
-docker compose exec -T openclaw-gateway node dist/index.js config validate --json
-docker compose exec -T openclaw-gateway node dist/index.js secrets audit --check --json
-docker compose exec -T openclaw-gateway node dist/index.js gateway probe --json
-curl -fsS http://127.0.0.1:18789/healthz
-curl -fsS http://127.0.0.1:18789/readyz
-ss -H -ltn 'sport = :18789'
-```
-
-Expected results include a healthy container, CLI `OpenClaw 2026.7.1`, active
-config `/etc/openclaw/openclaw.json`, a clean secrets audit, and exactly one
-host listener on `127.0.0.1:18789`.
-
-## Arcane boundary
-
-Arcane manages only the public `openclaw` Compose project. Its broad projects
-mount remains read-write, but a nested bind remounts
-`/opt/homelab-compose/openclaw-setup` read-only inside Arcane. This prevents
-ordinary Arcane editor/sync operations from modifying the private checkout.
-Arcane remains effectively host-administrative through the permitted Docker
-API, so the read-only overlay is an accidental-change guard, not a security
-boundary against a compromised administrator.
-
-Use Arcane for OpenClaw Up, Down, Restart, and Redeploy. Do not Rename or
-Destroy the private sibling checkout, and never register `openclaw-setup` as a
-GitOps project.
-
-## Backup and recovery
-
-Back up these as separate recovery units:
-
-- the private `openclaw-setup` Git remote once configured;
-- `/srv/homelab/docker-apps/openclaw` for runtime state;
-- the stable `OPENCLAW_GATEWAY_TOKEN` in the GitHub `prod` environment.
-
-The rendered token file is not its authoritative backup. Rotating the GitHub
-secret and running a full deployment recreates only OpenClaw, but invalidates
-clients using the old Gateway token.
+- `openclaw-gateway.service` is enabled, active, and bound only as intended;
+- nftables permits port 18789 only from Traefik;
+- the active config path is the private regular file and schema validation has
+  no warnings;
+- `secrets audit --check` is clean and the token is absent from Git;
+- runtime/auth state is outside the private checkout;
+- `https://openclaw.home.hchu.me` serves the Control UI through Traefik; and
+- the retained Docker Gateway is stopped while its rollback assets and
+  permanent source hold remain, or, only in tracked rollback state, that the
+  native service is disabled with no listener and the exact retained container
+  is the sole healthy Gateway.
 
 No model, Codex/OpenAI authentication, custom agent, channel, subagent, skill,
 or self-learning behavior belongs in this foundation deployment.

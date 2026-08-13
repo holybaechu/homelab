@@ -25,11 +25,73 @@
   ansible.builtin.command: "mountpoint -q {{ docker_apps_data_root }}"
   changed_when: false
 
+- name: Inspect the native OpenClaw cutover marker for Arcane
+  ansible.builtin.stat:
+    path: "{{ openclaw_native_cutover_marker_path }}"
+    follow: false
+  register: arcane_openclaw_cutover_marker
+
+- name: Read the native OpenClaw cutover marker for Arcane
+  ansible.builtin.slurp:
+    src: "{{ openclaw_native_cutover_marker_path }}"
+  register: arcane_openclaw_cutover_marker_content
+  when: arcane_openclaw_cutover_marker.stat.exists | default(false)
+  no_log: true
+
+- name: Require the exact native OpenClaw cutover marker for Arcane
+  ansible.builtin.assert:
+    that:
+      - arcane_openclaw_cutover_marker.stat.isreg | default(false)
+      - not (arcane_openclaw_cutover_marker.stat.islnk | default(false))
+      - arcane_openclaw_cutover_marker.stat.uid == 0
+      - arcane_openclaw_cutover_marker.stat.gid == 0
+      - arcane_openclaw_cutover_marker.stat.mode == '0600'
+      - (arcane_openclaw_cutover_marker_content.content | b64decode) == openclaw_native_transition_marker_value + '\n'
+    fail_msg: >-
+      The native OpenClaw cutover marker is malformed; refusing to reconcile
+      an ambiguous Arcane GitOps state.
+  when: arcane_openclaw_cutover_marker.stat.exists | default(false)
+  no_log: true
+
+- name: Require a validated marker for cutover-only Arcane reconciliation
+  ansible.builtin.assert:
+    that:
+      - arcane_openclaw_cutover_marker.stat.exists | default(false)
+    fail_msg: >-
+      Cutover-only Arcane reconciliation is permitted only after the exact
+      native OpenClaw cutover marker has been validated.
+  when: arcane_openclaw_cutover_only | default(false) | bool
+
+- name: Select marker-aware Arcane GitOps projects
+  ansible.builtin.set_fact:
+    arcane_effective_gitops_projects: >-
+      {{
+        arcane_gitops_projects
+        | rejectattr('name', 'equalto', 'openclaw')
+        | list
+        if arcane_openclaw_cutover_marker.stat.exists | default(false)
+        else arcane_gitops_projects
+      }}
+    arcane_effective_retired_gitops_projects: >-
+      {{
+        (
+          arcane_retired_gitops_projects | default([])
+          + [
+            {
+              'name': 'openclaw',
+              'compose_path': 'apps/compose/openclaw/compose.yml'
+            }
+          ]
+        )
+        if arcane_openclaw_cutover_marker.stat.exists | default(false)
+        else arcane_retired_gitops_projects | default([])
+      }}
+
 - name: Inspect existing workload Compose files before Arcane adoption
   ansible.builtin.stat:
     path: >-
       {{ arcane_projects_root }}/{{ item.name }}/{{ item.compose_path | basename }}
-  loop: "{{ arcane_gitops_projects }}"
+  loop: "{{ arcane_effective_gitops_projects }}"
   loop_control:
     label: "{{ item.name }}"
   register: arcane_workload_compose_files
@@ -55,7 +117,7 @@
       - compose.yaml
       - docker-compose.yml
       - docker-compose.yaml
-  loop: "{{ arcane_gitops_projects }}"
+  loop: "{{ arcane_effective_gitops_projects }}"
   loop_control:
     label: "{{ item.name }}"
   register: arcane_alternate_compose_files
@@ -191,11 +253,19 @@
       no_log: true
       diff: false
 
-    - name: Start Arcane with the temporary bootstrap key
+    - name: Start the ordinary Arcane project with the temporary bootstrap key
       ansible.builtin.command:
         cmd: docker compose up -d --force-recreate --remove-orphans
         chdir: "{{ arcane_control_root }}"
       changed_when: true
+      when: not (arcane_openclaw_cutover_only | default(false) | bool)
+
+    - name: Recreate only Arcane with the temporary cutover bootstrap key
+      ansible.builtin.command:
+        cmd: docker compose up -d --force-recreate --no-deps arcane
+        chdir: "{{ arcane_control_root }}"
+      changed_when: true
+      when: arcane_openclaw_cutover_only | default(false) | bool
 
     - name: Wait for the bootstrap Arcane API
       ansible.builtin.uri:
@@ -222,10 +292,10 @@
           --issuer {{ arcane_ci_oidc_issuer }}
           --audience {{ arcane_ci_oidc_audience }}
           --subject {{ arcane_ci_oidc_subject }}
-          {% for project in arcane_gitops_projects %}
+          {% for project in arcane_effective_gitops_projects %}
           --project {{ project.name }}={{ project.compose_path }}
           {% endfor %}
-          {% for project in arcane_retired_gitops_projects | default([]) %}
+          {% for project in arcane_effective_retired_gitops_projects %}
           --retired-project {{ project.name }}={{ project.compose_path }}
           {% endfor %}
       environment:
@@ -251,11 +321,19 @@
       no_log: true
       diff: false
 
-    - name: Force Arcane into its final keyless state
+    - name: Force ordinary Arcane into its final keyless state
       ansible.builtin.command:
         cmd: docker compose up -d --force-recreate arcane
         chdir: "{{ arcane_control_root }}"
       changed_when: true
+      when: not (arcane_openclaw_cutover_only | default(false) | bool)
+
+    - name: Recreate only Arcane into its final cutover keyless state
+      ansible.builtin.command:
+        cmd: docker compose up -d --force-recreate --no-deps arcane
+        chdir: "{{ arcane_control_root }}"
+      changed_when: true
+      when: arcane_openclaw_cutover_only | default(false) | bool
 
     - name: Wait for the final Arcane API health endpoint
       ansible.builtin.uri:

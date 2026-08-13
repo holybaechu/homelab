@@ -1,12 +1,14 @@
-# Two-LXC Docker Compose Migration
+# Homelab LXC and Docker Compose Architecture
 
 ## Target architecture
 
-The managed production topology contains exactly two LXCs:
+The managed production topology contains exactly three LXCs:
 
 - `tailnet` (`192.168.0.4`, VMID 111): Tailscale subnet router and exit node.
 - `docker_apps` (`192.168.0.3`, VMID 110): every application, managed with
   Docker Compose.
+- `openclaw` (`192.168.0.5`, VMID 118): an unprivileged, dedicated native
+  OpenClaw Gateway with no nested container engine or host bind mounts.
 
 The Docker host runs these workload projects in dependency order:
 
@@ -15,9 +17,9 @@ The Docker host runs these workload projects in dependency order:
    qBittorrent Web UI is private at `https://qbt.home.hchu.me`, while peer port
    `35435` is published over TCP and UDP for direct inbound connectivity.
 3. `code`: the private T3 Code development environment.
-4. `openclaw`: the loopback-only OpenClaw Gateway. Its private config repo is
-   a separate read-only bind source, while runtime state and credentials stay
-   outside Git.
+4. `openclaw`: the retained Docker rollback deployment during the native-LXC
+   migration. It remains active during the first staging phase, then remains
+   stopped and preserved after cutover.
 
 VMID 111 retains `/dev/net/tun` for Tailscale. VMID 110 has no TUN
 passthrough because the application stack no longer contains Gluetun or any
@@ -56,7 +58,7 @@ triggers `.github/workflows/cd.yml`. Changes confined to the known workload
 Compose directories deploy only the affected projects through Arcane and then
 run live validation. Mixed, Arcane control-plane, infrastructure, and deployment
 script changes use the full path: CD connects through Tailscale, plans and
-applies OpenTofu, bootstraps both LXCs, renders secret Compose environments and
+applies OpenTofu, bootstraps all three LXCs, renders secret Compose environments and
 application configs with Ansible, reconciles the projects, and performs live
 validation.
 

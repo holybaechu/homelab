@@ -36,6 +36,11 @@ http:
       entryPoints: [websecure]
       middlewares: [private-only, secure-headers]
       service: adguard
+    openclaw:
+      rule: Host(`openclaw.home.hchu.me`)
+      entryPoints: [websecure]
+      middlewares: [private-only, secure-headers]
+      service: openclaw
     pve:
       rule: Host(`pve.home.hchu.me`)
       entryPoints: [websecure]
@@ -52,6 +57,10 @@ http:
       loadBalancer:
         servers:
           - url: http://host.docker.internal:3000
+    openclaw:
+      loadBalancer:
+        servers:
+          - url: http://192.168.0.5:18789
     pve:
       loadBalancer:
         serversTransport: pve-transport

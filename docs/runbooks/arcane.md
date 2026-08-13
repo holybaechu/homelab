@@ -8,8 +8,9 @@ plane. It does not replace the infrastructure recovery path:
 - OpenTofu owns the `docker_apps` LXC shape.
 - Ansible owns Docker Engine, the Arcane control Compose project, Arcane's
   bootstrap secrets, and the rendered workload files.
-- Arcane deploys and operates the `platform`, `media`, `code`, and `openclaw` Compose
-  projects under `/opt/homelab-compose` for app-only pushes.
+- Arcane deploys and operates `platform`, `media`, and `code`. It also operates
+  `openclaw` during the native-LXC transition, until the audited cutover
+  finalizer retires only that sync.
 - Renovate and reviewed Git changes own container image versions. Arcane's
   image updater, automatic pruning, auto-heal, and lifecycle hooks remain
   disabled.
@@ -42,9 +43,11 @@ socket proxy is not published on the host.
    container health check is healthy.
 3. Open `https://arcane.home.hchu.me` from the LAN or tailnet and complete the
    first-login flow. Replace the initial administrator password immediately.
-4. Confirm that Arcane discovers `platform`, `media`, `code`, and `openclaw` from
-   `/opt/homelab-compose` and does not list `arcane-control` as a managed
-   project.
+4. Before OpenClaw cutover, confirm that Arcane discovers `platform`, `media`,
+   `code`, and `openclaw` from `/opt/homelab-compose`. After the finalizer,
+   confirm exactly `platform`, `media`, and `code`; the retained OpenClaw
+   project must remain absent. In either state, `arcane-control` must not be a
+   managed project.
 5. Run the repository validation playbook before accepting Arcane as an
    operational deployment path.
 
@@ -74,7 +77,11 @@ nested read-only mount. Do not edit either source in Arcane.
 
 For a push containing only safe files under `apps/compose/platform`,
 `apps/compose/media`, `apps/compose/code`, or `apps/compose/openclaw`, CD
-selects the `arcane` scope.
+selects the `arcane` scope only during the migration transition. The phase-2
+commit removes the OpenClaw prefix from the scope selector after its Arcane
+sync is retired. Thereafter, OpenClaw rollback-manifest or documentation
+changes deliberately select the full marker-aware Ansible path and must not
+attempt to recreate the Arcane project.
 `platform/traefik.yml` is a deliberate exception because it needs a forced
 Traefik recreation, so it uses the full Ansible path.
 After joining the tailnet, the runner pins `arcane.home.hchu.me` to

@@ -51,7 +51,25 @@
     {% endfor %}
     {% for setting in item.absent_settings | default([]) %}
     if printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
+      {% if setting.delete_matching_keys | default(false) %}
+      matching_keys="$(
+        printf '%s\n' "${config}" |
+          grep -E '{{ setting.pattern }}' |
+          cut -d: -f1
+      )"
+      test -n "${matching_keys}"
+      for key in ${matching_keys}; do
+        case "${key}" in
+          dev[0-9]*|mp[0-9]*) pct set "${vmid}" -delete "${key}" ;;
+          *)
+            printf 'Refusing to delete unexpected LXC key %s\n' "${key}" >&2
+            exit 1
+            ;;
+        esac
+      done
+      {% else %}
       pct set "${vmid}" {{ setting.pct_args }}
+      {% endif %}
     fi
     {% endfor %}
 

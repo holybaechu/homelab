@@ -28,9 +28,11 @@ def load_containers(path: Path = TOPOLOGY) -> dict[str, dict[str, Any]]:
     ):
         name, body = match.groups()
         containers[name] = {
+            "vmid": int(_parse_value(body, "vmid")),
             "hostname": _parse_value(body, "hostname"),
             "os_type": _parse_value(body, "os_type"),
             "ip_address": _parse_value(body, "ip_address").split("/", 1)[0],
+            "mac_address": _parse_value(body, "mac_address").upper(),
             "startup_order": int(_parse_value(body, "startup_order")),
         }
 
@@ -44,6 +46,15 @@ def load_containers(path: Path = TOPOLOGY) -> dict[str, dict[str, Any]]:
     )
     if duplicate_orders:
         raise ValueError(f"duplicate startup_order values: {duplicate_orders}")
+
+    for field in ("vmid", "hostname", "ip_address", "mac_address"):
+        duplicate_values = sorted(
+            value
+            for value in {container[field] for container in containers.values()}
+            if sum(1 for container in containers.values() if container[field] == value) > 1
+        )
+        if duplicate_values:
+            raise ValueError(f"duplicate {field} values: {duplicate_values}")
 
     return containers
 

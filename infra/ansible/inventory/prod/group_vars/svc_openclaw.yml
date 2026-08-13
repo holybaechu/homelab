@@ -1,0 +1,49 @@
+openclaw_native_activate: false
+openclaw_native_transition_marker_path: /var/lib/.openclaw-native-migration-validated
+openclaw_native_transition_marker_value: homelab-openclaw-native-migration-v1
+common_debian_create_service_account: false
+
+openclaw_version: 2026.7.1-2
+openclaw_cli_version: "{{ openclaw_version | regex_replace('-[0-9]+$', '') }}"
+openclaw_package_url: https://registry.npmjs.org/openclaw/-/openclaw-2026.7.1-2.tgz
+openclaw_package_sha512: c9c177c8f71b8cde9b50f79a531e8c87abf37b58505a80f7093ff059c983edaf316871c745468095aabe945c4c1dfd6cb0480e0d50308e5cd8aa9dadc24619ee
+
+openclaw_node_version: 24.19.0
+openclaw_node_archive: node-v24.19.0-linux-x64.tar.xz
+openclaw_node_url: "https://nodejs.org/download/release/v{{ openclaw_node_version }}/{{ openclaw_node_archive }}"
+openclaw_node_sha256: 14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647
+
+openclaw_user: openclaw
+openclaw_group: openclaw
+openclaw_uid: 1000
+openclaw_gid: 1000
+openclaw_home: /home/openclaw
+
+openclaw_install_root: /opt/openclaw
+openclaw_release_root: "{{ openclaw_install_root }}/releases/{{ openclaw_version }}"
+openclaw_current_root: "{{ openclaw_install_root }}/current"
+openclaw_entrypoint: "{{ openclaw_current_root }}/lib/node_modules/openclaw/openclaw.mjs"
+openclaw_package_cache_path: "/var/cache/openclaw/downloads/openclaw-{{ openclaw_version }}.tgz"
+
+openclaw_node_install_root: /opt/nodejs
+openclaw_node_release_root: "{{ openclaw_node_install_root }}/node-v{{ openclaw_node_version }}-linux-x64"
+openclaw_node_current_root: "{{ openclaw_node_install_root }}/current"
+openclaw_node_cache_path: "/var/cache/openclaw/downloads/{{ openclaw_node_archive }}"
+
+openclaw_setup_root: /home/openclaw/openclaw-setup
+openclaw_config_path: "{{ openclaw_setup_root }}/config/openclaw.json"
+openclaw_runtime_root: /var/lib/openclaw
+openclaw_state_root: /var/lib/openclaw
+openclaw_workspace_root: "{{ openclaw_state_root }}/workspace"
+openclaw_auth_profile_secret_root: "{{ openclaw_home }}/.config/openclaw"
+openclaw_cache_root: /var/cache/openclaw
+openclaw_compile_cache_root: "{{ openclaw_cache_root }}/node-compile-cache"
+openclaw_secret_root: /etc/openclaw/secrets
+openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
+
+openclaw_gateway_port: 18789
+openclaw_hostname: openclaw.home.hchu.me
+openclaw_control_ui_origin: "https://{{ openclaw_hostname }}"
+openclaw_bind_host: "{{ openclaw_ip }}"
+openclaw_proxy_ip: "{{ docker_apps_ip }}"
+openclaw_timezone: "{{ homelab_timezone }}"

@@ -1,0 +1,30 @@
+---
+- name: Reload systemd for OpenClaw
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Reload OpenClaw nftables policy
+  ansible.builtin.systemd_service:
+    name: nftables
+    state: reloaded
+
+- name: Inspect active OpenClaw Gateway before restart
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - --quiet
+      - openclaw-gateway.service
+  register: openclaw_gateway_active_for_restart
+  changed_when: false
+  failed_when: openclaw_gateway_active_for_restart.rc not in [0, 3]
+  listen: Restart OpenClaw Gateway
+
+- name: Restart an already-active OpenClaw Gateway
+  ansible.builtin.systemd_service:
+    name: openclaw-gateway.service
+    state: restarted
+  when:
+    - openclaw_gateway_active_for_restart.rc == 0
+    - not (openclaw_docker_rollback_activate | bool)
+  listen: Restart OpenClaw Gateway

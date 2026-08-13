@@ -40,11 +40,328 @@
       - openclaw_auth_profile_secret_root == openclaw_runtime_root + '/auth-profile-secrets'
       - openclaw_secret_root == openclaw_control_root + '/secrets'
       - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
+      - openclaw_native_cutover_marker_path == openclaw_control_root + '/native-cutover-validated'
+      - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
+      - openclaw_docker_rollback_activate is boolean
+      - hostvars['openclaw'].openclaw_native_activate is defined
+      - >-
+        not (openclaw_docker_rollback_activate | bool) or
+        not (hostvars['openclaw'].openclaw_native_activate | bool)
+      - >-
+        openclaw_traefik_backend_url ==
+        (
+          'http://openclaw-rollback:18789'
+          if openclaw_docker_rollback_activate | bool
+          else 'http://' + openclaw_ip + ':18789'
+        )
     fail_msg: OpenClaw deployment, private setup, runtime, and control paths must remain separated.
 
 - name: Require the persistent homelab mount before writing OpenClaw state
   ansible.builtin.command: "mountpoint -q {{ docker_apps_data_root }}"
   changed_when: false
+
+- name: Inspect the validated native OpenClaw cutover marker
+  ansible.builtin.stat:
+    path: "{{ openclaw_native_cutover_marker_path }}"
+    follow: false
+  register: openclaw_native_cutover_marker
+
+- name: Read the validated native OpenClaw cutover marker
+  ansible.builtin.slurp:
+    src: "{{ openclaw_native_cutover_marker_path }}"
+  register: openclaw_native_cutover_marker_content
+  when: openclaw_native_cutover_marker.stat.exists | default(false)
+  no_log: true
+
+- name: Require the exact validated native OpenClaw cutover marker
+  ansible.builtin.assert:
+    that:
+      - openclaw_native_cutover_marker.stat.isreg | default(false)
+      - not (openclaw_native_cutover_marker.stat.islnk | default(false))
+      - openclaw_native_cutover_marker.stat.uid == 0
+      - openclaw_native_cutover_marker.stat.gid == 0
+      - openclaw_native_cutover_marker.stat.mode == '0600'
+      - (openclaw_native_cutover_marker_content.content | b64decode) == openclaw_native_transition_marker_value + '\n'
+    fail_msg: >-
+      The native cutover marker exists but is malformed; refusing to start or
+      hold either Gateway until an operator resolves the ambiguity.
+  when: openclaw_native_cutover_marker.stat.exists | default(false)
+  no_log: true
+
+- name: Require the permanent source hold before tracked Docker rollback
+  ansible.builtin.assert:
+    that:
+      - openclaw_native_cutover_marker.stat.exists | default(false)
+    fail_msg: >-
+      Docker rollback is allowed only from a completed native cutover with its
+      exact permanent source hold marker intact.
+  when: openclaw_docker_rollback_activate | bool
+
+- name: Check for a half-committed native OpenClaw listener
+  ansible.builtin.wait_for:
+    host: "{{ openclaw_ip }}"
+    port: "{{ openclaw_gateway_port }}"
+    state: stopped
+    connect_timeout: 1
+    timeout: 2
+  register: openclaw_unmarked_native_listener_probe
+  changed_when: false
+  failed_when: false
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
+
+- name: Reject an unmarked native OpenClaw listener before Docker startup
+  ansible.builtin.assert:
+    that:
+      - openclaw_unmarked_native_listener_probe.msg is not defined
+    fail_msg: >-
+      A native OpenClaw listener is reachable without the validated source
+      marker; refusing to start Docker and risk split brain.
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
+
+- name: Preserve the validated native cutover and hold Docker Gateway stopped
+  when:
+    - openclaw_native_cutover_marker.stat.exists | default(false)
+    - not (openclaw_docker_rollback_activate | bool)
+  block:
+    - name: Require the validated native Gateway to remain ready
+      ansible.builtin.uri:
+        url: "http://{{ openclaw_ip }}:{{ openclaw_gateway_port }}/readyz"
+        method: GET
+        status_code: 200
+        return_content: false
+      register: openclaw_native_cutover_readiness
+      changed_when: false
+      retries: 6
+      delay: 5
+      until: openclaw_native_cutover_readiness.status == 200
+
+    - name: Stop the retained Docker OpenClaw Gateway
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - stop
+          - --timeout
+          - "30"
+          - openclaw-gateway
+      args:
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_retained_gateway_stop
+      changed_when: >-
+        'Stopped' in (openclaw_retained_gateway_stop.stdout ~ openclaw_retained_gateway_stop.stderr) or
+        'Stopping' in (openclaw_retained_gateway_stop.stdout ~ openclaw_retained_gateway_stop.stderr)
+
+    - name: Assert the retained Docker OpenClaw Gateway remains stopped
+      ansible.builtin.shell: |
+        set -eu
+        test -z "$(docker compose ps --status running -q openclaw-gateway)"
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_compose_root }}"
+      changed_when: false
+
+    - name: Disconnect the stopped rollback Gateway from the proxy network
+      ansible.builtin.shell: |
+        set -eu
+        container="$(docker compose ps --all -q openclaw-gateway)"
+        test -n "$container"
+        if docker inspect --format '{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}' "$container" |
+            python3 -c 'import json, sys; raise SystemExit(0 if "homelab_proxy" in json.load(sys.stdin) else 1)'; then
+          docker network disconnect -f homelab_proxy "$container"
+          printf '%s\n' changed
+        fi
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_compose_root }}"
+      changed_when: "'changed' in openclaw_retained_gateway_proxy_disconnect.stdout"
+      register: openclaw_retained_gateway_proxy_disconnect
+
+- name: Activate the exact retained Docker Gateway for tracked rollback
+  when: openclaw_docker_rollback_activate | bool
+  block:
+    - name: Require native OpenClaw to be stopped before Docker rollback
+      ansible.builtin.wait_for:
+        host: "{{ openclaw_ip }}"
+        port: "{{ openclaw_gateway_port }}"
+        state: stopped
+        connect_timeout: 1
+        timeout: 5
+      changed_when: false
+
+    - name: Inspect the retained Docker OpenClaw config for rollback
+      ansible.builtin.slurp:
+        src: "{{ openclaw_config_path }}"
+      register: openclaw_docker_rollback_config
+      no_log: true
+
+    - name: Require the hardened HTTPS rollback config
+      ansible.builtin.assert:
+        that:
+          - openclaw_rollback_config.gateway.mode == 'local'
+          - openclaw_rollback_config.gateway.port | int == openclaw_gateway_port | int
+          - openclaw_rollback_config.gateway.bind == 'lan'
+          - openclaw_rollback_config.gateway.auth.mode == 'token'
+          - >-
+            openclaw_rollback_config.gateway.auth.token ==
+            {'source': 'file', 'provider': 'gateway_token_file', 'id': 'value'}
+          - openclaw_rollback_config.gateway.auth.allowTailscale == false
+          - >-
+            openclaw_rollback_config.gateway.auth.rateLimit ==
+            {'maxAttempts': 10, 'windowMs': 60000, 'lockoutMs': 300000, 'exemptLoopback': true}
+          - openclaw_rollback_config.gateway.controlUi.enabled == true
+          - openclaw_rollback_config.gateway.controlUi.allowedOrigins == ['https://' + openclaw_hostname]
+          - openclaw_rollback_config.gateway.terminal.enabled == false
+          - openclaw_rollback_config.gateway.allowRealIpFallback == false
+          - openclaw_rollback_config.gateway.tailscale.mode == 'off'
+          - openclaw_rollback_config.gateway.tailscale.resetOnExit == false
+          - openclaw_rollback_config.gateway.trustedProxies | default([]) | length == 0
+          - >-
+            openclaw_rollback_config.secrets.providers.gateway_token_file ==
+            {'source': 'file', 'path': '/run/secrets/openclaw_gateway_token', 'mode': 'singleValue'}
+        fail_msg: >-
+          The retained Docker config must be explicitly prepared for the exact
+          HTTPS origin without trusting proxy identity before rollback.
+      vars:
+        openclaw_rollback_config: >-
+          {{ openclaw_docker_rollback_config.content | b64decode | from_json }}
+      no_log: true
+
+    - name: Prove the exact retained Docker Gateway identity and assets
+      ansible.builtin.shell: |
+        set -eu
+        test -f compose.yml
+        test -f .env
+        test -d '{{ openclaw_setup_root }}/.git'
+        test -f '{{ openclaw_config_path }}'
+        test -d '{{ openclaw_state_root }}'
+        test -d '{{ openclaw_auth_profile_secret_root }}'
+        test -f '{{ openclaw_gateway_token_path }}'
+        container="$(docker compose ps --all -q openclaw-gateway)"
+        test -n "$container"
+        test "$(printf '%s\n' "$container" | sed '/^$/d' | wc -l)" -eq 1
+        expected_image="$(docker compose config --images)"
+        test "$(printf '%s\n' "$expected_image" | sed '/^$/d' | wc -l)" -eq 1
+        test "$(docker inspect --format '{% raw %}{{.Config.Image}}{% endraw %}' "$container")" = "$expected_image"
+        test "$(docker inspect --format '{% raw %}{{index .Config.Labels "com.docker.compose.project"}}{% endraw %}' "$container")" = openclaw
+        test "$(docker inspect --format '{% raw %}{{index .Config.Labels "com.docker.compose.service"}}{% endraw %}' "$container")" = openclaw-gateway
+        docker image inspect "$expected_image" >/dev/null
+        printf '%s\n' "$container"
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_retained_gateway_identity
+      changed_when: false
+
+    - name: Require the existing private proxy network for rollback
+      ansible.builtin.shell: |
+        set -eu
+        container='{{ openclaw_retained_gateway_identity.stdout | trim }}'
+        docker network inspect homelab_proxy | python3 -c '
+        import json, sys
+        networks = json.load(sys.stdin)
+        valid = (
+            len(networks) == 1
+            and networks[0].get("Name") == "homelab_proxy"
+            and networks[0].get("Driver") == "bridge"
+            and networks[0].get("Scope") == "local"
+            and networks[0].get("Internal") is False
+        )
+        raise SystemExit(0 if valid else 1)
+        '
+        for member in $(docker network inspect --format '{% raw %}{{range .Containers}}{{.Name}} {{end}}{% endraw %}' homelab_proxy); do
+          member_id="$(docker inspect --format '{% raw %}{{.Id}}{% endraw %}' "$member")"
+          if docker inspect --format '{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}' "$member" |
+              python3 -c '
+        import json, sys
+        network = json.load(sys.stdin).get("homelab_proxy")
+        aliases = [] if network is None else network.get("Aliases") or []
+        raise SystemExit(0 if "openclaw-rollback" in aliases else 1)
+        '; then
+            test "$member_id" = "$container"
+          fi
+        done
+      args:
+        executable: /bin/sh
+      changed_when: false
+
+    - name: Start only the exact retained Docker Gateway
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - start
+          - openclaw-gateway
+      args:
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_retained_gateway_start
+      changed_when: "'Started' in (openclaw_retained_gateway_start.stdout ~ openclaw_retained_gateway_start.stderr)"
+
+    - name: Attach the retained Gateway to the proxy with its unique rollback alias
+      ansible.builtin.shell: |
+        set -eu
+        container='{{ openclaw_retained_gateway_identity.stdout | trim }}'
+        if docker inspect --format '{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}' "$container" |
+            python3 -c '
+        import json, sys
+        network = json.load(sys.stdin).get("homelab_proxy")
+        aliases = [] if network is None else network.get("Aliases") or []
+        raise SystemExit(0 if "openclaw-rollback" in aliases else 1)
+        '; then
+          printf '%s\n' unchanged
+          exit 0
+        fi
+        docker network disconnect -f homelab_proxy "$container" 2>/dev/null || true
+        docker network connect --alias openclaw-rollback homelab_proxy "$container"
+        printf '%s\n' changed
+      args:
+        executable: /bin/sh
+      register: openclaw_retained_gateway_proxy_attach
+      changed_when: "'changed' in openclaw_retained_gateway_proxy_attach.stdout_lines"
+
+    - name: Wait for the retained Docker rollback Gateway
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ openclaw_gateway_port }}/readyz"
+        method: GET
+        status_code: 200
+        return_content: false
+      register: openclaw_docker_rollback_readiness
+      changed_when: false
+      retries: 18
+      delay: 5
+      until: openclaw_docker_rollback_readiness.status == 200
+
+    - name: Validate the running retained Gateway without recreating it
+      ansible.builtin.shell: |
+        set -eu
+        container="$(docker compose ps --status running -q openclaw-gateway)"
+        test "$container" = '{{ openclaw_retained_gateway_identity.stdout | trim }}'
+        test "$(docker inspect --format '{% raw %}{{.State.Health.Status}}{% endraw %}' "$container")" = healthy
+        docker inspect --format '{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}' "$container" |
+          python3 -c '
+        import json, sys
+        network = json.load(sys.stdin).get("homelab_proxy")
+        aliases = [] if network is None else network.get("Aliases") or []
+        raise SystemExit(0 if "openclaw-rollback" in aliases else 1)
+        '
+        test "$(stat -c '%u:%g %a' '{{ openclaw_native_cutover_marker_path }}')" = '0:0 600'
+        test "$(cat '{{ openclaw_native_cutover_marker_path }}')" = '{{ openclaw_native_transition_marker_value }}'
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_compose_root }}"
+      changed_when: false
+
+    - name: Validate and audit the retained rollback Gateway
+      ansible.builtin.shell: |
+        set -eu
+        docker compose exec -T openclaw-gateway node dist/index.js config validate --json |
+          python3 -c 'import json, sys; value=json.load(sys.stdin); raise SystemExit(0 if value.get("valid") and not value.get("warnings") else 1)'
+        docker compose exec -T openclaw-gateway node dist/index.js secrets audit --check --json |
+          python3 -c 'import json, sys; value=json.load(sys.stdin); summary=value.get("summary") or {}; raise SystemExit(0 if value.get("status") == "clean" and summary.get("plaintextCount") == 0 and summary.get("unresolvedRefCount") == 0 else 1)'
+      args:
+        executable: /bin/sh
+        chdir: "{{ openclaw_compose_root }}"
+      changed_when: false
+      no_log: true
 
 - name: Inspect the private OpenClaw repository
   ansible.builtin.stat:
@@ -54,6 +371,7 @@
     - "{{ openclaw_setup_root }}/.git"
     - "{{ openclaw_config_path }}"
   register: openclaw_setup_paths
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Require the protected private OpenClaw repository and regular config file
   ansible.builtin.assert:
@@ -71,9 +389,10 @@
       - openclaw_setup_paths.results[2].stat.uid == 0
       - openclaw_setup_paths.results[2].stat.gid == openclaw_gid | int
       - openclaw_setup_paths.results[2].stat.mode == '0640'
-    fail_msg: >-
+  fail_msg: >-
       The private openclaw-setup repository or active config has unexpected
       type, ownership, or permissions; refusing to deploy it.
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Reject deployment manifests in the private OpenClaw repository root
   ansible.builtin.find:
@@ -87,6 +406,7 @@
       - docker-compose.yaml
   register: openclaw_private_deployment_manifests
   failed_when: openclaw_private_deployment_manifests.matched > 0
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Require a clean main branch in the private OpenClaw repository
   ansible.builtin.shell: |
@@ -100,6 +420,7 @@
     executable: /bin/sh
     chdir: "{{ openclaw_setup_root }}"
   changed_when: false
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Read the active private OpenClaw revision
   ansible.builtin.command:
@@ -111,11 +432,13 @@
       - HEAD
   register: openclaw_setup_revision
   changed_when: false
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Inspect the existing OpenClaw deployment directory
   ansible.builtin.stat:
     path: "{{ openclaw_compose_root }}"
   register: openclaw_compose_root_stat
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Reject alternate OpenClaw deployment manifests
   ansible.builtin.find:
@@ -128,7 +451,9 @@
       - docker-compose.yaml
   register: openclaw_alternate_compose_files
   failed_when: openclaw_alternate_compose_files.matched > 0
-  when: openclaw_compose_root_stat.stat.isdir | default(false)
+  when:
+    - not (openclaw_native_cutover_marker.stat.exists | default(false))
+    - openclaw_compose_root_stat.stat.isdir | default(false)
 
 - name: Create OpenClaw deployment and runtime directories
   ansible.builtin.file:
@@ -168,6 +493,7 @@
       mode: "0700"
   loop_control:
     label: "{{ item.path }}"
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Install the OpenClaw Gateway token outside Git
   ansible.builtin.copy:
@@ -179,6 +505,7 @@
   register: openclaw_gateway_token_install
   no_log: true
   diff: false
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Copy the public OpenClaw Compose project
   ansible.builtin.copy:
@@ -187,6 +514,7 @@
     owner: "{{ openclaw_uid }}"
     group: "{{ openclaw_gid }}"
     mode: preserve
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Render the non-secret OpenClaw deployment environment
   ansible.builtin.template:
@@ -195,12 +523,14 @@
     owner: "{{ openclaw_uid }}"
     group: "{{ openclaw_gid }}"
     mode: "0600"
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Validate the OpenClaw Compose project
   ansible.builtin.command:
     cmd: docker compose config --quiet
     chdir: "{{ openclaw_compose_root }}"
   changed_when: false
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Read the immutable OpenClaw image from Compose
   ansible.builtin.command:
@@ -214,6 +544,7 @@
     not (openclaw_rendered_image.stdout | trim is match(
       '^ghcr\.io/openclaw/openclaw:[^@\s]+@sha256:[0-9a-f]{64}$'
     ))
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Require the loopback Gateway port to be available
   ansible.builtin.shell: |
@@ -240,12 +571,14 @@
     executable: /bin/sh
     chdir: "{{ openclaw_compose_root }}"
   changed_when: false
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Pull the immutable OpenClaw image
   ansible.builtin.command:
     cmd: docker compose pull
     chdir: "{{ openclaw_compose_root }}"
   changed_when: false
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Verify the pinned OpenClaw image runtime identity
   ansible.builtin.command:
@@ -259,6 +592,7 @@
   register: openclaw_image_user
   changed_when: false
   failed_when: openclaw_image_user.stdout | trim != 'node'
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Verify the active OpenClaw config path before startup
   ansible.builtin.command:
@@ -269,6 +603,7 @@
   register: openclaw_config_file_preflight
   changed_when: false
   failed_when: openclaw_config_file_preflight.stdout | trim != '/etc/openclaw/openclaw.json'
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Validate the active OpenClaw config before startup
   ansible.builtin.command:
@@ -282,6 +617,7 @@
     openclaw_config_validation_preflight.rc != 0 or
     not (openclaw_config_validation_preflight.stdout | from_json).valid or
     (openclaw_config_validation_preflight.stdout | from_json).warnings | length > 0
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Audit OpenClaw secrets before startup
   ansible.builtin.command:
@@ -295,6 +631,7 @@
     openclaw_secrets_audit_preflight.rc != 0 or
     (openclaw_secrets_audit_preflight.stdout | from_json).status != 'clean'
   no_log: true
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Start only the OpenClaw Compose project
   ansible.builtin.command:
@@ -310,6 +647,7 @@
     'Created' in (openclaw_compose_up.stdout ~ openclaw_compose_up.stderr) or
     'Started' in (openclaw_compose_up.stdout ~ openclaw_compose_up.stderr) or
     'Removed orphan' in (openclaw_compose_up.stdout ~ openclaw_compose_up.stderr)
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Wait for the OpenClaw Gateway container to become healthy
   ansible.builtin.shell: |
@@ -325,6 +663,7 @@
   retries: 18
   delay: 5
   until: openclaw_gateway_health.rc == 0
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))
 
 - name: Check the OpenClaw Gateway readiness endpoint
   ansible.builtin.uri:
@@ -337,3 +676,4 @@
   retries: 6
   delay: 5
   until: openclaw_gateway_readiness.status == 200
+  when: not (openclaw_native_cutover_marker.stat.exists | default(false))

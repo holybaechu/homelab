@@ -102,6 +102,7 @@ run_foreground_target() {
 
 if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
   tailnet_entry=""
+  openclaw_entry=""
   docker_apps_entry=""
   pve_entry=""
   parallel_targets=""
@@ -109,15 +110,23 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
     target="${entry%%:*}"
     case "${target}" in
       tailnet) tailnet_entry="${entry}" ;;
+      openclaw) openclaw_entry="${entry}" ;;
       docker_apps) docker_apps_entry="${entry}" ;;
       pve) pve_entry="${entry}" ;;
       *) parallel_targets="${parallel_targets} ${entry}" ;;
     esac
   done
 
-  for required_entry in "${tailnet_entry}" "${docker_apps_entry}" "${pve_entry}"; do
+  # The native Gateway must be ready before Docker-host Traefik is reconciled.
+  # On the initial staged deployment it remains deliberately stopped, while
+  # after cutover this ordering prevents routing to an unready rebuilt LXC.
+  for required_entry in \
+    "${tailnet_entry}" \
+    "${openclaw_entry}" \
+    "${docker_apps_entry}" \
+    "${pve_entry}"; do
     if [ -z "${required_entry}" ]; then
-      echo "The site deployment requires tailnet, docker_apps, and pve targets" >&2
+      echo "The site deployment requires tailnet, openclaw, docker_apps, and pve targets" >&2
       exit 2
     fi
     target="${required_entry%%:*}"

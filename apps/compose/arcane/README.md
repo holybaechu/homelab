@@ -8,10 +8,16 @@ update itself.
 - Private UI: `https://arcane.home.hchu.me`
 - Loopback recovery endpoint: `http://127.0.0.1:3552`
 - Persistent state: `/srv/homelab/docker-apps/arcane/data`
-- Managed projects: `/opt/homelab-compose/{platform,media,code,openclaw}`
+- Managed projects before native cutover:
+  `/opt/homelab-compose/{platform,media,code,openclaw}`
+- Managed projects after the OpenClaw finalizer:
+  `/opt/homelab-compose/{platform,media,code}`
 
 The sibling `/opt/homelab-compose/openclaw-setup` private repository is mounted
 read-only inside Arcane and is never registered as an Arcane project.
+The retained OpenClaw Compose files and container remain on disk after cutover,
+but Arcane's OpenClaw sync stays retired during native operation and tracked
+Docker rollback.
 
 The Docker socket is mounted only into the private socket-proxy container.
 The proxy reduces the exposed API surface, but Arcane can still create

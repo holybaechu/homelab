@@ -7,3 +7,5 @@ common_debian_packages:
   - python3-apt
   - sudo
   - tzdata
+
+common_debian_create_service_account: true

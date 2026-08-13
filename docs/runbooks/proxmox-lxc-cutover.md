@@ -1,9 +1,10 @@
-# Proxmox Two-LXC Cutover Checklist
+# Proxmox LXC Cutover Checklist
 
 Use the detailed `docker-compose-migration.md` runbook for commands and
 rollback. The cutover gate is:
 
-- OpenTofu manages only VMID 111 (`tailnet`) and VMID 110 (`docker_apps`).
+- OpenTofu manages VMID 111 (`tailnet`), VMID 110 (`docker_apps`), and the
+  dedicated unprivileged native OpenClaw VMID 118 (`openclaw`).
 - VMIDs 110/111 are hostname-verified and `vzdump`-backed before replacement.
 - Legacy VMIDs 113, 114, and 116 are forgotten with `destroy = false`, not
   destroyed.
@@ -16,6 +17,8 @@ rollback. The cutover gate is:
 - VMID 111 retains `/dev/net/tun` for Tailscale.
 - VMID 110 has no TUN passthrough; it retains nesting/keyctl and the single
   `/var/lib/homelab` bind mount.
+- VMID 118 has no nesting, keyctl, TUN passthrough, or host bind mount. Its
+  port 18789 ingress is accepted only from Traefik on `192.168.0.3`.
 - The active Compose projects (`platform`, `media`, `code`, and `openclaw`) are
   running and Ansible live validation passes.
 - The media project has one direct qBittorrent instance at

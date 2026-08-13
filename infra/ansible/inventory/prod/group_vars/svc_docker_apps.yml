@@ -14,6 +14,10 @@ openclaw_control_root: /opt/homelab-control/openclaw
 openclaw_secret_root: "{{ openclaw_control_root }}/secrets"
 openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
 openclaw_gateway_port: 18789
+openclaw_hostname: openclaw.home.hchu.me
+openclaw_native_cutover_marker_path: /opt/homelab-control/openclaw/native-cutover-validated
+openclaw_native_transition_marker_value: homelab-openclaw-native-migration-v1
+openclaw_traefik_runtime_contract_marker_path: /opt/homelab-control/openclaw/traefik-runtime-contract.sha256
 openclaw_uid: "{{ service_uid }}"
 openclaw_gid: "{{ service_gid }}"
 openclaw_timezone: "{{ homelab_timezone }}"
@@ -118,8 +122,11 @@ docker_compose_projects:
     dest: "{{ docker_apps_compose_root }}/platform"
     runtime_files:
       - compose.yml
-      - dynamic.yml
       - traefik.yml
+    runtime_file_force_recreate_services:
+      - traefik
+    hot_reload_files:
+      - dynamic/routes.yml
     env_template: platform.env.j2
     config_templates:
       - src: AdGuardHome.yaml.j2

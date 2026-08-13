@@ -64,6 +64,14 @@
         or tailscale_running_executable.stdout != "/usr/sbin/tailscaled"
       when: tailscale_restart_scheduled | default(false)
 
+- name: Stage or activate the dedicated native OpenClaw Gateway
+  hosts: svc_openclaw
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: openclaw_native
+      tags: [openclaw, openclaw_native]
+
 - name: Configure Docker Compose application LXC
   hosts: svc_docker_apps
   gather_facts: true

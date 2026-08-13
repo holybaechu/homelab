@@ -6,6 +6,25 @@ homelab_timezone: Asia/Seoul
 
 tailnet_ip: "{{ hostvars['tailnet'].ansible_host }}"
 docker_apps_ip: "{{ hostvars['docker_apps'].ansible_host }}"
+openclaw_ip: "{{ hostvars['openclaw'].ansible_host }}"
+
+# Break-glass rollback is a tracked, mutually exclusive desired state.  It is
+# deliberately false throughout native staging and normal native operation.
+openclaw_docker_rollback_activate: false
+openclaw_traefik_backend_url: >-
+  {{
+    'http://openclaw-rollback:18789'
+    if openclaw_docker_rollback_activate | bool
+    else 'http://' + openclaw_ip + ':18789'
+  }}
+
+openclaw_lxc_allocation:
+  vmid: 118
+  hostname: openclaw
+  ip_address: "{{ openclaw_ip }}/24"
+  mac_address: 02:00:00:BA:EC:05
+  datastore_id: "{{ openclaw_root_datastore_id }}"
+  required_storage_gb: 32
 
 service_user: homelab
 service_group: homelab
@@ -60,6 +79,19 @@ pve_lxc_root_options:
       - description: retired Gluetun TUN device
         pattern: '^dev0: /dev/net/tun(,.*)?$'
         pct_args: '-delete dev0'
+  - vmid: 118
+    name: openclaw
+    settings: []
+    absent_settings:
+      - description: nesting or keyctl features
+        pattern: '^features:.*[ ,](nesting|keyctl)=1(,|$)'
+        pct_args: '-delete features'
+      - description: TUN device passthrough
+        pattern: '^dev[0-9]+: (path=)?/dev/net/tun(,.*)?$'
+        delete_matching_keys: true
+      - description: bind mounts
+        pattern: '^mp[0-9]+:'
+        delete_matching_keys: true
 
 pve_lxc_access_bootstrap:
   - vmid: 111
@@ -67,4 +99,7 @@ pve_lxc_access_bootstrap:
     os_family: debian
   - vmid: 110
     name: docker_apps
+    os_family: debian
+  - vmid: 118
+    name: openclaw
     os_family: debian

@@ -5,13 +5,14 @@ def read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_only_tailnet_and_docker_apps_are_managed_lxcs():
+def test_tailnet_docker_apps_and_openclaw_are_managed_lxcs():
     topology = read("infra/opentofu/envs/prod/containers.auto.tfvars")
     inventory = read("infra/ansible/inventory/prod/hosts.yml")
 
-    assert topology.count("vmid             =") == 2
+    assert topology.count("vmid             =") == 3
     assert "tailnet = {" in topology
     assert "docker_apps = {" in topology
+    assert "openclaw = {" in topology
     for retired in ("dns", "edge", "downloads", "files", "minecraft", "hermes"):
         assert f"  {retired} = {{" not in topology
         assert f"svc_{retired}:" not in inventory
@@ -20,6 +21,11 @@ def test_only_tailnet_and_docker_apps_are_managed_lxcs():
     assert 'ip_address       = "192.168.0.3/24"' in topology
     assert "vmid             = 111" in topology
     assert 'ip_address       = "192.168.0.4/24"' in topology
+    assert "vmid             = 118" in topology
+    assert 'hostname         = "openclaw"' in topology
+    assert 'ip_address       = "192.168.0.5/24"' in topology
+    assert 'mac_address      = "02:00:00:BA:EC:05"' in topology
+    assert "startup_order    = 3" in topology
 
 
 def test_retired_lxcs_are_forgotten_without_destruction():
@@ -33,7 +39,7 @@ def test_retired_lxcs_are_forgotten_without_destruction():
 def test_only_tailnet_keeps_tun_and_docker_lxc_removes_its_retired_device():
     all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
     tailnet = all_vars.split("  - vmid: 111", 1)[1].split("  - vmid: 110", 1)[0]
-    docker = all_vars.split("  - vmid: 110", 1)[1].split("pve_lxc_access_bootstrap:", 1)[0]
+    docker = all_vars.split("  - vmid: 110", 1)[1].split("  - vmid: 118", 1)[0]
 
     assert "pass through tun device for Tailscale" in tailnet
     assert "retired Gluetun TUN device" in docker
@@ -43,6 +49,37 @@ def test_only_tailnet_keeps_tun_and_docker_lxc_removes_its_retired_device():
     assert "enable nesting for Docker Engine in LXC" in docker
     assert "-mp0 /var/lib/homelab,mp=/srv/homelab" in docker
     assert "-mp1" not in docker
+
+
+def test_openclaw_lxc_has_no_nested_features_tun_or_bind_mounts():
+    topology = read("infra/opentofu/envs/prod/containers.auto.tfvars")
+    module = read("infra/opentofu/modules/pve-lxc/main.tf")
+    all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
+    openclaw = all_vars.split("  - vmid: 118", 1)[1].split(
+        "pve_lxc_access_bootstrap:", 1
+    )[0]
+
+    assert "unprivileged  = true" in module
+    assert "features {" not in module
+    assert "device_passthrough" not in topology
+    assert "mount_point" not in topology
+    assert "settings: []" in openclaw
+    assert "nesting or keyctl features" in openclaw
+    assert "TUN device passthrough" in openclaw
+    assert "(path=)?/dev/net/tun" in openclaw
+    assert "bind mounts" in openclaw
+    assert openclaw.count("delete_matching_keys: true") == 2
+
+
+def test_openclaw_is_in_debian_inventory_and_pve_bootstrap():
+    inventory = read("infra/ansible/inventory/prod/hosts.yml")
+    all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
+
+    assert "        openclaw:\n          ansible_host: 192.168.0.5" in inventory
+    assert "    svc_openclaw:\n      hosts:\n        openclaw:" in inventory
+    assert "openclaw_ip: \"{{ hostvars['openclaw'].ansible_host }}\"" in all_vars
+    bootstrap = all_vars.split("pve_lxc_access_bootstrap:", 1)[1]
+    assert "  - vmid: 118\n    name: openclaw\n    os_family: debian" in bootstrap
 
 
 def test_debian_bootstrap_materializes_proxmox_dns_before_apt():

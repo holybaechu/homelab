@@ -15,7 +15,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
       - /etc/ssl/certs/homelab-pve-root-ca.pem:/etc/ssl/certs/homelab-pve-root-ca.pem:ro
       - traefik_data:/data
     networks:

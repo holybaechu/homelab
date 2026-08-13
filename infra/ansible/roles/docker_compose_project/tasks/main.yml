@@ -142,6 +142,54 @@
     label: "{{ item.0.name }}:{{ item.1 }}"
   register: docker_compose_project_file_copy
 
+- name: Inspect tracked Compose hot-reload directories
+  ansible.builtin.stat:
+    path: "{{ item.0.dest }}/{{ item.1 | dirname }}"
+    follow: false
+  loop: "{{ docker_compose_projects | subelements('hot_reload_files', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }}:{{ item.1 | dirname }}"
+  register: docker_compose_hot_reload_directories
+
+- name: Reject redirected tracked Compose hot-reload directories
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (item.stat.exists | default(false)) or
+        (
+          item.stat.isdir | default(false) and
+          not (item.stat.islnk | default(false))
+        )
+    fail_msg: >-
+      A tracked Compose hot-reload directory is a symlink or non-directory;
+      refusing to copy files through a redirected path.
+  loop: "{{ docker_compose_hot_reload_directories.results }}"
+  loop_control:
+    label: "{{ item.item.0.name }}:{{ item.item.1 | dirname }}"
+
+- name: Create tracked Compose hot-reload directories
+  ansible.builtin.file:
+    path: "{{ item.0.dest }}/{{ item.1 | dirname }}"
+    state: directory
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    mode: "0755"
+    follow: false
+  loop: "{{ docker_compose_projects | subelements('hot_reload_files', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }}:{{ item.1 | dirname }}"
+
+- name: Copy tracked Compose hot-reload files without forcing recreation
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../{{ item.0.src }}/{{ item.1 }}"
+    dest: "{{ item.0.dest }}/{{ item.1 }}"
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    mode: preserve
+  loop: "{{ docker_compose_projects | subelements('hot_reload_files', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }}:{{ item.1 }}"
+
 - name: Read existing AdGuard admin password hash
   ansible.builtin.command:
     argv:
@@ -324,6 +372,7 @@
           (
             docker_compose_project_file_copy.results
             | selectattr('changed')
+            | rejectattr('item.0.runtime_file_force_recreate_services', 'defined')
             | map(attribute='item.0.name')
             | list
           )
@@ -346,6 +395,20 @@
   changed_when: false
   no_log: true
 
+- name: Select Compose projects that require isolated service recreation
+  ansible.builtin.set_fact:
+    docker_compose_force_recreate_service_projects: >-
+      {{
+        docker_compose_project_file_copy.results
+        | selectattr('changed')
+        | selectattr('item.0.runtime_file_force_recreate_services', 'defined')
+        | map(attribute='item.0.name')
+        | unique
+        | list
+      }}
+  changed_when: false
+  no_log: true
+
 - name: Validate Compose project forced recreation selection
   ansible.builtin.assert:
     that:
@@ -357,6 +420,56 @@
         docker_compose_force_recreate_projects | unique | list | length
         == docker_compose_force_recreate_projects | length
     fail_msg: The forced recreation selection must contain unique declared Compose project names only.
+
+- name: Validate isolated Compose service recreation declarations
+  ansible.builtin.assert:
+    that:
+      - >-
+        docker_compose_force_recreate_service_projects | difference(
+          docker_compose_projects | map(attribute='name') | list
+        ) | length == 0
+      - >-
+        item.runtime_file_force_recreate_services | default([]) | unique | list | length
+        == item.runtime_file_force_recreate_services | default([]) | length
+      - >-
+        item.runtime_file_force_recreate_services | default([]) | reject('string') | list | length == 0
+      - >-
+        item.runtime_file_force_recreate_services | default([]) | select('equalto', '') | list | length == 0
+    fail_msg: Isolated recreation declarations must contain unique non-empty service names only.
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Validate isolated recreation services exist in their Compose projects
+  ansible.builtin.command:
+    cmd: docker compose config --services
+    chdir: "{{ item.dest }}"
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.runtime_file_force_recreate_services is defined
+  register: docker_compose_declared_services
+  changed_when: false
+  failed_when: >-
+    docker_compose_declared_services.rc != 0 or
+    item.runtime_file_force_recreate_services | difference(
+      docker_compose_declared_services.stdout_lines
+    ) | length > 0
+
+- name: Recreate only services with changed service-specific runtime inputs
+  ansible.builtin.command:
+    cmd: >-
+      docker compose up -d --build --force-recreate --no-deps
+      {{ item.1 }}
+    chdir: "{{ item.0.dest }}"
+  loop: >-
+    {{ docker_compose_projects
+       | subelements('runtime_file_force_recreate_services', skip_missing=True) }}
+  loop_control:
+    label: "{{ item.0.name }}:{{ item.1 }}"
+  when: item.0.name in docker_compose_force_recreate_service_projects
+  register: docker_compose_service_up
+  changed_when: true
 
 - name: Pull Compose project images
   ansible.builtin.command:
