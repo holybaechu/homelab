@@ -535,7 +535,11 @@
           - "{{ openclaw_uid | string }}"
           - --gid
           - "{{ openclaw_gid | string }}"
+      register: openclaw_retained_gateway_contract_validation
       changed_when: false
+      retries: 3
+      delay: 2
+      until: openclaw_retained_gateway_contract_validation.rc == 0
       no_log: true
       when:
         - openclaw_native_cutover_marker_validation.stat.exists | default(false)

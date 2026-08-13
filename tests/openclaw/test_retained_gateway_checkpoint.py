@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import itertools
 import json
 import sys
 from pathlib import Path
@@ -113,6 +114,16 @@ def load_helper():
 
 def task_by_name(tasks: list[dict], name: str) -> dict:
     return next(task for task in tasks if task.get("name") == name)
+
+
+def assert_bounded_fail_closed_retry(task: dict) -> None:
+    register = task["register"]
+    assert task["retries"] == 3
+    assert task["delay"] == 2
+    assert task["until"] == f"{register}.rc == 0"
+    assert "failed_when" not in task
+    assert "ignore_errors" not in task
+    assert task["no_log"] is True
 
 
 def identity(**updates):
@@ -417,9 +428,13 @@ def live_mount_contract():
     return config, state, auth, token, host_mounts, realized_mounts
 
 
-def test_exact_requested_and_realized_mount_contract_accepts_live_shape():
+@pytest.mark.parametrize("order", list(itertools.permutations(range(4))))
+def test_exact_requested_and_realized_mount_contract_accepts_every_realized_order(
+    order,
+):
     helper = load_helper()
     config, state, auth, token, host_mounts, realized = live_mount_contract()
+    realized = [realized[index] for index in order]
 
     helper.validate_mount_contract(
         host_mounts, realized, config, state, auth, token
@@ -441,9 +456,16 @@ def test_exact_requested_and_realized_mount_contract_accepts_live_shape():
         "realized_destination",
         "realized_mode",
         "realized_rw",
+        "realized_rw_type",
         "realized_propagation",
         "realized_extra_key",
-        "realized_order",
+        "realized_missing_key",
+        "realized_duplicate",
+        "realized_missing",
+        "realized_extra",
+        "realized_outer_type",
+        "realized_entry_type",
+        "realized_destination_type",
     ],
 )
 def test_exact_requested_and_realized_mount_contract_rejects_every_drift(mutation):
@@ -473,12 +495,35 @@ def test_exact_requested_and_realized_mount_contract_rejects_every_drift(mutatio
         realized[0]["Mode"] = "ro"
     elif mutation == "realized_rw":
         realized[0]["RW"] = True
+    elif mutation == "realized_rw_type":
+        realized[0]["RW"] = 0
     elif mutation == "realized_propagation":
         realized[0]["Propagation"] = "rshared"
     elif mutation == "realized_extra_key":
         realized[0]["Name"] = "unexpected"
+    elif mutation == "realized_missing_key":
+        realized[0].pop("Propagation")
+    elif mutation == "realized_duplicate":
+        realized[1] = dict(realized[0])
+    elif mutation == "realized_missing":
+        realized.pop()
+    elif mutation == "realized_extra":
+        realized.append(
+            {
+                "Type": "bind",
+                "Source": "/attacker",
+                "Destination": "/attacker",
+                "Mode": "",
+                "RW": False,
+                "Propagation": "rprivate",
+            }
+        )
+    elif mutation == "realized_outer_type":
+        realized = tuple(realized)
+    elif mutation == "realized_entry_type":
+        realized[0] = "malformed"
     else:
-        realized[0], realized[1] = realized[1], realized[0]
+        realized[0]["Destination"] = ["/etc/openclaw/openclaw.json"]
 
     with pytest.raises(helper.ContractError):
         helper.validate_mount_contract(
@@ -861,6 +906,10 @@ def test_checkpoint_is_seeded_only_after_native_fence_and_required_before_rollba
     preserve = task_by_name(
         tasks, "Preserve the validated native cutover and hold Docker Gateway stopped"
     )["block"]
+    running = task_by_name(
+        preserve, "Inspect whether the retained Docker OpenClaw Gateway is running"
+    )
+    stop = task_by_name(preserve, "Stop the retained Docker OpenClaw Gateway")
     disconnect = task_by_name(
         preserve, "Disconnect the stopped rollback Gateway from the proxy network"
     )
@@ -868,6 +917,11 @@ def test_checkpoint_is_seeded_only_after_native_fence_and_required_before_rollba
         preserve,
         "Require retained rollback assets and their immutable identity checkpoint",
     )
+    assert preserve.index(running) < preserve.index(stop) < preserve.index(disconnect)
+    assert stop["when"] == (
+        "openclaw_retained_gateway_running.stdout | trim | length > 0"
+    )
+    assert stop["changed_when"] is True
     assert preserve.index(disconnect) < preserve.index(proof)
     assert proof["ansible.builtin.command"]["argv"][1:4] == [
         "require",
@@ -878,6 +932,7 @@ def test_checkpoint_is_seeded_only_after_native_fence_and_required_before_rollba
     assert proof["no_log"] is True
     assert proof["when"] == "hostvars['openclaw'].openclaw_native_activate | bool"
     assert proof["changed_when"] is False
+    assert_bounded_fail_closed_retry(proof)
     assert all(
         "seed" not in task.get("ansible.builtin.command", {}).get("argv", [])
         for task in preserve
@@ -901,7 +956,7 @@ def test_checkpoint_is_seeded_only_after_native_fence_and_required_before_rollba
         "rollback",
     ]
     assert "--require-expected-token" in checkpoint["ansible.builtin.command"]["argv"]
-    assert checkpoint["no_log"] is True
+    assert_bounded_fail_closed_retry(checkpoint)
 
 
 def test_full_validation_rechecks_checkpoint_in_native_and_rollback_states():
@@ -947,7 +1002,7 @@ def test_full_validation_rechecks_checkpoint_in_native_and_rollback_states():
         "(hostvars['openclaw'].openclaw_native_activate | bool) or "
         "(openclaw_docker_rollback_activate | bool)",
     ]
-    assert task["no_log"] is True
+    assert_bounded_fail_closed_retry(task)
 
 
 def test_pre_site_fence_verifies_before_native_mutation_and_always_cleans_up():
@@ -1013,6 +1068,8 @@ def test_pre_site_fence_verifies_before_native_mutation_and_always_cleans_up():
     assert tasks.index(inspect) < tasks.index(pre_stop) < tasks.index(stop)
     assert tasks.index(stop) < tasks.index(stopped_require)
     assert "length > 0" in pre_stop["when"][-1]
+    assert "length > 0" in stop["when"][-1]
+    assert stop["changed_when"] is True
     assert "length > 0" in stopped_require["when"][-1]
     assert "length == 0" in checkpoint["when"][-1]
     mode = checkpoint["ansible.builtin.command"]["argv"][1]
@@ -1023,6 +1080,8 @@ def test_pre_site_fence_verifies_before_native_mutation_and_always_cleans_up():
     assert pre_stop["ansible.builtin.command"]["argv"][3] == "rollback"
     assert stopped_require["ansible.builtin.command"]["argv"][3] == "stopped"
     assert rollback["ansible.builtin.command"]["argv"][5] == "rollback"
+    for verifier_task in (pre_stop, stopped_require, checkpoint, rollback):
+        assert_bounded_fail_closed_retry(verifier_task)
 
 
 @pytest.mark.parametrize(

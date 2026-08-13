@@ -197,6 +197,11 @@ def test_pre_native_fence_and_static_route_tuple_run_before_any_site_mutation():
     ]
     assert "openclaw_native_activate" in " ".join(stop["when"])
     assert "not (openclaw_docker_rollback_activate | bool)" in stop["when"]
+    assert (
+        "openclaw_pre_site_retained_gateway_running.stdout | trim | length > 0"
+        in stop["when"]
+    )
+    assert stop["changed_when"] is True
     assert workflow.index("Fence retained Docker OpenClaw before native reconciliation") < workflow.index(
         "- name: Deploy services"
     )

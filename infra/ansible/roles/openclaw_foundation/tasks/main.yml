@@ -239,6 +239,21 @@
       delay: 5
       until: openclaw_native_cutover_readiness.status == 200
 
+    - name: Inspect whether the retained Docker OpenClaw Gateway is running
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - ps
+          - --status
+          - running
+          - -q
+          - openclaw-gateway
+      args:
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_retained_gateway_running
+      changed_when: false
+
     - name: Stop the retained Docker OpenClaw Gateway
       ansible.builtin.command:
         argv:
@@ -251,9 +266,8 @@
       args:
         chdir: "{{ openclaw_compose_root }}"
       register: openclaw_retained_gateway_stop
-      changed_when: >-
-        'Stopped' in (openclaw_retained_gateway_stop.stdout ~ openclaw_retained_gateway_stop.stderr) or
-        'Stopping' in (openclaw_retained_gateway_stop.stdout ~ openclaw_retained_gateway_stop.stderr)
+      changed_when: true
+      when: openclaw_retained_gateway_running.stdout | trim | length > 0
 
     - name: Assert the retained Docker OpenClaw Gateway remains stopped
       ansible.builtin.shell: |
@@ -321,7 +335,11 @@
       args:
         stdin: "{{ openclaw_gateway_token | trim }}\n"
         stdin_add_newline: false
+      register: openclaw_retained_gateway_stopped_contract
       changed_when: false
+      retries: 3
+      delay: 2
+      until: openclaw_retained_gateway_stopped_contract.rc == 0
       no_log: true
       when: hostvars['openclaw'].openclaw_native_activate | bool
 
@@ -416,7 +434,11 @@
       args:
         stdin: "{{ openclaw_gateway_token | trim }}\n"
         stdin_add_newline: false
+      register: openclaw_retained_gateway_rollback_contract
       changed_when: false
+      retries: 3
+      delay: 2
+      until: openclaw_retained_gateway_rollback_contract.rc == 0
       no_log: true
 
     - name: Prove the exact retained Docker Gateway identity and assets

@@ -836,7 +836,40 @@ def validate_mount_contract(
         "retained requested mount contract drifted",
     )
     require(
-        json_type_exact(realized_mounts, expected_realized_mounts),
+        type(realized_mounts) is list,
+        "retained realized mounts are not a list",
+    )
+    require(
+        all(type(mount) is dict for mount in realized_mounts),
+        "retained realized mount entries are malformed",
+    )
+    realized_destinations = [mount.get("Destination") for mount in realized_mounts]
+    require(
+        all(type(destination) is str for destination in realized_destinations),
+        "retained realized mount destinations are malformed",
+    )
+    require(
+        len(realized_destinations) == len(set(realized_destinations)),
+        "retained realized mount destinations are duplicated",
+    )
+    expected_by_destination = {
+        mount["Destination"]: mount for mount in expected_realized_mounts
+    }
+    realized_by_destination = {
+        mount["Destination"]: mount for mount in realized_mounts
+    }
+    require(
+        set(realized_by_destination) == set(expected_by_destination),
+        "retained realized mount destinations drifted",
+    )
+    require(
+        all(
+            json_type_exact(
+                realized_by_destination[destination],
+                expected_mount,
+            )
+            for destination, expected_mount in expected_by_destination.items()
+        ),
         "retained realized mount contract drifted",
     )
 

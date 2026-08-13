@@ -58,7 +58,11 @@
   args:
     stdin: "{{ openclaw_gateway_token | trim }}\n"
     stdin_add_newline: false
+  register: openclaw_pre_site_running_rollback_contract
   changed_when: false
+  retries: 3
+  delay: 2
+  until: openclaw_pre_site_running_rollback_contract.rc == 0
   no_log: true
   when:
     - hostvars['openclaw'].openclaw_native_activate | bool
@@ -77,12 +81,11 @@
   args:
     chdir: "{{ openclaw_compose_root }}"
   register: openclaw_native_primary_source_stop
-  changed_when: >-
-    'Stopped' in (openclaw_native_primary_source_stop.stdout ~ openclaw_native_primary_source_stop.stderr) or
-    'Stopping' in (openclaw_native_primary_source_stop.stdout ~ openclaw_native_primary_source_stop.stderr)
+  changed_when: true
   when:
     - hostvars['openclaw'].openclaw_native_activate | bool
     - not (openclaw_docker_rollback_activate | bool)
+    - openclaw_pre_site_retained_gateway_running.stdout | trim | length > 0
 
 - name: Prove the retained Docker Gateway is fenced before native starts
   ansible.builtin.shell: |
@@ -158,7 +161,11 @@
   args:
     stdin: "{{ openclaw_gateway_token | trim }}\n"
     stdin_add_newline: false
+  register: openclaw_pre_site_stopped_rollback_contract
   changed_when: false
+  retries: 3
+  delay: 2
+  until: openclaw_pre_site_stopped_rollback_contract.rc == 0
   no_log: true
   when:
     - hostvars['openclaw'].openclaw_native_activate | bool
@@ -218,6 +225,9 @@
     stdin_add_newline: false
   register: openclaw_pre_site_retained_gateway_checkpoint_proof
   changed_when: "'changed=true' in openclaw_pre_site_retained_gateway_checkpoint_proof.stdout_lines"
+  retries: 3
+  delay: 2
+  until: openclaw_pre_site_retained_gateway_checkpoint_proof.rc == 0
   no_log: true
   when:
     - hostvars['openclaw'].openclaw_native_activate | bool
@@ -265,6 +275,10 @@
   args:
     stdin: "{{ openclaw_gateway_token | trim }}\n"
     stdin_add_newline: false
+  register: openclaw_pre_site_rollback_contract
   changed_when: false
+  retries: 3
+  delay: 2
+  until: openclaw_pre_site_rollback_contract.rc == 0
   no_log: true
   when: openclaw_docker_rollback_activate | bool
