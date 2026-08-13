@@ -374,6 +374,71 @@ def test_migration_orchestration_is_explicit_fail_closed_and_secret_quiet():
     assert "curl -fsS http://192.168.0.5:18789/readyz" in script
     assert "OPENCLAW_GATEWAY_TOKEN=" not in script
     assert "OPENCLAW_GATEWAY_TOKEN_FILE=" in script
+    handshake_proof = script.split(
+        "<<'GATEWAY_TOKEN_HANDSHAKE_PROOF'", maxsplit=1
+    )[1].split("GATEWAY_TOKEN_HANDSHAKE_PROOF", maxsplit=1)[0]
+    assert "gateway-token-handshake-proof" in script
+    assert "gateway-rpc-proof" not in script
+    assert "set -eu\numask 077\ncredential=" in handshake_proof
+    assert "OPENCLAW_STATE_DIR=\"$probe_state\"" in handshake_proof
+    assert "OPENCLAW_STATE_DIR=/var/lib/openclaw" not in handshake_proof
+    assert "OPENCLAW_WORKSPACE_DIR=\"$probe_state/workspace\"" in handshake_proof
+    assert "OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspace" not in handshake_proof
+    assert "OPENCLAW_AUTH_STORE_READONLY=1" in handshake_proof
+    assert 'sudo -u openclaw test -w "$probe_state"' in handshake_proof
+    assert handshake_proof.count('-mindepth 1 -print -quit') == 1
+    assert 'identity_exists=0' in handshake_proof
+    assert 'identity_symlink=0' in handshake_proof
+    assert 'test -e "$probe_state/identity" && identity_exists=1' in handshake_proof
+    assert 'test -L "$probe_state/identity" && identity_symlink=1' in handshake_proof
+    assert "exit 76" in handshake_proof
+    assert "timeout --signal=TERM --kill-after=5s 45s" in handshake_proof
+    assert 'assert "remote" not in gateway' in handshake_proof
+    assert 'assert payload.get("ok") is True' in handshake_proof
+    assert 'assert payload.get("degraded") is True' in handshake_proof
+    assert 'assert payload.get("capability") == "connected_no_operator_scope"' in handshake_proof
+    assert 'assert payload.get("primaryTargetId") == "explicit"' in handshake_proof
+    assert 'assert len(explicit_targets) == 1' in handshake_proof
+    assert 'assert sorted(target.get("id") for target in targets) == ["explicit", "localLoopback"]' in handshake_proof
+    assert 'assert explicit.get("kind") == "explicit"' in handshake_proof
+    assert 'assert explicit.get("active") is True' in handshake_proof
+    assert 'assert explicit.get("url") == "ws://192.168.0.5:18789"' in handshake_proof
+    assert 'assert connect.get("ok") is True' in handshake_proof
+    assert 'assert connect.get("rpcOk") is False' in handshake_proof
+    assert 'assert connect.get("scopeLimited") is True' in handshake_proof
+    assert 'assert auth.get("role") == "operator"' in handshake_proof
+    assert 'assert auth.get("scopes") == []' in handshake_proof
+    assert 'assert auth.get("capability") == "connected_no_operator_scope"' in handshake_proof
+    assert 'assert len(loopback_targets) == 1' in handshake_proof
+    assert 'assert loopback.get("url") == "ws://127.0.0.1:18789"' in handshake_proof
+    assert 'assert loopback.get("connect", {}).get("ok") is False' in handshake_proof
+    assert 'assert len(warnings) == 1' in handshake_proof
+    assert 'assert warnings[0].get("code") == "probe_scope_limited"' in handshake_proof
+    assert 'assert warnings[0].get("targetIds") == ["explicit"]' in handshake_proof
+    assert 'rm -rf -- "$probe_state"' in handshake_proof
+    transient_cleanup = script.split(
+        "<<'CLEANUP_MIGRATION_TRANSIENTS'", maxsplit=1
+    )[1].split("CLEANUP_MIGRATION_TRANSIENTS", maxsplit=1)[0]
+    assert 'test -d "$probe_state"' in transient_cleanup
+    assert 'test ! -L "$probe_state"' in transient_cleanup
+    assert 'readlink -m -- "$probe_state"' in transient_cleanup
+    assert '"openclaw:openclaw 700"' in transient_cleanup
+    assert 'rm -rf -- "$probe_state"' in transient_cleanup
+    assert 'test ! -L "$credential"' in transient_cleanup
+    assert 'test ! -L "$probe"' in transient_cleanup
+    cleanup_definition = script.index("cleanup_destination_migration_transients()")
+    cleanup_trap = script.index("trap cleanup EXIT")
+    early_cleanup = script.index(
+        "cleanup_destination_migration_transients", cleanup_trap
+    )
+    marker_inspection = script.index('destination_marker_state="$(run_ssh')
+    stale_inspection = script.index('stale_migration_state="$(run_ssh')
+    assert cleanup_definition < cleanup_trap < early_cleanup < marker_inspection
+    assert early_cleanup < stale_inspection
+    cleanup_body = script.split("cleanup() {", maxsplit=1)[1].split(
+        "trap cleanup EXIT", maxsplit=1
+    )[0]
+    assert "cleanup_destination_migration_transients >/dev/null 2>&1" in cleanup_body
     https_proof = script.index("https://openclaw.home.hchu.me/healthz")
     destination_marker = script.index("mark-validated-native")
     source_marker = script.index("mark-validated-source")
@@ -385,6 +450,13 @@ def test_migration_orchestration_is_explicit_fail_closed_and_secret_quiet():
     assert script.count("recoverable_state_detected=1") == 2
     assert '[ "${recoverable_state_detected}" -eq 1 ]' in script
     assert '[ "${result}" -eq 1 ]' in script
+
+    runbook = (
+        REPO_ROOT / "docs" / "runbooks" / "openclaw-native-migration.md"
+    ).read_text(encoding="utf-8")
+    assert "authenticated Gateway RPC" not in runbook
+    assert "shared-token-authenticated Gateway handshake" in runbook
+    assert "First device pairing remains a user action." in runbook
 
     paired_recovery = script.split(
         'if [ "${destination_marker_state}" = valid ]', maxsplit=1

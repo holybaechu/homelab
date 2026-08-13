@@ -643,6 +643,9 @@
         (openclaw_native_config.content | b64decode |
         from_json).gateway.auth.token ==
         {'source': 'file', 'provider': 'gateway_token_file', 'id': 'value'}
+      - >-
+        'remote' not in
+        (openclaw_native_config.content | b64decode | from_json).gateway
     fail_msg: >-
       The protected native config must retain the exact Gateway token provider
       and token SecretRef schema.
@@ -891,29 +894,29 @@
           environment, command line, config, raw journal, or credential
           material.
 
-- name: Probe native RPC through an isolated service-user credential
+- name: Validate the native Gateway token handshake without operator scope
   when: openclaw_native_activate | bool
   block:
-    - name: Create a temporary native RPC credential directory
+    - name: Create a temporary native Gateway handshake credential directory
       ansible.builtin.tempfile:
         state: directory
         path: /run
-        prefix: openclaw-rpc-credential-
-      register: openclaw_validation_credential_dir
+        prefix: openclaw-handshake-credential-
+      register: openclaw_gateway_handshake_credential_dir
       no_log: true
 
-    - name: Protect the temporary native RPC credential directory
+    - name: Protect the temporary native Gateway handshake credential directory
       ansible.builtin.file:
-        path: "{{ openclaw_validation_credential_dir.path }}"
+        path: "{{ openclaw_gateway_handshake_credential_dir.path }}"
         state: directory
         owner: root
         group: "{{ openclaw_group }}"
         mode: "0750"
 
-    - name: Materialize a read-only service-user RPC credential
+    - name: Materialize a read-only service-user Gateway handshake credential
       ansible.builtin.copy:
         src: "{{ openclaw_gateway_token_path }}"
-        dest: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
+        dest: "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token"
         remote_src: true
         owner: "{{ openclaw_user }}"
         group: "{{ openclaw_group }}"
@@ -921,11 +924,51 @@
       no_log: true
       diff: false
 
+    - name: Create an isolated native Gateway handshake state directory
+      ansible.builtin.tempfile:
+        state: directory
+        path: /run
+        prefix: openclaw-handshake-state-
+      register: openclaw_validation_handshake_state_dir
+      no_log: true
+
+    - name: Protect the isolated native Gateway handshake state
+      ansible.builtin.file:
+        path: "{{ openclaw_validation_handshake_state_dir.path }}"
+        state: directory
+        owner: "{{ openclaw_user }}"
+        group: "{{ openclaw_group }}"
+        mode: "0700"
+      no_log: true
+
+    - name: Prove the isolated native Gateway handshake state starts without device identity
+      ansible.builtin.shell: |
+        set -eu
+        test -d "{{ openclaw_validation_handshake_state_dir.path }}"
+        test ! -L "{{ openclaw_validation_handshake_state_dir.path }}"
+        test -w "{{ openclaw_validation_handshake_state_dir.path }}"
+        test -z "$(find "{{ openclaw_validation_handshake_state_dir.path }}" -mindepth 1 -print -quit)"
+        test ! -e "{{ openclaw_validation_handshake_state_dir.path }}/identity"
+        test ! -L "{{ openclaw_validation_handshake_state_dir.path }}/identity"
+      args:
+        executable: /bin/sh
+      become: true
+      become_user: "{{ openclaw_user }}"
+      changed_when: false
+      no_log: true
+
     # Pinned 2026.7.1-2 resolves the local gateway.auth.token SecretRef for an
-    # explicit probe target, so no raw credential is needed in process argv.
-    - name: Probe the active native OpenClaw Gateway RPC endpoint
+    # explicit probe target. A fresh isolated state and read-only auth storage
+    # ensure a stored or newly persisted device identity cannot mask the
+    # shared-token authorization edge; incidental migration artifacts may be
+    # written to the temporary state and are removed with it.
+    - name: Collect the active native Gateway scope-limited token handshake
       ansible.builtin.command:
         argv:
+          - /usr/bin/timeout
+          - --signal=TERM
+          - --kill-after=5s
+          - 45s
           - "{{ openclaw_node_release_root }}/bin/node"
           - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
           - gateway
@@ -935,25 +978,164 @@
           - --json
       become: true
       become_user: "{{ openclaw_user }}"
-      environment: *openclaw_native_cli_environment
-      register: openclaw_native_rpc_probe
+      environment:
+        <<: *openclaw_native_cli_environment
+        OPENCLAW_STATE_DIR: "{{ openclaw_validation_handshake_state_dir.path }}"
+        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_validation_handshake_state_dir.path }}/workspace"
+        OPENCLAW_AUTH_STORE_READONLY: "1"
+        OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token"
+      register: openclaw_native_gateway_handshake
       changed_when: false
-      failed_when: >-
-        openclaw_native_rpc_probe.rc != 0 or
-        not (openclaw_native_rpc_probe.stdout | from_json).ok or
-        (openclaw_native_rpc_probe.stdout | from_json).primaryTargetId != 'explicit' or
-        (openclaw_native_rpc_probe.stdout | from_json).targets | length < 1 or
-        (openclaw_native_rpc_probe.stdout | from_json).targets[0].id != 'explicit' or
-        (openclaw_native_rpc_probe.stdout | from_json).targets[0].url !=
-          'ws://' + openclaw_bind_host + ':' + (openclaw_gateway_port | string) or
-        not (openclaw_native_rpc_probe.stdout | from_json).targets[0].connect.rpcOk
+      failed_when: false
+      no_log: true
+
+    - name: Prove the exact native Gateway scope-limited token handshake contract
+      ansible.builtin.assert:
+        that:
+          - openclaw_native_gateway_handshake.rc == 0
+          - openclaw_native_gateway_handshake_payload.ok
+          - openclaw_native_gateway_handshake_payload.degraded
+          - >-
+            openclaw_native_gateway_handshake_payload.capability ==
+            'connected_no_operator_scope'
+          - openclaw_native_gateway_handshake_payload.primaryTargetId == 'explicit'
+          - >-
+            openclaw_native_gateway_handshake_target_ids ==
+            ['explicit', 'localLoopback']
+          - openclaw_native_gateway_handshake_explicit_targets | length == 1
+          - openclaw_native_gateway_handshake_explicit_targets[0].kind == 'explicit'
+          - openclaw_native_gateway_handshake_explicit_targets[0].active
+          - >-
+            openclaw_native_gateway_handshake_explicit_targets[0].url ==
+            'ws://' + openclaw_bind_host + ':' + (openclaw_gateway_port | string)
+          - openclaw_native_gateway_handshake_explicit_targets[0].connect.ok
+          - not openclaw_native_gateway_handshake_explicit_targets[0].connect.rpcOk
+          - openclaw_native_gateway_handshake_explicit_targets[0].connect.scopeLimited
+          - openclaw_native_gateway_handshake_explicit_targets[0].auth.role == 'operator'
+          - openclaw_native_gateway_handshake_explicit_targets[0].auth.scopes == []
+          - >-
+            openclaw_native_gateway_handshake_explicit_targets[0].auth.capability ==
+            'connected_no_operator_scope'
+          - openclaw_native_gateway_handshake_loopback_targets | length == 1
+          - >-
+            openclaw_native_gateway_handshake_loopback_targets[0].url ==
+            'ws://127.0.0.1:18789'
+          - not openclaw_native_gateway_handshake_loopback_targets[0].connect.ok
+          - openclaw_native_gateway_handshake_payload.warnings | length == 1
+          - >-
+            openclaw_native_gateway_handshake_payload.warnings[0].code ==
+            'probe_scope_limited'
+          - >-
+            openclaw_native_gateway_handshake_payload.warnings[0].targetIds ==
+            ['explicit']
+        fail_msg: >-
+          The native Gateway did not return the exact authenticated,
+          scope-limited handshake contract.
+      vars:
+        openclaw_native_gateway_handshake_payload: >-
+          {{ openclaw_native_gateway_handshake.stdout | from_json }}
+        openclaw_native_gateway_handshake_target_ids: >-
+          {{ openclaw_native_gateway_handshake_payload.targets |
+             map(attribute='id') | sort | list }}
+        openclaw_native_gateway_handshake_explicit_targets: >-
+          {{ openclaw_native_gateway_handshake_payload.targets |
+             selectattr('id', 'equalto', 'explicit') | list }}
+        openclaw_native_gateway_handshake_loopback_targets: >-
+          {{ openclaw_native_gateway_handshake_payload.targets |
+             selectattr('id', 'equalto', 'localLoopback') | list }}
       no_log: true
   always:
-    - name: Remove the temporary native RPC credential directory
+    - name: Inspect the post-probe native Gateway handshake state root
+      ansible.builtin.stat:
+        path: "{{ openclaw_validation_handshake_state_dir.path }}"
+        follow: false
+      register: openclaw_gateway_handshake_state_post_probe
+      when: openclaw_validation_handshake_state_dir.path is defined
+      failed_when: false
+      no_log: true
+
+    - name: Inspect the post-probe native Gateway device identity path
+      ansible.builtin.stat:
+        path: "{{ openclaw_validation_handshake_state_dir.path }}/identity"
+        follow: false
+      register: openclaw_gateway_handshake_identity_post_probe
+      when: openclaw_validation_handshake_state_dir.path is defined
+      failed_when: false
+      no_log: true
+
+    - name: Remove the temporary native Gateway handshake credential directory
       ansible.builtin.file:
-        path: "{{ openclaw_validation_credential_dir.path }}"
+        path: "{{ openclaw_gateway_handshake_credential_dir.path }}"
         state: absent
-      when: openclaw_validation_credential_dir.path is defined
+      when: openclaw_gateway_handshake_credential_dir.path is defined
+      failed_when: false
+      no_log: true
+
+    - name: Remove the isolated native Gateway handshake state directory
+      ansible.builtin.file:
+        path: "{{ openclaw_validation_handshake_state_dir.path }}"
+        state: absent
+      when: openclaw_validation_handshake_state_dir.path is defined
+      failed_when: false
+      no_log: true
+
+    - name: Inspect the removed native Gateway handshake credential root
+      ansible.builtin.stat:
+        path: "{{ openclaw_gateway_handshake_credential_dir.path }}"
+        follow: false
+      register: openclaw_gateway_handshake_credential_after_cleanup
+      when: openclaw_gateway_handshake_credential_dir.path is defined
+      failed_when: false
+      no_log: true
+
+    - name: Inspect the removed native Gateway handshake state root
+      ansible.builtin.stat:
+        path: "{{ openclaw_validation_handshake_state_dir.path }}"
+        follow: false
+      register: openclaw_gateway_handshake_state_after_cleanup
+      when: openclaw_validation_handshake_state_dir.path is defined
+      failed_when: false
+      no_log: true
+
+    - name: Require clean native Gateway handshake probe residue
+      ansible.builtin.assert:
+        that:
+          - openclaw_gateway_handshake_state_post_probe.stat.exists | default(false)
+          - openclaw_gateway_handshake_state_post_probe.stat.isdir | default(false)
+          - not (openclaw_gateway_handshake_state_post_probe.stat.islnk | default(true))
+          - >-
+            (openclaw_gateway_handshake_state_post_probe.stat.uid | default(-1)) ==
+            (openclaw_uid | int)
+          - >-
+            (openclaw_gateway_handshake_state_post_probe.stat.gid | default(-1)) ==
+            (openclaw_gid | int)
+          - >-
+            (openclaw_gateway_handshake_state_post_probe.stat.mode |
+            default('invalid')) == '0700'
+          - >-
+            not (openclaw_gateway_handshake_identity_post_probe.stat.exists |
+            default(true))
+          - >-
+            not (openclaw_gateway_handshake_identity_post_probe.stat.islnk |
+            default(false))
+          - >-
+            not (openclaw_gateway_handshake_credential_after_cleanup.stat.exists |
+            default(true))
+          - >-
+            not (openclaw_gateway_handshake_credential_after_cleanup.stat.islnk |
+            default(false))
+          - >-
+            not (openclaw_gateway_handshake_state_after_cleanup.stat.exists |
+            default(true))
+          - >-
+            not (openclaw_gateway_handshake_state_after_cleanup.stat.islnk |
+            default(false))
+        fail_msg: >-
+          The isolated Gateway handshake probe left invalid device identity or
+          temporary-directory residue.
+      when:
+        - openclaw_gateway_handshake_credential_dir.path is defined
+        - openclaw_validation_handshake_state_dir.path is defined
       no_log: true
 
 - name: Validate native OpenClaw listener and firewall ownership

@@ -156,6 +156,41 @@ relay_tar_stream() {
     || die "destination tar extraction failed"
 }
 
+cleanup_destination_migration_transients() {
+  run_ssh "${destination_target}" "sh -s -- cleanup-migration-transients" \
+    <<'CLEANUP_MIGRATION_TRANSIENTS'
+set -eu
+probe_state=/run/openclaw-migration-probe-state
+credential=/run/openclaw-migration-gateway-token
+probe=/run/openclaw-migration-probe.json
+if test -e "$credential" || test -L "$credential"; then
+  test -f "$credential"
+  test ! -L "$credential"
+  test "$(stat -c '%U:%G %a' "$credential")" = "openclaw:openclaw 400"
+  rm -f -- "$credential"
+fi
+if test -e "$probe" || test -L "$probe"; then
+  test -f "$probe"
+  test ! -L "$probe"
+  test "$(stat -c '%U:%G %a' "$probe")" = "root:root 600"
+  rm -f -- "$probe"
+fi
+rm -f -- \
+  /root/prepare-openclaw-native-checkout.py \
+  /root/openclaw-tree-manifest.py \
+  /root/openclaw-native-watchdog.sh \
+  /var/lib/.openclaw-native-migration-validated.tmp
+rmdir /root/openclaw-migration-empty-hooks 2>/dev/null || true
+if test -e "$probe_state" || test -L "$probe_state"; then
+  test -d "$probe_state"
+  test ! -L "$probe_state"
+  test "$(readlink -m -- "$probe_state")" = "$probe_state"
+  test "$(stat -c '%U:%G %a' "$probe_state")" = "openclaw:openclaw 700"
+  rm -rf -- "$probe_state"
+fi
+CLEANUP_MIGRATION_TRANSIENTS
+}
+
 cleanup() {
   result=$?
   trap - EXIT HUP INT TERM
@@ -166,9 +201,7 @@ cleanup() {
   fi
   rm -f -- "${relay_root}/stream"
   rmdir "${relay_root}" 2>/dev/null || true
-  run_ssh "${destination_target}" \
-    "rm -f -- '${remote_prepare}' '${remote_manifest}' '${remote_native_watchdog}' /run/openclaw-migration-gateway-token /run/openclaw-migration-probe.json /var/lib/.openclaw-native-migration-validated.tmp; rmdir /root/openclaw-migration-empty-hooks 2>/dev/null || true" \
-    >/dev/null 2>&1
+  cleanup_destination_migration_transients >/dev/null 2>&1
   run_ssh "${source_target}" \
     "rm -f -- '${remote_manifest}' /opt/homelab-control/openclaw/.native-cutover-validated.tmp; rmdir /run/openclaw-migration-empty-hooks 2>/dev/null || true" \
     >/dev/null 2>&1
@@ -680,6 +713,11 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# Normalize only exact, structurally validated probe residue before inspecting
+# durable migration state. This makes a runner-killed probe recover in one
+# subsequent invocation; an unexpected object, owner, or mode remains fatal.
+cleanup_destination_migration_transients
+
 destination_marker_state="$(run_ssh "${destination_target}" "sh -s -- marker-state" <<'DESTINATION_MARKER_STATE'
 set -eu
 marker=/var/lib/.openclaw-native-migration-validated
@@ -974,7 +1012,11 @@ test ! -e /home/openclaw/.config/.openclaw.migration
 test -s /etc/openclaw/secrets/gateway_token
 test "$(stat -c '%u:%g %a' /etc/openclaw/secrets/gateway_token)" = "0:0 600"
 test ! -e /run/openclaw-migration-gateway-token
+test ! -L /run/openclaw-migration-gateway-token
 test ! -e /run/openclaw-migration-probe.json
+test ! -L /run/openclaw-migration-probe.json
+test ! -e /run/openclaw-migration-probe-state
+test ! -L /run/openclaw-migration-probe-state
 test ! -e /etc/systemd/system/multi-user.target.wants/openclaw-gateway.service
 ! systemctl is-active --quiet openclaw-gateway.service
 ! ss -H -ltn 'sport = :18789' | grep -q .
@@ -1492,21 +1534,111 @@ curl -fsS --resolve openclaw.home.hchu.me:443:192.168.0.3 \
   https://openclaw.home.hchu.me/healthz >/dev/null
 PROXY_PATH_PROOF
 
-run_ssh "${destination_target}" "sh -s -- gateway-rpc-proof" <<'GATEWAY_RPC_PROOF'
+run_ssh "${destination_target}" "sh -s -- gateway-token-handshake-proof" <<'GATEWAY_TOKEN_HANDSHAKE_PROOF'
 set -eu
+umask 077
 credential=/run/openclaw-migration-gateway-token
 probe=/run/openclaw-migration-probe.json
+probe_state=/run/openclaw-migration-probe-state
+config=/home/openclaw/openclaw-setup/config/openclaw.json
 test ! -e "$credential"
+test ! -L "$credential"
 test ! -e "$probe"
+test ! -L "$probe"
+test ! -e "$probe_state"
+test ! -L "$probe_state"
+test -f "$config"
+test ! -L "$config"
+python3 - "$config" <<'PROBE_CONFIG_JSON'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+gateway = payload.get("gateway")
+assert isinstance(gateway, dict)
+assert "remote" not in gateway
+PROBE_CONFIG_JSON
 install -o openclaw -g openclaw -m 0400 /etc/openclaw/secrets/gateway_token "$credential"
-trap 'rm -f -- /run/openclaw-migration-gateway-token /run/openclaw-migration-probe.json' EXIT HUP INT TERM
-sudo -u openclaw -H env \
+install -d -o openclaw -g openclaw -m 0700 "$probe_state"
+test -d "$probe_state"
+test ! -L "$probe_state"
+test "$(stat -c '%U:%G %a' "$probe_state")" = "openclaw:openclaw 700"
+sudo -u openclaw test -w "$probe_state"
+test -z "$(find "$probe_state" -mindepth 1 -print -quit)"
+test ! -e "$probe_state/identity"
+test ! -L "$probe_state/identity"
+finalize_gateway_handshake() {
+  handshake_result=$?
+  trap - EXIT HUP INT TERM
+  set +e
+  residue_failure=0
+
+  identity_exists=0
+  identity_symlink=0
+  test -e "$probe_state/identity" && identity_exists=1
+  test -L "$probe_state/identity" && identity_symlink=1
+  if ! test -d "$probe_state" \
+      || test -L "$probe_state" \
+      || ! test "$(readlink -m -- "$probe_state")" = /run/openclaw-migration-probe-state \
+      || ! test "$(stat -c '%U:%G %a' "$probe_state" 2>/dev/null)" = "openclaw:openclaw 700" \
+      || test "$identity_exists" -ne 0 \
+      || test "$identity_symlink" -ne 0; then
+    residue_failure=1
+  fi
+
+  credential_safe=1
+  if test -e "$credential" || test -L "$credential"; then
+    if ! test -f "$credential" \
+        || test -L "$credential" \
+        || ! test "$(stat -c '%U:%G %a' "$credential" 2>/dev/null)" = "openclaw:openclaw 400"; then
+      credential_safe=0
+      residue_failure=1
+    fi
+  fi
+  probe_safe=1
+  if test -e "$probe" || test -L "$probe"; then
+    if ! test -f "$probe" \
+        || test -L "$probe" \
+        || ! test "$(stat -c '%U:%G %a' "$probe" 2>/dev/null)" = "root:root 600"; then
+      probe_safe=0
+      residue_failure=1
+    fi
+  fi
+
+  test "$credential_safe" -eq 1 && rm -f -- "$credential"
+  test "$probe_safe" -eq 1 && rm -f -- "$probe"
+  if test -d "$probe_state" \
+      && ! test -L "$probe_state" \
+      && test "$(readlink -m -- "$probe_state")" = /run/openclaw-migration-probe-state \
+      && test "$(stat -c '%U:%G %a' "$probe_state" 2>/dev/null)" = "openclaw:openclaw 700"; then
+    rm -rf -- "$probe_state"
+  else
+    residue_failure=1
+  fi
+  if test -e "$credential" || test -L "$credential" \
+      || test -e "$probe" || test -L "$probe" \
+      || test -e "$probe_state" || test -L "$probe_state"; then
+    residue_failure=1
+  fi
+  if test "$residue_failure" -ne 0; then
+    printf '%s\n' "The isolated Gateway handshake probe left invalid temporary residue." >&2
+    exit 76
+  fi
+  exit "$handshake_result"
+}
+trap finalize_gateway_handshake EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+timeout --signal=TERM --kill-after=5s 45s sudo -u openclaw -H env \
   HOME=/home/openclaw \
   PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
   OPENCLAW_HOME=/home/openclaw \
-  OPENCLAW_STATE_DIR=/var/lib/openclaw \
+  OPENCLAW_STATE_DIR="$probe_state" \
+  OPENCLAW_AUTH_STORE_READONLY=1 \
   OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
-  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspace \
+  OPENCLAW_WORKSPACE_DIR="$probe_state/workspace" \
   OPENCLAW_DISABLE_BONJOUR=1 \
   OPENCLAW_NO_AUTO_UPDATE=1 \
   OPENCLAW_NO_RESPAWN=1 \
@@ -1522,16 +1654,38 @@ import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 assert payload.get("ok") is True
+assert payload.get("degraded") is True
+assert payload.get("capability") == "connected_no_operator_scope"
 assert payload.get("primaryTargetId") == "explicit"
 targets = payload.get("targets")
-assert isinstance(targets, list) and len(targets) == 1
-assert targets[0].get("id") == "explicit"
-assert targets[0].get("url") == "ws://192.168.0.5:18789"
-assert targets[0].get("connect", {}).get("rpcOk") is True
+assert isinstance(targets, list)
+explicit_targets = [target for target in targets if target.get("id") == "explicit"]
+loopback_targets = [target for target in targets if target.get("id") == "localLoopback"]
+assert sorted(target.get("id") for target in targets) == ["explicit", "localLoopback"]
+assert len(explicit_targets) == 1
+explicit = explicit_targets[0]
+assert explicit.get("kind") == "explicit"
+assert explicit.get("active") is True
+assert explicit.get("url") == "ws://192.168.0.5:18789"
+connect = explicit.get("connect", {})
+assert connect.get("ok") is True
+assert connect.get("rpcOk") is False
+assert connect.get("scopeLimited") is True
+auth = explicit.get("auth", {})
+assert auth.get("role") == "operator"
+assert auth.get("scopes") == []
+assert auth.get("capability") == "connected_no_operator_scope"
+assert len(loopback_targets) == 1
+loopback = loopback_targets[0]
+assert loopback.get("url") == "ws://127.0.0.1:18789"
+assert loopback.get("connect", {}).get("ok") is False
+warnings = payload.get("warnings")
+assert isinstance(warnings, list)
+assert len(warnings) == 1
+assert warnings[0].get("code") == "probe_scope_limited"
+assert warnings[0].get("targetIds") == ["explicit"]
 PROBE_JSON
-rm -f -- "$credential" "$probe"
-trap - EXIT HUP INT TERM
-GATEWAY_RPC_PROOF
+GATEWAY_TOKEN_HANDSHAKE_PROOF
 
 prove_source_fence prove-source-fence-before-markers
 

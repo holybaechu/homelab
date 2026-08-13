@@ -704,7 +704,8 @@ def test_native_openclaw_activation_validates_before_starting():
         "Flush validated OpenClaw handlers before activation",
         "Activate only the native OpenClaw system service",
         "Wait for the native OpenClaw Gateway readiness endpoint",
-        "Probe the active native OpenClaw Gateway RPC endpoint",
+        "Collect the active native Gateway scope-limited token handshake",
+        "Prove the exact native Gateway scope-limited token handshake contract",
     ]
     positions = [tasks.index(name) for name in order]
     assert positions == sorted(positions)
@@ -732,6 +733,13 @@ def test_native_openclaw_activation_validates_before_starting():
     ):
         assert hardened_git_contract in tasks
     all_tasks = list(walk_tasks(parsed_tasks))
+    secret_ref_contract = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Require the protected native OpenClaw SecretRef schema"
+    )
+    assert any("'remote' not in" in check for check in secret_ref_contract["ansible.builtin.assert"]["that"])
+    assert secret_ref_contract["no_log"] is True
     audit = next(
         task
         for task in all_tasks
@@ -756,26 +764,116 @@ def test_native_openclaw_activation_validates_before_starting():
         for task in all_tasks
     )
 
-    rpc_probe = next(
+    gateway_handshake = next(
         task
         for task in all_tasks
-        if task["name"] == "Probe the active native OpenClaw Gateway RPC endpoint"
+        if task["name"] == "Collect the active native Gateway scope-limited token handshake"
     )
-    rpc_argv = rpc_probe["ansible.builtin.command"]["argv"]
-    assert "--token" not in rpc_argv
-    assert rpc_argv[-3:] == [
+    handshake_argv = gateway_handshake["ansible.builtin.command"]["argv"]
+    assert "--token" not in handshake_argv
+    assert handshake_argv[-3:] == [
         "--url",
         "ws://{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}",
         "--json",
     ]
-    assert rpc_probe["become_user"] == "{{ openclaw_user }}"
-    assert "primaryTargetId != 'explicit'" in rpc_probe["failed_when"]
-    assert "targets[0].connect.rpcOk" in rpc_probe["failed_when"]
+    assert gateway_handshake["become_user"] == "{{ openclaw_user }}"
+    assert gateway_handshake["no_log"] is True
+    assert gateway_handshake["environment"]["OPENCLAW_STATE_DIR"] == (
+        "{{ openclaw_validation_handshake_state_dir.path }}"
+    )
+    assert gateway_handshake["environment"]["OPENCLAW_WORKSPACE_DIR"] == (
+        "{{ openclaw_validation_handshake_state_dir.path }}/workspace"
+    )
+    assert gateway_handshake["environment"]["OPENCLAW_AUTH_STORE_READONLY"] == "1"
+    assert gateway_handshake["environment"]["OPENCLAW_GATEWAY_TOKEN_FILE"] == (
+        "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token"
+    )
+    assert gateway_handshake["failed_when"] is False
+    assert gateway_handshake["ansible.builtin.command"]["argv"][:4] == [
+        "/usr/bin/timeout",
+        "--signal=TERM",
+        "--kill-after=5s",
+        "45s",
+    ]
+    handshake_assertion = next(
+        task
+        for task in all_tasks
+        if task["name"]
+        == "Prove the exact native Gateway scope-limited token handshake contract"
+    )
+    assert handshake_assertion["no_log"] is True
+    handshake_contract = "\n".join(
+        handshake_assertion["ansible.builtin.assert"]["that"]
+    )
+    for contract in (
+        "openclaw_native_gateway_handshake.rc == 0",
+        "openclaw_native_gateway_handshake_payload.ok",
+        "openclaw_native_gateway_handshake_payload.degraded",
+        "'connected_no_operator_scope'",
+        "primaryTargetId == 'explicit'",
+        "['explicit', 'localLoopback']",
+        "explicit_targets | length == 1",
+        ".kind == 'explicit'",
+        ".active",
+        ".connect.ok",
+        ".connect.rpcOk",
+        ".connect.scopeLimited",
+        ".auth.role == 'operator'",
+        ".auth.scopes == []",
+        "loopback_targets | length == 1",
+        "'ws://127.0.0.1:18789'",
+        "warnings | length == 1",
+        "'probe_scope_limited'",
+        "['explicit']",
+    ):
+        assert contract in handshake_contract
+    state_checks = [
+        task
+        for task in all_tasks
+        if task["name"]
+        in {
+            "Prove the isolated native Gateway handshake state starts without device identity",
+        }
+    ]
+    assert len(state_checks) == 1
+    for state_check in state_checks:
+        state_shell = state_check["ansible.builtin.shell"]
+        assert "test -w" in state_shell
+        assert "/identity" in state_shell
+        assert "test ! -e" in state_shell
+        assert "test ! -L" in state_shell
+        assert state_check["become_user"] == "{{ openclaw_user }}"
+    assert "-mindepth 1 -print -quit" in state_checks[0]["ansible.builtin.shell"]
     assert any(
-        task["name"] == "Remove the temporary native RPC credential directory"
+        task["name"]
+        == "Remove the temporary native Gateway handshake credential directory"
         and task["ansible.builtin.file"]["state"] == "absent"
         for task in all_tasks
     )
+    handshake_credential_copy = next(
+        task
+        for task in all_tasks
+        if task["name"]
+        == "Materialize a read-only service-user Gateway handshake credential"
+    )
+    assert "openclaw_gateway_handshake_credential_dir.path" in (
+        handshake_credential_copy["ansible.builtin.copy"]["dest"]
+    )
+    assert handshake_credential_copy["no_log"] is True
+    assert any(
+        task["name"] == "Remove the isolated native Gateway handshake state directory"
+        and task["ansible.builtin.file"]["state"] == "absent"
+        for task in all_tasks
+    )
+    residue_assertion = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Require clean native Gateway handshake probe residue"
+    )
+    residue_contract = "\n".join(residue_assertion["ansible.builtin.assert"]["that"])
+    for contract in (".stat.uid", ".stat.gid", ".stat.mode", "'0700'", "identity", "after_cleanup"):
+        assert contract in residue_contract
+    assert residue_assertion["no_log"] is True
 
 
 def test_native_readiness_failure_reports_only_allowlisted_systemd_properties():

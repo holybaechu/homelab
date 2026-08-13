@@ -67,9 +67,11 @@ the persistent native fence, then authorizes and verifies Docker restoration.
 Do not bypass a failed rollback verification.
 
 Before activating native OpenClaw, the workflow re-proves both guards and their
-deadlines. Before releasing them, it proves the backend directly, the explicit
-authenticated Gateway RPC, and the real HTTPS Traefik path without disabling
-TLS verification. It then writes paired root-owned validation markers
+deadlines. Before releasing them, it proves the backend directly, an explicit
+shared-token-authenticated Gateway handshake with the intentional authorization
+boundary of no operator scope, and the real HTTPS Traefik path without disabling
+TLS verification. First device pairing remains a user action. It then writes
+paired root-owned validation markers
 atomically, retires only the OpenClaw Arcane sync, and verifies that the old
 Gateway remains stopped and retained.
 
