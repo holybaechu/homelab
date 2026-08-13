@@ -1,5 +1,9 @@
+import os
 import re
+import subprocess
+import sys
 
+import pytest
 import yaml
 
 from tests.helpers import REPO_ROOT
@@ -24,6 +28,39 @@ def walk_tasks(tasks):
         yield task
         for section in ("block", "rescue", "always"):
             yield from walk_tasks(task.get(section, []))
+
+
+def tracked_path_classifier():
+    validation = yaml.safe_load(read(VALIDATE))
+    native_play = next(
+        play
+        for play in validation
+        if play["name"] == "Validate the dedicated native OpenClaw host"
+    )
+    task = next(
+        task
+        for task in native_play["tasks"]
+        if task["name"] == "Validate active native OpenClaw Git and secret boundaries"
+    )
+    match = re.search(
+        r'^python3 - "\$tracked_paths" <<\'PY\'\n(?P<classifier>.*?)^PY$',
+        task["ansible.builtin.shell"],
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None
+    return match.group("classifier")
+
+
+def run_tracked_path_classifier(payload, tmp_path):
+    manifest = tmp_path / "tracked-paths"
+    manifest.write_bytes(payload)
+    return subprocess.run(
+        [sys.executable, "-", str(manifest)],
+        input=tracked_path_classifier(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 def test_native_openclaw_release_and_node_are_exactly_integrity_pinned():
@@ -1083,7 +1120,16 @@ def test_active_native_validation_rechecks_git_secret_and_path_boundaries():
         "git_safe diff --quiet --no-ext-diff --no-textconv",
         "git_safe diff --cached --quiet --no-ext-diff --no-textconv",
         "ls-files --error-unmatch config/openclaw.json",
-        "auth-profile-secrets|secrets|credentials|sessions|logs|cache|tmp|temp",
+        'tracked_paths="$(mktemp /run/openclaw-native-tracked-paths.XXXXXX)"',
+        'trap cleanup_tracked_paths EXIT',
+        'trap \'exit 1\' HUP INT TERM',
+        'rm -f -- "$tracked_paths"',
+        'stat -c \'%u:%g %a %h\' "$tracked_paths"',
+        'git_safe --no-pager ls-files -z > "$tracked_paths"',
+        'python3 - "$tracked_paths" <<\'PY\'',
+        'allowed = b".env.example"',
+        'b"auth-profile-secrets"',
+        'component.startswith(b".env") or component in sensitive',
         "token_pattern='{{ openclaw_gateway_token_path }}'",
         "grep --quiet -F -f \"$token_pattern\" --",
         "test \"$tracked_token_status\" -eq 1",
@@ -1098,45 +1144,129 @@ def test_active_native_validation_rechecks_git_secret_and_path_boundaries():
         assert contract in script
     assert 'gateway_token="$(' not in script
     assert "git_safe --no-pager grep -F --" not in script
+    assert "$(git_safe --no-pager ls-files -z" not in script
 
-    tracked_path_guard = next(
-        line.strip()
-        for line in script.splitlines()
-        if "git_safe --no-pager ls-files | grep -E" in line
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b"",
+        b".env.example\0",
+        b"README.md\0config/openclaw.json\0",
+        b"nested/authentication/README\0",
+    ),
+)
+def test_active_native_tracked_path_classifier_accepts_safe_nul_manifests(
+    payload, tmp_path
+):
+    result = run_tracked_path_classifier(payload, tmp_path)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b".env\0",
+        b".env.prod\0",
+        b".env\nprod\0",
+        b".env\tprod\0",
+        b"nested/.env.example\0",
+        b"state/data.json\0",
+        b"nested/runtime/gateway.pid\0",
+        b"auth/device.json\0",
+        b"auth-profile-secrets/provider.json\0",
+        b"secrets/README\0",
+        b"credentials/token\0",
+        b"sessions/session.json\0",
+        b"logs/gateway.log\0",
+        b"cache/index\0",
+        b"tmp/probe\0",
+        b"temp/probe\0",
+    ),
+)
+def test_active_native_tracked_path_classifier_rejects_sensitive_raw_paths(
+    payload, tmp_path
+):
+    result = run_tracked_path_classifier(payload, tmp_path)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b".env.example",
+        b"\0",
+        b"README.md\0\0",
+    ),
+)
+def test_active_native_tracked_path_classifier_rejects_invalid_nul_framing(
+    payload, tmp_path
+):
+    result = run_tracked_path_classifier(payload, tmp_path)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX control-character filenames required")
+@pytest.mark.parametrize(
+    ("tracked_path", "accepted"),
+    (
+        pytest.param(".env.example", True, id="root-env-example"),
+        pytest.param(".env\nprod", False, id="newline-env"),
+        pytest.param(".env\tprod", False, id="tab-env"),
+        pytest.param("nested/.env.example", False, id="nested-env-example"),
+        pytest.param("state/data.json", False, id="state"),
+        pytest.param("nested/runtime/gateway.pid", False, id="runtime"),
+        pytest.param("auth/device.json", False, id="auth"),
+        pytest.param(
+            "auth-profile-secrets/provider.json", False, id="auth-profile-secrets"
+        ),
+        pytest.param("secrets/README", False, id="secrets"),
+        pytest.param("credentials/token", False, id="credentials"),
+        pytest.param("sessions/session.json", False, id="sessions"),
+        pytest.param("logs/gateway.log", False, id="logs"),
+        pytest.param("cache/index", False, id="cache"),
+        pytest.param("tmp/probe", False, id="tmp"),
+        pytest.param("temp/probe", False, id="temp"),
+    ),
+)
+def test_active_native_tracked_path_classifier_handles_real_git_paths(
+    tracked_path, accepted, tmp_path
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init", "--quiet", str(repo)],
+        check=True,
+        capture_output=True,
     )
-    guard_match = re.fullmatch(
-        r'test -z "\$\(git_safe --no-pager ls-files \| grep -E '
-        r"'(?P<forbidden>[^']+)' \| grep -vxF '(?P<allowed>[^']+)' "
-        r'\|\| true\)"',
-        tracked_path_guard,
+    candidate = repo / tracked_path
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_bytes(b"test\n")
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "--", tracked_path],
+        check=True,
+        capture_output=True,
     )
-    assert guard_match is not None
-    assert guard_match.group("allowed") == ".env.example"
+    manifest = subprocess.run(
+        ["git", "-C", str(repo), "ls-files", "-z"],
+        check=True,
+        capture_output=True,
+    ).stdout
 
-    forbidden_path = re.compile(guard_match.group("forbidden")).search
-    allowed_path = guard_match.group("allowed")
+    result = run_tracked_path_classifier(manifest, tmp_path)
 
-    def rejected(path):
-        return forbidden_path(path) is not None and path != allowed_path
-
-    assert not rejected(".env.example")
-    for path in (
-        ".env",
-        ".env.prod",
-        "nested/.env.example",
-        "state/data.json",
-        "nested/runtime/gateway.pid",
-        "auth/device.json",
-        "auth-profile-secrets/provider.json",
-        "secrets/README",
-        "credentials/token",
-        "sessions/session.json",
-        "logs/gateway.log",
-        "cache/index",
-        "tmp/probe",
-        "temp/probe",
-    ):
-        assert rejected(path), path
+    assert (result.returncode == 0) is accepted
+    assert result.stdout == ""
+    assert result.stderr == ""
 
 
 def test_docker_host_has_a_minimal_native_cutover_finalizer():

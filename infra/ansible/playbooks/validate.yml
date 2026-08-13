@@ -243,7 +243,65 @@
         git_safe diff --quiet --no-ext-diff --no-textconv
         git_safe diff --cached --quiet --no-ext-diff --no-textconv
         git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
-        test -z "$(git_safe --no-pager ls-files | grep -E '(^|/)(\.env([^/]*|$)|state|runtime|auth|auth-profile-secrets|secrets|credentials|sessions|logs|cache|tmp|temp)(/|$)' | grep -vxF '.env.example' || true)"
+        umask 077
+        tracked_paths="$(mktemp /run/openclaw-native-tracked-paths.XXXXXX)"
+        cleanup_tracked_paths() {
+          rm -f -- "$tracked_paths"
+        }
+        trap cleanup_tracked_paths EXIT
+        trap 'exit 1' HUP INT TERM
+        test -f "$tracked_paths"
+        test ! -L "$tracked_paths"
+        test "$(stat -c '%u:%g %a %h' "$tracked_paths")" = '0:0 600 1'
+        git_safe --no-pager ls-files -z > "$tracked_paths"
+        python3 - "$tracked_paths" <<'PY'
+        import sys
+
+        if len(sys.argv) != 2:
+            raise SystemExit(1)
+
+        try:
+            with open(sys.argv[1], "rb") as tracked_paths:
+                payload = tracked_paths.read()
+        except OSError:
+            raise SystemExit(1)
+
+        if not payload:
+            paths = ()
+        else:
+            if not payload.endswith(b"\0"):
+                raise SystemExit(1)
+            paths = payload[:-1].split(b"\0")
+            if any(not path for path in paths):
+                raise SystemExit(1)
+
+        allowed = b".env.example"
+        sensitive = frozenset(
+            {
+                b"state",
+                b"runtime",
+                b"auth",
+                b"auth-profile-secrets",
+                b"secrets",
+                b"credentials",
+                b"sessions",
+                b"logs",
+                b"cache",
+                b"tmp",
+                b"temp",
+            }
+        )
+
+        for path in paths:
+            if path == allowed:
+                continue
+            components = path.split(b"/")
+            if any(
+                component.startswith(b".env") or component in sensitive
+                for component in components
+            ):
+                raise SystemExit(1)
+        PY
         token_pattern='{{ openclaw_gateway_token_path }}'
         test -f "$token_pattern"
         test ! -L "$token_pattern"
