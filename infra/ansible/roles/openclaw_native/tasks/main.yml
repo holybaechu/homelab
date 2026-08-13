@@ -475,6 +475,23 @@
   no_log: true
   when: openclaw_native_activate | bool
 
+- name: Require the protected native OpenClaw SecretRef schema
+  ansible.builtin.assert:
+    that:
+      - >-
+        (openclaw_native_config.content | b64decode | from_json).secrets ==
+        {'providers': {'gateway_token_file': {'source': 'file',
+        'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'}}}
+      - >-
+        (openclaw_native_config.content | b64decode |
+        from_json).gateway.auth.token ==
+        {'source': 'file', 'provider': 'gateway_token_file', 'id': 'value'}
+    fail_msg: >-
+      The protected native config must retain the exact Gateway token provider
+      and token SecretRef schema.
+  no_log: true
+  when: openclaw_native_activate | bool
+
 - name: Validate native config through an isolated service-user credential
   when: openclaw_native_activate | bool
   block:
@@ -569,11 +586,14 @@
       changed_when: false
       failed_when: >-
         openclaw_native_config_values.rc != 0 or
-        (openclaw_native_config_values.stdout | from_json) != item.value
+        (openclaw_native_config_values.stdout | from_json) !=
+        (item.cli_value | default(item.value))
       loop:
-        - {path: secrets.providers.gateway_token_file.source, value: file}
-        - {path: secrets.providers.gateway_token_file.path, value: "${OPENCLAW_GATEWAY_TOKEN_FILE}"}
-        - {path: secrets.providers.gateway_token_file.mode, value: singleValue}
+        # The pinned CLI redacts every value below secrets.providers when read.
+        # Their literal schema is asserted above from the protected config slurp.
+        - {path: secrets.providers.gateway_token_file.source, value: file, cli_value: __OPENCLAW_REDACTED__}
+        - {path: secrets.providers.gateway_token_file.path, value: "${OPENCLAW_GATEWAY_TOKEN_FILE}", cli_value: __OPENCLAW_REDACTED__}
+        - {path: secrets.providers.gateway_token_file.mode, value: singleValue, cli_value: __OPENCLAW_REDACTED__}
         - {path: gateway.mode, value: local}
         - {path: gateway.port, value: "{{ openclaw_gateway_port | int }}"}
         - {path: gateway.bind, value: custom}

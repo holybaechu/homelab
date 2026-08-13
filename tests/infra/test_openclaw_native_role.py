@@ -327,6 +327,66 @@ def test_native_config_path_preflight_normalizes_only_the_cli_home_display_prefi
     assert normalize("openclaw-setup/config/openclaw.json\n") != canonical
 
 
+def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redaction():
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    all_tasks = list(walk_tasks(tasks))
+    protected = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Require the protected native OpenClaw SecretRef schema"
+    )
+    cli = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Require the proxy-only native OpenClaw config values"
+    )
+
+    assert tasks.index(protected) < next(
+        index
+        for index, task in enumerate(tasks)
+        if task["name"] == "Validate native config through an isolated service-user credential"
+    )
+    assert protected["when"] == "openclaw_native_activate | bool"
+    assert protected["no_log"] is True
+    assertions = " ".join(protected["ansible.builtin.assert"]["that"])
+    assert ".secrets == {'providers': {'gateway_token_file':" in assertions
+    assert "'source': 'file'" in assertions
+    assert "'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}'" in assertions
+    assert "'mode': 'singleValue'" in assertions
+    assert ".gateway.auth.token ==" in assertions
+    assert "'provider': 'gateway_token_file'" in assertions
+    assert "'id': 'value'" in assertions
+
+    assert cli["failed_when"] == (
+        "openclaw_native_config_values.rc != 0 or "
+        "(openclaw_native_config_values.stdout | from_json) != "
+        "(item.cli_value | default(item.value))"
+    )
+    redacted = {
+        item["path"]: item
+        for item in cli["loop"]
+        if "cli_value" in item
+    }
+    assert set(redacted) == {
+        "secrets.providers.gateway_token_file.source",
+        "secrets.providers.gateway_token_file.path",
+        "secrets.providers.gateway_token_file.mode",
+    }
+    assert {item["cli_value"] for item in redacted.values()} == {
+        "__OPENCLAW_REDACTED__"
+    }
+    assert {item["value"] for item in redacted.values()} == {
+        "file",
+        "${OPENCLAW_GATEWAY_TOKEN_FILE}",
+        "singleValue",
+    }
+    assert all(
+        "cli_value" not in item
+        for item in cli["loop"]
+        if not item["path"].startswith("secrets.providers.gateway_token_file.")
+    )
+
+
 def test_active_native_validation_enforces_private_repository_boundaries():
     plays = yaml.safe_load(read(VALIDATE))
     native_play = next(play for play in plays if play.get("hosts") == "svc_openclaw")
