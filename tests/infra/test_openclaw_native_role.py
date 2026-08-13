@@ -9,6 +9,8 @@ VALIDATE = REPO_ROOT / "infra/ansible/playbooks/validate.yml"
 STAGE_VALIDATE = (
     REPO_ROOT / "infra/ansible/playbooks/validate-openclaw-native-stage.yml"
 )
+MATERIALIZER = ROLE / "files/materialize_openclaw_credential.py"
+PROBE_UNIT = ROLE / "templates/openclaw-credential-probe.service.j2"
 
 
 def read(path):
@@ -347,13 +349,133 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "SystemCallArchitectures=native",
         "ReadOnlyPaths={{ openclaw_config_path }}",
         "LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}",
-        "Environment=OPENCLAW_GATEWAY_TOKEN_FILE=%d/openclaw_gateway_token",
+        "RuntimeDirectory=openclaw-gateway",
+        "RuntimeDirectoryMode=0700",
+        "RuntimeDirectoryPreserve=no",
+        "LimitCORE=0",
+        "Environment=OPENCLAW_GATEWAY_TOKEN_FILE=/run/openclaw-gateway/gateway_token",
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
+        "%d/openclaw_gateway_token /run/openclaw-gateway/gateway_token",
         "ReadWritePaths={{ openclaw_runtime_root }}",
         "ReadWritePaths={{ openclaw_auth_profile_secret_root }}",
     ):
         assert value in unit
     assert "systemctl --user" not in unit
     assert "gateway install" not in unit
+
+
+def test_native_openclaw_materializes_the_systemd_credential_without_privilege():
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    unit = read(ROLE / "templates/openclaw-gateway.service.j2")
+    probe = read(PROBE_UNIT)
+
+    install = next(
+        task
+        for task in tasks
+        if task["name"] == "Install the bounded OpenClaw credential materializer"
+    )
+    assert install["ansible.builtin.copy"] == {
+        "src": "materialize_openclaw_credential.py",
+        "dest": "/usr/local/libexec/materialize-openclaw-credential",
+        "owner": "root",
+        "group": "root",
+        "mode": "0755",
+    }
+    assert install["notify"] == "Restart OpenClaw Gateway"
+    directory_task = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Create native OpenClaw installation and runtime directories"
+    )
+    assert {
+        "path": "/usr/local/libexec",
+        "owner": "root",
+        "group": "root",
+        "mode": "0755",
+    } in directory_task["loop"]
+
+    for rendered in (unit, probe):
+        assert "User={{ openclaw_user }}" in rendered
+        assert "Group={{ openclaw_group }}" in rendered
+        assert (
+            "LoadCredential=openclaw_gateway_token:"
+            "{{ openclaw_gateway_token_path }}"
+        ) in rendered
+        assert "/usr/local/libexec/materialize-openclaw-credential " in rendered
+        assert "%d/openclaw_gateway_token " in rendered
+        assert "RuntimeDirectoryMode=0700" in rendered
+        assert "RuntimeDirectoryPreserve=no" in rendered
+        assert "LimitCORE=0" in rendered
+        assert "ExecStartPre=+" not in rendered
+        assert "ExecStart=+" not in rendered
+        assert "OPENCLAW_GATEWAY_TOKEN=" not in rendered
+
+    assert "RuntimeDirectory=openclaw-gateway" in unit
+    assert (
+        "Environment=OPENCLAW_GATEWAY_TOKEN_FILE="
+        "/run/openclaw-gateway/gateway_token"
+    ) in unit
+    assert (
+        "Environment=OPENCLAW_GATEWAY_TOKEN_FILE=%d/openclaw_gateway_token"
+        not in unit
+    )
+    assert "RuntimeDirectory=openclaw-credential-probe" in probe
+    assert probe.count("ExecStart=") == 1
+    assert "Environment=" not in probe
+    assert "openclaw.mjs" not in probe
+    assert "gateway --port" not in probe
+
+
+def test_staged_credential_probe_is_bounded_no_log_and_removes_all_residue():
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    probe = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Validate the staged systemd credential materialization contract"
+    )
+
+    assert probe["when"] == "not (openclaw_native_activate | bool)"
+    assert probe["no_log"] is True
+    assert [task["name"] for task in probe["block"]] == [
+        "Install the transient OpenClaw credential contract probe",
+        "Reload systemd for the OpenClaw credential contract probe",
+        "Run the staged OpenClaw credential contract probe",
+        "Prove the staged OpenClaw credential contract probe completed",
+    ]
+    rendered = probe["block"][0]["ansible.builtin.template"]
+    assert rendered == {
+        "src": "openclaw-credential-probe.service.j2",
+        "dest": "/run/systemd/system/openclaw-credential-probe.service",
+        "owner": "root",
+        "group": "root",
+        "mode": "0600",
+    }
+    run = probe["block"][2]["ansible.builtin.systemd_service"]
+    assert run == {
+        "name": "openclaw-credential-probe.service",
+        "state": "started",
+    }
+    proof = probe["block"][3]["ansible.builtin.shell"]
+    assert "--property=Result --value" in proof
+    assert "--property=ExecMainStatus --value" in proof
+    assert "= inactive" in proof
+    assert "test ! -e /run/openclaw-credential-probe" in proof
+    assert "openclaw-gateway.service" not in proof
+    assert [task["name"] for task in probe["always"]] == [
+        "Stop the staged OpenClaw credential contract probe",
+        "Remove the transient OpenClaw credential contract probe unit",
+        "Reload systemd after the OpenClaw credential contract probe",
+        "Prove the staged OpenClaw credential contract probe left no residue",
+    ]
+    cleanup = probe["always"][-1]["ansible.builtin.shell"]
+    assert "test ! -e /run/systemd/system/openclaw-credential-probe.service" in cleanup
+    assert "test ! -e /run/openclaw-credential-probe" in cleanup
+    assert "list-unit-files openclaw-credential-probe.service" in cleanup
+    assert 'listed="$(systemctl list-unit-files' in cleanup
+    assert 'test -z "${listed}"' in cleanup
+    assert "openclaw-gateway.service" not in cleanup
 
 
 def test_native_openclaw_config_and_secrets_remain_separated():
@@ -773,6 +895,38 @@ def test_site_and_validation_include_the_dedicated_openclaw_lxc():
     assert "openclaw_native_activate | bool" in validation
     assert "Reject an ambiguous native transition marker" in validation
     assert "openclaw_native_transition_marker_value + '\\n'" in validation
+
+
+def test_native_validation_rechecks_the_runtime_credential_boundary():
+    for validation_path, task_name in (
+        (STAGE_VALIDATE, "Check the staged or active native credential boundary"),
+        (VALIDATE, "Check the native Gateway runtime credential boundary"),
+    ):
+        plays = yaml.safe_load(read(validation_path))
+        native_play = next(
+            play for play in plays if play.get("hosts") == "svc_openclaw"
+        )
+        task = next(
+            task for task in native_play["tasks"] if task["name"] == task_name
+        )
+        shell = task["ansible.builtin.shell"]
+        assert task["changed_when"] is False
+        assert task["no_log"] is True
+        assert "credential=/run/openclaw-gateway/gateway_token" in shell
+        assert 'test -f "$credential"' in shell
+        assert 'test ! -L "$credential"' in shell
+        assert "stat -c '%u:%g %a %h %s'" in shell
+        assert (
+            '"{{ openclaw_uid }}:{{ openclaw_gid }} 400 1 65"' in shell
+        )
+        assert "grep -Eq '^[0-9a-fA-F]{64}$'" in shell
+        assert "test ! -e /run/openclaw-credential-probe" in shell
+        assert (
+            "test ! -e /run/systemd/system/"
+            "openclaw-credential-probe.service" in shell
+        )
+        assert "cat " not in shell
+        assert "printf" not in shell
 
 
 def test_active_native_validation_rechecks_git_secret_and_path_boundaries():

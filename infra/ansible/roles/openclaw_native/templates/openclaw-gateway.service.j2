@@ -13,6 +13,10 @@ User={{ openclaw_user }}
 Group={{ openclaw_group }}
 WorkingDirectory={{ openclaw_state_root }}
 UMask=0077
+LimitCORE=0
+RuntimeDirectory=openclaw-gateway
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=no
 
 Environment=HOME={{ openclaw_home }}
 Environment=PATH={{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin
@@ -29,10 +33,11 @@ Environment=OPENCLAW_NO_AUTO_UPDATE=1
 Environment=OPENCLAW_NO_RESPAWN=1
 Environment=OPENCLAW_SERVICE_REPAIR_POLICY=external
 Environment=OPENCLAW_SUPERVISOR_MODE=external
-Environment=OPENCLAW_GATEWAY_TOKEN_FILE=%d/openclaw_gateway_token
+Environment=OPENCLAW_GATEWAY_TOKEN_FILE=/run/openclaw-gateway/gateway_token
 
 LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}
 
+ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/openclaw_gateway_token /run/openclaw-gateway/gateway_token
 ExecStart={{ openclaw_node_current_root }}/bin/node {{ openclaw_entrypoint }} gateway --port {{ openclaw_gateway_port }}
 Restart=always
 RestartSec=5

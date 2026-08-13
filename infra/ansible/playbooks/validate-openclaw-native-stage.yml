@@ -84,11 +84,32 @@
         {% else %}
         test "$(systemctl is-enabled openclaw-gateway.service 2>/dev/null || true)" = disabled
         test "$(systemctl is-active openclaw-gateway.service 2>/dev/null || true)" = inactive
-        ! ss -H -ltn 'sport = :{{ openclaw_gateway_port }}' | grep -q .
+        listeners="$(ss -H -ltn 'sport = :{{ openclaw_gateway_port }}')"
+        test -z "${listeners}"
         {% endif %}
       args:
         executable: /bin/sh
       changed_when: false
+
+    - name: Check the staged or active native credential boundary
+      ansible.builtin.shell: |
+        set -eu
+        credential=/run/openclaw-gateway/gateway_token
+        {% if openclaw_native_stage_marker.stat.exists | default(false) %}
+        test -f "$credential"
+        test ! -L "$credential"
+        test "$(stat -c '%u:%g %a %h %s' "$credential")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 400 1 65"
+        grep -Eq '^[0-9a-fA-F]{64}$' "$credential"
+        {% else %}
+        test ! -e /run/openclaw-gateway
+        test ! -L /run/openclaw-gateway
+        {% endif %}
+        test ! -e /run/openclaw-credential-probe
+        test ! -e /run/systemd/system/openclaw-credential-probe.service
+      args:
+        executable: /bin/sh
+      changed_when: false
+      no_log: true
 
 - name: Validate the narrow Traefik stage and retained Docker Gateway
   hosts: svc_docker_apps

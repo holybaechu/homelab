@@ -101,6 +101,7 @@
     - {path: "{{ openclaw_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_home }}/.config", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
     - {path: "{{ openclaw_auth_profile_secret_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: /usr/local/libexec, owner: root, group: root, mode: "0755"}
     - {path: /run/openclaw-native-empty-hooks, owner: root, group: root, mode: "0700"}
     - {path: /etc/openclaw, owner: root, group: root, mode: "0755"}
     - {path: "{{ openclaw_secret_root }}", owner: root, group: root, mode: "0700"}
@@ -319,6 +320,15 @@
   failed_when: >-
     openclaw_published_cli_version.stdout | trim != openclaw_cli_version_output
 
+- name: Install the bounded OpenClaw credential materializer
+  ansible.builtin.copy:
+    src: materialize_openclaw_credential.py
+    dest: /usr/local/libexec/materialize-openclaw-credential
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart OpenClaw Gateway
+
 - name: Render the dedicated OpenClaw nftables policy
   ansible.builtin.template:
     src: nftables.conf.j2
@@ -345,6 +355,64 @@
   notify:
     - Reload systemd for OpenClaw
     - Restart OpenClaw Gateway
+
+- name: Validate the staged systemd credential materialization contract
+  when: not (openclaw_native_activate | bool)
+  no_log: true
+  block:
+    - name: Install the transient OpenClaw credential contract probe
+      ansible.builtin.template:
+        src: openclaw-credential-probe.service.j2
+        dest: /run/systemd/system/openclaw-credential-probe.service
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Reload systemd for the OpenClaw credential contract probe
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Run the staged OpenClaw credential contract probe
+      ansible.builtin.systemd_service:
+        name: openclaw-credential-probe.service
+        state: started
+
+    - name: Prove the staged OpenClaw credential contract probe completed
+      ansible.builtin.shell: |
+        set -eu
+        test "$(systemctl show openclaw-credential-probe.service --property=Result --value)" = success
+        test "$(systemctl show openclaw-credential-probe.service --property=ExecMainStatus --value)" = 0
+        test "$(systemctl is-active openclaw-credential-probe.service 2>/dev/null || true)" = inactive
+        test ! -e /run/openclaw-credential-probe
+      args:
+        executable: /bin/sh
+      changed_when: false
+  always:
+    - name: Stop the staged OpenClaw credential contract probe
+      ansible.builtin.systemd_service:
+        name: openclaw-credential-probe.service
+        state: stopped
+      failed_when: false
+
+    - name: Remove the transient OpenClaw credential contract probe unit
+      ansible.builtin.file:
+        path: /run/systemd/system/openclaw-credential-probe.service
+        state: absent
+
+    - name: Reload systemd after the OpenClaw credential contract probe
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Prove the staged OpenClaw credential contract probe left no residue
+      ansible.builtin.shell: |
+        set -eu
+        test ! -e /run/systemd/system/openclaw-credential-probe.service
+        test ! -e /run/openclaw-credential-probe
+        listed="$(systemctl list-unit-files openclaw-credential-probe.service --no-legend)"
+        test -z "${listed}"
+      args:
+        executable: /bin/sh
+      changed_when: false
 
 - name: Inspect the validated native OpenClaw transition marker
   ansible.builtin.stat:

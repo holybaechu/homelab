@@ -281,7 +281,8 @@
         {% if openclaw_docker_rollback_activate | bool %}
         ! systemctl is-enabled --quiet openclaw-gateway.service
         ! systemctl is-active --quiet openclaw-gateway.service
-        ! ss -H -ltn 'sport = :{{ openclaw_gateway_port }}' | grep -q .
+        listeners="$(ss -H -ltn 'sport = :{{ openclaw_gateway_port }}')"
+        test -z "${listeners}"
         {% elif openclaw_native_activate | bool or openclaw_native_transition_marker_validation.stat.exists | default(false) %}
         systemctl is-enabled --quiet openclaw-gateway.service
         systemctl is-active --quiet openclaw-gateway.service
@@ -294,6 +295,26 @@
       args:
         executable: /bin/sh
       changed_when: false
+
+    - name: Check the native Gateway runtime credential boundary
+      ansible.builtin.shell: |
+        set -eu
+        credential=/run/openclaw-gateway/gateway_token
+        {% if not (openclaw_docker_rollback_activate | bool) and (openclaw_native_activate | bool or openclaw_native_transition_marker_validation.stat.exists | default(false)) %}
+        test -f "$credential"
+        test ! -L "$credential"
+        test "$(stat -c '%u:%g %a %h %s' "$credential")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 400 1 65"
+        grep -Eq '^[0-9a-fA-F]{64}$' "$credential"
+        {% else %}
+        test ! -e /run/openclaw-gateway
+        test ! -L /run/openclaw-gateway
+        {% endif %}
+        test ! -e /run/openclaw-credential-probe
+        test ! -e /run/systemd/system/openclaw-credential-probe.service
+      args:
+        executable: /bin/sh
+      changed_when: false
+      no_log: true
 
 - name: Validate Docker Compose application host
   hosts: svc_docker_apps
