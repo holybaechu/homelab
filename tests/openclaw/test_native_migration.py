@@ -154,6 +154,90 @@ def test_tree_manifest_rejects_root_escaping_links(tmp_path, target):
         module.manifest(root)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows symlink creation requires privileges")
+def test_tree_manifest_excludes_only_exact_docker_generated_plugin_skills(tmp_path):
+    module = load_script("openclaw-tree-manifest.py")
+    source = tmp_path / "source"
+    expected = tmp_path / "expected"
+    for root in (source, expected):
+        root.mkdir()
+        (root / "kept").write_text("state\n", encoding="utf-8")
+
+    generated = source / "plugin-skills"
+    generated.mkdir()
+    for name, target in module.DOCKER_GENERATED_PLUGIN_SKILLS.items():
+        os.symlink(target, generated / name)
+
+    with pytest.raises(ValueError, match="absolute symlink target is forbidden"):
+        module.manifest(source)
+    assert module.manifest(
+        source, exclude_docker_generated_plugin_skills=True
+    ) == module.manifest(
+        expected,
+        exclude_docker_generated_plugin_skills=True,
+        allow_absent_docker_generated_plugin_skills=True,
+    )
+    with pytest.raises(ValueError, match="plugin-skills directory is absent"):
+        module.manifest(expected, exclude_docker_generated_plugin_skills=True)
+
+    (generated / "canvas").unlink()
+    os.symlink("/unexpected/canvas", generated / "canvas")
+    with pytest.raises(ValueError, match="plugin-skills link is invalid: canvas"):
+        module.manifest(source, exclude_docker_generated_plugin_skills=True)
+
+    (generated / "canvas").unlink()
+    os.symlink(
+        module.DOCKER_GENERATED_PLUGIN_SKILLS["canvas"], generated / "canvas"
+    )
+    (generated / "unexpected").write_text("must not be skipped\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="entries differ from the allowlist"):
+        module.manifest(source, exclude_docker_generated_plugin_skills=True)
+
+
+def test_migration_excludes_only_validated_ephemeral_plugin_skill_links():
+    script = (REPO_ROOT / "scripts" / "ci" / "migrate-openclaw-native.sh").read_text(
+        encoding="utf-8"
+    )
+    source_preflight = script.split("<<'SOURCE_PREFLIGHT'", maxsplit=1)[1].split(
+        "SOURCE_PREFLIGHT", maxsplit=1
+    )[0]
+    final_native_proof = script.split("<<'FINAL_NATIVE_PROOF'", maxsplit=1)[1].split(
+        "FINAL_NATIVE_PROOF", maxsplit=1
+    )[0]
+
+    assert script.count("--exclude-docker-generated-plugin-skills") == 2
+    assert script.count("--allow-absent-docker-generated-plugin-skills") == 1
+    assert (
+        "python3 '${remote_manifest}' --exclude-docker-generated-plugin-skills "
+        "'${source_runtime}/state'" in script
+    )
+    assert (
+        "python3 '${remote_manifest}' --exclude-docker-generated-plugin-skills "
+        "--allow-absent-docker-generated-plugin-skills "
+        "'${destination_state_stage}'" in script
+    )
+    assert script.count("--exclude='./plugin-skills'") == 1
+    assert "test ! -e '${destination_state_stage}/plugin-skills'" in script
+    assert "test ! -L '${destination_state_stage}/plugin-skills'" in script
+
+    expected_links = {
+        "browser-automation": "/app/dist/extensions/browser/skills/browser-automation",
+        "canvas": "/app/dist/extensions/canvas/skills/canvas",
+    }
+    assert 'test ! -L "$plugin_skills"' in source_preflight
+    assert '"1000:1000 755"' in source_preflight
+    assert "-mindepth 1 -maxdepth 1 -printf '%f\\n'" in source_preflight
+    for name, target in expected_links.items():
+        assert f'test -L "$plugin_skills/{name}"' in source_preflight
+        assert target in source_preflight
+
+    assert 'plugin_skills=/var/lib/openclaw/plugin-skills' in final_native_proof
+    assert '"1000:1000 700"' in final_native_proof
+    assert 'for plugin_skill in browser-automation canvas; do' in final_native_proof
+    assert 'case "$plugin_target" in /opt/openclaw/*)' in final_native_proof
+    assert 'test -f "$plugin_target/SKILL.md"' in final_native_proof
+
+
 def test_migration_orchestration_is_explicit_fail_closed_and_secret_quiet():
     script = (REPO_ROOT / "scripts" / "ci" / "migrate-openclaw-native.sh").read_text(
         encoding="utf-8"
@@ -218,6 +302,26 @@ def test_migration_orchestration_is_explicit_fail_closed_and_secret_quiet():
     forced_restore = script.split("<<'ROLLBACK'", maxsplit=1)[1].split(
         "ROLLBACK", maxsplit=1
     )[0]
+    authorization_line = next(
+        line.strip() for line in script.splitlines() if "<<'ROLLBACK'" in line
+    )
+    authorization_prefix = 'if ! run_ssh "${source_target}" "'
+    authorization_suffix = '" <<\'ROLLBACK\''
+    assert authorization_line.startswith(authorization_prefix)
+    assert authorization_line.endswith(authorization_suffix)
+    authorization_argv = authorization_line[
+        len(authorization_prefix) : -len(authorization_suffix)
+    ].split()
+    assert authorization_argv == [
+        "sh",
+        "-s",
+        "--",
+        "authorize-persistent-failback",
+        "${rollback_state}",
+    ]
+    assert 'operation="$1"' in forced_restore
+    assert 'requested_state="$2"' in forced_restore
+    assert 'test "$operation" = authorize-persistent-failback' in forced_restore
     assert 'atomic_guard_write "$marker_value" "$armed"' in source_fence
     assert "source_fence_proven=1" in source_fence
     assert 'printf \'%s\\n\' fenced' in source_fence

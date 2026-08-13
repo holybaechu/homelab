@@ -281,6 +281,14 @@ def test_traefik_runtime_contract_retries_every_crash_prefix_without_restarting_
     marker_guard = task_by_name(tasks, "Reject an unsafe Traefik runtime contract marker")
     marker_guard_text = " ".join(marker_guard["ansible.builtin.assert"]["that"])
     assert r"^[0-9a-f]{64}\\n$" in marker_guard_text
+    reconciliation = task_by_name(
+        tasks, "Select durable Traefik runtime contract reconciliation"
+    )["ansible.builtin.set_fact"][
+        "openclaw_traefik_runtime_contract_requires_recreate"
+    ]
+    assert "b64decode | trim" in reconciliation
+    assert "openclaw_traefik_runtime_contract.stdout | trim" in reconciliation
+    assert "+ '\\n'" not in reconciliation
     marker_names = names[
         names.index("Inspect the applied Traefik runtime contract marker") :
         names.index("Remove the superseded single-file Traefik configuration")

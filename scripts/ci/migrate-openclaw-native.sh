@@ -407,7 +407,9 @@ force="$guard_root/failback.force"
 marker_value=homelab-openclaw-native-migration-v1
 compose_root=/opt/homelab-compose/openclaw
 
-requested_state="$1"
+operation="$1"
+requested_state="$2"
+test "$operation" = authorize-persistent-failback
 case "$requested_state" in
   fenced|forced-pending|force-only) ;;
   *) exit 64 ;;
@@ -924,6 +926,20 @@ test -f config/openclaw.json
 test ! -L config/openclaw.json
 test -d "$runtime/state"
 test ! -L "$runtime/state"
+plugin_skills="$runtime/state/plugin-skills"
+test -d "$plugin_skills"
+test ! -L "$plugin_skills"
+test "$(stat -c '%u:%g %a' "$plugin_skills")" = "1000:1000 755"
+test "$(find "$plugin_skills" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)" = \
+  "$(printf '%s\n' browser-automation canvas)"
+test -L "$plugin_skills/browser-automation"
+test "$(stat -c '%u:%g %a' "$plugin_skills/browser-automation")" = "1000:1000 777"
+test "$(readlink "$plugin_skills/browser-automation")" = \
+  /app/dist/extensions/browser/skills/browser-automation
+test -L "$plugin_skills/canvas"
+test "$(stat -c '%u:%g %a' "$plugin_skills/canvas")" = "1000:1000 777"
+test "$(readlink "$plugin_skills/canvas")" = \
+  /app/dist/extensions/canvas/skills/canvas
 test -d "$runtime/auth-profile-secrets"
 test ! -L "$runtime/auth-profile-secrets"
 test -z "$(find "$runtime/auth-profile-secrets" -mindepth 1 -print -quit)"
@@ -1162,7 +1178,8 @@ run_ssh "${source_target}" \
   "cd /opt/homelab-compose/openclaw && test -z \"\$(docker compose ps --status running -q openclaw-gateway)\""
 
 source_setup_manifest="$(run_ssh "${source_target}" "python3 '${remote_manifest}' '${source_setup}'")"
-source_state_manifest="$(run_ssh "${source_target}" "python3 '${remote_manifest}' '${source_runtime}/state'")"
+source_state_manifest="$(run_ssh "${source_target}" \
+  "python3 '${remote_manifest}' --exclude-docker-generated-plugin-skills '${source_runtime}/state'")"
 source_auth_manifest="$(run_ssh "${source_target}" "python3 '${remote_manifest}' '${source_runtime}/auth-profile-secrets'")"
 
 # The runner relays each tar stream through a FIFO. Hosts never trust each
@@ -1204,15 +1221,16 @@ relay_tar_stream \
   "umask 077; install -d -o root -g openclaw -m 0750 '${destination_setup_stage}'; tar --extract --no-same-owner --no-same-permissions --directory='${destination_setup_stage}'"
 
 relay_tar_stream \
-  "tar --create --numeric-owner --one-file-system --directory='${source_runtime}/state' ." \
-  "install -d -o openclaw -g openclaw -m 0700 '${destination_state_stage}'; tar --extract --no-same-owner --no-same-permissions --directory='${destination_state_stage}'; find '${destination_state_stage}' -xdev -exec chown -h openclaw:openclaw {} +; chmod 0700 '${destination_state_stage}' '${destination_state_stage}/workspace'"
+  "tar --create --numeric-owner --one-file-system --exclude='./plugin-skills' --directory='${source_runtime}/state' ." \
+  "install -d -o openclaw -g openclaw -m 0700 '${destination_state_stage}'; tar --extract --no-same-owner --no-same-permissions --directory='${destination_state_stage}'; test ! -e '${destination_state_stage}/plugin-skills'; test ! -L '${destination_state_stage}/plugin-skills'; find '${destination_state_stage}' -xdev -exec chown -h openclaw:openclaw {} +; chmod 0700 '${destination_state_stage}' '${destination_state_stage}/workspace'"
 
 relay_tar_stream \
   "tar --create --numeric-owner --one-file-system --directory='${source_runtime}/auth-profile-secrets' ." \
   "install -d -o openclaw -g openclaw -m 0700 '${destination_auth_stage}'; tar --extract --no-same-owner --no-same-permissions --directory='${destination_auth_stage}'; find '${destination_auth_stage}' -xdev -exec chown -h openclaw:openclaw {} +; chmod 0700 '${destination_auth_stage}'"
 
 destination_setup_manifest="$(run_ssh "${destination_target}" "python3 '${remote_manifest}' '${destination_setup_stage}'")"
-destination_state_manifest="$(run_ssh "${destination_target}" "python3 '${remote_manifest}' '${destination_state_stage}'")"
+destination_state_manifest="$(run_ssh "${destination_target}" \
+  "python3 '${remote_manifest}' --exclude-docker-generated-plugin-skills --allow-absent-docker-generated-plugin-skills '${destination_state_stage}'")"
 destination_auth_manifest="$(run_ssh "${destination_target}" "python3 '${remote_manifest}' '${destination_auth_stage}'")"
 [ "${destination_setup_manifest}" = "${source_setup_manifest}" ] \
   || die "private checkout transfer verification failed"
@@ -1438,6 +1456,22 @@ systemctl is-enabled --quiet openclaw-gateway.service
 systemctl is-active --quiet openclaw-gateway.service
 curl -fsS http://192.168.0.5:18789/healthz >/dev/null
 curl -fsS http://192.168.0.5:18789/readyz >/dev/null
+plugin_skills=/var/lib/openclaw/plugin-skills
+test -d "$plugin_skills"
+test ! -L "$plugin_skills"
+test "$(stat -c '%u:%g %a' "$plugin_skills")" = "1000:1000 700"
+test "$(find "$plugin_skills" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)" = \
+  "$(printf '%s\n' browser-automation canvas)"
+for plugin_skill in browser-automation canvas; do
+  plugin_link="$plugin_skills/$plugin_skill"
+  test -L "$plugin_link"
+  test "$(stat -c '%u:%g %a' "$plugin_link")" = "1000:1000 777"
+  plugin_target="$(readlink -f "$plugin_link")"
+  case "$plugin_target" in /opt/openclaw/*) ;; *) exit 1 ;; esac
+  test -d "$plugin_target"
+  test -f "$plugin_target/SKILL.md"
+  test ! -L "$plugin_target/SKILL.md"
+done
 cd /home/openclaw/openclaw-setup
 hooks=/root/openclaw-migration-empty-hooks
 install -d -o root -g root -m 0700 "$hooks"

@@ -172,8 +172,8 @@
     openclaw_traefik_runtime_contract_requires_recreate: >-
       {{
         not (openclaw_traefik_runtime_contract_marker.stat.exists | default(false)) or
-        (openclaw_traefik_runtime_contract_marker_content.content | default('') | b64decode) !=
-          (openclaw_traefik_runtime_contract.stdout | trim) + '\n'
+        (openclaw_traefik_runtime_contract_marker_content.content | default('') | b64decode | trim) !=
+          (openclaw_traefik_runtime_contract.stdout | trim)
       }}
 
 - name: Recreate only Traefik for an unapplied runtime contract
