@@ -187,6 +187,68 @@ def test_native_openclaw_is_staged_then_explicitly_activated():
         "state": "stopped",
         "daemon_reload": True,
     }
+    staged_when = [
+        "not (openclaw_native_activate | bool)",
+        "not (openclaw_native_transition_marker.stat.exists | default(false))",
+    ]
+    diagnostic = next(
+        task
+        for task in tasks
+        if task["name"] == "Read allowlisted retained staged OpenClaw failure properties"
+    )
+    assert diagnostic["when"] == staged_when
+    argv = diagnostic["ansible.builtin.command"]["argv"]
+    assert argv[:3] == ["systemctl", "show", "openclaw-gateway.service"]
+    assert set(argv[3:]) == {
+        "--property=ActiveState",
+        "--property=SubState",
+        "--property=Result",
+        "--property=ExecMainCode",
+        "--property=ExecMainStatus",
+        "--property=NRestarts",
+    }
+    report = next(
+        task
+        for task in tasks
+        if task["name"] == "Report retained staged OpenClaw failure properties"
+    )
+    assert report["when"] == staged_when + [
+        "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
+    ]
+    assert report["ansible.builtin.debug"]["msg"] == (
+        "{{ openclaw_staged_systemd_state.stdout_lines }}"
+    )
+    reset = next(
+        task
+        for task in tasks
+        if task["name"] == "Reset the retained staged OpenClaw failure state"
+    )
+    assert reset["when"] == staged_when
+    assert reset["changed_when"] is False
+    assert reset["ansible.builtin.command"]["argv"] == [
+        "systemctl",
+        "reset-failed",
+        "openclaw-gateway.service",
+    ]
+    proof = next(
+        task
+        for task in tasks
+        if task["name"] == "Prove the uncut staged OpenClaw service remains fenced"
+    )
+    assert proof["when"] == staged_when
+    proof_shell = proof["ansible.builtin.shell"]
+    assert "systemctl is-enabled openclaw-gateway.service" in proof_shell
+    assert "systemctl is-active openclaw-gateway.service" in proof_shell
+    assert "sport = :{{ openclaw_gateway_port }}" in proof_shell
+    assert 'listeners="$(ss -H -ltn' in proof_shell
+    assert 'test -z "${listeners}"' in proof_shell
+    assert "! ss " not in proof_shell
+    stage_task_names = [task["name"] for task in tasks]
+    assert stage_task_names.index(staged["name"]) < stage_task_names.index(
+        diagnostic["name"]
+    ) < stage_task_names.index(report["name"]) < stage_task_names.index(
+        reset["name"]
+    ) < stage_task_names.index(proof["name"])
     preserve = next(
         task
         for task in tasks

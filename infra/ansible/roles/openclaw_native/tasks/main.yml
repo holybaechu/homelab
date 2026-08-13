@@ -389,6 +389,57 @@
     - not (openclaw_native_activate | bool)
     - not (openclaw_native_transition_marker.stat.exists | default(false))
 
+- name: Read allowlisted retained staged OpenClaw failure properties
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - openclaw-gateway.service
+      - --property=ActiveState
+      - --property=SubState
+      - --property=Result
+      - --property=ExecMainCode
+      - --property=ExecMainStatus
+      - --property=NRestarts
+  register: openclaw_staged_systemd_state
+  changed_when: false
+  when:
+    - not (openclaw_native_activate | bool)
+    - not (openclaw_native_transition_marker.stat.exists | default(false))
+
+- name: Report retained staged OpenClaw failure properties
+  ansible.builtin.debug:
+    msg: "{{ openclaw_staged_systemd_state.stdout_lines }}"
+  when:
+    - not (openclaw_native_activate | bool)
+    - not (openclaw_native_transition_marker.stat.exists | default(false))
+    - "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
+
+- name: Reset the retained staged OpenClaw failure state
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - reset-failed
+      - openclaw-gateway.service
+  changed_when: false
+  when:
+    - not (openclaw_native_activate | bool)
+    - not (openclaw_native_transition_marker.stat.exists | default(false))
+
+- name: Prove the uncut staged OpenClaw service remains fenced
+  ansible.builtin.shell: |
+    set -eu
+    test "$(systemctl is-enabled openclaw-gateway.service 2>/dev/null || true)" = disabled
+    test "$(systemctl is-active openclaw-gateway.service 2>/dev/null || true)" = inactive
+    listeners="$(ss -H -ltn 'sport = :{{ openclaw_gateway_port }}')"
+    test -z "${listeners}"
+  args:
+    executable: /bin/sh
+  changed_when: false
+  when:
+    - not (openclaw_native_activate | bool)
+    - not (openclaw_native_transition_marker.stat.exists | default(false))
+
 - name: Inspect the transferred private OpenClaw repository
   ansible.builtin.stat:
     path: "{{ item }}"
