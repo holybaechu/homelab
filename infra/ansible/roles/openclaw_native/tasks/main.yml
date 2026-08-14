@@ -856,53 +856,103 @@
         ((openclaw_native_config.content | b64decode | from_json).agents.list |
         selectattr('id', 'equalto', 'ctf') |
         map(attribute='tools.elevated.enabled') | list) == [false]
-      - >-
-        not (openclaw_discord_enabled | bool) or
-        (
-          (openclaw_native_config.content | b64decode | from_json).channels.discord.enabled and
-          (((openclaw_native_config.content | b64decode | from_json).channels.discord.accounts | list | sort) == ['shared']) and
-          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.dmPolicy == 'disabled' and
-          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.groupPolicy == 'allowlist' and
-          not (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.configWrites and
-          not (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.allowBots and
-          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.token ==
-          {'source': 'file', 'provider': 'discord_bot_token_file', 'id': 'value'} and
-          (
-            ((openclaw_native_config.content | b64decode | from_json).bindings |
-            selectattr('match.channel', 'equalto', 'discord') | list | length) > 0
-          ) and
-          (
-            ((openclaw_native_config.content | b64decode | from_json).bindings |
-            selectattr('match.channel', 'equalto', 'discord') |
-            selectattr('match.accountId', 'equalto', 'shared') | list | length) ==
-            ((openclaw_native_config.content | b64decode | from_json).bindings |
-            selectattr('match.channel', 'equalto', 'discord') | list | length)
-          ) and
-          (
-            ((openclaw_native_config.content | b64decode | from_json).bindings |
-            selectattr('match.channel', 'equalto', 'discord') |
-            selectattr('match.peer.kind', 'equalto', 'channel') | list | length) ==
-            ((openclaw_native_config.content | b64decode | from_json).bindings |
-            selectattr('match.channel', 'equalto', 'discord') | list | length)
-          ) and
-          (
-            ((openclaw_native_config.content | b64decode | from_json).bindings |
-            selectattr('match.channel', 'equalto', 'discord') |
-            map(attribute='match.peer.id') | list | unique | list | length) ==
-            ((openclaw_native_config.content | b64decode | from_json).bindings |
-            selectattr('match.channel', 'equalto', 'discord') | list | length)
-          ) and
-          (
-            ((openclaw_native_config.content | b64decode | from_json).bindings |
-            selectattr('agentId', 'equalto', 'ctf') |
-            selectattr('match.channel', 'equalto', 'discord') | list | length) == 1
-          )
-        )
     fail_msg: >-
       The protected native config must retain the exact Gateway token provider
       and token SecretRef schema.
   no_log: true
   when: openclaw_native_activate | bool
+
+- name: Require channel-only shared Discord routing
+  ansible.builtin.assert:
+    that:
+      - openclaw_discord.enabled | bool
+      - (openclaw_discord.accounts | list | sort) == ['shared']
+      - openclaw_discord_account.enabled | bool
+      - openclaw_discord_account.dmPolicy == 'disabled'
+      - openclaw_discord_account.groupPolicy == 'allowlist'
+      - not (openclaw_discord_account.configWrites | bool)
+      - not (openclaw_discord_account.allowBots | bool)
+      - >-
+        openclaw_discord_account.token ==
+        {'source': 'file', 'provider': 'discord_bot_token_file', 'id': 'value'}
+      - (openclaw_discord_guilds | list | sort) == ['*']
+      - openclaw_discord_account.allowFrom | default([]) | length == 0
+      - openclaw_discord_account.groupAllowFrom | default([]) | length == 0
+      - openclaw_discord_account.users | default([]) | length == 0
+      - openclaw_discord_account.roles | default([]) | length == 0
+      - openclaw_discord_wildcard.users | default([]) | length == 0
+      - openclaw_discord_wildcard.roles | default([]) | length == 0
+      - openclaw_discord_allowed_channels | length > 0
+      - >-
+        (openclaw_discord_allowed_channels | list |
+        select('match', '^[0-9]{17,20}$') | list | length) ==
+        (openclaw_discord_allowed_channels | length)
+      - >-
+        (openclaw_discord_allowed_channels | dict2items |
+        selectattr('value.enabled', 'defined') |
+        selectattr('value.enabled', 'equalto', true) | list | length) ==
+        (openclaw_discord_allowed_channels | length)
+      - >-
+        (openclaw_discord_allowed_channels | dict2items |
+        selectattr('value.users', 'defined') | list | length) == 0
+      - >-
+        (openclaw_discord_allowed_channels | dict2items |
+        selectattr('value.roles', 'defined') | list | length) == 0
+      - openclaw_discord_bindings | length > 0
+      - >-
+        (openclaw_discord_bindings |
+        selectattr('match.accountId', 'equalto', 'shared') | list | length) ==
+        (openclaw_discord_bindings | length)
+      - >-
+        (openclaw_discord_bindings |
+        selectattr('match.peer.kind', 'equalto', 'channel') | list | length) ==
+        (openclaw_discord_bindings | length)
+      - >-
+        (openclaw_discord_bindings |
+        selectattr('match.guildId', 'defined') | list | length) == 0
+      - >-
+        (openclaw_discord_bindings | map(attribute='match.peer.id') |
+        select('match', '^[0-9]{17,20}$') | list | length) ==
+        (openclaw_discord_bindings | length)
+      - >-
+        (openclaw_discord_bindings | map(attribute='match.peer.id') |
+        list | unique | list | length) ==
+        (openclaw_discord_bindings | length)
+      - >-
+        (openclaw_discord_bindings | map(attribute='match.peer.id') |
+        list | sort) == (openclaw_discord_allowed_channels | list | sort)
+      - >-
+        (openclaw_discord_bindings | map(attribute='agentId') | list |
+        difference(openclaw_native_config_parsed.agents.list |
+        map(attribute='id') | list) | length) == 0
+      - >-
+        (openclaw_discord_bindings |
+        selectattr('agentId', 'equalto', 'ctf') | list | length) > 0
+    fail_msg: >-
+      The shared Discord account must use numeric channel IDs as its only
+      authorization and routing keys. Every allowed channel must have exactly
+      one binding to a configured agent; user, role, guild, and DM allowlists
+      are not permitted.
+  vars:
+    openclaw_native_config_parsed: >-
+      {{ openclaw_native_config.content | b64decode | from_json }}
+    openclaw_discord: >-
+      {{ openclaw_native_config_parsed.get('channels', {}).get('discord', {}) }}
+    openclaw_discord_account: >-
+      {{ openclaw_discord.get('accounts', {}).get('shared', {}) }}
+    openclaw_discord_guilds: >-
+      {{ openclaw_discord_account.get('guilds', {}) }}
+    openclaw_discord_wildcard: >-
+      {{ openclaw_discord_guilds.get('*', {}) }}
+    openclaw_discord_allowed_channels: >-
+      {{ openclaw_discord_wildcard.get('channels', {}) }}
+    openclaw_discord_bindings: >-
+      {{ openclaw_native_config_parsed.get('bindings', []) |
+      selectattr('match.channel', 'equalto', 'discord') | list }}
+  no_log: true
+  when:
+    - openclaw_native_activate | bool
+    - openclaw_discord_enabled | bool
 
 - name: Validate native config through an isolated service-user credential
   when: openclaw_native_activate | bool

@@ -42,9 +42,9 @@ version available from their configured apt repositories.
 - `LOW_ID_CUTOVER_CONFIRMED`: set to `true` only for the first 117/112 to
   110/111 renumber after reviewing the plan
 - `OPENCLAW_DISCORD_ENABLED`: optional `true`/`false` switch. Set it to
-  `true` only after the private shared Discord fragment has real guild,
-  channel, and approved-user IDs for every bound agent and the CTF transport
-  bridge/service split is deployed.
+  `true` only after the private shared Discord fragment has real numeric
+  channel IDs for every bound agent and the CTF transport bridge/service split
+  is deployed.
 
 The native OpenClaw reservation is not duplicated as a GitHub variable. Its
 exact production identity (`192.168.0.5`, `02:00:00:BA:EC:05`) is hardcoded in

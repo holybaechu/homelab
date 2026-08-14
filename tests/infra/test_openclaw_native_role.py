@@ -605,17 +605,23 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         for task in all_tasks
         if task["name"] == "Require the protected native OpenClaw SecretRef schema"
     )
+    discord_routing = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Require channel-only shared Discord routing"
+    )
     cli = next(
         task
         for task in all_tasks
         if task["name"] == "Require the proxy-only native OpenClaw config values"
     )
 
-    assert tasks.index(protected) < next(
+    config_preflight_index = next(
         index
         for index, task in enumerate(tasks)
         if task["name"] == "Validate native config through an isolated service-user credential"
     )
+    assert tasks.index(protected) < tasks.index(discord_routing) < config_preflight_index
     assert protected["when"] == "openclaw_native_activate | bool"
     assert protected["no_log"] is True
     assertions = " ".join(protected["ansible.builtin.assert"]["that"])
@@ -627,15 +633,40 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     assert "'discord_bot_token_file':" in assertions
     assert "'path': '${OPENCLAW_DISCORD_BOT_TOKEN_FILE}'" in assertions
     assert "openclaw_discord_enabled | bool" in assertions
-    assert "groupPolicy == 'allowlist'" in assertions
-    assert "dmPolicy == 'disabled'" in assertions
-    assert ".accounts.shared" in assertions
-    assert "selectattr('match.accountId', 'equalto', 'shared')" in assertions
-    assert "selectattr('match.peer.kind', 'equalto', 'channel')" in assertions
-    assert "map(attribute='match.peer.id') | list | unique" in assertions
     assert ".gateway.auth.token ==" in assertions
     assert "'provider': 'gateway_token_file'" in assertions
     assert "'id': 'value'" in assertions
+
+    assert discord_routing["when"] == [
+        "openclaw_native_activate | bool",
+        "openclaw_discord_enabled | bool",
+    ]
+    assert discord_routing["no_log"] is True
+    routing_assertions = " ".join(discord_routing["ansible.builtin.assert"]["that"])
+    assert "groupPolicy == 'allowlist'" in routing_assertions
+    assert "dmPolicy == 'disabled'" in routing_assertions
+    assert "openclaw_discord_guilds | list | sort) == ['*']" in routing_assertions
+    assert "allowFrom | default([]) | length == 0" in routing_assertions
+    assert "groupAllowFrom | default([]) | length == 0" in routing_assertions
+    assert "users | default([]) | length == 0" in routing_assertions
+    assert "roles | default([]) | length == 0" in routing_assertions
+    assert "select('match', '^[0-9]{17,20}$')" in routing_assertions
+    assert "selectattr('match.accountId', 'equalto', 'shared')" in routing_assertions
+    assert "selectattr('match.peer.kind', 'equalto', 'channel')" in routing_assertions
+    assert "selectattr('match.guildId', 'defined')" in routing_assertions
+    assert "map(attribute='match.peer.id')" in routing_assertions
+    assert "difference(openclaw_native_config_parsed.agents.list" in routing_assertions
+    assert "selectattr('agentId', 'equalto', 'ctf')" in routing_assertions
+    assert "== 1" not in routing_assertions
+    assert set(discord_routing["vars"]) == {
+        "openclaw_native_config_parsed",
+        "openclaw_discord",
+        "openclaw_discord_account",
+        "openclaw_discord_guilds",
+        "openclaw_discord_wildcard",
+        "openclaw_discord_allowed_channels",
+        "openclaw_discord_bindings",
+    }
 
     assert cli["failed_when"] == (
         "openclaw_native_config_values.rc != 0 or "
