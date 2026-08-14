@@ -431,7 +431,7 @@ def test_cd_workflow_pins_actions_and_tailscale_version():
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7" in workflow
     assert "tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4" in workflow
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7" in ci
-    assert "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6" in ci
+    assert "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7" in ci
 
     connect_tailscale = workflow.split("- name: Connect Tailscale", maxsplit=1)[1]
     connect_tailscale = connect_tailscale.split("- name: Install tooling", maxsplit=1)[0]
