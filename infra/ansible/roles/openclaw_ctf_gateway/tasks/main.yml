@@ -19,7 +19,8 @@
       - openclaw_ctf_docker_client_key_path == openclaw_secret_root + '/ctf_docker_client_key'
       - openclaw_ctf_docker_known_hosts_path == openclaw_secret_root + '/ctf_docker_known_hosts'
       - openclaw_ctf_codex_profile_id == 'openai:ctf'
-      - openclaw_ctf_codex_model == 'openai/gpt-5.5'
+      - openclaw_ctf_codex_model == 'openai/gpt-5.6-terra'
+      - openclaw_ctf_codex_thinking_default == 'xhigh'
       - openclaw_ctf_codex_plugin_spec == 'npm:@openclaw/codex@2026.7.1-1'
       - openclaw_relay_ctf_hmac_path == openclaw_secret_root + '/discord_relay_ctf_hmac'
       - openclaw_native_activate is boolean
@@ -192,6 +193,7 @@
       - openclaw_ctf_gateway_config.gateway.terminal.enabled == false
       - openclaw_ctf_gateway_config.agents.list | map(attribute='id') | list == ['ctf']
       - openclaw_ctf_gateway_config.agents.list[0].model.primary == openclaw_ctf_codex_model
+      - openclaw_ctf_gateway_config.agents.list[0].thinkingDefault == openclaw_ctf_codex_thinking_default
       - openclaw_ctf_gateway_config.auth.order.openai == [openclaw_ctf_codex_profile_id]
       - >-
         openclaw_ctf_gateway_config.models.providers.openai ==

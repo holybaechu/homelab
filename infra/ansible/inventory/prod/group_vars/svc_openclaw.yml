@@ -36,7 +36,8 @@ openclaw_ctf_plugin_source_root: "{{ openclaw_setup_root }}/plugins/openclaw-dis
 openclaw_ctf_plugin_root: /opt/openclaw-ctf-plugins/openclaw-discord-relay-ctf
 openclaw_ctf_gateway_token_path: "{{ openclaw_secret_root }}/ctf_gateway_token"
 openclaw_ctf_codex_profile_id: openai:ctf
-openclaw_ctf_codex_model: openai/gpt-5.5
+openclaw_ctf_codex_model: openai/gpt-5.6-terra
+openclaw_ctf_codex_thinking_default: xhigh
 openclaw_ctf_codex_plugin_spec: npm:@openclaw/codex@2026.7.1-1
 openclaw_ctf_gateway_port: 19789
 openclaw_ctf_gateway_bind_host: 127.0.0.1
@@ -64,6 +65,13 @@ openclaw_workspace_root: "{{ openclaw_state_root }}/workspace"
 openclaw_auth_profile_secret_root: "{{ openclaw_home }}/.config/openclaw"
 openclaw_cache_root: /var/cache/openclaw
 openclaw_compile_cache_root: "{{ openclaw_cache_root }}/node-compile-cache"
+# Every core agent inherits this subscription-backed model unless it is
+# deliberately given an identical explicit override. The CTF Gateway keeps a
+# separate profile and state root below, so its Docker boundary remains intact.
+openclaw_codex_profile_id: openai:main
+openclaw_codex_model: openai/gpt-5.6-terra
+openclaw_codex_thinking_default: xhigh
+openclaw_codex_plugin_spec: npm:@openclaw/codex@2026.7.1-1
 openclaw_secret_root: /etc/openclaw/secrets
 openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
 # Discord is owned by a dedicated relay, not either OpenClaw Gateway. The

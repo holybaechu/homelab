@@ -143,7 +143,8 @@ def test_ctf_gateway_is_a_separate_uid_scoped_to_the_ctf_config_and_workspace():
         "openclaw_ctf_workspace_root == '/srv/openclaw-ctf'",
         "openclaw_ctf_sandbox_skills_root == openclaw_ctf_state_root + '/sandbox/skills-workspaces'",
             "openclaw_ctf_codex_profile_id == 'openai:ctf'",
-            "openclaw_ctf_codex_model == 'openai/gpt-5.5'",
+            "openclaw_ctf_codex_model == 'openai/gpt-5.6-terra'",
+            "openclaw_ctf_codex_thinking_default == 'xhigh'",
             "openclaw_ctf_codex_plugin_spec == 'npm:@openclaw/codex@2026.7.1-1'",
     ):
         assert required in assertions
@@ -160,6 +161,7 @@ def test_ctf_gateway_is_a_separate_uid_scoped_to_the_ctf_config_and_workspace():
         "models.providers.openai ==",
         "'agentRuntime': {'id': 'codex'}",
         "agents.list[0].model.primary == openclaw_ctf_codex_model",
+        "agents.list[0].thinkingDefault == openclaw_ctf_codex_thinking_default",
         "agents.list | map(attribute='id') | list == ['ctf']",
         "sandbox.backend == 'docker'",
         "sandbox.scope == 'session'",

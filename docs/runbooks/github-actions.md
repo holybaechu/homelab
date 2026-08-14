@@ -100,13 +100,16 @@ and CTF services receive only their respective systemd credential. Keep both
 GitHub values stable and recoverable; rotating either invalidates clients of
 that Gateway only.
 
-The CTF Gateway has no OpenAI API-key secret in GitHub. After deployment, its
-`openai:ctf` profile is created with the owner's ChatGPT/Codex device-code
-OAuth login and is retained only in the CTF service account's isolated
-OpenClaw auth/state storage. Do not put an OpenAI API key, ChatGPT session
-token, OAuth refresh token, or a copy of desktop `~/.codex` in GitHub secrets,
-the core configuration, the Discord relay, or a private route file. Follow the
-production sign-in procedure in `docs/runbooks/openclaw-ctf.md`.
+Neither Gateway has an OpenAI API-key secret in GitHub. After deployment, the
+core `openai:main` and CTF `openai:ctf` profiles are created separately with
+the owner's ChatGPT/Codex device-code OAuth login and retained only in their
+respective service accounts' isolated OpenClaw auth/state storage. Do not put
+an OpenAI API key, ChatGPT session token, OAuth refresh token, or a copy of
+desktop `~/.codex` in GitHub secrets, the Discord relay, or a private route
+file. The protected core config may name `openai:main`, but it never contains
+the resulting credential. Follow the core sign-in procedure in
+`docs/runbooks/openclaw.md` first, then the CTF procedure in
+`docs/runbooks/openclaw-ctf.md`.
 After a successful deployment of this OAuth version, delete any obsolete
 `OPENCLAW_CTF_OPENAI_API_KEY` GitHub secret so it cannot become a stale
 production credential.

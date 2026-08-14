@@ -19,14 +19,17 @@ the existing main agent available without giving it CTF Docker access.
 
 The core openclaw-gateway.service stays on port 18789. It has no DOCKER_HOST,
 Docker client, Docker SSH key, CTF workspace, CTF state, or Discord bot token.
-Its service account cannot read the CTF service's paths.
+Its service account cannot read the CTF service's paths. Core agents inherit
+`openai/gpt-5.6-terra` with xhigh thinking through the native Codex runtime and use their own
+`openai:main` OAuth profile, which is kept separately from both the CTF
+profile and all Docker transport credentials.
 
 The separate openclaw-ctf-gateway.service listens only on 127.0.0.1:19789. It
 runs as openclaw-ctf (UID/GID 1001) with a separate config, state directory,
 auth directory, workspace, Gateway bearer token, and relay HMAC. It is the
 only Gateway service that receives the CTF-scoped Docker client and pinned SSH
 transport credential. The two Gateway bearer tokens are independent and must
-not be reused. The CTF agent uses `openai/gpt-5.5` through the native Codex
+not be reused. The CTF agent uses `openai/gpt-5.6-terra` with xhigh thinking through the native Codex
 runtime and its separate `openai:ctf` ChatGPT/Codex OAuth profile. Refreshable
 OAuth material is kept only in the CTF service account's isolated OpenClaw
 auth/state storage. There is no `OPENCLAW_CTF_OPENAI_API_KEY`; the core Gateway
@@ -145,22 +148,27 @@ falls back to the core agent.
    copy Discord tokens, route files, or CTF data into this repository.
 2. Add independent GitHub prod secrets `OPENCLAW_GATEWAY_TOKEN` and
    `OPENCLAW_CTF_GATEWAY_TOKEN`. Both are required for the split deployment,
-   including when Discord remains disabled. Add the single generic
-   `OPENCLAW_DISCORD_BOT_TOKEN` only when preparing to activate the relay.
-   Do not add an OpenAI API key, a ChatGPT session token, or OAuth material to
-   GitHub; the CTF subscription login is performed locally after deployment.
+    including when Discord remains disabled. Add the single generic
+    `OPENCLAW_DISCORD_BOT_TOKEN` only when preparing to activate the relay.
+    Do not add an OpenAI API key, a ChatGPT session token, or OAuth material to
+    GitHub; both subscription logins are performed locally after deployment.
 3. Deploy the split with OPENCLAW_DISCORD_ENABLED=false (or leave the variable
    unset). This installs and keeps the relay stopped; it does not log the bot
    in to Discord.
 4. The deployment installs the exact pinned Codex harness,
-   `npm:@openclaw/codex@2026.7.1-1`, for the CTF service account
-   and checks its runtime before startup. The deployment host therefore needs
-   outbound access to the npm registry while this package is installed or
-   updated; do not substitute a desktop Codex installation or an unpinned
-   package.
+   `npm:@openclaw/codex@2026.7.1-1`, separately for the core and CTF service
+   accounts and checks both runtimes before startup. The deployment host
+   therefore needs outbound access to the npm registry while this package is
+   installed or updated; do not substitute a desktop Codex installation or an
+   unpinned package.
 5. Before enabling the relay, sign in to the owner's ChatGPT/Codex subscription
-   from a trusted shell on VMID 118. Stop the CTF service first so the OAuth
-   profile is not changed while the Gateway is running:
+   as the core service first, following the exact `openai:main` device-code
+   procedure in `docs/runbooks/openclaw.md`. Stopping the core Gateway also
+   stops this dependent CTF service, so performing the core login first avoids
+   interrupting a completed CTF login.
+6. Then sign in to the same subscription from a trusted shell on VMID 118 as
+   the isolated CTF service. Stop the CTF service first so its `openai:ctf`
+   profile is not changed while its Gateway is running:
 
    ```sh
    sudo systemctl stop openclaw-ctf-gateway.service
@@ -181,7 +189,7 @@ falls back to the core agent.
    ChatGPT/Codex account. Do not copy an OAuth file from a desktop `~/.codex`,
    paste a token into a shell, or record the device code or resulting OAuth
    data in GitHub, Git, chat, or a password field intended for API keys.
-6. Verify that the isolated CTF profile and configured model are usable, then
+7. Verify that the isolated CTF profile and configured model are usable, then
    restart the CTF Gateway. Run each command with the same CTF environment so
    it cannot see the core Gateway's state:
 
@@ -213,18 +221,21 @@ falls back to the core agent.
    ```
 
    The first command must show profile `openai:ctf`; the second must list the
-   configured `openai/gpt-5.5` route as available. Once the relay is enabled in
+   configured `openai/gpt-5.6-terra` route as available; do not substitute a
+   different model silently if the subscription does not expose Terra. Once the relay is enabled in
    a non-production routed channel, send `/status` (or `/codex status`) and
    confirm the response reports the OpenAI Codex runtime before relying on the
    agent for a challenge.
-7. Run the private CTF relay tests, validate the numeric route map and Discord
+8. Run the private CTF relay tests, validate the numeric route map and Discord
    permissions, then exercise an attachment and request-correlated ZIP in a
    non-production routed channel. Only then set OPENCLAW_DISCORD_ENABLED=true
    and run the full production deployment.
 
-The CTF Gateway consumes the owner's existing ChatGPT/Codex subscription
-quota. It does not create or use an OpenAI Platform API-key account, and the
-`openai:ctf` profile must remain exclusive to this isolated CTF service.
+The core and CTF Gateways consume the owner's same ChatGPT/Codex subscription
+quota. Neither creates or uses an OpenAI Platform API-key account. The
+`openai:main` and `openai:ctf` profiles must remain exclusive to their
+respective isolated service accounts even when they are signed in to the same
+subscription.
 
 Ansible keeps the bot token and both relay HMACs out of Git as root-owned
 systemd credential sources. The relay HMACs are generated on the target and

@@ -29,6 +29,10 @@
       - openclaw_workspace_root == openclaw_state_root + '/workspace'
       - openclaw_auth_profile_secret_root == openclaw_home + '/.config/openclaw'
       - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
+      - openclaw_codex_profile_id == 'openai:main'
+      - openclaw_codex_model == 'openai/gpt-5.6-terra'
+      - openclaw_codex_thinking_default == 'xhigh'
+      - openclaw_codex_plugin_spec == 'npm:@openclaw/codex@2026.7.1-1'
       - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
       - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
       - openclaw_native_activate is boolean
@@ -734,19 +738,38 @@
         ((openclaw_native_config.content | b64decode | from_json).agents.list |
         selectattr('id', 'equalto', 'main') | map(attribute='default') | list) == [true]
       - >-
+        (openclaw_native_config.content | b64decode | from_json).agents.defaults.model.primary ==
+        openclaw_codex_model
+      - >-
+        (openclaw_native_config.content | b64decode | from_json).agents.defaults.thinkingDefault ==
+        openclaw_codex_thinking_default
+      - >-
+        ((openclaw_native_config.content | b64decode | from_json).agents.list |
+        selectattr('model', 'defined') | map(attribute='model') |
+        map(attribute='primary') | list | difference([openclaw_codex_model]) | length) == 0
+      - >-
         ((openclaw_native_config.content | b64decode | from_json).agents.list |
         selectattr('id', 'equalto', 'ctf') | list | length) == 0
+      - >-
+        (openclaw_native_config.content | b64decode | from_json).auth ==
+        {'order': {'openai': [openclaw_codex_profile_id]}}
+      - >-
+        (openclaw_native_config.content | b64decode | from_json).models ==
+        {'providers': {'openai': {'agentRuntime': {'id': 'codex'}}}}
       - >-
         (openclaw_native_config.content | b64decode | from_json).get('channels', {}) | length == 0
       - >-
         (openclaw_native_config.content | b64decode | from_json).get('bindings', []) | length == 0
       - >-
+        (openclaw_native_config.content | b64decode | from_json).plugins.entries.codex.enabled | bool
+      - >-
         (openclaw_native_config.content | b64decode | from_json).plugins.entries['openclaw-discord-relay-core'].enabled | bool
       - >-
         (openclaw_native_config.content | b64decode | from_json).plugins.entries['openclaw-discord-relay-core'].config.allowedChannelIds | length > 0
     fail_msg: >-
-      The core Gateway must retain only its token SecretRef, contain no CTF
-      agent or Discord account, and expose only the narrow core relay plugin.
+      The core Gateway must retain only its token SecretRef, route every core
+      agent through the subscription-backed Codex runtime, contain no CTF agent
+      or Discord account, and expose only the Codex harness plus narrow relay.
   no_log: true
   when: openclaw_native_activate | bool
 
@@ -808,6 +831,45 @@
       no_log: true
       diff: false
 
+    - name: Materialize a writable core plugin-install config
+      ansible.builtin.copy:
+        src: "{{ openclaw_config_path }}"
+        dest: "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
+        remote_src: true
+        owner: "{{ openclaw_user }}"
+        group: "{{ openclaw_group }}"
+        mode: "0600"
+      no_log: true
+      diff: false
+
+    - name: Install the pinned core Codex harness
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_current_root }}/bin/node"
+          - "{{ openclaw_entrypoint }}"
+          - plugins
+          - install
+          - "{{ openclaw_codex_plugin_spec }}"
+          - --pin
+          - --force
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: &openclaw_native_plugin_install_environment
+        HOME: "{{ openclaw_home }}"
+        PATH: "{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin"
+        OPENCLAW_HOME: "{{ openclaw_home }}"
+        OPENCLAW_STATE_DIR: "{{ openclaw_state_root }}"
+        OPENCLAW_CONFIG_PATH: "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
+        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_workspace_root }}"
+        OPENCLAW_DISABLE_BONJOUR: "1"
+        OPENCLAW_NO_AUTO_UPDATE: "1"
+        OPENCLAW_NO_RESPAWN: "1"
+        OPENCLAW_SERVICE_REPAIR_POLICY: external
+        OPENCLAW_SUPERVISOR_MODE: external
+        OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
+        OPENCLAW_DISCORD_RELAY_CORE_HMAC_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_relay_core_hmac"
+      notify: Restart OpenClaw Gateway
+
     - name: Check the active native OpenClaw config path
       ansible.builtin.command:
         argv:
@@ -818,19 +880,8 @@
       become: true
       become_user: "{{ openclaw_user }}"
       environment: &openclaw_native_cli_environment
-        HOME: "{{ openclaw_home }}"
-        PATH: "{{ openclaw_node_release_root }}/bin:{{ openclaw_release_root }}/bin:/usr/local/bin:/usr/bin:/bin"
-        OPENCLAW_HOME: "{{ openclaw_home }}"
-        OPENCLAW_STATE_DIR: "{{ openclaw_state_root }}"
+        <<: *openclaw_native_plugin_install_environment
         OPENCLAW_CONFIG_PATH: "{{ openclaw_config_path }}"
-        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_workspace_root }}"
-        OPENCLAW_DISABLE_BONJOUR: "1"
-        OPENCLAW_NO_AUTO_UPDATE: "1"
-        OPENCLAW_NO_RESPAWN: "1"
-        OPENCLAW_SERVICE_REPAIR_POLICY: external
-        OPENCLAW_SUPERVISOR_MODE: external
-        OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
-        OPENCLAW_DISCORD_RELAY_CORE_HMAC_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_relay_core_hmac"
       register: openclaw_config_file_preflight
       changed_when: false
       failed_when: >-
@@ -856,6 +907,26 @@
         openclaw_config_validation_preflight.rc != 0 or
         not (openclaw_config_validation_preflight.stdout | from_json).valid or
         (openclaw_config_validation_preflight.stdout | from_json).warnings | length > 0
+
+    - name: Inspect the core Codex harness runtime before startup
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_current_root }}/bin/node"
+          - "{{ openclaw_entrypoint }}"
+          - plugins
+          - inspect
+          - codex
+          - --runtime
+          - --json
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: *openclaw_native_cli_environment
+      register: openclaw_codex_runtime_inspection
+      changed_when: false
+      failed_when: >-
+        openclaw_codex_runtime_inspection.rc != 0 or
+        (openclaw_codex_runtime_inspection.stdout | from_json).plugin.id != 'codex' or
+        (openclaw_codex_runtime_inspection.stdout | from_json).plugin.status != 'loaded'
 
     - name: Inspect the core relay plugin runtime before startup
       ansible.builtin.command:
@@ -917,6 +988,11 @@
         - {path: gateway.allowRealIpFallback, value: false}
         - {path: gateway.tailscale.mode, value: "off"}
         - {path: gateway.tailscale.resetOnExit, value: false}
+        - {path: auth.order.openai, value: ["{{ openclaw_codex_profile_id }}"]}
+        - {path: models.providers.openai, value: {agentRuntime: {id: codex}}}
+        - {path: agents.defaults.model.primary, value: "{{ openclaw_codex_model }}"}
+        - {path: agents.defaults.thinkingDefault, value: "{{ openclaw_codex_thinking_default }}"}
+        - {path: plugins.entries.codex.enabled, value: true}
       loop_control:
         label: "{{ item.path }}"
 

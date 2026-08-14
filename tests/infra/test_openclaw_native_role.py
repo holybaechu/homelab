@@ -566,6 +566,12 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert variables["openclaw_auth_profile_secret_root"] == (
         "{{ openclaw_home }}/.config/openclaw"
     )
+    assert variables["openclaw_codex_profile_id"] == "openai:main"
+    assert variables["openclaw_codex_model"] == "openai/gpt-5.6-terra"
+    assert variables["openclaw_codex_thinking_default"] == "xhigh"
+    assert variables["openclaw_codex_plugin_spec"] == (
+        "npm:@openclaw/codex@2026.7.1-1"
+    )
     assert "stat.mode == '0640'" in tasks
     assert "not (openclaw_setup_paths.results[2].stat.islnk" in tasks
     assert "git_safe --no-pager ls-files --error-unmatch config/openclaw.json" in tasks
@@ -576,6 +582,80 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert 'owner: root\n    group: root\n    mode: "0600"' in tasks
     assert "OPENCLAW_SUPERVISOR_MODE: external" in tasks
     assert "plugins/openclaw-discord-relay-core/openclaw.plugin.json" in tasks
+
+
+def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_core_agents():
+    variables = yaml.safe_load(read(VARS))
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    all_tasks = list(walk_tasks(tasks))
+
+    contract = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Require the protected core-only OpenClaw Gateway schema"
+    )
+    assertions = "\n".join(contract["ansible.builtin.assert"]["that"])
+    for required in (
+        "agents.defaults.model.primary == openclaw_codex_model",
+        "agents.defaults.thinkingDefault == openclaw_codex_thinking_default",
+        "difference([openclaw_codex_model])",
+        "'order': {'openai': [openclaw_codex_profile_id]}",
+        "'agentRuntime': {'id': 'codex'}",
+        "plugins.entries.codex.enabled",
+    ):
+        assert required in assertions
+    assert "apiKey" not in assertions
+
+    install = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Install the pinned core Codex harness"
+    )
+    assert install["ansible.builtin.command"]["argv"][-5:] == [
+        "plugins",
+        "install",
+        "{{ openclaw_codex_plugin_spec }}",
+        "--pin",
+        "--force",
+    ]
+    assert install["become_user"] == "{{ openclaw_user }}"
+    assert install["environment"]["OPENCLAW_CONFIG_PATH"] == (
+        "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
+    )
+    assert install["environment"]["OPENCLAW_STATE_DIR"] == "{{ openclaw_state_root }}"
+
+    writable_config = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Materialize a writable core plugin-install config"
+    )
+    assert writable_config["ansible.builtin.copy"] == {
+        "src": "{{ openclaw_config_path }}",
+        "dest": "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json",
+        "remote_src": True,
+        "owner": "{{ openclaw_user }}",
+        "group": "{{ openclaw_group }}",
+        "mode": "0600",
+    }
+
+    runtime = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Inspect the core Codex harness runtime before startup"
+    )
+    assert runtime["ansible.builtin.command"]["argv"][-5:] == [
+        "plugins",
+        "inspect",
+        "codex",
+        "--runtime",
+        "--json",
+    ]
+    assert ".plugin.id != 'codex'" in runtime["failed_when"]
+    assert ".plugin.status != 'loaded'" in runtime["failed_when"]
+
+    assert variables["openclaw_codex_profile_id"] != variables[
+        "openclaw_ctf_codex_profile_id"
+    ]
 
 
 def test_native_config_path_preflight_normalizes_only_the_cli_home_display_prefix():
@@ -801,7 +881,9 @@ def test_native_openclaw_activation_validates_before_starting():
     order = [
         "Require the protected private OpenClaw repository and regular config",
         "Require a clean tracked native OpenClaw config on main",
+        "Install the pinned core Codex harness",
         "Validate the native OpenClaw config schema",
+        "Inspect the core Codex harness runtime before startup",
         "Require the proxy-only native OpenClaw config values",
         "Audit native OpenClaw secrets before startup",
         "Flush validated OpenClaw handlers before activation",

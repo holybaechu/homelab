@@ -18,7 +18,7 @@ content repository, and mutable runtime material:
 | Private OpenClaw repository | `/home/openclaw/openclaw-setup` on VMID 118 |
 | Active native config | `/home/openclaw/openclaw-setup/config/openclaw.json` |
 | Runtime state | `/var/lib/openclaw` |
-| Future auth-profile state | `/home/openclaw/.config/openclaw` |
+| Core Codex OAuth-profile state | `/home/openclaw/.config/openclaw` |
 | Gateway token | `/etc/openclaw/secrets/gateway_token` |
 
 The private repository contains config plus inert scaffolding for future
@@ -45,6 +45,68 @@ disabled.
 Control UI access uses HTTPS. A new browser must receive the Gateway token out
 of band and may require explicit device approval. Do not enable insecure auth,
 device-auth bypasses, wildcard origins, or trusted-proxy authentication.
+
+All core agents inherit `openai/gpt-5.6-terra` with xhigh thinking through
+`agents.defaults` and are forced through the native Codex runtime. Their independent OpenClaw OAuth
+profile is `openai:main`; the CTF Gateway uses `openai:ctf` in a separate Unix
+identity and state store. Both profiles may sign in to the same owner's
+ChatGPT/Codex subscription, but no OAuth file, desktop `~/.codex` directory,
+or OpenAI API key is shared between services.
+
+## Core Codex subscription activation
+
+After a deployment has installed the pinned `@openclaw/codex` harness, create
+the core profile from a trusted shell on VMID 118. Stop the core service first;
+this also stops the dependent CTF service, so always complete this core login
+before the separate CTF login documented in `openclaw-ctf.md`.
+
+```sh
+sudo systemctl stop openclaw-gateway.service
+
+sudo -u openclaw env \
+  HOME=/home/openclaw \
+  OPENCLAW_HOME=/home/openclaw \
+  OPENCLAW_STATE_DIR=/var/lib/openclaw \
+  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
+  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspace \
+  PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
+  /opt/nodejs/current/bin/node \
+  /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \
+  models auth login --provider openai --profile-id openai:main --device-code
+
+sudo -u openclaw env \
+  HOME=/home/openclaw \
+  OPENCLAW_HOME=/home/openclaw \
+  OPENCLAW_STATE_DIR=/var/lib/openclaw \
+  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
+  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspace \
+  PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
+   /opt/nodejs/current/bin/node \
+   /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \
+   models auth list --agent main --provider openai
+
+sudo -u openclaw env \
+  HOME=/home/openclaw \
+  OPENCLAW_HOME=/home/openclaw \
+  OPENCLAW_STATE_DIR=/var/lib/openclaw \
+  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
+  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspace \
+  PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
+  /opt/nodejs/current/bin/node \
+  /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \
+  models list --provider openai
+
+sudo systemctl start openclaw-gateway.service
+sudo systemctl is-active --quiet openclaw-gateway.service
+```
+
+Complete the displayed device-code flow in a browser using the owner's
+ChatGPT/Codex account. The profile lives only in the core service account's
+auth/state storage and refreshes there. Never put its device code, access or
+refresh token, a ChatGPT session token, or an OpenAI API key in Git, GitHub
+secrets, chat, or the private configuration. Before restarting the service,
+confirm the model list includes `openai/gpt-5.6-terra`; do not substitute a
+different model silently if the subscription does not expose Terra.
 
 ## Configuration updates
 
@@ -95,5 +157,7 @@ The production validation must prove:
   native service is disabled with no listener and the exact retained container
   is the sole healthy Gateway.
 
-No model, Codex/OpenAI authentication, custom agent, channel, subagent, skill,
-or self-learning behavior belongs in this foundation deployment.
+The pinned core Codex harness and its `openai:main` profile are the only model
+authentication contract in this foundation deployment. Custom agent routing,
+channel policy, subagents, skills, and self-learning behavior remain outside
+this foundation boundary.
