@@ -689,7 +689,7 @@
           - "{{ openclaw_retained_gateway_verifier_path }}"
           - require
           - --container-state
-          - "{{ 'running' if openclaw_docker_rollback_activate | bool else 'stopped' }}"
+          - "{{ 'running' if openclaw_docker_rollback_activate | bool else 'fenced' }}"
           - --config-state
           - "{{ 'rollback' if openclaw_docker_rollback_activate | bool else 'foundation-or-rollback' }}"
           - --compose-root

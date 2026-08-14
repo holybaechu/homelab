@@ -300,7 +300,7 @@
           - "{{ openclaw_retained_gateway_verifier_path }}"
           - require
           - --container-state
-          - stopped
+          - fenced
           - --config-state
           - foundation-or-rollback
           - --compose-root

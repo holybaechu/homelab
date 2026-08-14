@@ -878,6 +878,39 @@ def validate_apparmor_profile(profile: object) -> None:
     require(profile == "", "retained AppArmor profile drifted")
 
 
+def require_rendered_image(arguments: argparse.Namespace) -> str:
+    rendered_images = run(
+        ["docker", "compose", "config", "--images"], cwd=arguments.compose_root
+    ).stdout.splitlines()
+    require(len(rendered_images) == 1, "retained Compose project must render exactly one image")
+    rendered_image = rendered_images[0].decode("utf-8")
+    require(
+        rendered_image == arguments.expected_image,
+        "retained Compose image differs from the pinned rollback image",
+    )
+    require(IMAGE.fullmatch(rendered_image) is not None, "retained image reference is not immutable")
+    return rendered_image
+
+
+def require_local_pinned_image(rendered_image: str) -> tuple[str, dict[str, Any]]:
+    images = load_json(["docker", "image", "inspect", rendered_image])
+    require(isinstance(images, list) and len(images) == 1, "retained image inspect is ambiguous")
+    image_id = images[0].get("Id")
+    image_config = images[0].get("Config") or {}
+    require(isinstance(image_config, dict), "pinned image config is malformed")
+    require(isinstance(image_id, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", image_id), "invalid retained image ID")
+    return image_id, image_config
+
+
+def require_fenced_lifecycle_state(state: object) -> None:
+    require(isinstance(state, dict), "retained container state is malformed")
+    require(state.get("Running") is False, "retained fenced Gateway is running")
+    require(
+        state.get("Status") in {"created", "exited"},
+        "retained fenced Gateway has an invalid lifecycle state",
+    )
+
+
 def require_container(arguments: argparse.Namespace) -> dict[str, str]:
     ids = run(
         ["docker", "compose", "ps", "--all", "-q", "openclaw-gateway"],
@@ -892,20 +925,8 @@ def require_container(arguments: argparse.Namespace) -> dict[str, str]:
     require(container.get("Id") == container_id, "retained container identity drifted during inspect")
     validate_apparmor_profile(container.get("AppArmorProfile"))
 
-    rendered_images = run(["docker", "compose", "config", "--images"], cwd=arguments.compose_root).stdout.splitlines()
-    require(len(rendered_images) == 1, "retained Compose project must render exactly one image")
-    rendered_image = rendered_images[0].decode("utf-8")
-    require(
-        rendered_image == arguments.expected_image,
-        "retained Compose image differs from the pinned rollback image",
-    )
-    require(IMAGE.fullmatch(rendered_image) is not None, "retained image reference is not immutable")
-    images = load_json(["docker", "image", "inspect", rendered_image])
-    require(isinstance(images, list) and len(images) == 1, "retained image inspect is ambiguous")
-    image_id = images[0].get("Id")
-    image_config = images[0].get("Config") or {}
-    require(isinstance(image_config, dict), "pinned image config is malformed")
-    require(isinstance(image_id, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", image_id), "invalid retained image ID")
+    rendered_image = require_rendered_image(arguments)
+    image_id, image_config = require_local_pinned_image(rendered_image)
     require(container.get("Image") == image_id, "retained container does not use the pinned local image")
 
     config = container.get("Config") or {}
@@ -948,8 +969,10 @@ def require_container(arguments: argparse.Namespace) -> dict[str, str]:
     networks = (container.get("NetworkSettings") or {}).get("Networks") or {}
     default_network = networks.get("openclaw_default")
     rollback_network = networks.get("homelab_proxy")
+    require(isinstance(state, dict), "retained container state is malformed")
     running = state.get("Running") is True and state.get("Status") == "running"
     stopped = state.get("Running") is False and state.get("Status") == "exited"
+    fenced = state.get("Running") is False and state.get("Status") in {"created", "exited"}
     validate_container_dns_identity(
         container.get("Name"),
         config.get("Hostname"),
@@ -963,9 +986,12 @@ def require_container(arguments: argparse.Namespace) -> dict[str, str]:
     if arguments.container_state == "stopped":
         require(stopped, "retained Gateway must be stopped before checkpoint seeding")
         require(set(networks) == {"openclaw_default"}, "stopped retained Gateway network set drifted")
+    elif arguments.container_state == "fenced":
+        require_fenced_lifecycle_state(state)
+        require(set(networks) == {"openclaw_default"}, "fenced retained Gateway network set drifted")
     elif arguments.container_state == "rollback":
-        require(stopped or running, "retained rollback Gateway has an invalid lifecycle state")
-        if stopped:
+        require(fenced or running, "retained rollback Gateway has an invalid lifecycle state")
+        if fenced:
             require(set(networks) == {"openclaw_default"}, "stopped rollback Gateway network set drifted")
         else:
             require(
@@ -1089,8 +1115,8 @@ def seed_checkpoint(path: Path, candidate: bytes) -> bool:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("seed", "require"))
-    parser.add_argument("--container-state", choices=("stopped", "rollback", "running"), required=True)
+    parser.add_argument("mode", choices=("preflight", "seed", "require"))
+    parser.add_argument("--container-state", choices=("fenced", "stopped", "rollback", "running"), required=True)
     parser.add_argument(
         "--config-state",
         choices=("foundation-or-rollback", "rollback"),
@@ -1128,10 +1154,18 @@ def main() -> int:
     try:
         arguments = parse_arguments()
         require_assets(arguments)
+        if arguments.mode == "preflight":
+            require(
+                arguments.container_state == "fenced",
+                "asset preflight requires the fenced retained Gateway state",
+            )
+            require_local_pinned_image(require_rendered_image(arguments))
+            print("changed=false")
+            return 0
         identity = require_container(arguments)
         candidate = checkpoint_bytes(identity)
         if arguments.mode == "seed":
-            require(arguments.container_state == "stopped", "checkpoint seeding requires a stopped Gateway")
+            require(arguments.container_state == "fenced", "checkpoint seeding requires a fenced Gateway")
             changed = seed_checkpoint(arguments.checkpoint, candidate)
         else:
             require_checkpoint(arguments.checkpoint, candidate)

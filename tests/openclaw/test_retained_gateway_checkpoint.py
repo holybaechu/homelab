@@ -778,43 +778,74 @@ def test_alias_owner_scan_rejects_string_aliases_instead_of_using_substring_memb
 
 
 @pytest.mark.parametrize(
-    ("container_state", "running", "health", "networks", "accepted"),
+    ("state", "accepted"),
     [
-        ("stopped", False, None, {"openclaw_default"}, True),
-        ("stopped", False, None, {"openclaw_default", "rogue"}, False),
-        ("rollback", True, "starting", {"openclaw_default"}, True),
+        ({"Running": False, "Status": "created"}, True),
+        ({"Running": False, "Status": "exited"}, True),
+        ({"Running": True, "Status": "running"}, False),
+        ({"Running": False, "Status": "paused"}, False),
+        ({"Running": 0, "Status": "created"}, False),
+        ({"Running": False, "Status": None}, False),
+        ([], False),
+    ],
+)
+def test_fenced_lifecycle_accepts_only_created_or_exited_nonrunning_containers(
+    state, accepted
+):
+    helper = load_helper()
+
+    if accepted:
+        helper.require_fenced_lifecycle_state(state)
+    else:
+        with pytest.raises(helper.ContractError):
+            helper.require_fenced_lifecycle_state(state)
+
+
+@pytest.mark.parametrize(
+    ("container_state", "status", "running", "health", "networks", "accepted"),
+    [
+        ("fenced", "created", False, None, {"openclaw_default"}, True),
+        ("fenced", "exited", False, None, {"openclaw_default"}, True),
+        ("fenced", "created", False, None, {"openclaw_default", "rogue"}, False),
+        ("fenced", "paused", False, None, {"openclaw_default"}, False),
+        ("rollback", "created", False, None, {"openclaw_default"}, True),
+        ("rollback", "exited", False, None, {"openclaw_default"}, True),
+        ("rollback", "running", True, "starting", {"openclaw_default"}, True),
         (
             "rollback",
-            True,
-            "healthy",
-            {"openclaw_default", "homelab_proxy"},
-            True,
-        ),
-        ("rollback", True, "unhealthy", {"openclaw_default"}, False),
-        ("rollback", True, "healthy", {"openclaw_default", "rogue"}, False),
-        (
             "running",
             True,
             "healthy",
             {"openclaw_default", "homelab_proxy"},
             True,
         ),
-        ("running", True, "healthy", {"openclaw_default"}, False),
+        ("rollback", "running", True, "unhealthy", {"openclaw_default"}, False),
+        ("rollback", "running", True, "healthy", {"openclaw_default", "rogue"}, False),
+        (
+            "running",
+            "running",
+            True,
+            "healthy",
+            {"openclaw_default", "homelab_proxy"},
+            True,
+        ),
+        ("running", "running", True, "healthy", {"openclaw_default"}, False),
     ],
 )
 def test_retained_lifecycle_accepts_only_exact_network_and_health_states(
-    container_state, running, health, networks, accepted
+    container_state, status, running, health, networks, accepted
 ):
     helper = load_helper()
-    stopped = not running
+    state = {"Running": running, "Status": status}
+    fenced = not running and status in {"created", "exited"}
 
     def validate():
-        if container_state == "stopped":
-            helper.require(stopped, "state")
+        if container_state == "fenced":
+            helper.require_fenced_lifecycle_state(state)
             helper.require(set(networks) == {"openclaw_default"}, "networks")
         elif container_state == "rollback":
-            helper.require(stopped or running, "state")
-            if stopped:
+            helper.require(fenced or running, "state")
+            if fenced:
                 helper.require(set(networks) == {"openclaw_default"}, "networks")
             else:
                 helper.require(health in {"starting", "healthy"}, "health")
@@ -926,7 +957,7 @@ def test_checkpoint_is_seeded_only_after_native_fence_and_required_before_rollba
     assert proof["ansible.builtin.command"]["argv"][1:4] == [
         "require",
         "--container-state",
-        "stopped",
+        "fenced",
     ]
     assert "--require-expected-token" in proof["ansible.builtin.command"]["argv"]
     assert proof["no_log"] is True
@@ -997,6 +1028,7 @@ def test_full_validation_rechecks_checkpoint_in_native_and_rollback_states():
     argv = task["ansible.builtin.command"]["argv"]
     assert argv[1] == "require"
     assert "'running' if openclaw_docker_rollback_activate" in argv[3]
+    assert "else 'fenced'" in argv[3]
     assert task["when"] == [
         "openclaw_native_cutover_marker_validation.stat.exists | default(false)",
         "(hostvars['openclaw'].openclaw_native_activate | bool) or "
@@ -1044,9 +1076,25 @@ def test_pre_site_fence_verifies_before_native_mutation_and_always_cleans_up():
     assert play["tasks"].index(verifier_stat) < play["tasks"].index(transaction)
 
     tasks = yaml.safe_load(FENCE_ASSETS.read_text(encoding="utf-8"))
+    container = task_by_name(
+        tasks,
+        "Inspect whether the retained Gateway container exists before native-primary fencing",
+    )
     inspect = task_by_name(
         tasks,
         "Inspect whether the retained Gateway is running before native-primary fencing",
+    )
+    bootstrap_boundary = task_by_name(
+        tasks,
+        "Require a pristine retained Gateway bootstrap boundary before recovery",
+    )
+    recovery_preflight = task_by_name(
+        tasks,
+        "Preflight exact retained rollback assets before cold recovery",
+    )
+    create = task_by_name(
+        tasks,
+        "Create an absent retained Docker Gateway fenced for initial identity seeding",
     )
     pre_stop = task_by_name(
         tasks,
@@ -1065,7 +1113,54 @@ def test_pre_site_fence_verifies_before_native_mutation_and_always_cleans_up():
     rollback = task_by_name(
         tasks, "Require the exact retained identity checkpoint before tracked rollback"
     )
-    assert tasks.index(inspect) < tasks.index(pre_stop) < tasks.index(stop)
+    assert tasks.index(container) < tasks.index(inspect) < tasks.index(bootstrap_boundary)
+    assert tasks.index(bootstrap_boundary) < tasks.index(recovery_preflight) < tasks.index(create)
+    assert tasks.index(create) < tasks.index(pre_stop) < tasks.index(stop)
+    assert container["ansible.builtin.command"]["argv"] == [
+        "docker",
+        "compose",
+        "ps",
+        "--all",
+        "-q",
+        "openclaw-gateway",
+    ]
+    assert container["changed_when"] is False
+    bootstrap_requirements = bootstrap_boundary["ansible.builtin.assert"]["that"]
+    for requirement in (
+        "openclaw_native_primary_source_hold.stat.exists | default(false)",
+        "openclaw_native_primary_source_hold.stat.isreg | default(false)",
+        "not (openclaw_native_primary_source_hold.stat.islnk | default(false))",
+        "not (openclaw_pre_site_retained_gateway_checkpoint.stat.exists | default(false))",
+        "not (openclaw_pre_site_retained_gateway_checkpoint.stat.islnk | default(false))",
+        "not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.exists | default(false))",
+        "not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.islnk | default(false))",
+    ):
+        assert requirement in bootstrap_requirements
+    assert "length == 0" in bootstrap_boundary["when"][-1]
+    assert bootstrap_boundary["no_log"] is True
+    assert recovery_preflight["ansible.builtin.command"]["argv"][1:4] == [
+        "preflight",
+        "--container-state",
+        "fenced",
+    ]
+    assert "--require-expected-token" in recovery_preflight["ansible.builtin.command"]["argv"]
+    assert_bounded_fail_closed_retry(recovery_preflight)
+    assert create["ansible.builtin.command"]["argv"] == [
+        "docker",
+        "compose",
+        "create",
+        "openclaw-gateway",
+    ]
+    create_conditions = "\n".join(create["when"])
+    for requirement in (
+        "openclaw_native_primary_source_hold.stat.exists",
+        "openclaw_pre_site_retained_gateway_container.stdout | trim | length == 0",
+        "not (openclaw_pre_site_retained_gateway_checkpoint.stat.exists",
+        "not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.exists",
+    ):
+        assert requirement in create_conditions
+    assert "running.stdout" not in create_conditions
+    assert "start" not in " ".join(create["ansible.builtin.command"]["argv"])
     assert tasks.index(stop) < tasks.index(stopped_require)
     assert "length > 0" in pre_stop["when"][-1]
     assert "length > 0" in stop["when"][-1]
@@ -1078,7 +1173,8 @@ def test_pre_site_fence_verifies_before_native_mutation_and_always_cleans_up():
     assert "openclaw_pre_site_persistent_retained_gateway_verifier.stat.exists" in mode
     assert "stat.islnk" in mode
     assert pre_stop["ansible.builtin.command"]["argv"][3] == "rollback"
-    assert stopped_require["ansible.builtin.command"]["argv"][3] == "stopped"
+    assert stopped_require["ansible.builtin.command"]["argv"][3] == "fenced"
+    assert checkpoint["ansible.builtin.command"]["argv"][3] == "fenced"
     assert rollback["ansible.builtin.command"]["argv"][5] == "rollback"
     for verifier_task in (pre_stop, stopped_require, checkpoint, rollback):
         assert_bounded_fail_closed_retry(verifier_task)

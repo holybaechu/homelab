@@ -1,4 +1,21 @@
 ---
+- name: Inspect whether the retained Gateway container exists before native-primary fencing
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - ps
+      - --all
+      - -q
+      - openclaw-gateway
+  args:
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_pre_site_retained_gateway_container
+  changed_when: false
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+
 - name: Inspect whether the retained Gateway is running before native-primary fencing
   ansible.builtin.command:
     argv:
@@ -16,6 +33,122 @@
   when:
     - hostvars['openclaw'].openclaw_native_activate | bool
     - not (openclaw_docker_rollback_activate | bool)
+
+- name: Require a pristine retained Gateway bootstrap boundary before recovery
+  ansible.builtin.assert:
+    that:
+      - openclaw_native_primary_source_hold.stat.exists | default(false)
+      - openclaw_native_primary_source_hold.stat.isreg | default(false)
+      - not (openclaw_native_primary_source_hold.stat.islnk | default(false))
+      - openclaw_native_primary_source_hold.stat.uid | default(-1) == 0
+      - openclaw_native_primary_source_hold.stat.gid | default(-1) == 0
+      - openclaw_native_primary_source_hold.stat.mode | default('') == '0600'
+      - >-
+        (openclaw_native_primary_source_hold_content.content | default('') | b64decode) ==
+        openclaw_native_transition_marker_value + '\n'
+      - not (openclaw_pre_site_retained_gateway_checkpoint.stat.exists | default(false))
+      - not (openclaw_pre_site_retained_gateway_checkpoint.stat.islnk | default(false))
+      - not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.exists | default(false))
+      - not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.islnk | default(false))
+    fail_msg: >-
+      The retained Docker Gateway is absent after its identity bootstrap has
+      begun or completed. Refusing to replace a checkpointed rollback source;
+      restore its exact retained container through a separately reviewed
+      recovery instead.
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+    - openclaw_pre_site_retained_gateway_container.stdout | trim | length == 0
+  no_log: true
+
+- name: Preflight exact retained rollback assets before cold recovery
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_pre_site_retained_gateway_verifier.path }}"
+      - preflight
+      - --container-state
+      - fenced
+      - --config-state
+      - foundation-or-rollback
+      - --compose-root
+      - "{{ openclaw_compose_root }}"
+      - --setup-root
+      - "{{ openclaw_setup_root }}"
+      - --config
+      - "{{ openclaw_config_path }}"
+      - --runtime-root
+      - "{{ openclaw_runtime_root }}"
+      - --state-root
+      - "{{ openclaw_state_root }}"
+      - --auth-root
+      - "{{ openclaw_auth_profile_secret_root }}"
+      - --control-root
+      - "{{ openclaw_control_root }}"
+      - --token
+      - "{{ openclaw_gateway_token_path }}"
+      - --checkpoint
+      - "{{ openclaw_retained_gateway_identity_path }}"
+      - --expected-image
+      - "{{ openclaw_retained_image_ref }}"
+      - --hostname
+      - "{{ openclaw_hostname }}"
+      - --port
+      - "{{ openclaw_gateway_port | string }}"
+      - --uid
+      - "{{ openclaw_uid | string }}"
+      - --gid
+      - "{{ openclaw_gid | string }}"
+      - --require-expected-token
+  args:
+    stdin: "{{ openclaw_gateway_token | trim }}\n"
+    stdin_add_newline: false
+  register: openclaw_pre_site_retained_gateway_recovery_preflight
+  changed_when: false
+  retries: 3
+  delay: 2
+  until: openclaw_pre_site_retained_gateway_recovery_preflight.rc == 0
+  no_log: true
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+    - openclaw_pre_site_retained_gateway_container.stdout | trim | length == 0
+    - not (openclaw_pre_site_retained_gateway_checkpoint.stat.exists | default(false))
+    - not (openclaw_pre_site_retained_gateway_checkpoint.stat.islnk | default(false))
+    - not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.exists | default(false))
+    - not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.islnk | default(false))
+
+- name: Create an absent retained Docker Gateway fenced for initial identity seeding
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - create
+      - openclaw-gateway
+  args:
+    chdir: "{{ openclaw_compose_root }}"
+  register: openclaw_pre_site_retained_gateway_create
+  changed_when: >-
+    'Created' in (
+      openclaw_pre_site_retained_gateway_create.stdout ~
+      openclaw_pre_site_retained_gateway_create.stderr
+    )
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
+    - openclaw_native_primary_source_hold.stat.exists | default(false)
+    - openclaw_native_primary_source_hold.stat.isreg | default(false)
+    - not (openclaw_native_primary_source_hold.stat.islnk | default(false))
+    - openclaw_native_primary_source_hold.stat.uid | default(-1) == 0
+    - openclaw_native_primary_source_hold.stat.gid | default(-1) == 0
+    - openclaw_native_primary_source_hold.stat.mode | default('') == '0600'
+    - >-
+      (openclaw_native_primary_source_hold_content.content | default('') | b64decode) ==
+      openclaw_native_transition_marker_value + '\n'
+    - openclaw_pre_site_retained_gateway_container.stdout | trim | length == 0
+    - not (openclaw_pre_site_retained_gateway_checkpoint.stat.exists | default(false))
+    - not (openclaw_pre_site_retained_gateway_checkpoint.stat.islnk | default(false))
+    - not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.exists | default(false))
+    - not (openclaw_pre_site_persistent_retained_gateway_verifier.stat.islnk | default(false))
 
 - name: Require a checkpoint-matching running rollback Gateway before stopping it
   ansible.builtin.command:
@@ -126,7 +259,7 @@
       - "{{ openclaw_pre_site_retained_gateway_verifier.path }}"
       - require
       - --container-state
-      - stopped
+      - fenced
       - --config-state
       - rollback
       - --compose-root
@@ -188,7 +321,7 @@
           else 'require'
         }}
       - --container-state
-      - stopped
+      - fenced
       - --config-state
       - foundation-or-rollback
       - --compose-root
