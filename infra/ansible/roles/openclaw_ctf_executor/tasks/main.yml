@@ -87,11 +87,14 @@
     path: "{{ item.path }}"
     state: directory
     owner: root
-    group: root
+    # sshd must be able to open this path while checking the transport
+    # account's authorized key.  The private primary group can traverse it,
+    # but no non-root principal can modify the directory or its contents.
+    group: "{{ openclaw_ctf_docker_user }}"
     mode: "{{ item.mode }}"
   loop:
     - {path: "/var/lib/{{ openclaw_ctf_docker_user }}", mode: "0750"}
-    - {path: "/var/lib/{{ openclaw_ctf_docker_user }}/.ssh", mode: "0700"}
+    - {path: "/var/lib/{{ openclaw_ctf_docker_user }}/.ssh", mode: "0750"}
 
 - name: Reserve the root-managed CTF Docker transport authorized-keys file
   ansible.builtin.file:
@@ -100,8 +103,8 @@
     access_time: preserve
     modification_time: preserve
     owner: root
-    group: root
-    mode: "0600"
+    group: "{{ openclaw_ctf_docker_user }}"
+    mode: "0640"
 
 - name: Restrict the CTF Docker transport account to the Docker dial socket
   ansible.builtin.template:

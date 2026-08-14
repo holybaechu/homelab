@@ -102,6 +102,11 @@
         printf '%s\n' "${effective}" | grep -Fx 'allowtcpforwarding no'
         printf '%s\n' "${effective}" | grep -Fx 'permittty no'
         printf '%s\n' "${effective}" | grep -Fx 'passwordauthentication no'
+        test "$(stat -c '%U:%G %a' /var/lib/{{ openclaw_ctf_docker_user }})" = "root:{{ openclaw_ctf_docker_user }} 750"
+        test "$(stat -c '%U:%G %a' /var/lib/{{ openclaw_ctf_docker_user }}/.ssh)" = "root:{{ openclaw_ctf_docker_user }} 750"
+        test "$(stat -c '%U:%G %a' /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys)" = "root:{{ openclaw_ctf_docker_user }} 640"
+        /usr/sbin/runuser -u {{ openclaw_ctf_docker_user }} -- /usr/bin/test -r /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys
+        ! /usr/sbin/runuser -u {{ openclaw_ctf_docker_user }} -- /usr/bin/test -w /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys
         test "$(wc -l < /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys)" -eq 1
         grep -F 'from="{{ openclaw_ip }}",command="/usr/bin/docker system dial-stdio",no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding ssh-ed25519 ' /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys
       args:

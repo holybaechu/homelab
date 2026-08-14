@@ -45,10 +45,54 @@ def test_executor_keeps_its_hardened_docker_and_network_contract():
         assert denied_cidr in firewall
 
 
+def test_forced_docker_transport_key_is_root_managed_but_ssh_readable():
+    tasks = yaml.safe_load(
+        read("infra/ansible/roles/openclaw_ctf_executor/tasks/main.yml")
+    )
+    home_task_definition = next(
+        task
+        for task in tasks
+        if task["name"]
+        == "Lock down the CTF Docker transport user's home and authorized-key directory"
+    )
+    home_task = home_task_definition["ansible.builtin.file"]
+    authorized_keys_task = next(
+        task
+        for task in tasks
+        if task["name"] == "Reserve the root-managed CTF Docker transport authorized-keys file"
+    )["ansible.builtin.file"]
+
+    assert home_task["owner"] == "root"
+    assert home_task["group"] == "{{ openclaw_ctf_docker_user }}"
+    assert home_task_definition["loop"] == [
+        {"path": "/var/lib/{{ openclaw_ctf_docker_user }}", "mode": "0750"},
+        {
+            "path": "/var/lib/{{ openclaw_ctf_docker_user }}/.ssh",
+            "mode": "0750",
+        },
+    ]
+    assert authorized_keys_task["owner"] == "root"
+    assert authorized_keys_task["group"] == "{{ openclaw_ctf_docker_user }}"
+    assert authorized_keys_task["mode"] == "0640"
+
+    validation = read("infra/ansible/playbooks/validate.yml")
+    assert "root:{{ openclaw_ctf_docker_user }} 750" in validation
+    assert "root:{{ openclaw_ctf_docker_user }} 640" in validation
+    assert (
+        "/usr/sbin/runuser -u {{ openclaw_ctf_docker_user }} -- /usr/bin/test -r"
+        in validation
+    )
+    assert (
+        "! /usr/sbin/runuser -u {{ openclaw_ctf_docker_user }} -- /usr/bin/test -w"
+        in validation
+    )
+
+
 def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets():
     service = read("infra/ansible/roles/openclaw_native/templates/openclaw-gateway.service.j2")
     wrapper = read("infra/ansible/roles/openclaw_native/templates/openclaw-ctf-docker-ssh.j2")
     transport = read("infra/ansible/roles/openclaw_ctf_transport/tasks/main.yml")
+    transport_tasks = yaml.safe_load(transport)
 
     for required in (
         "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
@@ -65,7 +109,24 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
     assert "docker system dial-stdio" in transport
     assert "no-port-forwarding" in transport
     assert "openclaw_ctf_user" not in transport
-    assert "openclaw-gateway.service" in read(
+    installed_key = next(
+        task
+        for task in transport_tasks
+        if task["name"] == "Install the Gateway-only forced Docker transport key"
+    )["ansible.builtin.copy"]
+    assert installed_key["owner"] == "root"
+    assert installed_key["group"] == "{{ openclaw_ctf_docker_user }}"
+    assert installed_key["mode"] == "0640"
+
+    names = [task["name"] for task in transport_tasks]
+    smoke_index = names.index("Validate the restricted remote CTF Docker transport")
+    refresh_index = names.index(
+        "Refresh the one Gateway CTF Docker credential snapshot after verification"
+    )
+    assert smoke_index < refresh_index
+    refresh = transport_tasks[refresh_index]["ansible.builtin.systemd_service"]
+    assert refresh == {"name": "openclaw-gateway.service", "state": "restarted"}
+    assert "Restart OpenClaw Gateway after transport update" not in read(
         "infra/ansible/roles/openclaw_ctf_transport/handlers/main.yml"
     )
 

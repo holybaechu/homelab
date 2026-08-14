@@ -33,8 +33,10 @@
       from="{{ openclaw_ip }}",command="/usr/bin/docker system dial-stdio",no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding {{ openclaw_gateway_transport_public_key.content | b64decode | trim }}
     dest: "/var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys"
     owner: root
-    group: root
-    mode: "0600"
+    # sshd evaluates this file under the restricted account's UID.  Its
+    # private group may read the public key but cannot modify it.
+    group: "{{ openclaw_ctf_docker_user }}"
+    mode: "0640"
   no_log: true
   notify: Reload isolated CTF executor SSH after transport update
 
@@ -54,7 +56,6 @@
     mode: "0600"
   delegate_to: openclaw
   no_log: true
-  notify: Restart OpenClaw Gateway after transport update
 
 - name: Validate the restricted remote CTF Docker transport
   when: hostvars['openclaw'].openclaw_native_activate | default(false) | bool
@@ -124,5 +125,14 @@
       when: openclaw_ctf_transport_credential_dir.path is defined
       failed_when: false
 
-- name: Reload CTF transport credentials in the one Gateway service
+- name: Refresh the one Gateway CTF Docker credential snapshot after verification
+  ansible.builtin.systemd_service:
+    name: openclaw-gateway.service
+    state: restarted
+  delegate_to: openclaw
+  when:
+    - hostvars['openclaw'].openclaw_native_activate | default(false) | bool
+    - not (hostvars['openclaw'].openclaw_docker_rollback_activate | default(false) | bool)
+
+- name: Flush the CTF executor SSH handler after transport update
   ansible.builtin.meta: flush_handlers
