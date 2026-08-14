@@ -386,9 +386,14 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "CapabilityBoundingSet=",
         "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
         "SystemCallArchitectures=native",
-        "ReadOnlyPaths={{ openclaw_setup_root }}",
+        "ReadOnlyPaths={{ openclaw_config_path }}",
         "LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}",
-        "LoadCredential=discord_relay_core_hmac:{{ openclaw_relay_core_hmac_path }}",
+        "LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}",
+        "LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}",
+        "LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}",
+        "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
+        "Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}",
+        "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=%d/discord_bot_token",
         "RuntimeDirectory=openclaw-gateway",
         "RuntimeDirectoryMode=0700",
         "RuntimeDirectoryPreserve=no",
@@ -398,24 +403,14 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "%d/openclaw_gateway_token /run/openclaw-gateway/gateway_token",
         "ReadWritePaths={{ openclaw_runtime_root }}",
         "ReadWritePaths={{ openclaw_auth_profile_secret_root }}",
+        "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
+        "InaccessiblePaths=/run/docker.sock",
+        "InaccessiblePaths=/var/run/docker.sock",
     ):
         assert value in unit
-    for inaccessible in (
-        "InaccessiblePaths={{ openclaw_ctf_workspace_root }}",
-        "InaccessiblePaths={{ openclaw_ctf_state_root }}",
-        "InaccessiblePaths={{ openclaw_ctf_home }}",
-        "InaccessiblePaths=/opt/openclaw-ctf",
-        "InaccessiblePaths=/opt/openclaw-ctf-plugins",
-    ):
-        assert inaccessible in unit
     for forbidden in (
-        "Environment=DOCKER_HOST=",
-        "Environment=DOCKER_SSH_COMMAND=",
-        "LoadCredential=ctf_docker_client_key:",
-        "LoadCredential=ctf_docker_known_hosts:",
-        "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
-        "LoadCredential=discord_bot_token:",
-        "OPENCLAW_DISCORD_BOT_TOKEN_FILE=",
+        "openclaw-ctf-gateway.service",
+        "openclaw-discord-relay.service",
     ):
         assert forbidden not in unit
     assert "systemctl --user" not in unit
@@ -572,6 +567,9 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert variables["openclaw_codex_plugin_spec"] == (
         "npm:@openclaw/codex@2026.7.1-1"
     )
+    assert variables["openclaw_discord_plugin_spec"] == (
+        "npm:@openclaw/discord@2026.7.1"
+    )
     assert "stat.mode == '0640'" in tasks
     assert "not (openclaw_setup_paths.results[2].stat.islnk" in tasks
     assert "git_safe --no-pager ls-files --error-unmatch config/openclaw.json" in tasks
@@ -581,10 +579,10 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert "unresolvedRefCount != 0" in tasks
     assert 'owner: root\n    group: root\n    mode: "0600"' in tasks
     assert "OPENCLAW_SUPERVISOR_MODE: external" in tasks
-    assert "plugins/openclaw-discord-relay-core/openclaw.plugin.json" in tasks
+    assert "openclaw-discord-relay-core" not in tasks
 
 
-def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_core_agents():
+def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_all_agents():
     variables = yaml.safe_load(read(VARS))
     tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
     all_tasks = list(walk_tasks(tasks))
@@ -592,16 +590,19 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_core_age
     contract = next(
         task
         for task in all_tasks
-        if task["name"] == "Require the protected core-only OpenClaw Gateway schema"
+        if task["name"] == "Require the protected one-Gateway OpenClaw schema"
     )
     assertions = "\n".join(contract["ansible.builtin.assert"]["that"])
     for required in (
         "agents.defaults.model.primary == openclaw_codex_model",
         "agents.defaults.thinkingDefault == openclaw_codex_thinking_default",
-        "difference([openclaw_codex_model])",
         "'order': {'openai': [openclaw_codex_profile_id]}",
-        "'agentRuntime': {'id': 'codex'}",
+        "models.providers.openai.agentRuntime.id",
         "plugins.entries.codex.enabled",
+        "plugins.entries.discord.enabled",
+        "openclaw_ctf_agents | length == 1",
+        "openclaw_main_agents | length == 1",
+        "sandbox.backend == 'docker'",
     ):
         assert required in assertions
     assert "apiKey" not in assertions
@@ -652,10 +653,48 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_core_age
     ]
     assert ".plugin.id != 'codex'" in runtime["failed_when"]
     assert ".plugin.status != 'loaded'" in runtime["failed_when"]
+    assert runtime["no_log"] is True
 
-    assert variables["openclaw_codex_profile_id"] != variables[
-        "openclaw_ctf_codex_profile_id"
+    assert "openclaw_ctf_codex_profile_id" not in variables
+
+
+def test_native_openclaw_installs_and_loads_the_pinned_discord_channel_plugin():
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    all_tasks = list(walk_tasks(tasks))
+
+    install = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Install the pinned core Discord channel plugin"
+    )
+    assert install["ansible.builtin.command"]["argv"][-5:] == [
+        "plugins",
+        "install",
+        "{{ openclaw_discord_plugin_spec }}",
+        "--pin",
+        "--force",
     ]
+    assert install["become_user"] == "{{ openclaw_user }}"
+    assert install["environment"]["OPENCLAW_CONFIG_PATH"] == (
+        "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
+    )
+
+    runtime = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Inspect the core Discord channel plugin runtime before startup"
+    )
+    assert runtime["ansible.builtin.command"]["argv"][-5:] == [
+        "plugins",
+        "inspect",
+        "discord",
+        "--runtime",
+        "--json",
+    ]
+    assert ".plugin.id != 'discord'" in runtime["failed_when"]
+    assert ".plugin.status != 'loaded'" in runtime["failed_when"]
+    assert runtime["become_user"] == "{{ openclaw_user }}"
+    assert runtime["no_log"] is True
 
 
 def test_native_config_path_preflight_normalizes_only_the_cli_home_display_prefix():
@@ -703,25 +742,19 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     protected = next(
         task
         for task in all_tasks
-        if task["name"] == "Require the protected core-only OpenClaw Gateway schema"
+        if task["name"] == "Require the protected one-Gateway OpenClaw schema"
     )
     discord_boundary = next(
         task
         for task in all_tasks
         if task["name"]
-        == "Forbid Discord credentials and channel bindings in the core Gateway"
+        == "Require channel-only shared Discord routing in the one Gateway"
     )
     cli = next(
         task
         for task in all_tasks
         if task["name"] == "Require the proxy-only native OpenClaw config values"
     )
-    runtime_check = next(
-        task
-        for task in all_tasks
-        if task["name"] == "Inspect the core relay plugin runtime before startup"
-    )
-
     config_preflight_index = next(
         index
         for index, task in enumerate(tasks)
@@ -739,22 +772,26 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     assert ".gateway.auth.token ==" in assertions
     assert "'provider': 'gateway_token_file'" in assertions
     assert "'id': 'value'" in assertions
-    assert "selectattr('id', 'equalto', 'ctf') | list | length) == 0" in assertions
-    assert ".get('channels', {}) | length == 0" in assertions
-    assert ".get('bindings', []) | length == 0" in assertions
-    assert "openclaw-discord-relay-core" in assertions
-    assert "allowedChannelIds" in assertions
-    assert "discord_bot_token_file" not in assertions
+    assert "discord_bot_token_file" in assertions
+    assert "plugins.entries.discord.enabled" in assertions
+    assert "openclaw_ctf_agents | length == 1" in assertions
+    assert "openclaw_main_agents | length == 1" in assertions
+    assert "sandbox.backend == 'docker'" in assertions
+    assert "sandbox.scope == 'session'" in assertions
+    assert assertions.count("'message' in") == 3
+    assert "'message' not in (openclaw_ctf_agents[0].tools.sandbox.tools.deny" in assertions
+    assert "openclaw_ctf_agents[0].tools.message.crossContext" in assertions
+    assert "openclaw_main_agents[0].tools.message.crossContext" in assertions
 
     assert discord_boundary["when"] == "openclaw_native_activate | bool"
     assert discord_boundary["no_log"] is True
     boundary_assertions = " ".join(
         discord_boundary["ansible.builtin.assert"]["that"]
     )
-    assert ".get('channels', {}) | length) == 0" in boundary_assertions
-    assert ".get('bindings', []) | length) == 0" in boundary_assertions
-    assert "'discord_bot_token_file' not in" in boundary_assertions
-    assert set(discord_boundary["vars"]) == {"openclaw_native_config_parsed"}
+    assert "openclaw_discord_account.token" in boundary_assertions
+    assert "openclaw_discord_allowed_channels" in boundary_assertions
+    assert "selectattr('agentId', 'equalto', 'ctf')" in boundary_assertions
+    assert "openclaw_discord_account" in discord_boundary["vars"]
 
     assert cli["failed_when"] == (
         "openclaw_native_config_values.rc != 0 or "
@@ -770,6 +807,9 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         "secrets.providers.gateway_token_file.source",
         "secrets.providers.gateway_token_file.path",
         "secrets.providers.gateway_token_file.mode",
+        "secrets.providers.discord_bot_token_file.source",
+        "secrets.providers.discord_bot_token_file.path",
+        "secrets.providers.discord_bot_token_file.mode",
     }
     assert {item["cli_value"] for item in redacted.values()} == {
         "__OPENCLAW_REDACTED__"
@@ -778,23 +818,21 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         "file",
         "${OPENCLAW_GATEWAY_TOKEN_FILE}",
         "singleValue",
+        "${OPENCLAW_DISCORD_BOT_TOKEN_FILE}",
     }
     assert all(
         "cli_value" not in item
         for item in cli["loop"]
-        if not item["path"].startswith("secrets.providers.gateway_token_file.")
+        if not item["path"].startswith("secrets.providers.")
     )
-    assert runtime_check["ansible.builtin.command"]["argv"][-5:] == [
-        "plugins",
-        "inspect",
-        "openclaw-discord-relay-core",
-        "--runtime",
-        "--json",
-    ]
-    assert runtime_check["become_user"] == "{{ openclaw_user }}"
-    assert ".plugin.id != 'openclaw-discord-relay-core'" in runtime_check["failed_when"]
-    assert ".plugin.status != 'loaded'" in runtime_check["failed_when"]
-    assert runtime_check["no_log"] is True
+    assert {
+        item["path"]: item["value"]
+        for item in cli["loop"]
+        if item["path"].startswith("plugins.entries.")
+    } == {
+        "plugins.entries.codex.enabled": True,
+        "plugins.entries.discord.enabled": True,
+    }
 
 
 def test_active_native_validation_enforces_private_repository_boundaries():
@@ -826,10 +864,6 @@ def test_active_native_validation_enforces_private_repository_boundaries():
         "git_safe diff --quiet --no-ext-diff --no-textconv",
         "git_safe diff --cached --quiet --no-ext-diff --no-textconv",
         "git_safe --no-pager ls-files --error-unmatch config/openclaw.json",
-        "plugins/openclaw-discord-relay-core/index.js",
-        "plugins/openclaw-discord-relay-core/package.json",
-        "plugins/openclaw-discord-relay-core/openclaw.plugin.json",
-        "plugins/openclaw-discord-relay-ctf/openclaw.plugin.json",
         "(^|/)(state|runtime|auth|credentials|sessions|logs|cache|tmp|temp)(/|$)",
         "grep --quiet -F -f '{{ openclaw_gateway_token_path }}' --",
         'test "$tracked_token_status" -eq 1',
@@ -921,7 +955,7 @@ def test_native_openclaw_activation_validates_before_starting():
     secret_ref_contract = next(
         task
         for task in all_tasks
-        if task["name"] == "Require the protected core-only OpenClaw Gateway schema"
+        if task["name"] == "Require the protected one-Gateway OpenClaw schema"
     )
     assert any("'remote' not in" in check for check in secret_ref_contract["ansible.builtin.assert"]["that"])
     assert secret_ref_contract["no_log"] is True
@@ -943,26 +977,26 @@ def test_native_openclaw_activation_validates_before_starting():
     assert credential_copy["ansible.builtin.copy"]["mode"] == "0400"
     assert credential_copy["no_log"] is True
     assert credential_copy["diff"] is False
-    relay_hmac_credential_copy = next(
+    discord_credential_copy = next(
         task
         for task in all_tasks
         if task["name"]
-        == "Materialize a read-only core relay HMAC validation credential"
+        == "Materialize a read-only shared Discord validation credential"
     )
-    assert relay_hmac_credential_copy["ansible.builtin.copy"]["src"] == (
-        "{{ openclaw_relay_core_hmac_path }}"
+    assert discord_credential_copy["ansible.builtin.copy"]["src"] == (
+        "{{ openclaw_discord_bot_token_path }}"
     )
-    assert relay_hmac_credential_copy["ansible.builtin.copy"]["mode"] == "0400"
-    assert relay_hmac_credential_copy["no_log"] is True
+    assert discord_credential_copy["ansible.builtin.copy"]["mode"] == "0400"
+    assert discord_credential_copy["no_log"] is True
     config_path_preflight = next(
         task
         for task in all_tasks
         if task["name"] == "Check the active native OpenClaw config path"
     )
     assert config_path_preflight["environment"][
-        "OPENCLAW_DISCORD_RELAY_CORE_HMAC_FILE"
-    ] == "{{ openclaw_validation_credential_dir.path }}/discord_relay_core_hmac"
-    assert "OPENCLAW_DISCORD_BOT_TOKEN_FILE" not in config_path_preflight["environment"]
+        "OPENCLAW_DISCORD_BOT_TOKEN_FILE"
+    ] == "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
+    assert "OPENCLAW_DISCORD_RELAY_CORE_HMAC_FILE" not in config_path_preflight["environment"]
     assert any(
         task["name"] == "Remove the temporary native OpenClaw credential directory"
         and task["ansible.builtin.file"]["state"] == "absent"
@@ -1197,35 +1231,34 @@ def test_site_and_validation_include_the_dedicated_openclaw_lxc():
 
     assert "hosts: svc_openclaw" in site
     assert "role: openclaw_native" in site
-    assert "role: openclaw_ctf_gateway" in site
-    assert "role: openclaw_discord_relay" in site
+    assert "role: openclaw_ctf_gateway" not in site
+    assert "role: openclaw_discord_relay" not in site
     assert site.index("Wait for tailnet route recovery") < site.index(
-        "Stage or activate the separated core and CTF OpenClaw Gateways"
+        "Configure the isolated CTF Docker executor"
     )
     assert site.index(
-        "Stage or activate the separated core and CTF OpenClaw Gateways"
-    ) < site.index("Connect the isolated CTF Gateway to the isolated CTF executor")
+        "Configure the isolated CTF Docker executor"
+    ) < site.index("Stage or activate the dedicated native OpenClaw Gateway")
     assert site.index(
-        "Connect the isolated CTF Gateway to the isolated CTF executor"
-    ) < site.index("Configure the sole Discord ingress relay after both Gateways are ready")
+        "Stage or activate the dedicated native OpenClaw Gateway"
+    ) < site.index("Connect the native OpenClaw Gateway to the isolated CTF executor")
     assert site.index(
-        "Configure the sole Discord ingress relay after both Gateways are ready"
+        "Connect the native OpenClaw Gateway to the isolated CTF executor"
     ) < site.index("Configure Docker Compose application LXC")
 
     assert "Validate the dedicated native OpenClaw host" in validation
     assert "systemctl is-enabled --quiet openclaw-gateway.service" in validation
     assert "systemctl is-active --quiet openclaw-gateway.service" in validation
-    assert "systemctl is-enabled --quiet openclaw-ctf-gateway.service" in validation
-    assert "systemctl is-active --quiet openclaw-ctf-gateway.service" in validation
-    assert "openclaw-discord-relay.service" in validation
+    assert "! systemctl is-active --quiet openclaw-ctf-gateway.service" in validation
+    assert "! systemctl is-active --quiet openclaw-discord-relay.service" in validation
     assert "test ! -S /var/run/docker.sock" in validation
-    assert "test ! -x /usr/bin/docker" in validation
+    assert "test -x '{{ openclaw_ctf_docker_cli_path }}'" in validation
     assert "! systemctl cat docker.service" in validation
-    assert "Validate the Gateway service's credential-scoped remote CTF Docker transport" not in validation
+    assert "Validate the Gateway service credential-scoped remote CTF Docker transport" in validation
     assert "openclaw_ctf_docker_cli_path" in validation
-    assert "openclaw_ctf_user" in validation
-    assert "! systemctl cat openclaw-gateway.service | grep -Fq 'ReadWritePaths={{ openclaw_ctf_workspace_root }}'" in validation
-    assert "systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths={{ openclaw_ctf_workspace_root }}'" in validation
+    assert "openclaw_ctf_user" not in validation
+    assert "systemctl cat openclaw-gateway.service | grep -Fqx 'ReadWritePaths={{ openclaw_ctf_workspace_root }}'" in validation
+    assert "InaccessiblePaths=/var/run/docker.sock" in validation
     assert "systemctl is-active --quiet nftables" in validation
     assert "openclaw_native_activate | bool" in validation
     assert "Reject an ambiguous native transition marker" in validation

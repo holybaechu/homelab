@@ -41,13 +41,6 @@ version available from their configured apt repositories.
 - `ADGUARD_ADMIN_USERNAME`: optional AdGuard Home admin username; defaults to the inventory value
 - `LOW_ID_CUTOVER_CONFIRMED`: set to `true` only for the first 117/112 to
   110/111 renumber after reviewing the plan
-- `OPENCLAW_DISCORD_ENABLED`: optional `true`/`false` switch, disabled by
-  default. It starts the isolated Discord relay, not either OpenClaw Gateway.
-  Keep it `false` until the private numeric route file, bot permissions, and
-  attachment-plus-ZIP handoff tests are ready. When enabled, the CTF route
-  permits only request-correlated ZIP replies up to 25 MiB; validate the
-  private plugin and a non-production Discord flow first.
-
 The native OpenClaw reservation is not duplicated as a GitHub variable. Its
 exact production identity (`192.168.0.5`, `02:00:00:BA:EC:05`) is hardcoded in
 the tracked OpenTofu topology and enforced by the LXC preflight. Keep the
@@ -73,13 +66,9 @@ router reservation aligned with that tracked contract.
 - `ARCANE_ENCRYPTION_KEY`, exactly 64 hexadecimal characters representing 32 bytes
 - `ARCANE_JWT_SECRET`, at least 32 characters
 - `OPENCLAW_GATEWAY_TOKEN`, exactly 64 hexadecimal characters representing 32 bytes;
-  the bearer token for the core Gateway
-- `OPENCLAW_CTF_GATEWAY_TOKEN`, exactly 64 hexadecimal characters representing
-  32 bytes; the required, separate bearer token for the loopback-only CTF
-  Gateway
-- `OPENCLAW_DISCORD_BOT_TOKEN`, optional; the one shared bot token, required
-  only when `OPENCLAW_DISCORD_ENABLED=true`. It is loaded by the isolated
-  Discord relay only, never by the core or CTF Gateway.
+  the bearer token for the one Gateway
+- `OPENCLAW_DISCORD_BOT_TOKEN`, required; the one shared bot token loaded by
+  the one Gateway for direct channel routing.
 
 The active topology has one direct qBittorrent instance and no Gluetun or
 Proton VPN service, so CD does not require a Proton or WireGuard secret.
@@ -93,31 +82,22 @@ be recreated with the same values during an LXC replacement.
 Generate the two values independently with `openssl rand -hex 32`; do not reuse
 one output for both secrets.
 
-Generate `OPENCLAW_GATEWAY_TOKEN` and `OPENCLAW_CTF_GATEWAY_TOKEN`
-independently with the same command. Ansible writes them outside Git on VMID
-118 as root-owned mode-`0600` files below `/etc/openclaw/secrets/`; the core
-and CTF services receive only their respective systemd credential. Keep both
-GitHub values stable and recoverable; rotating either invalidates clients of
-that Gateway only.
+Generate `OPENCLAW_GATEWAY_TOKEN` with `openssl rand -hex 32`. Ansible writes
+it outside Git on VMID 118 as a root-owned mode-`0600` file below
+`/etc/openclaw/secrets/`; the one Gateway receives it as a systemd credential.
+Keep the value stable and recoverable; rotating it invalidates Gateway clients.
 
-Neither Gateway has an OpenAI API-key secret in GitHub. After deployment, the
-core `openai:main` and CTF `openai:ctf` profiles are created separately with
-the owner's ChatGPT/Codex device-code OAuth login and retained only in their
-respective service accounts' isolated OpenClaw auth/state storage. Do not put
-an OpenAI API key, ChatGPT session token, OAuth refresh token, or a copy of
-desktop `~/.codex` in GitHub secrets, the Discord relay, or a private route
-file. The protected core config may name `openai:main`, but it never contains
-the resulting credential. Follow the core sign-in procedure in
-`docs/runbooks/openclaw.md` first, then the CTF procedure in
-`docs/runbooks/openclaw-ctf.md`.
-After a successful deployment of this OAuth version, delete any obsolete
-`OPENCLAW_CTF_OPENAI_API_KEY` GitHub secret so it cannot become a stale
-production credential.
+The Gateway uses the owner's `openai:main` ChatGPT/Codex profile; no OpenAI API
+key belongs in GitHub. Do not put an API key, ChatGPT session token, OAuth
+refresh token, or desktop `~/.codex` copy in GitHub secrets or the private
+configuration. The `ctf` agent shares this profile in the one Gateway. Delete
+obsolete `OPENCLAW_CTF_GATEWAY_TOKEN` and `OPENCLAW_CTF_OPENAI_API_KEY`
+secrets after migration.
 
-Do not create per-agent Discord secrets. The single generic
-`OPENCLAW_DISCORD_BOT_TOKEN` is supplied only to
-`openclaw-discord-relay.service`. Its per-target HMAC credentials are generated
-on the target and are not GitHub secrets.
+Do not create per-agent Discord secrets. The one
+`OPENCLAW_DISCORD_BOT_TOKEN` is supplied directly to
+`openclaw-gateway.service`; numeric channel bindings in the private config
+select agents.
 
 Example `COPYPARTY_USERS_JSON`:
 

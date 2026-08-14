@@ -4,9 +4,9 @@
     name: ssh.service
     state: reloaded
 
-- name: Restart OpenClaw CTF Gateway after transport update
+- name: Restart OpenClaw Gateway after transport update
   ansible.builtin.systemd_service:
-    name: openclaw-ctf-gateway.service
+    name: openclaw-gateway.service
     state: restarted
   delegate_to: openclaw
   when:

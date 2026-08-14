@@ -19,10 +19,6 @@ REQUIRED_ENV = {
     "arcane_encryption_key": "ARCANE_ENCRYPTION_KEY",
     "arcane_jwt_secret": "ARCANE_JWT_SECRET",
     "openclaw_gateway_token": "OPENCLAW_GATEWAY_TOKEN",
-    "openclaw_ctf_gateway_token": "OPENCLAW_CTF_GATEWAY_TOKEN",
-}
-
-OPTIONAL_ENV: dict[str, str] = {
     "openclaw_discord_bot_token": "OPENCLAW_DISCORD_BOT_TOKEN",
 }
 
@@ -70,7 +66,6 @@ def build_mapping() -> dict[str, Any]:
     mapping["arcane_encryption_key"] = mapping["arcane_encryption_key"].strip()
     mapping["arcane_jwt_secret"] = mapping["arcane_jwt_secret"].strip()
     mapping["openclaw_gateway_token"] = mapping["openclaw_gateway_token"].strip()
-    mapping["openclaw_ctf_gateway_token"] = mapping["openclaw_ctf_gateway_token"].strip()
 
     if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["arcane_encryption_key"]) is None:
         raise SystemExit("ARCANE_ENCRYPTION_KEY must be exactly 64 hexadecimal characters")
@@ -78,20 +73,7 @@ def build_mapping() -> dict[str, Any]:
         raise SystemExit("ARCANE_JWT_SECRET must be at least 32 characters")
     if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["openclaw_gateway_token"]) is None:
         raise SystemExit("OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters")
-    if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["openclaw_ctf_gateway_token"]) is None:
-        raise SystemExit("OPENCLAW_CTF_GATEWAY_TOKEN must be exactly 64 hexadecimal characters")
 
-    for var_name, env_name in OPTIONAL_ENV.items():
-        value = os.environ.get(env_name)
-        if value:
-            mapping[var_name] = value
-
-    discord_enabled = os.environ.get("OPENCLAW_DISCORD_ENABLED", "").strip()
-    if discord_enabled:
-        normalized = discord_enabled.lower()
-        if normalized not in {"true", "false"}:
-            raise SystemExit("OPENCLAW_DISCORD_ENABLED must be true or false")
-        mapping["openclaw_discord_relay_enabled"] = normalized == "true"
     mapping["copyparty_users"] = load_copyparty_users()
 
     adguard_admin_username = os.environ.get("ADGUARD_ADMIN_USERNAME")

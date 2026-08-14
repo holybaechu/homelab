@@ -1,3 +1,5 @@
+import yaml
+
 from tests.helpers import REPO_ROOT
 
 
@@ -98,7 +100,24 @@ def test_openclaw_is_in_debian_inventory_and_pve_bootstrap():
     assert "        ctf_executor:\n          ansible_host: 192.168.0.6" in inventory
     assert "    svc_ctf_executor:\n      hosts:\n        ctf_executor:" in inventory
     assert "ctf_executor_ip: \"{{ hostvars['ctf_executor'].ansible_host }}\"" in all_vars
-    assert "  - vmid: 119\n    name: ctf-executor\n    os_family: debian" in bootstrap
+    assert "  - vmid: 119\n    name: ctf_executor\n    os_family: debian" in bootstrap
+
+
+def test_ctf_executor_bootstrap_target_uses_the_ansible_inventory_name():
+    inventory = yaml.safe_load(read("infra/ansible/inventory/prod/hosts.yml"))
+    all_vars = yaml.safe_load(read("infra/ansible/inventory/prod/group_vars/all.yml"))
+
+    ctf_bootstrap_target = next(
+        entry
+        for entry in all_vars["pve_lxc_access_bootstrap"]
+        if entry["vmid"] == 119
+    )
+
+    assert ctf_bootstrap_target["name"] == "ctf_executor"
+    assert (
+        ctf_bootstrap_target["name"]
+        in inventory["all"]["children"]["debian"]["hosts"]
+    )
 
 
 def test_debian_bootstrap_materializes_proxmox_dns_before_apt():

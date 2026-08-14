@@ -46,19 +46,17 @@ Control UI access uses HTTPS. A new browser must receive the Gateway token out
 of band and may require explicit device approval. Do not enable insecure auth,
 device-auth bypasses, wildcard origins, or trusted-proxy authentication.
 
-All core agents inherit `openai/gpt-5.6-terra` with xhigh thinking through
-`agents.defaults` and are forced through the native Codex runtime. Their independent OpenClaw OAuth
-profile is `openai:main`; the CTF Gateway uses `openai:ctf` in a separate Unix
-identity and state store. Both profiles may sign in to the same owner's
-ChatGPT/Codex subscription, but no OAuth file, desktop `~/.codex` directory,
-or OpenAI API key is shared between services.
+All agents, including `ctf`, inherit `openai/gpt-5.6-terra` with xhigh thinking
+through `agents.defaults` and run through the native Codex runtime. They share
+the one `openai:main` profile inside the one Gateway service account. No OAuth
+file, desktop `~/.codex` directory, or OpenAI API key is stored in either Git
+repository.
 
 ## Core Codex subscription activation
 
 After a deployment has installed the pinned `@openclaw/codex` harness, create
-the core profile from a trusted shell on VMID 118. Stop the core service first;
-this also stops the dependent CTF service, so always complete this core login
-before the separate CTF login documented in `openclaw-ctf.md`.
+the shared profile from a trusted shell on VMID 118. Stop the one Gateway
+service first.
 
 ```sh
 sudo systemctl stop openclaw-gateway.service

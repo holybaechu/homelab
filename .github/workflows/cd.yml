@@ -180,9 +180,7 @@ jobs:
           ARCANE_ENCRYPTION_KEY: ${{ secrets.ARCANE_ENCRYPTION_KEY }}
           ARCANE_JWT_SECRET: ${{ secrets.ARCANE_JWT_SECRET }}
           OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
-          OPENCLAW_CTF_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_CTF_GATEWAY_TOKEN }}
           OPENCLAW_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_DISCORD_BOT_TOKEN }}
-          OPENCLAW_DISCORD_ENABLED: ${{ vars.OPENCLAW_DISCORD_ENABLED }}
         run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Prepare one-time lowest-ID cutover

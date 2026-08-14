@@ -159,7 +159,7 @@
   hosts: svc_openclaw
   gather_facts: false
   tasks:
-    - name: Check core OpenClaw LXC isolation from the CTF executor
+    - name: Check one-Gateway OpenClaw LXC and CTF workspace isolation
       ansible.builtin.shell: |
         set -eu
         test "$(hostname)" = openclaw
@@ -167,40 +167,49 @@
         test "$(id -g openclaw)" = "{{ openclaw_gid }}"
         test "$(getent passwd openclaw | cut -d: -f7)" = /usr/sbin/nologin
         test ! -S /var/run/docker.sock
-        test ! -x /usr/bin/docker
+        test -x '{{ openclaw_ctf_docker_cli_path }}'
         ! systemctl cat docker.service >/dev/null 2>&1
         ! systemctl cat containerd.service >/dev/null 2>&1
-        test "$(id -u {{ openclaw_ctf_user }})" = "{{ openclaw_ctf_uid }}"
-        test "$(id -g {{ openclaw_ctf_user }})" = "{{ openclaw_ctf_gid }}"
-        test "$(getent passwd {{ openclaw_ctf_user }} | cut -d: -f7)" = /usr/sbin/nologin
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 700"
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}')" = "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_client_key_path }}')" = "0:0 600"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_known_hosts_path }}')" = "0:0 600"
-        ! runuser -u '{{ openclaw_user }}' -- /usr/bin/test -r '{{ openclaw_ctf_workspace_root }}'
-        ! runuser -u '{{ openclaw_user }}' -- /usr/bin/test -r '{{ openclaw_ctf_state_root }}'
-        ! runuser -u '{{ openclaw_user }}' -- /usr/bin/test -x '{{ openclaw_ctf_docker_cli_path }}'
       args:
         executable: /bin/sh
       changed_when: false
 
-    - name: Prove the core Gateway systemd unit has no CTF Docker transport
+    - name: Validate the Gateway service credential-scoped remote CTF Docker transport
       ansible.builtin.shell: |
         set -eu
-        ! systemctl cat openclaw-gateway.service | grep -Eq '(^|[^A-Z_])DOCKER_HOST='
-        ! systemctl cat openclaw-gateway.service | grep -Fq 'DOCKER_SSH_COMMAND='
-        ! systemctl cat openclaw-gateway.service | grep -Fq 'ctf_docker_client_key'
-        ! systemctl cat openclaw-gateway.service | grep -Fq 'ctf_docker_known_hosts'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}'
+        systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_client_key:'
+        systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_known_hosts:'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=/run/docker.sock'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=/var/run/docker.sock'
         ! systemctl cat openclaw-gateway.service | grep -Eq '(^|[^A-Z_])OPENAI_API_KEY='
-        ! systemctl cat openclaw-gateway.service | grep -Fq 'ReadWritePaths={{ openclaw_ctf_workspace_root }}'
-        ! systemctl cat openclaw-gateway.service | grep -Fq 'ReadWritePaths={{ openclaw_ctf_state_root }}'
-        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths={{ openclaw_ctf_workspace_root }}'
-        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths={{ openclaw_ctf_state_root }}'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'ReadWritePaths={{ openclaw_ctf_workspace_root }}'
+        ! systemctl is-active --quiet openclaw-ctf-gateway.service
+        ! systemctl is-active --quiet openclaw-discord-relay.service
+        test ! -e /etc/systemd/system/openclaw-ctf-gateway.service
+        test ! -e /etc/systemd/system/openclaw-discord-relay.service
+        systemd-run \
+          --wait \
+          --pipe \
+          --collect \
+          --quiet \
+          --uid='{{ openclaw_user }}' \
+          --property='LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}' \
+          --property='LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}' \
+          --setenv='DOCKER_HOST={{ openclaw_ctf_docker_host }}' \
+          --setenv='DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}' \
+          '{{ openclaw_ctf_docker_cli_path }}' version >/dev/null
       args:
         executable: /bin/sh
       changed_when: false
+      no_log: true
 
-    - name: Validate the isolated CTF Gateway Docker transport and workspace
+    - name: Prove remote Docker receives generated CTF sandbox skills at the pinned path
       ansible.builtin.shell: |
         set -eu
         systemd-run \
@@ -208,7 +217,7 @@
           --pipe \
           --collect \
           --quiet \
-          --uid='{{ openclaw_ctf_user }}' \
+          --uid='{{ openclaw_user }}' \
           --property='LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}' \
           --property='LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}' \
           --setenv='DOCKER_HOST={{ openclaw_ctf_docker_host }}' \
@@ -227,7 +236,7 @@
               --tmpfs /var/tmp \
               --tmpfs /run \
               --cap-drop ALL \
-              --user {{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} \
+              --user {{ openclaw_uid }}:{{ openclaw_gid }} \
               --volume "${fixture}/.openclaw/sandbox-skills/skills:/workspace/.openclaw/sandbox-skills/skills:ro" \
               {{ openclaw_ctf_executor_image }} \
               /bin/sh -ceu "test -r /workspace/.openclaw/sandbox-skills/skills/ctf-artifacts/SKILL.md; grep -Fx ctf-sandbox-skill-transport /workspace/.openclaw/sandbox-skills/skills/ctf-artifacts/SKILL.md"
@@ -265,14 +274,7 @@
         test -d '{{ openclaw_ctf_workspace_root }}/exports'
         test -d '{{ openclaw_ctf_workspace_root }}/media/inbound'
         test -d '{{ openclaw_ctf_workspace_root }}/skills/ctf-artifacts'
-        test -r '{{ openclaw_ctf_plugin_root }}/openclaw.plugin.json'
-        test -r '{{ openclaw_ctf_plugin_root }}/index.js'
-        grep -Fq 'ctf_publish' '{{ openclaw_ctf_plugin_root }}/openclaw.plugin.json'
-        grep -Fq 'registerTool' '{{ openclaw_ctf_plugin_root }}/index.js'
-        grep -Fq 'media/inbound' '{{ openclaw_ctf_plugin_root }}/index.js'
-        grep -Fq 'runEmbeddedAgent' '{{ openclaw_ctf_plugin_root }}/index.js'
-        grep -Fq 'exports' '{{ openclaw_ctf_plugin_root }}/index.js'
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
         setup="$(realpath '{{ openclaw_setup_root }}')"
         workspace="$(realpath '{{ openclaw_ctf_workspace_root }}')"
         case "$workspace" in "$setup"|"$setup"/*) exit 1 ;; esac
@@ -280,74 +282,17 @@
         executable: /bin/sh
       changed_when: false
 
-    - name: Check the isolated CTF Gateway service and credential boundary
+    - name: Check direct Discord credential state when explicitly enabled
       ansible.builtin.shell: |
         set -eu
-        systemctl is-enabled --quiet openclaw-ctf-gateway.service
-        systemctl is-active --quiet openclaw-ctf-gateway.service
-        curl -fsS 'http://{{ openclaw_ctf_gateway_bind_host }}:{{ openclaw_ctf_gateway_port }}/readyz' >/dev/null
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_gateway_config_path }}')" = "0:{{ openclaw_ctf_gid }} 640"
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_gateway_token_path }}')" = '0:0 600'
-        test ! -e '{{ openclaw_secret_root }}/ctf_openai_api_key'
-        test "$(stat -c '%u:%g %a' /run/openclaw-ctf-gateway/gateway_token)" = "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 400"
-        systemctl cat openclaw-ctf-gateway.service | grep -Fq 'Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}'
-        ! systemctl cat openclaw-ctf-gateway.service | grep -Eq '(^|[^A-Z_])OPENAI_API_KEY='
-        ! systemctl cat openclaw-ctf-gateway.service | grep -Fq 'ctf_openai_api_key'
-        systemctl cat openclaw-ctf-gateway.service | grep -Fq 'LoadCredential=ctf_docker_client_key:'
-        systemctl cat openclaw-ctf-gateway.service | grep -Fq 'LoadCredential=ctf_docker_known_hosts:'
-        ! systemctl cat openclaw-ctf-gateway.service | grep -Fq 'OPENCLAW_DISCORD_BOT_TOKEN_FILE'
-        ! systemctl cat openclaw-ctf-gateway.service | grep -Fq 'LoadCredential=openclaw_gateway_token:'
-        ! systemctl cat openclaw-ctf-gateway.service | grep -Fq 'discord_relay_core_hmac'
-        ! runuser -u '{{ openclaw_ctf_user }}' -- /usr/bin/test -r '{{ openclaw_state_root }}'
-        ! runuser -u '{{ openclaw_ctf_user }}' -- /usr/bin/test -r '{{ openclaw_workspace_root }}'
+        test "$(stat -c '%u:%g %a' '{{ openclaw_discord_bot_token_path }}')" = '0:0 600'
+        systemctl cat openclaw-gateway.service | grep -Fq 'Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=%d/discord_bot_token'
+        systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=discord_bot_token:'
       args:
         executable: /bin/sh
       changed_when: false
       no_log: true
-      when:
-        - openclaw_native_activate | bool
-        - not (openclaw_docker_rollback_activate | bool)
-
-    - name: Check isolated Discord relay state when explicitly enabled
-      ansible.builtin.shell: |
-        set -eu
-        systemctl is-enabled --quiet openclaw-discord-relay.service
-        systemctl is-active --quiet openclaw-discord-relay.service
-        test "$(stat -c '%u:%g %a' '{{ openclaw_discord_relay_routes_path }}')" = "0:{{ openclaw_discord_relay_gid }} 640"
-        systemctl cat openclaw-discord-relay.service | grep -Fq 'LoadCredential=discord_bot_token:'
-        systemctl cat openclaw-discord-relay.service | grep -Fq 'LoadCredential=relay_core_hmac:'
-        systemctl cat openclaw-discord-relay.service | grep -Fq 'LoadCredential=relay_ctf_hmac:'
-        ! systemctl cat openclaw-discord-relay.service | grep -Fq 'DOCKER_HOST='
-        ! systemctl cat openclaw-discord-relay.service | grep -Fq 'LoadCredential=openclaw_gateway_token:'
-        ! systemctl cat openclaw-discord-relay.service | grep -Fq 'LoadCredential=openclaw_ctf_gateway_token:'
-        ! systemctl cat openclaw-discord-relay.service | grep -Eq '(^|[^A-Z_])OPENAI_API_KEY='
-        systemctl cat openclaw-discord-relay.service | grep -Fq 'InaccessiblePaths={{ openclaw_ctf_workspace_root }}'
-        systemctl cat openclaw-discord-relay.service | grep -Fq 'InaccessiblePaths={{ openclaw_ctf_home }}'
-        systemctl cat openclaw-discord-relay.service | grep -Fq 'InaccessiblePaths={{ openclaw_ctf_state_root }}'
-        systemctl cat openclaw-discord-relay.service | grep -Fq 'InaccessiblePaths={{ openclaw_ctf_cache_root }}'
-        systemctl cat openclaw-discord-relay.service | grep -Fq 'InaccessiblePaths={{ openclaw_ctf_plugin_root }}'
-        systemctl cat openclaw-discord-relay.service | grep -Fq 'InaccessiblePaths={{ openclaw_ctf_docker_cli_path | dirname }}'
-        ! systemctl cat openclaw-discord-relay.service | grep -Fq 'ReadWritePaths={{ openclaw_ctf_workspace_root }}'
-        test "$(systemctl show --property=User --value openclaw-discord-relay.service)" = '{{ openclaw_discord_relay_user }}'
-        ! runuser -u '{{ openclaw_discord_relay_user }}' -- /usr/bin/test -r '{{ openclaw_ctf_workspace_root }}'
-        ! runuser -u '{{ openclaw_discord_relay_user }}' -- /usr/bin/test -r '{{ openclaw_ctf_state_root }}'
-        ! runuser -u '{{ openclaw_discord_relay_user }}' -- /usr/bin/test -r '{{ openclaw_ctf_plugin_root }}'
-        ! runuser -u '{{ openclaw_discord_relay_user }}' -- /usr/bin/test -x '{{ openclaw_ctf_docker_cli_path }}'
-      args:
-        executable: /bin/sh
-      changed_when: false
-      no_log: true
-      when: openclaw_discord_relay_enabled | bool
-
-    - name: Check isolated Discord relay remains stopped when disabled
-      ansible.builtin.shell: |
-        set -eu
-        ! systemctl is-enabled --quiet openclaw-discord-relay.service
-        ! systemctl is-active --quiet openclaw-discord-relay.service
-      args:
-        executable: /bin/sh
-      changed_when: false
-      when: not (openclaw_discord_relay_enabled | bool)
+      when: openclaw_discord_enabled | bool
 
     - name: Require mutually exclusive tracked OpenClaw ownership and route
       ansible.builtin.assert:
@@ -406,14 +351,6 @@
         git_safe diff --quiet --no-ext-diff --no-textconv
         git_safe diff --cached --quiet --no-ext-diff --no-textconv
         git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch config/openclaw-ctf.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch config/discord-relay-routes.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-core/index.js >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-core/package.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-core/openclaw.plugin.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-ctf/index.js >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-ctf/package.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-ctf/openclaw.plugin.json >/dev/null
         test -z "$(
           git_safe --no-pager ls-files |
             grep -E '(^|/)(state|runtime|auth|credentials|sessions|logs|cache|tmp|temp)(/|$)' || true
@@ -494,14 +431,6 @@
         git_safe diff --quiet --no-ext-diff --no-textconv
         git_safe diff --cached --quiet --no-ext-diff --no-textconv
         git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch config/openclaw-ctf.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch config/discord-relay-routes.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-core/index.js >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-core/package.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-core/openclaw.plugin.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-ctf/index.js >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-ctf/package.json >/dev/null
-        git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-ctf/openclaw.plugin.json >/dev/null
         umask 077
         tracked_paths="$(mktemp /run/openclaw-native-tracked-paths.XXXXXX)"
         cleanup_tracked_paths() {

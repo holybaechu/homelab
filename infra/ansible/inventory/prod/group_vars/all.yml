@@ -15,9 +15,12 @@ ctf_executor_ip: "{{ hostvars['ctf_executor'].ansible_host }}"
 openclaw_ctf_shared_host_path: "{{ homelab_data_mount }}/openclaw-ctf"
 openclaw_ctf_sandbox_skills_host_path: "{{ homelab_data_mount }}/openclaw-ctf-sandbox-skills"
 openclaw_ctf_workspace_root: /srv/openclaw-ctf
-openclaw_ctf_sandbox_skills_root: /var/lib/openclaw-ctf/sandbox/skills-workspaces
-openclaw_ctf_uid: 1001
-openclaw_ctf_gid: 1001
+# The one Gateway and its CTF sandbox share the service identity for mounted
+# challenge and generated-skill data. The executor itself remains a separate
+# LXC and exposes Docker only through the forced SSH command below.
+openclaw_ctf_sandbox_skills_root: /var/lib/openclaw/sandbox/skills-workspaces
+openclaw_ctf_uid: "{{ service_uid }}"
+openclaw_ctf_gid: "{{ service_gid }}"
 openclaw_ctf_docker_user: openclaw-ctf-docker
 openclaw_ctf_docker_host: "ssh://{{ openclaw_ctf_docker_user }}@{{ ctf_executor_ip }}"
 openclaw_ctf_docker_client_key_path: /etc/openclaw/secrets/ctf_docker_client_key
@@ -170,5 +173,5 @@ pve_lxc_access_bootstrap:
     name: openclaw
     os_family: debian
   - vmid: 119
-    name: ctf-executor
+    name: ctf_executor
     os_family: debian
