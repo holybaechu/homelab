@@ -1,6 +1,22 @@
 #!/bin/sh
 set -eu
 
+# Docker's pinned SSH connection helper calls exactly:
+#   ssh -l openclaw-ctf-docker -o ConnectTimeout=30 -T -- <executor> \
+#     'docker system dial-stdio'
+# Reject every other invocation before inspecting the credential directory.
+if [ "$#" -ne 7 ] || \
+   [ "$1" != "-l" ] || \
+   [ "$2" != "{{ openclaw_ctf_docker_user }}" ] || \
+   [ "$3" != "-o ConnectTimeout=30" ] || \
+   [ "$4" != "-T" ] || \
+   [ "$5" != "--" ] || \
+   [ "$6" != "{{ ctf_executor_ip }}" ] || \
+   [ "$7" != "docker system dial-stdio" ]; then
+  echo "refusing a non-CTF Docker SSH invocation" >&2
+  exit 64
+fi
+
 credential_dir="${CREDENTIALS_DIRECTORY:?missing systemd credential directory}"
 client_key="${credential_dir}/ctf_docker_client_key"
 known_hosts="${credential_dir}/ctf_docker_known_hosts"
@@ -8,6 +24,7 @@ known_hosts="${credential_dir}/ctf_docker_known_hosts"
 test -r "${client_key}"
 test -r "${known_hosts}"
 
+# Reconstruct the approved transport rather than forwarding caller arguments.
 exec /usr/bin/ssh \
   -F /dev/null \
   -o BatchMode=yes \
@@ -18,5 +35,10 @@ exec /usr/bin/ssh \
   -o PasswordAuthentication=no \
   -o KbdInteractiveAuthentication=no \
   -o PreferredAuthentications=publickey \
+  -o IdentityAgent=none \
   -i "${client_key}" \
-  "$@"
+  -l "{{ openclaw_ctf_docker_user }}" \
+  -o "ConnectTimeout=30" \
+  -T \
+  -- "{{ ctf_executor_ip }}" \
+  "docker system dial-stdio"

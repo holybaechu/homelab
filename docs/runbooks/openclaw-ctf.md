@@ -15,10 +15,13 @@ pinned SSH host key and forced command.
 
 ## Important one-Gateway limit
 
-Pinned OpenClaw reads `DOCKER_HOST` and `DOCKER_SSH_COMMAND` from the Gateway
-process environment. It does not support giving those environment variables or
-the systemd-loaded SSH credentials to only one agent inside a shared Gateway
-process. Therefore the remote Docker capability is process-scoped, not a hard
+Docker's `ssh://` connection helper for the Gateway's `DOCKER_HOST` invokes a
+literal `ssh` executable. The Gateway service prepends a root-owned private
+SSH shim to `PATH`; that shim accepts only Docker's pinned CTF transport
+invocation and reads the key and host pin from its systemd
+`CREDENTIALS_DIRECTORY`. OpenClaw does not support giving that process-level
+Docker transport or its systemd-loaded credentials to only one agent inside a
+shared Gateway process. Therefore the remote Docker capability is process-scoped, not a hard
 per-agent credential boundary.
 
 The checked configuration gives only `ctf` a session-scoped Docker sandbox and

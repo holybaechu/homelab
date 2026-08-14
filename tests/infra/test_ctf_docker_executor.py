@@ -96,7 +96,7 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
 
     for required in (
         "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
-        "Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}",
+        "Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin",
         "LoadCredential=ctf_docker_client_key:",
         "LoadCredential=ctf_docker_known_hosts:",
         "InaccessiblePaths=-/run/docker.sock",
@@ -104,8 +104,22 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
         "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
     ):
         assert required in service
-    for required in ("StrictHostKeyChecking=yes", "IdentitiesOnly=yes", "CREDENTIALS_DIRECTORY"):
+    for required in (
+        "StrictHostKeyChecking=yes",
+        "IdentitiesOnly=yes",
+        "CREDENTIALS_DIRECTORY",
+        '[ "$#" -ne 7 ]',
+        '[ "$2" != "{{ openclaw_ctf_docker_user }}" ]',
+        '[ "$6" != "{{ ctf_executor_ip }}" ]',
+        '[ "$7" != "docker system dial-stdio" ]',
+        '-o IdentityAgent=none',
+        '-l "{{ openclaw_ctf_docker_user }}"',
+        '-- "{{ ctf_executor_ip }}"',
+    ):
         assert required in wrapper
+    assert '  "$@"' not in wrapper
+    assert "DOCKER_SSH_COMMAND" not in service
+    assert "DOCKER_SSH_COMMAND" not in transport
     assert "docker system dial-stdio" in transport
     assert "no-port-forwarding" in transport
     assert "openclaw_ctf_user" not in transport
@@ -135,7 +149,8 @@ def test_one_gateway_limit_is_explicitly_documented_and_not_overclaimed():
     runbook = read("docs/runbooks/openclaw-ctf.md")
 
     assert "DOCKER_HOST" in runbook
-    assert "DOCKER_SSH_COMMAND" in runbook
+    assert "CREDENTIALS_DIRECTORY" in runbook
+    assert "DOCKER_SSH_COMMAND" not in runbook
     assert "process-scoped, not a hard\nper-agent credential boundary" in runbook
     assert "host-exec-capable agent could never\nreach the capability" in runbook
     assert "separate Gateway/process" in runbook

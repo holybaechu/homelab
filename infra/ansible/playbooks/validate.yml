@@ -187,7 +187,7 @@
       ansible.builtin.shell: |
         set -eu
         systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}'
-        systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin'
         systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_client_key:'
         systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_known_hosts:'
         systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=-/run/docker.sock'
@@ -198,6 +198,8 @@
         ! systemctl is-active --quiet openclaw-discord-relay.service
         test ! -e /etc/systemd/system/openclaw-ctf-gateway.service
         test ! -e /etc/systemd/system/openclaw-discord-relay.service
+        test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_ssh_shim_dir }}')" = "root:{{ openclaw_group }} 750"
+        test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_ssh_shim_dir }}/ssh')" = "root:{{ openclaw_group }} 750"
         systemd-run \
           --wait \
           --pipe \
@@ -207,7 +209,7 @@
           --property='LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}' \
           --property='LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}' \
           --setenv='DOCKER_HOST={{ openclaw_ctf_docker_host }}' \
-          --setenv='DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}' \
+          --setenv='PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:/usr/local/bin:/usr/bin:/bin' \
           '{{ openclaw_ctf_docker_cli_path }}' version >/dev/null
       args:
         executable: /bin/sh
@@ -226,7 +228,7 @@
           --property='LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}' \
           --property='LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}' \
           --setenv='DOCKER_HOST={{ openclaw_ctf_docker_host }}' \
-          --setenv='DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}' \
+          --setenv='PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:/usr/local/bin:/usr/bin:/bin' \
           /bin/sh -ceu '
             fixture="$(mktemp -d {{ openclaw_ctf_sandbox_skills_root }}/validate.XXXXXX)"
             cleanup() { rm -rf "${fixture}"; }

@@ -38,6 +38,7 @@
       - openclaw_ctf_docker_client_key_path == openclaw_secret_root + '/ctf_docker_client_key'
       - openclaw_ctf_docker_known_hosts_path == openclaw_secret_root + '/ctf_docker_known_hosts'
       - openclaw_ctf_docker_host == 'ssh://' + openclaw_ctf_docker_user + '@' + ctf_executor_ip
+      - openclaw_ctf_docker_ssh_shim_dir == '/usr/local/libexec/openclaw-ctf-docker-bin'
       - openclaw_ctf_docker_network == 'openclaw-ctf'
       - openclaw_discord_enabled | bool
       - openclaw_codex_profile_id == 'openai:main'
@@ -143,6 +144,7 @@
     - {path: "{{ openclaw_home }}/.config", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
     - {path: "{{ openclaw_auth_profile_secret_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: /usr/local/libexec, owner: root, group: root, mode: "0755"}
+    - {path: "{{ openclaw_ctf_docker_ssh_shim_dir }}", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
     - {path: /run/openclaw-native-empty-hooks, owner: root, group: root, mode: "0700"}
     - {path: /etc/openclaw, owner: root, group: root, mode: "0755"}
     - {path: "{{ openclaw_secret_root }}", owner: root, group: root, mode: "0700"}
@@ -258,13 +260,13 @@
   no_log: true
   notify: Restart OpenClaw Gateway
 
-- name: Install the CTF executor Docker SSH wrapper
+- name: Install the private CTF executor Docker SSH PATH shim
   ansible.builtin.template:
     src: openclaw-ctf-docker-ssh.j2
-    dest: "{{ openclaw_ctf_docker_ssh_wrapper_path }}"
+    dest: "{{ openclaw_ctf_docker_ssh_shim_dir }}/ssh"
     owner: root
-    group: root
-    mode: "0755"
+    group: "{{ openclaw_group }}"
+    mode: "0750"
   notify: Restart OpenClaw Gateway
 
 - name: Require an explicit shared Discord bot token
