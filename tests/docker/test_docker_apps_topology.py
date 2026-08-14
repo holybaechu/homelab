@@ -5,14 +5,15 @@ def read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_tailnet_docker_apps_and_openclaw_are_managed_lxcs():
+def test_tailnet_docker_apps_openclaw_and_ctf_executor_are_managed_lxcs():
     topology = read("infra/opentofu/envs/prod/containers.auto.tfvars")
     inventory = read("infra/ansible/inventory/prod/hosts.yml")
 
-    assert topology.count("vmid             =") == 3
+    assert topology.count("vmid             =") == 4
     assert "tailnet = {" in topology
     assert "docker_apps = {" in topology
     assert "openclaw = {" in topology
+    assert "ctf_executor = {" in topology
     for retired in ("dns", "edge", "downloads", "files", "minecraft", "hermes"):
         assert f"  {retired} = {{" not in topology
         assert f"svc_{retired}:" not in inventory
@@ -25,6 +26,11 @@ def test_tailnet_docker_apps_and_openclaw_are_managed_lxcs():
     assert 'hostname         = "openclaw"' in topology
     assert 'ip_address       = "192.168.0.5/24"' in topology
     assert 'mac_address      = "02:00:00:BA:EC:05"' in topology
+    assert "startup_order    = 4" in topology
+    assert "vmid             = 119" in topology
+    assert 'hostname         = "ctf-executor"' in topology
+    assert 'ip_address       = "192.168.0.6/24"' in topology
+    assert 'mac_address      = "02:00:00:BA:EC:06"' in topology
     assert "startup_order    = 3" in topology
 
 
@@ -51,23 +57,29 @@ def test_only_tailnet_keeps_tun_and_docker_lxc_removes_its_retired_device():
     assert "-mp1" not in docker
 
 
-def test_openclaw_lxc_has_no_nested_features_tun_or_bind_mounts():
+def test_openclaw_lxc_has_no_nested_features_tun_and_only_ctf_scoped_mounts():
     topology = read("infra/opentofu/envs/prod/containers.auto.tfvars")
     module = read("infra/opentofu/modules/pve-lxc/main.tf")
     all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
-    openclaw = all_vars.split("  - vmid: 118", 1)[1].split(
-        "pve_lxc_access_bootstrap:", 1
-    )[0]
+    openclaw = all_vars.split("  - vmid: 118", 1)[1].split("  - vmid: 119", 1)[0]
 
     assert "unprivileged  = true" in module
     assert "features {" not in module
     assert "device_passthrough" not in topology
     assert "mount_point" not in topology
-    assert "settings: []" in openclaw
+    assert 'bind_mount_sources:' in openclaw
+    assert '"{{ openclaw_ctf_shared_host_path }}"' in openclaw
+    assert '"{{ openclaw_ctf_sandbox_skills_host_path }}"' in openclaw
+    assert "mount the dedicated CTF workspace once" in openclaw
+    assert "-mp0 {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}" in openclaw
+    assert "mount generated CTF sandbox skills once" in openclaw
+    assert "-mp1 {{ openclaw_ctf_sandbox_skills_host_path }},mp={{ openclaw_ctf_sandbox_skills_root }}" in openclaw
+    assert "enable nesting for the isolated CTF Docker executor" not in openclaw
     assert "nesting or keyctl features" in openclaw
     assert "TUN device passthrough" in openclaw
     assert "(path=)?/dev/net/tun" in openclaw
-    assert "bind mounts" in openclaw
+    assert "unexpected CTF-executor bind mounts" in openclaw
+    assert "^mp[2-9][0-9]*:" in openclaw
     assert openclaw.count("delete_matching_keys: true") == 2
 
 
@@ -80,6 +92,10 @@ def test_openclaw_is_in_debian_inventory_and_pve_bootstrap():
     assert "openclaw_ip: \"{{ hostvars['openclaw'].ansible_host }}\"" in all_vars
     bootstrap = all_vars.split("pve_lxc_access_bootstrap:", 1)[1]
     assert "  - vmid: 118\n    name: openclaw\n    os_family: debian" in bootstrap
+    assert "        ctf_executor:\n          ansible_host: 192.168.0.6" in inventory
+    assert "    svc_ctf_executor:\n      hosts:\n        ctf_executor:" in inventory
+    assert "ctf_executor_ip: \"{{ hostvars['ctf_executor'].ansible_host }}\"" in all_vars
+    assert "  - vmid: 119\n    name: ctf-executor\n    os_family: debian" in bootstrap
 
 
 def test_debian_bootstrap_materializes_proxmox_dns_before_apt():

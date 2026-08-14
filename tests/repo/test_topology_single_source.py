@@ -6,6 +6,7 @@ def test_ansible_ip_variables_cover_only_managed_lxcs():
     assert "tailnet_ip: \"{{ hostvars['tailnet'].ansible_host }}\"" in text
     assert "docker_apps_ip: \"{{ hostvars['docker_apps'].ansible_host }}\"" in text
     assert "openclaw_ip: \"{{ hostvars['openclaw'].ansible_host }}\"" in text
+    assert "ctf_executor_ip: \"{{ hostvars['ctf_executor'].ansible_host }}\"" in text
     for retired in ("edge", "dns", "downloads", "files", "minecraft", "hermes"):
         assert f"{retired}_ip:" not in text
 

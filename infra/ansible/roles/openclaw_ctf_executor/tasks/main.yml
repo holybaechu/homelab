@@ -1,0 +1,295 @@
+---
+- name: Require the isolated OpenClaw CTF executor contract
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Linux'
+      - ansible_architecture == 'x86_64'
+      - openclaw_ctf_executor_image is match('^[a-z0-9][a-z0-9._/-]*:[a-z0-9][a-z0-9._-]*$')
+      - openclaw_ctf_executor_image_build_root == '/opt/openclaw-ctf-image'
+      - openclaw_ctf_executor_image_revision is match('^[0-9]+$')
+      - openclaw_ctf_docker_network == 'openclaw-ctf'
+      - openclaw_ctf_docker_network_cidr == '172.30.0.0/24'
+      - openclaw_ctf_docker_bridge == 'occtfbr0'
+      - openclaw_ctf_workspace_root == '/srv/openclaw-ctf'
+      - openclaw_ctf_docker_user == 'openclaw-ctf-docker'
+      - openclaw_ctf_executor_user_uid | int == 1001
+      - openclaw_ctf_executor_user_gid | int == 1001
+    fail_msg: The isolated CTF Docker executor variables are invalid.
+
+- name: Install isolated CTF executor operating-system prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - iptables
+      - openssh-server
+    state: present
+    update_cache: true
+
+- name: Create Docker apt keyring directory for the isolated CTF executor
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install Docker apt signing key for the isolated CTF executor
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure Docker apt repository for the isolated CTF executor
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Install Docker Engine for isolated CTF sandboxes
+  ansible.builtin.apt:
+    name:
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-ce
+      - docker-ce-cli
+    state: present
+    update_cache: true
+  notify: Restart isolated CTF Docker
+
+- name: Create the restricted CTF Docker transport group
+  ansible.builtin.group:
+    name: "{{ openclaw_ctf_docker_user }}"
+    gid: "{{ openclaw_ctf_executor_user_gid }}"
+    system: true
+    state: present
+
+- name: Create the restricted CTF Docker transport user
+  ansible.builtin.user:
+    name: "{{ openclaw_ctf_docker_user }}"
+    uid: "{{ openclaw_ctf_executor_user_uid }}"
+    group: "{{ openclaw_ctf_docker_user }}"
+    groups: docker
+    append: true
+    home: "/var/lib/{{ openclaw_ctf_docker_user }}"
+    shell: /bin/sh
+    create_home: true
+    system: true
+    password_lock: true
+    state: present
+
+- name: Lock down the CTF Docker transport user's home and authorized-key directory
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "/var/lib/{{ openclaw_ctf_docker_user }}", mode: "0750"}
+    - {path: "/var/lib/{{ openclaw_ctf_docker_user }}/.ssh", mode: "0700"}
+
+- name: Reserve the root-managed CTF Docker transport authorized-keys file
+  ansible.builtin.file:
+    path: "/var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys"
+    state: touch
+    access_time: preserve
+    modification_time: preserve
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Restrict the CTF Docker transport account to the Docker dial socket
+  ansible.builtin.template:
+    src: 60-openclaw-ctf-docker.conf.j2
+    dest: /etc/ssh/sshd_config.d/60-openclaw-ctf-docker.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload isolated CTF executor SSH
+
+- name: Validate the restricted CTF Docker transport SSH configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/sshd
+      - -t
+  changed_when: false
+
+- name: Require the dedicated CTF workspace bind mount
+  ansible.builtin.stat:
+    path: "{{ openclaw_ctf_workspace_root }}"
+    follow: false
+  register: openclaw_ctf_workspace_stat
+
+- name: Verify the dedicated CTF workspace ownership
+  ansible.builtin.assert:
+    that:
+      - openclaw_ctf_workspace_stat.stat.isdir | default(false)
+      - not (openclaw_ctf_workspace_stat.stat.islnk | default(true))
+      - (openclaw_ctf_workspace_stat.stat.uid | int) == (service_uid | int)
+      - (openclaw_ctf_workspace_stat.stat.gid | int) == (service_gid | int)
+      - openclaw_ctf_workspace_stat.stat.mode == '0700'
+    fail_msg: >-
+      The CTF executor must receive only the dedicated, service-owned CTF
+      workspace bind mount from Proxmox.
+
+- name: Require the generated CTF sandbox-skills bind mount
+  ansible.builtin.stat:
+    path: "{{ openclaw_ctf_sandbox_skills_root }}"
+    follow: false
+  register: openclaw_ctf_sandbox_skills_stat
+
+- name: Verify generated CTF sandbox-skills ownership
+  ansible.builtin.assert:
+    that:
+      - openclaw_ctf_sandbox_skills_stat.stat.isdir | default(false)
+      - not (openclaw_ctf_sandbox_skills_stat.stat.islnk | default(true))
+      - (openclaw_ctf_sandbox_skills_stat.stat.uid | int) == (service_uid | int)
+      - (openclaw_ctf_sandbox_skills_stat.stat.gid | int) == (service_gid | int)
+      - openclaw_ctf_sandbox_skills_stat.stat.mode == '0700'
+    fail_msg: >-
+      The CTF executor must receive the generated sandbox-skill source at the
+      same path used by the native Gateway's remote Docker client.
+
+- name: Create the isolated CTF Docker image build directory
+  ansible.builtin.file:
+    path: "{{ openclaw_ctf_executor_image_build_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Stage the isolated CTF Kali Dockerfile
+  ansible.builtin.copy:
+    src: Dockerfile
+    dest: "{{ openclaw_ctf_executor_image_build_root }}/Dockerfile"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure the isolated CTF Docker daemon
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart isolated CTF Docker
+
+- name: Install the CTF Docker egress firewall helper
+  ansible.builtin.template:
+    src: openclaw-ctf-docker-firewall.sh.j2
+    dest: /usr/local/libexec/openclaw-ctf-docker-firewall
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart isolated CTF Docker
+
+- name: Create the CTF Docker systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Reapply CTF egress firewall rules after Docker restarts
+  ansible.builtin.template:
+    src: 20-openclaw-ctf-firewall.conf.j2
+    dest: /etc/systemd/system/docker.service.d/20-openclaw-ctf-firewall.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload isolated CTF executor systemd
+    - Restart isolated CTF Docker
+
+- name: Apply CTF Docker configuration before creating sandboxes
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the isolated CTF Docker Engine
+  ansible.builtin.systemd_service:
+    name: docker.service
+    enabled: true
+    state: started
+
+- name: Inspect the isolated CTF Docker network
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - inspect
+      - "{{ openclaw_ctf_docker_network }}"
+  register: openclaw_ctf_network_inspect
+  changed_when: false
+  failed_when: openclaw_ctf_network_inspect.rc not in [0, 1]
+
+- name: Create the explicit isolated CTF Docker network
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - create
+      - --driver
+      - bridge
+      - --subnet
+      - "{{ openclaw_ctf_docker_network_cidr }}"
+      - --opt
+      - "com.docker.network.bridge.name={{ openclaw_ctf_docker_bridge }}"
+      - --opt
+      - com.docker.network.bridge.enable_icc=false
+      - "{{ openclaw_ctf_docker_network }}"
+  when: openclaw_ctf_network_inspect.rc == 1
+
+- name: Verify the explicit isolated CTF Docker network
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - inspect
+      - "{{ openclaw_ctf_docker_network }}"
+  register: openclaw_ctf_network
+  changed_when: false
+  failed_when: >-
+    openclaw_ctf_network.rc != 0 or
+    (openclaw_ctf_network.stdout | from_json | first).Driver != 'bridge' or
+    (openclaw_ctf_network.stdout | from_json | first).IPAM.Config[0].Subnet != openclaw_ctf_docker_network_cidr or
+    (openclaw_ctf_network.stdout | from_json | first).Options['com.docker.network.bridge.name'] != openclaw_ctf_docker_bridge or
+    (openclaw_ctf_network.stdout | from_json | first).Options['com.docker.network.bridge.enable_icc'] != 'false'
+
+- name: Apply CTF Docker egress firewall rules now
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/openclaw-ctf-docker-firewall
+  changed_when: false
+
+- name: Inspect the isolated CTF Kali image revision
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - --format
+      - "{{ '{{' }} index .Config.Labels \"homelab.openclaw.ctf.image-revision\" {{ '}}' }}"
+      - "{{ openclaw_ctf_executor_image }}"
+  register: openclaw_ctf_image_inspect
+  changed_when: false
+  failed_when: openclaw_ctf_image_inspect.rc not in [0, 1]
+
+- name: Build the isolated CTF Kali image when the declared revision is absent
+  ansible.builtin.command:
+    argv:
+      - docker
+      - build
+      - --label
+      - "homelab.openclaw.ctf.image-revision={{ openclaw_ctf_executor_image_revision }}"
+      - --tag
+      - "{{ openclaw_ctf_executor_image }}"
+      - "{{ openclaw_ctf_executor_image_build_root }}"
+  when: >-
+    openclaw_ctf_image_inspect.rc == 1 or
+    (openclaw_ctf_image_inspect.stdout | trim) != openclaw_ctf_executor_image_revision

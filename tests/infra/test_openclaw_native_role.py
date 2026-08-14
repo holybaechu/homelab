@@ -619,10 +619,16 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     assert protected["when"] == "openclaw_native_activate | bool"
     assert protected["no_log"] is True
     assertions = " ".join(protected["ansible.builtin.assert"]["that"])
-    assert ".secrets == {'providers': {'gateway_token_file':" in assertions
+    assert ".secrets ==" in assertions
+    assert "'gateway_token_file':" in assertions
     assert "'source': 'file'" in assertions
     assert "'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}'" in assertions
     assert "'mode': 'singleValue'" in assertions
+    assert "'ctf_discord_bot_token_file':" in assertions
+    assert "'path': '${OPENCLAW_CTF_DISCORD_BOT_TOKEN_FILE}'" in assertions
+    assert "openclaw_ctf_discord_enabled | bool" in assertions
+    assert "groupPolicy == 'allowlist'" in assertions
+    assert "dmPolicy == 'disabled'" in assertions
     assert ".gateway.auth.token ==" in assertions
     assert "'provider': 'gateway_token_file'" in assertions
     assert "'id': 'value'" in assertions
@@ -797,6 +803,24 @@ def test_native_openclaw_activation_validates_before_starting():
     assert credential_copy["ansible.builtin.copy"]["mode"] == "0400"
     assert credential_copy["no_log"] is True
     assert credential_copy["diff"] is False
+    discord_credential_copy = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Materialize a read-only service-user CTF Discord credential"
+    )
+    assert discord_credential_copy["when"] == "openclaw_ctf_discord_enabled | bool"
+    assert discord_credential_copy["ansible.builtin.copy"]["src"] == (
+        "{{ openclaw_ctf_discord_bot_token_path }}"
+    )
+    assert discord_credential_copy["ansible.builtin.copy"]["mode"] == "0400"
+    config_path_preflight = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Check the active native OpenClaw config path"
+    )
+    assert config_path_preflight["environment"][
+        "OPENCLAW_CTF_DISCORD_BOT_TOKEN_FILE"
+    ] == "{{ openclaw_validation_credential_dir.path }}/ctf_discord_bot_token"
     assert any(
         task["name"] == "Remove the temporary native OpenClaw credential directory"
         and task["ansible.builtin.file"]["state"] == "absent"
@@ -1040,8 +1064,10 @@ def test_site_and_validation_include_the_dedicated_openclaw_lxc():
     assert "Validate the dedicated native OpenClaw host" in validation
     assert "systemctl is-enabled --quiet openclaw-gateway.service" in validation
     assert "systemctl is-active --quiet openclaw-gateway.service" in validation
-    assert "test ! -e /var/run/docker.sock" in validation
-    assert "! command -v docker" in validation
+    assert "test ! -S /var/run/docker.sock" in validation
+    assert "test -x /usr/bin/docker" in validation
+    assert "! systemctl cat docker.service" in validation
+    assert "Validate the Gateway service's credential-scoped remote CTF Docker transport" in validation
     assert "systemctl is-active --quiet nftables" in validation
     assert "openclaw_native_activate | bool" in validation
     assert "Reject an ambiguous native transition marker" in validation

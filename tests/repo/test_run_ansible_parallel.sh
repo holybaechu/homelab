@@ -7,6 +7,8 @@ fake_bin="${test_root}/bin"
 marker="${test_root}/tailnet-complete"
 docker_marker="${test_root}/docker-retirement-complete"
 openclaw_marker="${test_root}/openclaw-complete"
+ctf_executor_marker="${test_root}/ctf-executor-complete"
+ctf_transport_marker="${test_root}/ctf-transport-complete"
 pve_marker="${test_root}/pve-cleanup-started"
 mkdir -p "${fake_bin}"
 
@@ -17,7 +19,7 @@ trap cleanup EXIT
 
 cat > "${fake_bin}/python3" <<'EOF'
 #!/bin/sh
-printf '%s\n' 'tailnet:svc_tailnet docker_apps:svc_docker_apps openclaw:svc_openclaw'
+printf '%s\n' 'tailnet:svc_tailnet docker_apps:svc_docker_apps ctf_executor:svc_ctf_executor openclaw:svc_openclaw'
 EOF
 
 cat > "${fake_bin}/ansible-playbook" <<'EOF'
@@ -26,6 +28,14 @@ case "$*" in
   *'validate.yml'*'--limit svc_docker_apps'*)
     sleep "${FAKE_DOCKER_DELAY_SECONDS:-0}"
     printf '%s\n' 'docker validation complete'
+    ;;
+  *'site.yml'*'--limit svc_ctf_executor'*'--tags ctf_executor'*)
+    if [ ! -f "${TAILNET_COMPLETE_MARKER}" ]; then
+      printf '%s\n' 'CTF executor started before tailnet completed' >&2
+      exit 96
+    fi
+    : > "${CTF_EXECUTOR_COMPLETE_MARKER}"
+    printf '%s\n' 'CTF executor completed after tailnet'
     ;;
   *'--limit svc_tailnet'*)
     printf '%s\n' 'tailnet started'
@@ -42,6 +52,10 @@ case "$*" in
       printf '%s\n' 'docker started before OpenClaw completed' >&2
       exit 94
     fi
+    if [ ! -f "${CTF_TRANSPORT_COMPLETE_MARKER}" ]; then
+      printf '%s\n' 'docker started before CTF transport completed' >&2
+      exit 99
+    fi
     if [ "${FAKE_DOCKER_FAIL:-0}" = "1" ]; then
       printf '%s\n' 'docker retirement failed deliberately' >&2
       exit 93
@@ -55,8 +69,20 @@ case "$*" in
       printf '%s\n' 'OpenClaw started before tailnet completed' >&2
       exit 95
     fi
+    if [ ! -f "${CTF_EXECUTOR_COMPLETE_MARKER}" ]; then
+      printf '%s\n' 'OpenClaw started before CTF executor completed' >&2
+      exit 97
+    fi
     : > "${OPENCLAW_COMPLETE_MARKER}"
     printf '%s\n' 'OpenClaw completed after tailnet'
+    ;;
+  *'site.yml'*'--limit svc_ctf_executor'*'--tags ctf_transport'*)
+    if [ ! -f "${OPENCLAW_COMPLETE_MARKER}" ]; then
+      printf '%s\n' 'CTF transport started before OpenClaw completed' >&2
+      exit 98
+    fi
+    : > "${CTF_TRANSPORT_COMPLETE_MARKER}"
+    printf '%s\n' 'CTF transport completed after OpenClaw'
     ;;
   *'site.yml'*'--limit pve_hosts'*)
     if [ ! -f "${DOCKER_RETIREMENT_COMPLETE_MARKER}" ]; then
@@ -95,6 +121,8 @@ fast_path_output="$(
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
   PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
   OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
+  CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
+  CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" validate
 )"
@@ -109,10 +137,12 @@ TAILNET_COMPLETE_MARKER="${marker}" \
 DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
 PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
 OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
+CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
+CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
 ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
   sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
 
-rm -f "${marker}" "${docker_marker}" "${openclaw_marker}" "${pve_marker}"
+rm -f "${marker}" "${docker_marker}" "${openclaw_marker}" "${ctf_executor_marker}" "${ctf_transport_marker}" "${pve_marker}"
 set +e
 docker_failure_output="$({
   PATH="${fake_bin}:${PATH}" \
@@ -120,6 +150,8 @@ docker_failure_output="$({
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
   PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
   OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
+  CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
+  CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
   FAKE_DOCKER_FAIL=1 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
@@ -137,7 +169,7 @@ if printf '%s\n' "${docker_failure_output}" | grep -F \
   exit 1
 fi
 
-rm -f "${marker}" "${docker_marker}" "${openclaw_marker}"
+rm -f "${marker}" "${docker_marker}" "${openclaw_marker}" "${ctf_executor_marker}" "${ctf_transport_marker}"
 set +e
 timeout_output="$({
   PATH="${fake_bin}:${PATH}" \
@@ -145,6 +177,8 @@ timeout_output="$({
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
   PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
   OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
+  CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
+  CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
   FAKE_TAILNET_DELAY_SECONDS=3 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=1 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
@@ -158,6 +192,8 @@ printf '%s\n' "${timeout_output}" | grep -F 'timed out after 1 seconds'
 
 : > "${marker}"
 : > "${openclaw_marker}"
+: > "${ctf_executor_marker}"
+: > "${ctf_transport_marker}"
 set +e
 background_timeout_output="$({
   PATH="${fake_bin}:${PATH}" \
@@ -165,6 +201,8 @@ background_timeout_output="$({
   DOCKER_RETIREMENT_COMPLETE_MARKER="${docker_marker}" \
   PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
   OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
+  CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
+  CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
   FAKE_TAILNET_DELAY_SECONDS=0 \
   FAKE_DOCKER_DELAY_SECONDS=3 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=1 \

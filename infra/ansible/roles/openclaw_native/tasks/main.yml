@@ -29,6 +29,13 @@
       - openclaw_workspace_root == openclaw_state_root + '/workspace'
       - openclaw_auth_profile_secret_root == openclaw_home + '/.config/openclaw'
       - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
+      - openclaw_ctf_workspace_root == '/srv/openclaw-ctf'
+      - openclaw_ctf_sandbox_skills_root == openclaw_state_root + '/sandbox/skills-workspaces'
+      - openclaw_ctf_docker_client_key_path == openclaw_secret_root + '/ctf_docker_client_key'
+      - openclaw_ctf_docker_known_hosts_path == openclaw_secret_root + '/ctf_docker_known_hosts'
+      - openclaw_ctf_docker_host == 'ssh://' + openclaw_ctf_docker_user + '@' + ctf_executor_ip
+      - openclaw_ctf_docker_network == 'openclaw-ctf'
+      - openclaw_ctf_discord_enabled is boolean
       - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
       - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
       - openclaw_native_activate is boolean
@@ -74,7 +81,11 @@
   ansible.builtin.apt:
     name:
       - git
+      - ca-certificates
+      - curl
+      - gnupg
       - nftables
+      - openssh-client
       - xz-utils
     state: present
     update_cache: true
@@ -116,6 +127,9 @@
     - {path: "{{ openclaw_compile_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_runtime_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_state_root }}/sandbox", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_ctf_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_ctf_sandbox_skills_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_home }}/.config", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
     - {path: "{{ openclaw_auth_profile_secret_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: /usr/local/libexec, owner: root, group: root, mode: "0755"}
@@ -124,6 +138,108 @@
     - {path: "{{ openclaw_secret_root }}", owner: root, group: root, mode: "0700"}
   loop_control:
     label: "{{ item.path }}"
+
+- name: Create Docker CLI apt keyring directory for the CTF executor transport
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install Docker CLI apt signing key for the CTF executor transport
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure Docker CLI apt repository for the CTF executor transport
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Install only the Docker CLI on the native Gateway
+  ansible.builtin.apt:
+    name: docker-ce-cli
+    state: present
+    update_cache: true
+
+- name: Generate the CTF executor Docker transport identity
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/ssh-keygen
+      - -q
+      - -t
+      - ed25519
+      - -N
+      - ""
+      - -f
+      - "{{ openclaw_ctf_docker_client_key_path }}"
+      - -C
+      - openclaw-ctf-docker-transport
+  args:
+    creates: "{{ openclaw_ctf_docker_client_key_path }}"
+  no_log: true
+  notify: Restart OpenClaw Gateway
+
+- name: Protect the CTF executor Docker transport identity
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ openclaw_ctf_docker_client_key_path }}", mode: "0600"}
+    - {path: "{{ openclaw_ctf_docker_client_key_path }}.pub", mode: "0644"}
+  no_log: true
+
+- name: Initialize the pinned CTF executor Docker host key file
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ openclaw_ctf_docker_known_hosts_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+    force: false
+  no_log: true
+  notify: Restart OpenClaw Gateway
+
+- name: Install the CTF executor Docker SSH wrapper
+  ansible.builtin.template:
+    src: openclaw-ctf-docker-ssh.j2
+    dest: "{{ openclaw_ctf_docker_ssh_wrapper_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart OpenClaw Gateway
+
+- name: Require an explicit optional CTF Discord bot token
+  ansible.builtin.assert:
+    that:
+      - openclaw_ctf_discord_bot_token is defined
+      - openclaw_ctf_discord_bot_token is string
+      - openclaw_ctf_discord_bot_token | trim | length > 0
+    fail_msg: >-
+      Configure OPENCLAW_CTF_DISCORD_BOT_TOKEN in the production secret store
+      before enabling the CTF Discord credential.
+  no_log: true
+  when: openclaw_ctf_discord_enabled | bool
+
+- name: Install the optional CTF Discord bot token outside Git
+  ansible.builtin.copy:
+    content: "{{ openclaw_ctf_discord_bot_token | trim }}\n"
+    dest: "{{ openclaw_ctf_discord_bot_token_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+  when: openclaw_ctf_discord_enabled | bool
+  notify: Restart OpenClaw Gateway
 
 - name: Install the OpenClaw Gateway token outside Git
   ansible.builtin.copy:
@@ -619,6 +735,14 @@
     git_safe diff --cached --quiet --no-ext-diff --no-textconv
     git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
     test -z "$(git_safe --no-pager ls-files -- .env)"
+    for tracked_path in \
+      workspaces/ctf/AGENTS.md \
+      workspaces/ctf/templates/writeup.md \
+      workspaces/ctf/skills/ctf-artifacts/SKILL.md \
+      workspaces/ctf/scripts/init-ctf-challenge.py \
+      workspaces/ctf/scripts/export-ctf-package.py; do
+      git_safe --no-pager ls-files --error-unmatch "${tracked_path}" >/dev/null
+    done
   args:
     executable: /bin/sh
     chdir: "{{ openclaw_setup_root }}"
@@ -649,13 +773,59 @@
   no_log: true
   when: openclaw_native_activate | bool
 
+- name: Create the durable CTF workspace layout outside the private checkout
+  ansible.builtin.file:
+    path: "{{ openclaw_ctf_workspace_root }}/{{ item }}"
+    state: directory
+    owner: "{{ openclaw_user }}"
+    group: "{{ openclaw_group }}"
+    mode: "0700"
+  loop:
+    - challenges
+    - exports
+    - media/inbound
+    - scripts
+    - templates
+    - skills/ctf-artifacts
+  when: openclaw_native_activate | bool
+
+- name: Seed tracked CTF instructions and artifact helpers into the durable workspace
+  ansible.builtin.copy:
+    src: "{{ openclaw_setup_root }}/{{ item.source }}"
+    dest: "{{ openclaw_ctf_workspace_root }}/{{ item.destination }}"
+    remote_src: true
+    owner: "{{ openclaw_user }}"
+    group: "{{ openclaw_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {source: workspaces/ctf/AGENTS.md, destination: AGENTS.md, mode: "0640"}
+    - {source: workspaces/ctf/templates/writeup.md, destination: templates/writeup.md, mode: "0640"}
+    - {source: workspaces/ctf/skills/ctf-artifacts/SKILL.md, destination: skills/ctf-artifacts/SKILL.md, mode: "0640"}
+    - {source: workspaces/ctf/scripts/init-ctf-challenge.py, destination: scripts/init-ctf-challenge.py, mode: "0750"}
+    - {source: workspaces/ctf/scripts/export-ctf-package.py, destination: scripts/export-ctf-package.py, mode: "0750"}
+  when: openclaw_native_activate | bool
+  notify: Restart OpenClaw Gateway
+
 - name: Require the protected native OpenClaw SecretRef schema
   ansible.builtin.assert:
     that:
       - >-
         (openclaw_native_config.content | b64decode | from_json).secrets ==
-        {'providers': {'gateway_token_file': {'source': 'file',
-        'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'}}}
+        {'providers':
+          {
+            'gateway_token_file': {'source': 'file', 'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'}
+          }
+        } or
+        (
+          openclaw_ctf_discord_enabled | bool and
+          (openclaw_native_config.content | b64decode | from_json).secrets ==
+          {'providers':
+            {
+              'gateway_token_file': {'source': 'file', 'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'},
+              'ctf_discord_bot_token_file': {'source': 'file', 'path': '${OPENCLAW_CTF_DISCORD_BOT_TOKEN_FILE}', 'mode': 'singleValue'}
+            }
+          }
+        )
       - >-
         (openclaw_native_config.content | b64decode |
         from_json).gateway.auth.token ==
@@ -663,6 +833,45 @@
       - >-
         'remote' not in
         (openclaw_native_config.content | b64decode | from_json).gateway
+      - >-
+        ((openclaw_native_config.content | b64decode | from_json).agents.list |
+        selectattr('id', 'equalto', 'main') | map(attribute='default') | list) == [true]
+      - >-
+        ((openclaw_native_config.content | b64decode | from_json).agents.list |
+        selectattr('id', 'equalto', 'ctf') | map(attribute='workspace') | list) ==
+        [openclaw_ctf_workspace_root]
+      - >-
+        ((openclaw_native_config.content | b64decode | from_json).agents.list |
+        selectattr('id', 'equalto', 'ctf') | map(attribute='sandbox.backend') | list) ==
+        ['docker']
+      - >-
+        ((openclaw_native_config.content | b64decode | from_json).agents.list |
+        selectattr('id', 'equalto', 'ctf') | map(attribute='sandbox.scope') | list) ==
+        ['session']
+      - >-
+        ((openclaw_native_config.content | b64decode | from_json).agents.list |
+        selectattr('id', 'equalto', 'ctf') |
+        map(attribute='sandbox.docker.network') | list) == [openclaw_ctf_docker_network]
+      - >-
+        ((openclaw_native_config.content | b64decode | from_json).agents.list |
+        selectattr('id', 'equalto', 'ctf') |
+        map(attribute='tools.elevated.enabled') | list) == [false]
+      - >-
+        not (openclaw_ctf_discord_enabled | bool) or
+        (
+          (openclaw_native_config.content | b64decode | from_json).channels.discord.enabled and
+          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.dmPolicy == 'disabled' and
+          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.groupPolicy == 'allowlist' and
+          not (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.configWrites and
+          not (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.allowBots and
+          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.token ==
+          {'source': 'file', 'provider': 'ctf_discord_bot_token_file', 'id': 'value'} and
+          (
+            ((openclaw_native_config.content | b64decode | from_json).bindings |
+            selectattr('agentId', 'equalto', 'ctf') |
+            selectattr('match.channel', 'equalto', 'discord') | list | length) == 1
+          )
+        )
     fail_msg: >-
       The protected native config must retain the exact Gateway token provider
       and token SecretRef schema.
@@ -699,6 +908,18 @@
       no_log: true
       diff: false
 
+    - name: Materialize a read-only service-user CTF Discord credential
+      ansible.builtin.copy:
+        src: "{{ openclaw_ctf_discord_bot_token_path }}"
+        dest: "{{ openclaw_validation_credential_dir.path }}/ctf_discord_bot_token"
+        remote_src: true
+        owner: "{{ openclaw_user }}"
+        group: "{{ openclaw_group }}"
+        mode: "0400"
+      when: openclaw_ctf_discord_enabled | bool
+      no_log: true
+      diff: false
+
     - name: Check the active native OpenClaw config path
       ansible.builtin.command:
         argv:
@@ -721,6 +942,7 @@
         OPENCLAW_SERVICE_REPAIR_POLICY: external
         OPENCLAW_SUPERVISOR_MODE: external
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
+        OPENCLAW_CTF_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/ctf_discord_bot_token"
       register: openclaw_config_file_preflight
       changed_when: false
       failed_when: >-

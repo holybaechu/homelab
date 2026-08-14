@@ -102,6 +102,7 @@ run_foreground_target() {
 
 if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
   tailnet_entry=""
+  ctf_executor_entry=""
   openclaw_entry=""
   docker_apps_entry=""
   pve_entry=""
@@ -110,6 +111,7 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
     target="${entry%%:*}"
     case "${target}" in
       tailnet) tailnet_entry="${entry}" ;;
+      ctf_executor) ctf_executor_entry="${entry}" ;;
       openclaw) openclaw_entry="${entry}" ;;
       docker_apps) docker_apps_entry="${entry}" ;;
       pve) pve_entry="${entry}" ;;
@@ -117,18 +119,59 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
     esac
   done
 
-  # The native Gateway must be ready before Docker-host Traefik is reconciled.
+  # The CTF executor must exist before the Gateway is activated, but its
+  # transport can only be connected after the Gateway generates its dedicated
+  # SSH identity. The native Gateway must then be ready before Docker-host
+  # Traefik is reconciled.
   # On the initial staged deployment it remains deliberately stopped, while
   # after cutover this ordering prevents routing to an unready rebuilt LXC.
   for required_entry in \
     "${tailnet_entry}" \
+    "${ctf_executor_entry}" \
     "${openclaw_entry}" \
     "${docker_apps_entry}" \
     "${pve_entry}"; do
     if [ -z "${required_entry}" ]; then
-      echo "The site deployment requires tailnet, openclaw, docker_apps, and pve targets" >&2
+      echo "The site deployment requires tailnet, ctf_executor, openclaw, docker_apps, and pve targets" >&2
       exit 2
     fi
+  done
+
+  target="${tailnet_entry%%:*}"
+  limit="${tailnet_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" "$@"; then
+    :
+  else
+    exit $?
+  fi
+
+  target="${ctf_executor_entry%%:*}"
+  limit="${ctf_executor_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" --tags ctf_executor "$@"; then
+    :
+  else
+    exit $?
+  fi
+
+  target="${openclaw_entry%%:*}"
+  limit="${openclaw_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" "$@"; then
+    :
+  else
+    exit $?
+  fi
+
+  target="${ctf_executor_entry%%:*}"
+  limit="${ctf_executor_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" --tags ctf_transport "$@"; then
+    :
+  else
+    exit $?
+  fi
+
+  for required_entry in \
+    "${docker_apps_entry}" \
+    "${pve_entry}"; do
     target="${required_entry%%:*}"
     limit="${required_entry#*:}"
     if run_foreground_target "${target}" "${limit}" "$@"; then

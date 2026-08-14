@@ -37,10 +37,13 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     assert "ARCANE_ENCRYPTION_KEY:" in workflow
     assert "ARCANE_JWT_SECRET:" in workflow
     assert "OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}" in workflow
+    assert "OPENCLAW_CTF_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_CTF_DISCORD_BOT_TOKEN }}" in workflow
+    assert "OPENCLAW_CTF_DISCORD_ENABLED: ${{ vars.OPENCLAW_CTF_DISCORD_ENABLED }}" in workflow
     secret_step = workflow.split(
         "- name: Validate and write Ansible service secrets", maxsplit=1
     )[1].split("- name: Prepare one-time lowest-ID cutover", maxsplit=1)[0]
     assert "OPENCLAW_GATEWAY_TOKEN:" in secret_step
+    assert "OPENCLAW_CTF_DISCORD_BOT_TOKEN:" in secret_step
     assert workflow.count("OPENCLAW_GATEWAY_TOKEN:") == 1
     assert "OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters" in script
     assert "64 hexadecimal characters" in script
@@ -332,9 +335,13 @@ def test_parallel_ansible_runner_derives_service_targets_from_topology():
     assert "Arcane scope deploys workloads through Arcane" in runner
     assert 'f"{name}:svc_{name}"' in target_renderer
     assert runner.index('tailnet_entry=""') < runner.index('openclaw_entry=""')
+    assert runner.index('ctf_executor_entry=""') < runner.index('openclaw_entry=""')
     assert runner.index('"${tailnet_entry}"') < runner.index('"${openclaw_entry}"')
+    assert runner.index('"${ctf_executor_entry}"') < runner.index('"${openclaw_entry}"')
     assert runner.index('"${openclaw_entry}"') < runner.index('"${docker_apps_entry}"')
     assert runner.index('"${docker_apps_entry}"') < runner.index('"${pve_entry}"')
+    assert '--tags ctf_executor' in runner
+    assert '--tags ctf_transport' in runner
 
 
 def test_parallel_validate_runner_includes_pve_drift_validation_target():

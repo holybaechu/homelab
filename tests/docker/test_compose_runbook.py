@@ -1,12 +1,13 @@
 from tests.helpers import REPO_ROOT
 
 
-def test_runbook_documents_three_lxc_target_and_rollback():
+def test_runbook_documents_four_lxc_target_and_rollback():
     runbook = (REPO_ROOT / "docs/runbooks/docker-compose-migration.md").read_text(encoding="utf-8")
-    assert "three LXCs" in runbook
+    assert "four LXCs" in runbook
     assert "tailnet" in runbook
     assert "docker_apps" in runbook
     assert "openclaw" in runbook
+    assert "ctf-executor" in runbook
     assert "Rollback" in runbook
 
 

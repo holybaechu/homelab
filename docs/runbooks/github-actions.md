@@ -41,6 +41,9 @@ version available from their configured apt repositories.
 - `ADGUARD_ADMIN_USERNAME`: optional AdGuard Home admin username; defaults to the inventory value
 - `LOW_ID_CUTOVER_CONFIRMED`: set to `true` only for the first 117/112 to
   110/111 renumber after reviewing the plan
+- `OPENCLAW_CTF_DISCORD_ENABLED`: optional `true`/`false` switch. Set it to
+  `true` only after the private CTF Discord fragment has real guild, channel,
+  and approved-user IDs.
 
 The native OpenClaw reservation is not duplicated as a GitHub variable. Its
 exact production identity (`192.168.0.5`, `02:00:00:BA:EC:05`) is hardcoded in
@@ -67,6 +70,9 @@ router reservation aligned with that tracked contract.
 - `ARCANE_ENCRYPTION_KEY`, exactly 64 hexadecimal characters representing 32 bytes
 - `ARCANE_JWT_SECRET`, at least 32 characters
 - `OPENCLAW_GATEWAY_TOKEN`, exactly 64 hexadecimal characters representing 32 bytes
+- `OPENCLAW_CTF_DISCORD_BOT_TOKEN`, optional; required only when
+  `OPENCLAW_CTF_DISCORD_ENABLED=true` and the private CTF Discord fragment has
+  been merged into the active config
 
 The active topology has one direct qBittorrent instance and no Gluetun or
 Proton VPN service, so CD does not require a Proton or WireGuard secret.
@@ -130,11 +136,12 @@ The `tag:ci` ACL should only reach:
 
 - Proxmox SSH/API
 - LXC SSH targets at `192.168.0.4:22` (tailnet), `192.168.0.3:22`
-  (Docker apps), and `192.168.0.5:22` (the dedicated OpenClaw LXC)
+  (Docker apps), `192.168.0.5:22` (the dedicated OpenClaw LXC), and
+  `192.168.0.6:22` (the isolated CTF executor)
 
-Verify the ephemeral CI node can reach all three SSH targets. The normal full
+Verify the ephemeral CI node can reach all four SSH targets. The normal full
 workflow fails closed during bootstrap if the ACL does not permit the OpenClaw
-address.
+or CTF executor address.
 
 ## OpenTofu State
 

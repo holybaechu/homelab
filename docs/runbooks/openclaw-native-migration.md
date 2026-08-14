@@ -2,8 +2,8 @@
 
 The completed migration used two public IaC deployments and one audited
 transfer. This document records that transaction and the current rollback
-contract. Do not add model credentials, agents, channels, skills, or browser
-state as part of foundation maintenance.
+contract. It is not the procedure for changing agents, channels, skills, or
+browser state; see `openclaw.md` and `openclaw-ctf.md` for current operation.
 
 ## Completed phase 1: inactive staging
 
@@ -42,7 +42,9 @@ The existing Docker Gateway on VMID 110 remains running and Arcane continues
 to manage it.
 
 That stage established that VMID 118 requires no Docker engine, socket,
-nesting, TUN device, or Proxmox bind mount.
+nesting, TUN device, or Proxmox bind mount. The later isolated CTF extension
+retains the first four constraints and adds one narrowly scoped CTF workspace
+bind mount; it does not modify the migration transaction or rollback assets.
 
 ## Completed audited transfer
 

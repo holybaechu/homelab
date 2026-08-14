@@ -16,7 +16,7 @@ def value(body: str, key: str) -> int:
     return int(match.group(1))
 
 
-def test_three_lxcs_match_capacity_plan():
+def test_four_lxcs_match_capacity_plan():
     text = (REPO_ROOT / "infra/opentofu/envs/prod/containers.auto.tfvars").read_text(encoding="utf-8")
     expected = {
         "tailnet": {
@@ -38,6 +38,13 @@ def test_three_lxcs_match_capacity_plan():
             "cores": 4,
             "memory_mb": 4096,
             "swap_mb": 1024,
+            "startup_order": 4,
+        },
+        "ctf_executor": {
+            "root_disk_gb": 64,
+            "cores": 4,
+            "memory_mb": 8192,
+            "swap_mb": 2048,
             "startup_order": 3,
         },
     }

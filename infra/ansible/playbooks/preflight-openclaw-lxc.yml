@@ -13,5 +13,8 @@
           --mac-address {{ openclaw_lxc_allocation.mac_address | quote }}
           --datastore-id {{ openclaw_lxc_allocation.datastore_id | quote }}
           --required-storage-gb {{ openclaw_lxc_allocation.required_storage_gb }}
+          --expected-bind-mount {{ (openclaw_ctf_shared_host_path + ',mp=' + openclaw_ctf_workspace_root) | quote }}
+          --expected-bind-mount {{ (openclaw_ctf_sandbox_skills_host_path + ',mp=' + openclaw_ctf_sandbox_skills_root) | quote }}
+          --allow-missing-expected-bind-mounts
         executable: /usr/bin/python3
       changed_when: false

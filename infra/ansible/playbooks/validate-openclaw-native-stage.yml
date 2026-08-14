@@ -11,8 +11,13 @@
         test "$(id -u openclaw)" = "{{ openclaw_uid }}"
         test "$(id -g openclaw)" = "{{ openclaw_gid }}"
         test "$(getent passwd openclaw | cut -d: -f7)" = /usr/sbin/nologin
-        test ! -e /var/run/docker.sock
-        ! command -v docker >/dev/null 2>&1
+        test ! -S /var/run/docker.sock
+        test -x /usr/bin/docker
+        ! systemctl cat docker.service >/dev/null 2>&1
+        ! systemctl cat containerd.service >/dev/null 2>&1
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_client_key_path }}')" = "0:0 600"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_known_hosts_path }}')" = "0:0 600"
       args:
         executable: /bin/sh
       changed_when: false

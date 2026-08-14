@@ -55,6 +55,9 @@ jobs:
       - name: Check Ansible OpenClaw allocation preflight syntax
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/preflight-openclaw-lxc.yml --syntax-check
 
+      - name: Check Ansible CTF executor allocation preflight syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/preflight-ctf-executor-lxc.yml --syntax-check
+
       - name: Check narrow Ansible OpenClaw bootstrap syntax
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/bootstrap-openclaw-native.yml --syntax-check
 

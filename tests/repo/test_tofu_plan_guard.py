@@ -191,6 +191,7 @@ def test_tofu_plan_guard_rejects_empty_state_even_when_all_targets_are_approved(
         ("docker_apps", 110),
         ("tailnet", 111),
         ("openclaw", 118),
+        ("ctf_executor", 119),
     ]
     plan_resources = []
     for name, vmid in resources:

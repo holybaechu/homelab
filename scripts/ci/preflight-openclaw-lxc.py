@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Fail closed when the dedicated OpenClaw LXC allocation is not safe."""
+"""Fail closed when a dedicated OpenClaw-related LXC allocation is not safe."""
 
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import ipaddress
 import json
 from pathlib import Path
@@ -30,6 +30,10 @@ class Allocation:
     mac_address: str
     datastore_id: str
     required_storage_bytes: int
+    role_tag: str = "role-openclaw"
+    required_features: frozenset[str] = field(default_factory=frozenset)
+    expected_bind_mounts: tuple[str, ...] = ()
+    allow_missing_expected_bind_mounts: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,17 +57,44 @@ def parse_allocation(args: argparse.Namespace) -> Allocation:
         raise ValueError("VMID must be at least 100")
     ip_interface = ipaddress.ip_interface(args.ip_address)
     if not isinstance(ip_interface, ipaddress.IPv4Interface):
-        raise ValueError("OpenClaw must use an IPv4 allocation")
+        raise ValueError("the LXC must use an IPv4 allocation")
     mac_address = normalize_mac(args.mac_address)
     first_octet = int(mac_address.split(":", 1)[0], 16)
     if first_octet & 1:
-        raise ValueError("OpenClaw MAC address must be unicast")
+        raise ValueError("LXC MAC address must be unicast")
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", args.hostname):
-        raise ValueError("OpenClaw hostname is not a valid DNS label")
+        raise ValueError("LXC hostname is not a valid DNS label")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", args.datastore_id):
-        raise ValueError("OpenClaw datastore ID is invalid")
+        raise ValueError("LXC datastore ID is invalid")
     if args.required_storage_gb <= 0:
-        raise ValueError("OpenClaw required storage must be greater than zero")
+        raise ValueError("LXC required storage must be greater than zero")
+    if not re.fullmatch(r"role-[a-z0-9-]+", args.role_tag):
+        raise ValueError("LXC role tag is invalid")
+    required_features = frozenset(args.required_feature)
+    unsupported_features = required_features - {"nesting", "keyctl"}
+    if unsupported_features:
+        raise ValueError(
+            "unsupported required LXC feature(s): "
+            + ", ".join(sorted(unsupported_features))
+        )
+    expected_bind_mounts = tuple(sorted(args.expected_bind_mount))
+    if len(set(expected_bind_mounts)) != len(expected_bind_mounts):
+        raise ValueError("expected bind mounts must not contain duplicates")
+    for bind_mount in expected_bind_mounts:
+        source, separator, destination = bind_mount.partition(",mp=")
+        if (
+            separator != ",mp="
+            or not source.startswith("/")
+            or not destination.startswith("/")
+            or "," in destination
+        ):
+            raise ValueError(
+                "expected bind mounts must use /source,mp=/destination syntax"
+            )
+    if args.allow_missing_expected_bind_mounts and not expected_bind_mounts:
+        raise ValueError(
+            "allow_missing_expected_bind_mounts requires an expected bind mount"
+        )
     return Allocation(
         args.vmid,
         args.hostname,
@@ -71,6 +102,10 @@ def parse_allocation(args: argparse.Namespace) -> Allocation:
         mac_address,
         args.datastore_id,
         args.required_storage_gb * 1024**3,
+        args.role_tag,
+        required_features,
+        expected_bind_mounts,
+        args.allow_missing_expected_bind_mounts,
     )
 
 
@@ -154,10 +189,13 @@ def validate_existing_target(config: GuestConfig, allocation: Allocation) -> Non
         for tag in re.split(r"[;,]", fields.get("tags", ""))
         if tag.strip()
     }
-    required_tags = {"managed-by-opentofu", "role-openclaw"}
+    required_tags = {"managed-by-opentofu", allocation.role_tag}
     if not required_tags.issubset(tags):
+        role_label = (
+            "OpenClaw" if allocation.role_tag == "role-openclaw" else allocation.role_tag
+        )
         raise PreflightError(
-            f"VMID {allocation.vmid} is missing its managed OpenClaw tags"
+            f"VMID {allocation.vmid} is missing its managed {role_label} tags"
         )
     if not fields.get("rootfs", "").startswith(f"{allocation.datastore_id}:"):
         raise PreflightError(
@@ -166,15 +204,41 @@ def validate_existing_target(config: GuestConfig, allocation: Allocation) -> Non
         )
 
     feature_values = parse_net_values(fields.get("features", ""))
-    enabled_features = [
+    enabled_features = frozenset(
         name for name in ("nesting", "keyctl") if feature_values.get(name) == "1"
-    ]
-    if enabled_features:
+    )
+    if enabled_features != allocation.required_features:
+        if not allocation.required_features:
+            detail = "forbidden features: " + ", ".join(sorted(enabled_features))
+        else:
+            detail = (
+                "unexpected feature set: "
+                + ", ".join(sorted(enabled_features))
+                + " (expected "
+                + ", ".join(sorted(allocation.required_features))
+                + ")"
+            )
         raise PreflightError(
-            f"VMID {allocation.vmid} has forbidden features: {', '.join(enabled_features)}"
+            f"VMID {allocation.vmid} has {detail}"
         )
-    if any(re.fullmatch(r"mp[0-9]+", key) for key in fields):
-        raise PreflightError(f"VMID {allocation.vmid} has a forbidden bind mount")
+    actual_bind_mounts = tuple(
+        sorted(
+            value
+            for key, value in fields.items()
+            if re.fullmatch(r"mp[0-9]+", key)
+        )
+    )
+    if actual_bind_mounts != allocation.expected_bind_mounts:
+        if not (
+            allocation.allow_missing_expected_bind_mounts
+            and len(actual_bind_mounts) == len(set(actual_bind_mounts))
+            and set(actual_bind_mounts).issubset(allocation.expected_bind_mounts)
+        ):
+            if not allocation.expected_bind_mounts:
+                detail = "a forbidden bind mount"
+            else:
+                detail = "an unexpected bind mount set"
+            raise PreflightError(f"VMID {allocation.vmid} has {detail}")
     if any(
         re.fullmatch(r"dev[0-9]+", key) and "/dev/net/tun" in value
         for key, value in fields.items()
@@ -439,6 +503,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mac-address", required=True)
     parser.add_argument("--datastore-id", required=True)
     parser.add_argument("--required-storage-gb", required=True, type=int)
+    parser.add_argument("--role-tag", default="role-openclaw")
+    parser.add_argument("--required-feature", action="append", default=[])
+    parser.add_argument("--expected-bind-mount", action="append", default=[])
+    parser.add_argument("--allow-missing-expected-bind-mounts", action="store_true")
     parser.add_argument("--config-root", type=Path, default=Path("/etc/pve"))
     return parser
 

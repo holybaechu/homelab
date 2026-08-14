@@ -1,0 +1,13 @@
+# The Gateway uses a single forced SSH command to reach Docker's stdio API.
+# This account has no interactive, forwarding, or password authentication path.
+Match User {{ openclaw_ctf_docker_user }}
+    AuthenticationMethods publickey
+    ForceCommand /usr/bin/docker system dial-stdio
+    KbdInteractiveAuthentication no
+    PasswordAuthentication no
+    PermitTTY no
+    AllowAgentForwarding no
+    AllowTcpForwarding no
+    GatewayPorts no
+    PermitTunnel no
+    X11Forwarding no

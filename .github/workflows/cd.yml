@@ -104,6 +104,16 @@ jobs:
           --extra-vars
           "openclaw_root_datastore_id=${PVE_ROOT_DATASTORE_ID}"
 
+      - name: Preflight isolated CTF executor LXC allocation
+        if: steps.scope.outputs.deployment_scope == 'full'
+        env:
+          PVE_ROOT_DATASTORE_ID: ${{ vars.PVE_ROOT_DATASTORE_ID }}
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
+          infra/ansible/playbooks/preflight-ctf-executor-lxc.yml
+          --extra-vars
+          "openclaw_root_datastore_id=${PVE_ROOT_DATASTORE_ID}"
+
       - name: Trust Docker application LXC access for identity proof
         if: >-
           github.event_name == 'workflow_dispatch' &&
@@ -170,6 +180,8 @@ jobs:
           ARCANE_ENCRYPTION_KEY: ${{ secrets.ARCANE_ENCRYPTION_KEY }}
           ARCANE_JWT_SECRET: ${{ secrets.ARCANE_JWT_SECRET }}
           OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
+          OPENCLAW_CTF_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_CTF_DISCORD_BOT_TOKEN }}
+          OPENCLAW_CTF_DISCORD_ENABLED: ${{ vars.OPENCLAW_CTF_DISCORD_ENABLED }}
         run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Prepare one-time lowest-ID cutover
