@@ -36,15 +36,15 @@ Environment=OPENCLAW_SUPERVISOR_MODE=external
 Environment=OPENCLAW_GATEWAY_TOKEN_FILE=/run/openclaw-gateway/gateway_token
 Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}
 Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}
-{% if openclaw_ctf_discord_enabled | bool %}
-Environment=OPENCLAW_CTF_DISCORD_BOT_TOKEN_FILE=%d/ctf_discord_bot_token
+{% if openclaw_discord_enabled | bool %}
+Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=%d/discord_bot_token
 {% endif %}
 
 LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}
 LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}
 LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}
-{% if openclaw_ctf_discord_enabled | bool %}
-LoadCredential=ctf_discord_bot_token:{{ openclaw_ctf_discord_bot_token_path }}
+{% if openclaw_discord_enabled | bool %}
+LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}
 {% endif %}
 
 ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/openclaw_gateway_token /run/openclaw-gateway/gateway_token

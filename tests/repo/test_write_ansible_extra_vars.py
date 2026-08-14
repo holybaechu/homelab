@@ -53,22 +53,22 @@ def test_openclaw_gateway_token_is_mapped_after_shape_validation(monkeypatch):
     assert mapping["openclaw_gateway_token"] == "cd" * 32
 
 
-def test_optional_ctf_discord_secret_and_boolean_are_mapped(monkeypatch):
+def test_optional_shared_discord_secret_and_boolean_are_mapped(monkeypatch):
     module = runpy.run_path(str(SCRIPT))
     seed_required_environment(monkeypatch, module)
-    monkeypatch.setenv("OPENCLAW_CTF_DISCORD_BOT_TOKEN", "discord-token")
-    monkeypatch.setenv("OPENCLAW_CTF_DISCORD_ENABLED", "true")
+    monkeypatch.setenv("OPENCLAW_DISCORD_BOT_TOKEN", "discord-token")
+    monkeypatch.setenv("OPENCLAW_DISCORD_ENABLED", "true")
 
     mapping = module["build_mapping"]()
 
-    assert mapping["openclaw_ctf_discord_bot_token"] == "discord-token"
-    assert mapping["openclaw_ctf_discord_enabled"] is True
+    assert mapping["openclaw_discord_bot_token"] == "discord-token"
+    assert mapping["openclaw_discord_enabled"] is True
 
 
-def test_invalid_ctf_discord_boolean_is_rejected(monkeypatch):
+def test_invalid_shared_discord_boolean_is_rejected(monkeypatch):
     module = runpy.run_path(str(SCRIPT))
     seed_required_environment(monkeypatch, module)
-    monkeypatch.setenv("OPENCLAW_CTF_DISCORD_ENABLED", "enabled")
+    monkeypatch.setenv("OPENCLAW_DISCORD_ENABLED", "enabled")
 
     with pytest.raises(SystemExit, match="must be true or false"):
         module["build_mapping"]()

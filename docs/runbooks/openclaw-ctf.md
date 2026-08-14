@@ -56,25 +56,35 @@ The tracked agent contract prevents use of elevated execution, gateway tools,
 SSH credentials, host paths, and a Docker socket. The OpenClaw config also
 denies gateway, cron, browser, canvas, and node tools to the CTF sandbox.
 
-## Discord activation
+## Shared Discord bot routing
 
 The committed active config intentionally has no Discord account because no
-bot token or Discord IDs belong in Git. After creating a bot that has access
-only to the dedicated CTF channel:
+bot token or Discord IDs belong in Git. One bot account can serve multiple
+agents: give each agent a dedicated, explicitly allowlisted Discord channel
+and an exact channel binding. The CTF route remains one such binding.
+
+After the CTF bridge/service split is deployed:
 
 1. Copy the structure in private
-   `config/ctf-discord.example.json` into the active private config and replace
+   `config/discord.example.json` into the active private config and replace
    every guild, channel slug, channel ID, and approved user ID placeholder.
+   Add one allowlisted channel entry and one exact binding per additional
+   agent; all bindings use the shared Discord account.
 2. Keep `dmPolicy: disabled`, `groupPolicy: allowlist`, `configWrites: false`,
-   and `allowBots: false`. Do not give the bot permissions outside the CTF
-   channel.
-3. Set the GitHub `prod` secret `OPENCLAW_CTF_DISCORD_BOT_TOKEN` and the
-   `OPENCLAW_CTF_DISCORD_ENABLED=true` environment variable, then deploy the
+   and `allowBots: false`. Do not give the bot permissions outside explicitly
+   allowlisted agent channels.
+3. Set the GitHub `prod` secret `OPENCLAW_DISCORD_BOT_TOKEN` and the
+   `OPENCLAW_DISCORD_ENABLED=true` environment variable, then deploy the
    full Ansible site play. The token is written as a root-only systemd
    credential source and is never committed.
 4. Send a message from an approved Discord user in the configured channel. A
-   DM, another channel, an unapproved user, or a bot message must not reach the
-   CTF agent.
+   DM, another channel, an unapproved user, or a bot message must not reach
+   that channel's bound agent.
+
+Do not activate the CTF route before that split. The current single Gateway
+process cannot isolate its remote Docker transport from unrelated agents.
+Other shared-bot channels can use the generic account only after their own
+routing and authorization checks pass.
 
 ## Verification
 

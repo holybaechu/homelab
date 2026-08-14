@@ -37,13 +37,13 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     assert "ARCANE_ENCRYPTION_KEY:" in workflow
     assert "ARCANE_JWT_SECRET:" in workflow
     assert "OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}" in workflow
-    assert "OPENCLAW_CTF_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_CTF_DISCORD_BOT_TOKEN }}" in workflow
-    assert "OPENCLAW_CTF_DISCORD_ENABLED: ${{ vars.OPENCLAW_CTF_DISCORD_ENABLED }}" in workflow
+    assert "OPENCLAW_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_DISCORD_BOT_TOKEN }}" in workflow
+    assert "OPENCLAW_DISCORD_ENABLED: ${{ vars.OPENCLAW_DISCORD_ENABLED }}" in workflow
     secret_step = workflow.split(
         "- name: Validate and write Ansible service secrets", maxsplit=1
     )[1].split("- name: Prepare one-time lowest-ID cutover", maxsplit=1)[0]
     assert "OPENCLAW_GATEWAY_TOKEN:" in secret_step
-    assert "OPENCLAW_CTF_DISCORD_BOT_TOKEN:" in secret_step
+    assert "OPENCLAW_DISCORD_BOT_TOKEN:" in secret_step
     assert workflow.count("OPENCLAW_GATEWAY_TOKEN:") == 1
     assert "OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters" in script
     assert "64 hexadecimal characters" in script

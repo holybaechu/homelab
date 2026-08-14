@@ -22,7 +22,7 @@ REQUIRED_ENV = {
 }
 
 OPTIONAL_ENV: dict[str, str] = {
-    "openclaw_ctf_discord_bot_token": "OPENCLAW_CTF_DISCORD_BOT_TOKEN",
+    "openclaw_discord_bot_token": "OPENCLAW_DISCORD_BOT_TOKEN",
 }
 
 
@@ -82,12 +82,12 @@ def build_mapping() -> dict[str, Any]:
         if value:
             mapping[var_name] = value
 
-    ctf_discord_enabled = os.environ.get("OPENCLAW_CTF_DISCORD_ENABLED", "").strip()
-    if ctf_discord_enabled:
-        normalized = ctf_discord_enabled.lower()
+    discord_enabled = os.environ.get("OPENCLAW_DISCORD_ENABLED", "").strip()
+    if discord_enabled:
+        normalized = discord_enabled.lower()
         if normalized not in {"true", "false"}:
-            raise SystemExit("OPENCLAW_CTF_DISCORD_ENABLED must be true or false")
-        mapping["openclaw_ctf_discord_enabled"] = normalized == "true"
+            raise SystemExit("OPENCLAW_DISCORD_ENABLED must be true or false")
+        mapping["openclaw_discord_enabled"] = normalized == "true"
     mapping["copyparty_users"] = load_copyparty_users()
 
     adguard_admin_username = os.environ.get("ADGUARD_ADMIN_USERNAME")

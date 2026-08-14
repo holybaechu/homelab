@@ -41,8 +41,8 @@ openclaw_compile_cache_root: "{{ openclaw_cache_root }}/node-compile-cache"
 openclaw_secret_root: /etc/openclaw/secrets
 openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
 openclaw_ctf_docker_ssh_wrapper_path: /usr/local/libexec/openclaw-ctf-docker-ssh
-openclaw_ctf_discord_enabled: false
-openclaw_ctf_discord_bot_token_path: "{{ openclaw_secret_root }}/ctf_discord_bot_token"
+openclaw_discord_enabled: false
+openclaw_discord_bot_token_path: "{{ openclaw_secret_root }}/discord_bot_token"
 
 openclaw_gateway_port: 18789
 openclaw_hostname: openclaw.home.hchu.me

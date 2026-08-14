@@ -624,11 +624,15 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     assert "'source': 'file'" in assertions
     assert "'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}'" in assertions
     assert "'mode': 'singleValue'" in assertions
-    assert "'ctf_discord_bot_token_file':" in assertions
-    assert "'path': '${OPENCLAW_CTF_DISCORD_BOT_TOKEN_FILE}'" in assertions
-    assert "openclaw_ctf_discord_enabled | bool" in assertions
+    assert "'discord_bot_token_file':" in assertions
+    assert "'path': '${OPENCLAW_DISCORD_BOT_TOKEN_FILE}'" in assertions
+    assert "openclaw_discord_enabled | bool" in assertions
     assert "groupPolicy == 'allowlist'" in assertions
     assert "dmPolicy == 'disabled'" in assertions
+    assert ".accounts.shared" in assertions
+    assert "selectattr('match.accountId', 'equalto', 'shared')" in assertions
+    assert "selectattr('match.peer.kind', 'equalto', 'channel')" in assertions
+    assert "map(attribute='match.peer.id') | list | unique" in assertions
     assert ".gateway.auth.token ==" in assertions
     assert "'provider': 'gateway_token_file'" in assertions
     assert "'id': 'value'" in assertions
@@ -806,11 +810,11 @@ def test_native_openclaw_activation_validates_before_starting():
     discord_credential_copy = next(
         task
         for task in all_tasks
-        if task["name"] == "Materialize a read-only service-user CTF Discord credential"
+        if task["name"] == "Materialize a read-only service-user shared Discord credential"
     )
-    assert discord_credential_copy["when"] == "openclaw_ctf_discord_enabled | bool"
+    assert discord_credential_copy["when"] == "openclaw_discord_enabled | bool"
     assert discord_credential_copy["ansible.builtin.copy"]["src"] == (
-        "{{ openclaw_ctf_discord_bot_token_path }}"
+        "{{ openclaw_discord_bot_token_path }}"
     )
     assert discord_credential_copy["ansible.builtin.copy"]["mode"] == "0400"
     config_path_preflight = next(
@@ -819,8 +823,8 @@ def test_native_openclaw_activation_validates_before_starting():
         if task["name"] == "Check the active native OpenClaw config path"
     )
     assert config_path_preflight["environment"][
-        "OPENCLAW_CTF_DISCORD_BOT_TOKEN_FILE"
-    ] == "{{ openclaw_validation_credential_dir.path }}/ctf_discord_bot_token"
+        "OPENCLAW_DISCORD_BOT_TOKEN_FILE"
+    ] == "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
     assert any(
         task["name"] == "Remove the temporary native OpenClaw credential directory"
         and task["ansible.builtin.file"]["state"] == "absent"

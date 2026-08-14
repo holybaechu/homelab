@@ -35,7 +35,7 @@
       - openclaw_ctf_docker_known_hosts_path == openclaw_secret_root + '/ctf_docker_known_hosts'
       - openclaw_ctf_docker_host == 'ssh://' + openclaw_ctf_docker_user + '@' + ctf_executor_ip
       - openclaw_ctf_docker_network == 'openclaw-ctf'
-      - openclaw_ctf_discord_enabled is boolean
+      - openclaw_discord_enabled is boolean
       - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
       - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
       - openclaw_native_activate is boolean
@@ -217,28 +217,28 @@
     mode: "0755"
   notify: Restart OpenClaw Gateway
 
-- name: Require an explicit optional CTF Discord bot token
+- name: Require an explicit optional shared Discord bot token
   ansible.builtin.assert:
     that:
-      - openclaw_ctf_discord_bot_token is defined
-      - openclaw_ctf_discord_bot_token is string
-      - openclaw_ctf_discord_bot_token | trim | length > 0
+      - openclaw_discord_bot_token is defined
+      - openclaw_discord_bot_token is string
+      - openclaw_discord_bot_token | trim | length > 0
     fail_msg: >-
-      Configure OPENCLAW_CTF_DISCORD_BOT_TOKEN in the production secret store
-      before enabling the CTF Discord credential.
+      Configure OPENCLAW_DISCORD_BOT_TOKEN in the production secret store
+      before enabling the shared Discord credential.
   no_log: true
-  when: openclaw_ctf_discord_enabled | bool
+  when: openclaw_discord_enabled | bool
 
-- name: Install the optional CTF Discord bot token outside Git
+- name: Install the optional shared Discord bot token outside Git
   ansible.builtin.copy:
-    content: "{{ openclaw_ctf_discord_bot_token | trim }}\n"
-    dest: "{{ openclaw_ctf_discord_bot_token_path }}"
+    content: "{{ openclaw_discord_bot_token | trim }}\n"
+    dest: "{{ openclaw_discord_bot_token_path }}"
     owner: root
     group: root
     mode: "0600"
   no_log: true
   diff: false
-  when: openclaw_ctf_discord_enabled | bool
+  when: openclaw_discord_enabled | bool
   notify: Restart OpenClaw Gateway
 
 - name: Install the OpenClaw Gateway token outside Git
@@ -817,12 +817,12 @@
           }
         } or
         (
-          openclaw_ctf_discord_enabled | bool and
+          openclaw_discord_enabled | bool and
           (openclaw_native_config.content | b64decode | from_json).secrets ==
           {'providers':
             {
               'gateway_token_file': {'source': 'file', 'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'},
-              'ctf_discord_bot_token_file': {'source': 'file', 'path': '${OPENCLAW_CTF_DISCORD_BOT_TOKEN_FILE}', 'mode': 'singleValue'}
+              'discord_bot_token_file': {'source': 'file', 'path': '${OPENCLAW_DISCORD_BOT_TOKEN_FILE}', 'mode': 'singleValue'}
             }
           }
         )
@@ -857,15 +857,41 @@
         selectattr('id', 'equalto', 'ctf') |
         map(attribute='tools.elevated.enabled') | list) == [false]
       - >-
-        not (openclaw_ctf_discord_enabled | bool) or
+        not (openclaw_discord_enabled | bool) or
         (
           (openclaw_native_config.content | b64decode | from_json).channels.discord.enabled and
-          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.dmPolicy == 'disabled' and
-          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.groupPolicy == 'allowlist' and
-          not (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.configWrites and
-          not (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.allowBots and
-          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.ctf.token ==
-          {'source': 'file', 'provider': 'ctf_discord_bot_token_file', 'id': 'value'} and
+          (((openclaw_native_config.content | b64decode | from_json).channels.discord.accounts | list | sort) == ['shared']) and
+          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.dmPolicy == 'disabled' and
+          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.groupPolicy == 'allowlist' and
+          not (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.configWrites and
+          not (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.allowBots and
+          (openclaw_native_config.content | b64decode | from_json).channels.discord.accounts.shared.token ==
+          {'source': 'file', 'provider': 'discord_bot_token_file', 'id': 'value'} and
+          (
+            ((openclaw_native_config.content | b64decode | from_json).bindings |
+            selectattr('match.channel', 'equalto', 'discord') | list | length) > 0
+          ) and
+          (
+            ((openclaw_native_config.content | b64decode | from_json).bindings |
+            selectattr('match.channel', 'equalto', 'discord') |
+            selectattr('match.accountId', 'equalto', 'shared') | list | length) ==
+            ((openclaw_native_config.content | b64decode | from_json).bindings |
+            selectattr('match.channel', 'equalto', 'discord') | list | length)
+          ) and
+          (
+            ((openclaw_native_config.content | b64decode | from_json).bindings |
+            selectattr('match.channel', 'equalto', 'discord') |
+            selectattr('match.peer.kind', 'equalto', 'channel') | list | length) ==
+            ((openclaw_native_config.content | b64decode | from_json).bindings |
+            selectattr('match.channel', 'equalto', 'discord') | list | length)
+          ) and
+          (
+            ((openclaw_native_config.content | b64decode | from_json).bindings |
+            selectattr('match.channel', 'equalto', 'discord') |
+            map(attribute='match.peer.id') | list | unique | list | length) ==
+            ((openclaw_native_config.content | b64decode | from_json).bindings |
+            selectattr('match.channel', 'equalto', 'discord') | list | length)
+          ) and
           (
             ((openclaw_native_config.content | b64decode | from_json).bindings |
             selectattr('agentId', 'equalto', 'ctf') |
@@ -908,15 +934,15 @@
       no_log: true
       diff: false
 
-    - name: Materialize a read-only service-user CTF Discord credential
+    - name: Materialize a read-only service-user shared Discord credential
       ansible.builtin.copy:
-        src: "{{ openclaw_ctf_discord_bot_token_path }}"
-        dest: "{{ openclaw_validation_credential_dir.path }}/ctf_discord_bot_token"
+        src: "{{ openclaw_discord_bot_token_path }}"
+        dest: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
         remote_src: true
         owner: "{{ openclaw_user }}"
         group: "{{ openclaw_group }}"
         mode: "0400"
-      when: openclaw_ctf_discord_enabled | bool
+      when: openclaw_discord_enabled | bool
       no_log: true
       diff: false
 
@@ -942,7 +968,7 @@
         OPENCLAW_SERVICE_REPAIR_POLICY: external
         OPENCLAW_SUPERVISOR_MODE: external
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
-        OPENCLAW_CTF_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/ctf_discord_bot_token"
+        OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
       register: openclaw_config_file_preflight
       changed_when: false
       failed_when: >-
