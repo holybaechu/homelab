@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Materialize one systemd credential for OpenClaw without printing it."""
+"""Materialize fixed systemd credentials for OpenClaw without printing them."""
 
 from __future__ import annotations
 
@@ -8,14 +8,29 @@ import re
 import secrets
 import stat
 import sys
+from collections.abc import Callable
 
 
 EXPECTED_UID = 1000
 EXPECTED_GID = 1000
 EXPECTED_DIRECTORY_MODE = 0o700
 EXPECTED_FILE_MODE = 0o400
-TOKEN_PATTERN = re.compile(rb"[0-9A-Fa-f]{64}\n\Z")
-MAX_READ_BYTES = 66
+GATEWAY_TOKEN_DESTINATIONS = frozenset(
+    {
+        "/run/openclaw-gateway/gateway_token",
+        "/run/openclaw-credential-probe/gateway_token",
+    }
+)
+DISCORD_TOKEN_DESTINATIONS = frozenset(
+    {
+        "/run/openclaw-gateway/discord_bot_token",
+        "/run/openclaw-credential-probe/discord_bot_token",
+    }
+)
+GATEWAY_TOKEN_PATTERN = re.compile(rb"[0-9A-Fa-f]{64}\n\Z")
+MAX_GATEWAY_TOKEN_READ_BYTES = 66
+MAX_DISCORD_TOKEN_BYTES = 4096
+MAX_DISCORD_TOKEN_READ_BYTES = MAX_DISCORD_TOKEN_BYTES + 1
 
 
 def parse_arguments(argv: list[str]) -> tuple[int, int, str, str] | None:
@@ -39,7 +54,30 @@ def parse_arguments(argv: list[str]) -> tuple[int, int, str, str] | None:
     return uid, gid, source, destination
 
 
-def require_regular_file(path: str, expected_uid: int, expected_gid: int) -> os.stat_result:
+def is_valid_discord_token(payload: bytes) -> bool:
+    """Permit one bounded printable token with an optional terminal newline."""
+    if payload.endswith(b"\n"):
+        payload = payload[:-1]
+    return (
+        0 < len(payload) <= MAX_DISCORD_TOKEN_BYTES
+        and all(0x21 <= byte <= 0x7E for byte in payload)
+    )
+
+
+def credential_spec(destination: str) -> tuple[int, Callable[[bytes], bool]] | None:
+    """Return the fixed read bound and validator for an allowed destination."""
+    if destination in GATEWAY_TOKEN_DESTINATIONS:
+        return MAX_GATEWAY_TOKEN_READ_BYTES, lambda payload: (
+            GATEWAY_TOKEN_PATTERN.fullmatch(payload) is not None
+        )
+    if destination in DISCORD_TOKEN_DESTINATIONS:
+        return MAX_DISCORD_TOKEN_READ_BYTES, is_valid_discord_token
+    return None
+
+
+def require_regular_file(
+    path: str, expected_uid: int, expected_gid: int, expected_size: int
+) -> os.stat_result:
     file_stat = os.lstat(path)
     if not stat.S_ISREG(file_stat.st_mode):
         raise RuntimeError("credential target is not a regular file")
@@ -47,7 +85,7 @@ def require_regular_file(path: str, expected_uid: int, expected_gid: int) -> os.
         raise RuntimeError("credential target ownership is invalid")
     if stat.S_IMODE(file_stat.st_mode) != EXPECTED_FILE_MODE:
         raise RuntimeError("credential target mode is invalid")
-    if file_stat.st_nlink != 1 or file_stat.st_size != 65:
+    if file_stat.st_nlink != 1 or file_stat.st_size != expected_size:
         raise RuntimeError("credential target identity is invalid")
     return file_stat
 
@@ -58,9 +96,11 @@ def _main() -> int:
         return 64
 
     expected_uid, expected_gid, source, destination = arguments
+    spec = credential_spec(destination)
     runtime_directory = os.path.dirname(destination)
-    if not runtime_directory or os.path.basename(destination) != "gateway_token":
+    if spec is None or not runtime_directory:
         return 65
+    max_read_bytes, payload_is_valid = spec
 
     uid = os.getuid()
     gid = os.getgid()
@@ -84,7 +124,9 @@ def _main() -> int:
     if hasattr(os, "O_NOFOLLOW"):
         source_flags |= os.O_NOFOLLOW
     source_fd = os.open(source, source_flags)
-    temp_path = os.path.join(runtime_directory, f".gateway_token.{secrets.token_hex(16)}")
+    temp_path = os.path.join(
+        runtime_directory, f".{os.path.basename(destination)}.{secrets.token_hex(16)}"
+    )
     temp_fd = -1
     try:
         opened_source_stat = os.fstat(source_fd)
@@ -95,8 +137,8 @@ def _main() -> int:
             or opened_source_stat.st_nlink != 1
         ):
             return 69
-        payload = os.read(source_fd, MAX_READ_BYTES)
-        if os.read(source_fd, 1) or TOKEN_PATTERN.fullmatch(payload) is None:
+        payload = os.read(source_fd, max_read_bytes)
+        if os.read(source_fd, 1) or not payload_is_valid(payload):
             return 70
 
         temp_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
@@ -118,14 +160,14 @@ def _main() -> int:
             or temp_stat.st_gid != gid
             or stat.S_IMODE(temp_stat.st_mode) != EXPECTED_FILE_MODE
             or temp_stat.st_nlink != 1
-            or temp_stat.st_size != 65
+            or temp_stat.st_size != len(payload)
         ):
             return 71
         os.close(temp_fd)
         temp_fd = -1
 
         os.replace(temp_path, destination)
-        require_regular_file(destination, uid, gid)
+        require_regular_file(destination, uid, gid, len(payload))
         destination_fd = os.open(destination, source_flags)
         try:
             destination_stat = os.fstat(destination_fd)
@@ -136,16 +178,18 @@ def _main() -> int:
                 or destination_stat.st_gid != gid
                 or stat.S_IMODE(destination_stat.st_mode) != EXPECTED_FILE_MODE
                 or destination_stat.st_nlink != 1
-                or destination_stat.st_size != 65
+                or destination_stat.st_size != len(payload)
                 or destination_stat.st_dev != path_stat.st_dev
                 or destination_stat.st_ino != path_stat.st_ino
-                or os.read(destination_fd, MAX_READ_BYTES) != payload
+                or os.read(destination_fd, max_read_bytes) != payload
                 or os.read(destination_fd, 1)
             ):
                 return 72
         finally:
             os.close(destination_fd)
-        directory_fd = os.open(runtime_directory, os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY)
+        directory_fd = os.open(
+            runtime_directory, os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
+        )
         try:
             os.fsync(directory_fd)
         finally:

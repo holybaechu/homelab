@@ -36,7 +36,7 @@ Environment=OPENCLAW_SUPERVISOR_MODE=external
 Environment=OPENCLAW_GATEWAY_TOKEN_FILE=/run/openclaw-gateway/gateway_token
 Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}
 Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}
-Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=%d/discord_bot_token
+Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token
 
 LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}
 LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}
@@ -44,6 +44,7 @@ LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}
 LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}
 
 ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/openclaw_gateway_token /run/openclaw-gateway/gateway_token
+ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/discord_bot_token /run/openclaw-gateway/discord_bot_token
 ExecStart={{ openclaw_node_current_root }}/bin/node {{ openclaw_entrypoint }} gateway --port {{ openclaw_gateway_port }}
 Restart=always
 RestartSec=5
@@ -78,8 +79,8 @@ ReadWritePaths={{ openclaw_runtime_root }}
 ReadWritePaths={{ openclaw_cache_root }}
 ReadWritePaths={{ openclaw_auth_profile_secret_root }}
 ReadWritePaths={{ openclaw_ctf_workspace_root }}
-InaccessiblePaths=/run/docker.sock
-InaccessiblePaths=/var/run/docker.sock
+InaccessiblePaths=-/run/docker.sock
+InaccessiblePaths=-/var/run/docker.sock
 
 StandardOutput=journal
 StandardError=journal

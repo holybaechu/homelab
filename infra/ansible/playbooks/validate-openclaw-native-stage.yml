@@ -100,11 +100,25 @@
       ansible.builtin.shell: |
         set -eu
         credential=/run/openclaw-gateway/gateway_token
+        discord_credential=/run/openclaw-gateway/discord_bot_token
         {% if openclaw_native_stage_marker.stat.exists | default(false) %}
         test -f "$credential"
         test ! -L "$credential"
         test "$(stat -c '%u:%g %a %h %s' "$credential")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 400 1 65"
         grep -Eq '^[0-9a-fA-F]{64}$' "$credential"
+        test -f "$discord_credential"
+        test ! -L "$discord_credential"
+        discord_metadata="$(stat -c '%u:%g %a %h %s' "$discord_credential")"
+        case "$discord_metadata" in
+          "{{ openclaw_uid }}:{{ openclaw_gid }} 400 1 "*) ;;
+          *) exit 1 ;;
+        esac
+        discord_size="${discord_metadata##* }"
+        case "$discord_size" in
+          ''|*[!0-9]*) exit 1 ;;
+        esac
+        test "$discord_size" -ge 1
+        test "$discord_size" -le 4097
         {% else %}
         test ! -e /run/openclaw-gateway
         test ! -L /run/openclaw-gateway

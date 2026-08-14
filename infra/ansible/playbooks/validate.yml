@@ -185,8 +185,8 @@
         systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}'
         systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_client_key:'
         systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_known_hosts:'
-        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=/run/docker.sock'
-        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=/var/run/docker.sock'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=-/run/docker.sock'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=-/var/run/docker.sock'
         ! systemctl cat openclaw-gateway.service | grep -Eq '(^|[^A-Z_])OPENAI_API_KEY='
         systemctl cat openclaw-gateway.service | grep -Fqx 'ReadWritePaths={{ openclaw_ctf_workspace_root }}'
         ! systemctl is-active --quiet openclaw-ctf-gateway.service
@@ -286,8 +286,9 @@
       ansible.builtin.shell: |
         set -eu
         test "$(stat -c '%u:%g %a' '{{ openclaw_discord_bot_token_path }}')" = '0:0 600'
-        systemctl cat openclaw-gateway.service | grep -Fq 'Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=%d/discord_bot_token'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token'
         systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=discord_bot_token:'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/discord_bot_token /run/openclaw-gateway/discord_bot_token'
       args:
         executable: /bin/sh
       changed_when: false
@@ -546,11 +547,25 @@
       ansible.builtin.shell: |
         set -eu
         credential=/run/openclaw-gateway/gateway_token
+        discord_credential=/run/openclaw-gateway/discord_bot_token
         {% if not (openclaw_docker_rollback_activate | bool) and (openclaw_native_activate | bool or openclaw_native_transition_marker_validation.stat.exists | default(false)) %}
         test -f "$credential"
         test ! -L "$credential"
         test "$(stat -c '%u:%g %a %h %s' "$credential")" = "{{ openclaw_uid }}:{{ openclaw_gid }} 400 1 65"
         grep -Eq '^[0-9a-fA-F]{64}$' "$credential"
+        test -f "$discord_credential"
+        test ! -L "$discord_credential"
+        discord_metadata="$(stat -c '%u:%g %a %h %s' "$discord_credential")"
+        case "$discord_metadata" in
+          "{{ openclaw_uid }}:{{ openclaw_gid }} 400 1 "*) ;;
+          *) exit 1 ;;
+        esac
+        discord_size="${discord_metadata##* }"
+        case "$discord_size" in
+          ''|*[!0-9]*) exit 1 ;;
+        esac
+        test "$discord_size" -ge 1
+        test "$discord_size" -le 4097
         {% else %}
         test ! -e /run/openclaw-gateway
         test ! -L /run/openclaw-gateway

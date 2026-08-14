@@ -393,7 +393,7 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}",
         "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
         "Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}",
-        "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=%d/discord_bot_token",
+        "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token",
         "RuntimeDirectory=openclaw-gateway",
         "RuntimeDirectoryMode=0700",
         "RuntimeDirectoryPreserve=no",
@@ -401,11 +401,13 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "Environment=OPENCLAW_GATEWAY_TOKEN_FILE=/run/openclaw-gateway/gateway_token",
         "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
         "%d/openclaw_gateway_token /run/openclaw-gateway/gateway_token",
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
+        "%d/discord_bot_token /run/openclaw-gateway/discord_bot_token",
         "ReadWritePaths={{ openclaw_runtime_root }}",
         "ReadWritePaths={{ openclaw_auth_profile_secret_root }}",
         "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
-        "InaccessiblePaths=/run/docker.sock",
-        "InaccessiblePaths=/var/run/docker.sock",
+        "InaccessiblePaths=-/run/docker.sock",
+        "InaccessiblePaths=-/var/run/docker.sock",
     ):
         assert value in unit
     for forbidden in (
@@ -455,8 +457,13 @@ def test_native_openclaw_materializes_the_systemd_credential_without_privilege()
             "LoadCredential=openclaw_gateway_token:"
             "{{ openclaw_gateway_token_path }}"
         ) in rendered
+        assert (
+            "LoadCredential=discord_bot_token:"
+            "{{ openclaw_discord_bot_token_path }}"
+        ) in rendered
         assert "/usr/local/libexec/materialize-openclaw-credential " in rendered
         assert "%d/openclaw_gateway_token " in rendered
+        assert "%d/discord_bot_token " in rendered
         assert "RuntimeDirectoryMode=0700" in rendered
         assert "RuntimeDirectoryPreserve=no" in rendered
         assert "LimitCORE=0" in rendered
@@ -473,29 +480,42 @@ def test_native_openclaw_materializes_the_systemd_credential_without_privilege()
         "Environment=OPENCLAW_GATEWAY_TOKEN_FILE=%d/openclaw_gateway_token"
         not in unit
     )
+    assert (
+        "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE="
+        "/run/openclaw-gateway/discord_bot_token"
+    ) in unit
+    assert "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=%d/discord_bot_token" not in unit
     assert "RuntimeDirectory=openclaw-credential-probe" in probe
+    assert (
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
+        "%d/openclaw_gateway_token /run/openclaw-credential-probe/gateway_token"
+    ) in probe
+    assert (
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
+        "%d/discord_bot_token /run/openclaw-credential-probe/discord_bot_token"
+    ) in probe
     assert probe.count("ExecStart=") == 1
     assert "Environment=" not in probe
     assert "openclaw.mjs" not in probe
     assert "gateway --port" not in probe
 
 
-def test_staged_credential_probe_is_bounded_no_log_and_removes_all_residue():
+def test_native_credential_probe_is_bounded_no_log_and_removes_all_residue():
     tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
     probe = next(
         task
         for task in tasks
         if task["name"]
-        == "Validate the staged systemd credential materialization contract"
+        == "Validate the native systemd credential materialization contract"
     )
 
-    assert probe["when"] == "not (openclaw_native_activate | bool)"
+    assert probe["when"] == "not (openclaw_docker_rollback_activate | bool)"
     assert probe["no_log"] is True
     assert [task["name"] for task in probe["block"]] == [
         "Install the transient OpenClaw credential contract probe",
         "Reload systemd for the OpenClaw credential contract probe",
-        "Run the staged OpenClaw credential contract probe",
-        "Prove the staged OpenClaw credential contract probe completed",
+        "Run the native OpenClaw credential contract probe",
+        "Prove the native OpenClaw credential contract probe completed",
     ]
     rendered = probe["block"][0]["ansible.builtin.template"]
     assert rendered == {
@@ -517,10 +537,10 @@ def test_staged_credential_probe_is_bounded_no_log_and_removes_all_residue():
     assert "test ! -e /run/openclaw-credential-probe" in proof
     assert "openclaw-gateway.service" not in proof
     assert [task["name"] for task in probe["always"]] == [
-        "Stop the staged OpenClaw credential contract probe",
+        "Stop the native OpenClaw credential contract probe",
         "Remove the transient OpenClaw credential contract probe unit",
         "Reload systemd after the OpenClaw credential contract probe",
-        "Prove the staged OpenClaw credential contract probe left no residue",
+        "Prove the native OpenClaw credential contract probe left no residue",
     ]
     cleanup = probe["always"][-1]["ansible.builtin.shell"]
     assert "test ! -e /run/systemd/system/openclaw-credential-probe.service" in cleanup
@@ -1055,6 +1075,9 @@ def test_native_openclaw_activation_validates_before_starting():
         if task["name"] == "Check the active native OpenClaw config path"
     )
     assert config_path_preflight["environment"][
+        "OPENCLAW_GATEWAY_TOKEN_FILE"
+    ] == "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
+    assert config_path_preflight["environment"][
         "OPENCLAW_DISCORD_BOT_TOKEN_FILE"
     ] == "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
     assert "OPENCLAW_DISCORD_RELAY_CORE_HMAC_FILE" not in config_path_preflight["environment"]
@@ -1092,6 +1115,7 @@ def test_native_openclaw_activation_validates_before_starting():
         "OPENCLAW_SUPERVISOR_MODE": "external",
         "OPENCLAW_AUTH_STORE_READONLY": "1",
         "OPENCLAW_GATEWAY_TOKEN_FILE": "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token",
+        "OPENCLAW_DISCORD_BOT_TOKEN_FILE": "{{ openclaw_gateway_handshake_credential_dir.path }}/discord_bot_token",
     }
     handshake_source = tasks.split(
         "    - name: Collect the active native Gateway scope-limited token handshake\n", 1
@@ -1174,6 +1198,20 @@ def test_native_openclaw_activation_validates_before_starting():
         handshake_credential_copy["ansible.builtin.copy"]["dest"]
     )
     assert handshake_credential_copy["no_log"] is True
+    handshake_discord_credential_copy = next(
+        task
+        for task in all_tasks
+        if task["name"]
+        == "Materialize a read-only shared Discord Gateway handshake credential"
+    )
+    assert handshake_discord_credential_copy["ansible.builtin.copy"]["src"] == (
+        "{{ openclaw_discord_bot_token_path }}"
+    )
+    assert "openclaw_gateway_handshake_credential_dir.path" in (
+        handshake_discord_credential_copy["ansible.builtin.copy"]["dest"]
+    )
+    assert handshake_discord_credential_copy["ansible.builtin.copy"]["mode"] == "0400"
+    assert handshake_discord_credential_copy["no_log"] is True
     assert any(
         task["name"] == "Remove the isolated native Gateway handshake state directory"
         and task["ansible.builtin.file"]["state"] == "absent"
@@ -1333,7 +1371,12 @@ def test_site_and_validation_include_the_dedicated_openclaw_lxc():
     assert "openclaw_ctf_docker_cli_path" in validation
     assert "openclaw_ctf_user" not in validation
     assert "systemctl cat openclaw-gateway.service | grep -Fqx 'ReadWritePaths={{ openclaw_ctf_workspace_root }}'" in validation
-    assert "InaccessiblePaths=/var/run/docker.sock" in validation
+    assert "InaccessiblePaths=-/var/run/docker.sock" in validation
+    assert "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token" in validation
+    assert (
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
+        "%d/discord_bot_token /run/openclaw-gateway/discord_bot_token"
+    ) in validation
     assert "systemctl is-active --quiet nftables" in validation
     assert "openclaw_native_activate | bool" in validation
     assert "Reject an ambiguous native transition marker" in validation
@@ -1356,6 +1399,7 @@ def test_native_validation_rechecks_the_runtime_credential_boundary():
         assert task["changed_when"] is False
         assert task["no_log"] is True
         assert "credential=/run/openclaw-gateway/gateway_token" in shell
+        assert "discord_credential=/run/openclaw-gateway/discord_bot_token" in shell
         assert 'test -f "$credential"' in shell
         assert 'test ! -L "$credential"' in shell
         assert "stat -c '%u:%g %a %h %s'" in shell
@@ -1363,6 +1407,13 @@ def test_native_validation_rechecks_the_runtime_credential_boundary():
             '"{{ openclaw_uid }}:{{ openclaw_gid }} 400 1 65"' in shell
         )
         assert "grep -Eq '^[0-9a-fA-F]{64}$'" in shell
+        assert 'test -f "$discord_credential"' in shell
+        assert 'test ! -L "$discord_credential"' in shell
+        assert 'discord_metadata="$(stat -c' in shell
+        assert '"{{ openclaw_uid }}:{{ openclaw_gid }} 400 1 "*' in shell
+        assert 'discord_size="${discord_metadata##* }"' in shell
+        assert 'test "$discord_size" -ge 1' in shell
+        assert 'test "$discord_size" -le 4097' in shell
         assert "test ! -e /run/openclaw-credential-probe" in shell
         assert (
             "test ! -e /run/systemd/system/"

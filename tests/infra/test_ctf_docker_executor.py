@@ -55,8 +55,8 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
         "Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}",
         "LoadCredential=ctf_docker_client_key:",
         "LoadCredential=ctf_docker_known_hosts:",
-        "InaccessiblePaths=/run/docker.sock",
-        "InaccessiblePaths=/var/run/docker.sock",
+        "InaccessiblePaths=-/run/docker.sock",
+        "InaccessiblePaths=-/var/run/docker.sock",
         "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
     ):
         assert required in service

@@ -32,7 +32,14 @@ def test_materializer_has_a_fixed_silent_fail_closed_contract():
     assert "EXPECTED_DIRECTORY_MODE = 0o700" in source
     assert "EXPECTED_FILE_MODE = 0o400" in source
     assert 're.compile(rb"[0-9A-Fa-f]{64}\\n\\Z")' in source
-    assert "MAX_READ_BYTES = 66" in source
+    assert '"/run/openclaw-gateway/gateway_token"' in source
+    assert '"/run/openclaw-credential-probe/gateway_token"' in source
+    assert '"/run/openclaw-gateway/discord_bot_token"' in source
+    assert '"/run/openclaw-credential-probe/discord_bot_token"' in source
+    assert "MAX_GATEWAY_TOKEN_READ_BYTES = 66" in source
+    assert "MAX_DISCORD_TOKEN_BYTES = 4096" in source
+    assert "def is_valid_discord_token(" in source
+    assert "def credential_spec(" in source
     assert "def parse_arguments(" in source
     assert 'argv[1] != "--owner"' in source
     assert "owner.count(\":\") != 1" in source
@@ -44,7 +51,7 @@ def test_materializer_has_a_fixed_silent_fail_closed_contract():
     assert "os.fsync(temp_fd)" in source
     assert "os.fsync(directory_fd)" in source
     assert "st_nlink != 1" in source
-    assert "st_size != 65" in source
+    assert "st_size != expected_size" in source
     assert source.count("destination_stat.st_uid != uid") == 1
     assert source.count("destination_stat.st_gid != gid") == 1
     assert "print(" not in source
@@ -73,6 +80,55 @@ def test_materializer_accepts_the_explicit_ctf_service_owner_without_changing_co
         assert helper.parse_arguments(invalid) is None
 
 
+def test_materializer_allows_only_the_four_fixed_gateway_and_discord_destinations():
+    helper = load_helper()
+
+    for destination in (
+        "/run/openclaw-gateway/gateway_token",
+        "/run/openclaw-credential-probe/gateway_token",
+        "/run/openclaw-gateway/discord_bot_token",
+        "/run/openclaw-credential-probe/discord_bot_token",
+    ):
+        assert helper.credential_spec(destination) is not None
+    for destination in (
+        "/run/openclaw-gateway/other_token",
+        "/tmp/gateway_token",
+        "/run/openclaw-gateway/../openclaw-gateway/gateway_token",
+        "/run/openclaw-credential-probe/other_token",
+    ):
+        assert helper.credential_spec(destination) is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"MTIz.NDU2-abc_DEF",
+        b"MTIz.NDU2-abc_DEF\n",
+        b"a" * 4096,
+    ],
+)
+def test_materializer_accepts_bounded_printable_discord_tokens(payload):
+    helper = load_helper()
+
+    assert helper.is_valid_discord_token(payload) is True
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"",
+        b"token\r\n",
+        b"token\nother",
+        b"token\x00",
+        b"a" * 4097,
+    ],
+)
+def test_materializer_rejects_invalid_discord_tokens(payload):
+    helper = load_helper()
+
+    assert helper.is_valid_discord_token(payload) is False
+
+
 @pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership required")
 def test_materializer_atomically_replaces_a_planted_symlink_without_touching_target(
     tmp_path, monkeypatch, capsys
@@ -92,6 +148,7 @@ def test_materializer_atomically_replaces_a_planted_symlink_without_touching_tar
     decoy.write_bytes(b"unchanged")
     destination = runtime / "gateway_token"
     destination.symlink_to(decoy)
+    monkeypatch.setattr(helper, "GATEWAY_TOKEN_DESTINATIONS", frozenset({str(destination)}))
 
     monkeypatch.setattr(
         helper.sys,
@@ -128,6 +185,7 @@ def test_materializer_honors_an_explicit_service_owner(
     source.write_bytes(payload)
     source.chmod(0o400)
     destination = runtime / "gateway_token"
+    monkeypatch.setattr(helper, "GATEWAY_TOKEN_DESTINATIONS", frozenset({str(destination)}))
 
     monkeypatch.setattr(
         helper.sys,
@@ -153,6 +211,44 @@ def test_materializer_honors_an_explicit_service_owner(
 
 
 @pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership required")
+def test_materializer_atomically_materializes_the_discord_token_without_output(
+    tmp_path, monkeypatch, capsys
+):
+    helper = load_helper()
+    monkeypatch.setattr(helper, "EXPECTED_UID", os.getuid())
+    monkeypatch.setattr(helper, "EXPECTED_GID", os.getgid())
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    runtime.chmod(0o700)
+    source = tmp_path / "credential"
+    payload = b"MTIz.NDU2-abc_DEF\n"
+    source.write_bytes(payload)
+    source.chmod(0o400)
+    destination = runtime / "discord_bot_token"
+    monkeypatch.setattr(helper, "DISCORD_TOKEN_DESTINATIONS", frozenset({str(destination)}))
+
+    monkeypatch.setattr(
+        helper.sys,
+        "argv",
+        [str(HELPER), str(source), str(destination)],
+    )
+
+    assert helper.main() == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    target_stat = destination.lstat()
+    assert stat.S_ISREG(target_stat.st_mode)
+    assert stat.S_IMODE(target_stat.st_mode) == 0o400
+    assert target_stat.st_uid == os.getuid()
+    assert target_stat.st_gid == os.getgid()
+    assert target_stat.st_nlink == 1
+    assert target_stat.st_size == len(payload)
+    assert destination.read_bytes() == payload
+    assert not list(runtime.glob(".discord_bot_token.*"))
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership required")
 @pytest.mark.parametrize(
     "payload",
     [
@@ -175,6 +271,7 @@ def test_materializer_rejects_every_noncanonical_token_without_output(
     source.write_bytes(payload)
     source.chmod(0o400)
     destination = runtime / "gateway_token"
+    monkeypatch.setattr(helper, "GATEWAY_TOKEN_DESTINATIONS", frozenset({str(destination)}))
     monkeypatch.setattr(
         helper.sys,
         "argv",

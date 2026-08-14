@@ -526,8 +526,8 @@
     - Reload systemd for OpenClaw
     - Restart OpenClaw Gateway
 
-- name: Validate the staged systemd credential materialization contract
-  when: not (openclaw_native_activate | bool)
+- name: Validate the native systemd credential materialization contract
+  when: not (openclaw_docker_rollback_activate | bool)
   no_log: true
   block:
     - name: Install the transient OpenClaw credential contract probe
@@ -542,12 +542,12 @@
       ansible.builtin.systemd_service:
         daemon_reload: true
 
-    - name: Run the staged OpenClaw credential contract probe
+    - name: Run the native OpenClaw credential contract probe
       ansible.builtin.systemd_service:
         name: openclaw-credential-probe.service
         state: started
 
-    - name: Prove the staged OpenClaw credential contract probe completed
+    - name: Prove the native OpenClaw credential contract probe completed
       ansible.builtin.shell: |
         set -eu
         test "$(systemctl show openclaw-credential-probe.service --property=Result --value)" = success
@@ -558,7 +558,7 @@
         executable: /bin/sh
       changed_when: false
   always:
-    - name: Stop the staged OpenClaw credential contract probe
+    - name: Stop the native OpenClaw credential contract probe
       ansible.builtin.systemd_service:
         name: openclaw-credential-probe.service
         state: stopped
@@ -573,7 +573,7 @@
       ansible.builtin.systemd_service:
         daemon_reload: true
 
-    - name: Prove the staged OpenClaw credential contract probe left no residue
+    - name: Prove the native OpenClaw credential contract probe left no residue
       ansible.builtin.shell: |
         set -eu
         test ! -e /run/systemd/system/openclaw-credential-probe.service
@@ -1420,6 +1420,17 @@
       no_log: true
       diff: false
 
+    - name: Materialize a read-only shared Discord Gateway handshake credential
+      ansible.builtin.copy:
+        src: "{{ openclaw_discord_bot_token_path }}"
+        dest: "{{ openclaw_gateway_handshake_credential_dir.path }}/discord_bot_token"
+        remote_src: true
+        owner: "{{ openclaw_user }}"
+        group: "{{ openclaw_group }}"
+        mode: "0400"
+      no_log: true
+      diff: false
+
     - name: Create an isolated native Gateway handshake state directory
       ansible.builtin.tempfile:
         state: directory
@@ -1488,6 +1499,7 @@
         OPENCLAW_SUPERVISOR_MODE: external
         OPENCLAW_AUTH_STORE_READONLY: "1"
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token"
+        OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/discord_bot_token"
       register: openclaw_native_gateway_handshake
       changed_when: false
       failed_when: false
