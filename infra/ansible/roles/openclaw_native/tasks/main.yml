@@ -1060,10 +1060,18 @@
       no_log: true
       diff: false
 
+    - name: Create a writable native OpenClaw plugin-install directory
+      ansible.builtin.file:
+        path: "{{ openclaw_validation_credential_dir.path }}/plugin-install"
+        state: directory
+        owner: "{{ openclaw_user }}"
+        group: "{{ openclaw_group }}"
+        mode: "0700"
+
     - name: Materialize a writable core plugin-install config
       ansible.builtin.copy:
         src: "{{ openclaw_config_path }}"
-        dest: "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
+        dest: "{{ openclaw_validation_credential_dir.path }}/plugin-install/plugin-install-config.json"
         remote_src: true
         owner: "{{ openclaw_user }}"
         group: "{{ openclaw_group }}"
@@ -1088,7 +1096,7 @@
         PATH: "{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin"
         OPENCLAW_HOME: "{{ openclaw_home }}"
         OPENCLAW_STATE_DIR: "{{ openclaw_state_root }}"
-        OPENCLAW_CONFIG_PATH: "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
+        OPENCLAW_CONFIG_PATH: "{{ openclaw_validation_credential_dir.path }}/plugin-install/plugin-install-config.json"
         OPENCLAW_WORKSPACE_DIR: "{{ openclaw_workspace_root }}"
         OPENCLAW_DISABLE_BONJOUR: "1"
         OPENCLAW_NO_AUTO_UPDATE: "1"

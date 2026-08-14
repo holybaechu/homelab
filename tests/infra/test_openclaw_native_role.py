@@ -639,12 +639,25 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_all_agen
     ]
     assert install["become_user"] == "{{ openclaw_user }}"
     assert install["environment"]["OPENCLAW_CONFIG_PATH"] == (
-        "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
+        "{{ openclaw_validation_credential_dir.path }}/plugin-install/plugin-install-config.json"
     )
     assert install["environment"]["OPENCLAW_STATE_DIR"] == "{{ openclaw_state_root }}"
     assert install["environment"]["NPM_CONFIG_CACHE"] == (
         "{{ openclaw_npm_cache_root }}"
     )
+
+    plugin_install_dir = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Create a writable native OpenClaw plugin-install directory"
+    )
+    assert plugin_install_dir["ansible.builtin.file"] == {
+        "path": "{{ openclaw_validation_credential_dir.path }}/plugin-install",
+        "state": "directory",
+        "owner": "{{ openclaw_user }}",
+        "group": "{{ openclaw_group }}",
+        "mode": "0700",
+    }
 
     writable_config = next(
         task
@@ -653,7 +666,7 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_all_agen
     )
     assert writable_config["ansible.builtin.copy"] == {
         "src": "{{ openclaw_config_path }}",
-        "dest": "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json",
+        "dest": "{{ openclaw_validation_credential_dir.path }}/plugin-install/plugin-install-config.json",
         "remote_src": True,
         "owner": "{{ openclaw_user }}",
         "group": "{{ openclaw_group }}",
@@ -698,7 +711,7 @@ def test_native_openclaw_installs_and_loads_the_pinned_discord_channel_plugin():
     ]
     assert install["become_user"] == "{{ openclaw_user }}"
     assert install["environment"]["OPENCLAW_CONFIG_PATH"] == (
-        "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
+        "{{ openclaw_validation_credential_dir.path }}/plugin-install/plugin-install-config.json"
     )
     assert install["environment"]["NPM_CONFIG_CACHE"] == (
         "{{ openclaw_npm_cache_root }}"
@@ -991,6 +1004,19 @@ def test_native_openclaw_activation_validates_before_starting():
     )
     assert audit["become"] is True
     assert audit["become_user"] == "{{ openclaw_user }}"
+
+    credential_dir = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Protect the temporary native OpenClaw credential directory"
+    )
+    assert credential_dir["ansible.builtin.file"] == {
+        "path": "{{ openclaw_validation_credential_dir.path }}",
+        "state": "directory",
+        "owner": "root",
+        "group": "{{ openclaw_group }}",
+        "mode": "0750",
+    }
 
     credential_copy = next(
         task
