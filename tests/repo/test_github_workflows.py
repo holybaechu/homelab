@@ -210,7 +210,7 @@ def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_push
     assert "compose-identities.after.tsv" in cleanup
 
 
-def test_cd_workflow_limits_retained_gateway_rebaseline_to_explicit_manual_dispatch():
+def test_cd_workflow_limits_retained_gateway_recovery_to_explicit_manual_dispatch():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"
     )
@@ -218,17 +218,32 @@ def test_cd_workflow_limits_retained_gateway_rebaseline_to_explicit_manual_dispa
         REPO_ROOT / "scripts" / "ci" / "write_ansible_extra_vars.py"
     ).read_text(encoding="utf-8")
 
-    input_name = "approve_openclaw_retained_gateway_rebaseline"
-    approval_var = "openclaw_retained_gateway_rebaseline_approved"
+    approvals = {
+        "approve_openclaw_retained_gateway_rebaseline": (
+            "openclaw_retained_gateway_rebaseline_approved"
+        ),
+        "approve_openclaw_retained_gateway_image_pull": (
+            "openclaw_retained_gateway_image_pull_approved"
+        ),
+    }
     dispatch_inputs = workflow.split("  workflow_dispatch:", maxsplit=1)[1].split(
         "  push:", maxsplit=1
     )[0]
-    approval_input = dispatch_inputs.split(f"      {input_name}:", maxsplit=1)[1]
-    approval_input = approval_input.split("  push:", maxsplit=1)[0]
+    input_lines = dispatch_inputs.splitlines()
 
-    assert f"{input_name}:" in dispatch_inputs
-    assert "default: false" in approval_input
-    assert "type: boolean" in approval_input
+    for input_name in approvals:
+        input_start = input_lines.index(f"      {input_name}:")
+        input_end = next(
+            (
+                index
+                for index, line in enumerate(input_lines[input_start + 1 :], input_start + 1)
+                if line.startswith("      ") and not line.startswith("       ")
+            ),
+            len(input_lines),
+        )
+        approval_input = "\n".join(input_lines[input_start:input_end])
+        assert "default: false" in approval_input
+        assert "type: boolean" in approval_input
 
     bootstrap = workflow.index("infra/ansible/playbooks/bootstrap.yml")
     recovery = workflow.index("- name: Rebaseline retained Docker OpenClaw rollback assets")
@@ -237,26 +252,31 @@ def test_cd_workflow_limits_retained_gateway_rebaseline_to_explicit_manual_dispa
 
     recovery_step = workflow[recovery:fence]
     assert "github.event_name == 'workflow_dispatch'" in recovery_step
-    assert f"inputs.{input_name} == true" in recovery_step
+    for input_name in approvals:
+        assert f"inputs.{input_name} == true" in recovery_step
     assert "steps.scope.outputs.deployment_scope == 'full'" in recovery_step
     assert (
         "infra/ansible/playbooks/rebaseline-openclaw-retained-rollback.yml"
         in recovery_step
     )
     assert '--extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"' in recovery_step
-    assert f"--extra-vars '{{\"{approval_var}\":true}}'" in recovery_step
+    for approval_var in approvals.values():
+        assert f"--extra-vars '{{\"{approval_var}\":true}}'" in recovery_step
     recovery_command = recovery_step.split("        run: >-", maxsplit=1)[1]
-    assert f"inputs.{input_name}" not in recovery_command
-    assert f"${{{{ inputs.{input_name} }}}}" not in recovery_command
+    for input_name in approvals:
+        assert f"inputs.{input_name}" not in recovery_command
+        assert f"${{{{ inputs.{input_name} }}}}" not in recovery_command
 
-    # The privileged boolean is supplied only to the dedicated recovery
-    # playbook: it is neither an ordinary deployment secret nor a push input.
-    assert approval_var not in extra_vars_script
-    assert approval_var not in workflow.replace(recovery_step, "")
+    # The privileged booleans are supplied only to the dedicated recovery
+    # playbook: neither is an ordinary deployment secret nor a push input.
+    for approval_var in approvals.values():
+        assert approval_var not in extra_vars_script
+        assert approval_var not in workflow.replace(recovery_step, "")
     push_trigger = workflow.split("  push:", maxsplit=1)[1].split(
         "permissions:", maxsplit=1
     )[0]
-    assert input_name not in push_trigger
+    for input_name in approvals:
+        assert input_name not in push_trigger
 
 
 def test_cd_workflow_fast_tracks_known_workloads_through_arcane():

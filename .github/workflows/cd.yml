@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         type: boolean
+      approve_openclaw_retained_gateway_image_pull:
+        description: Approve pulling the exact pinned retained OpenClaw rollback image
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -251,6 +256,7 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' &&
           inputs.approve_openclaw_retained_gateway_rebaseline == true &&
+          inputs.approve_openclaw_retained_gateway_image_pull == true &&
           steps.scope.outputs.deployment_scope == 'full'
         env:
           ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
@@ -259,6 +265,7 @@ jobs:
           infra/ansible/playbooks/rebaseline-openclaw-retained-rollback.yml
           --extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"
           --extra-vars '{"openclaw_retained_gateway_rebaseline_approved":true}'
+          --extra-vars '{"openclaw_retained_gateway_image_pull_approved":true}'
 
       - name: Fence retained Docker OpenClaw before native reconciliation
         if: steps.scope.outputs.deployment_scope == 'full'

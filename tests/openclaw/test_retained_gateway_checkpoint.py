@@ -1231,6 +1231,7 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
     assert play["gather_facts"] is False
     assert play["any_errors_fatal"] is True
     assert play["vars"]["openclaw_retained_gateway_rebaseline_approved"] is False
+    assert play["vars"]["openclaw_retained_gateway_image_pull_approved"] is False
     assert play["vars"]["openclaw_rebaseline_legacy_verifier_sha256"] == (
         "5676d458c508c8e95ffadc6e47eeaffdb6a4026e5d40980001ab9fe6ad196e61"
     )
@@ -1253,6 +1254,8 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
     requirements = approval["ansible.builtin.assert"]["that"]
     assert "openclaw_retained_gateway_rebaseline_approved is boolean" in requirements
     assert "openclaw_retained_gateway_rebaseline_approved | bool" in requirements
+    assert "openclaw_retained_gateway_image_pull_approved is boolean" in requirements
+    assert "openclaw_retained_gateway_image_pull_approved | bool" in requirements
     assert "hostvars['openclaw'].openclaw_native_activate | bool" in requirements
     assert "not (openclaw_docker_rollback_activate | bool)" in requirements
     assert any("openclaw_tracked_route.http.routers.openclaw.rule" in value for value in requirements)
@@ -1272,6 +1275,16 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
     assert any("openclaw_rebaseline_legacy_verifier_sha256" in value for value in verifier_requirements)
 
     block = transaction["block"]
+    assets = task_by_name(
+        block, "Verify retained rollback assets before acquiring the pinned image"
+    )
+    protected_assets = task_by_name(
+        block, "Verify retained rollback asset token before acquiring the pinned image"
+    )
+    image_inspect = task_by_name(block, "Inspect the exact retained rollback image cache")
+    image_pull = task_by_name(
+        block, "Acquire the exact pinned retained rollback image when absent"
+    )
     diagnostic = task_by_name(
         block, "Diagnose non-secret retained rollback assets before identity rebaseline"
     )
@@ -1282,6 +1295,9 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
         block, "Remove the archived live checkpoint under explicit rebaseline approval"
     )
     create = task_by_name(block, "Create a new fenced retained Docker Gateway without pull or start")
+    candidate = task_by_name(
+        block, "Validate the new fenced retained Docker Gateway before replacement"
+    )
     seed = task_by_name(block, "Seed the new fenced retained rollback identity")
     require = task_by_name(block, "Require the new fenced retained rollback identity")
     audit = task_by_name(block, "Record the explicitly approved retained rollback rebaseline")
@@ -1289,6 +1305,40 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
     cleanup = task_by_name(
         transaction["always"], "Remove the ephemeral retained rollback rebaseline verifier"
     )
+
+    assets_argv = assets["ansible.builtin.command"]["argv"]
+    assert assets_argv[1:4] == ["assets", "--container-state", "fenced"]
+    assert "--require-expected-token" not in assets_argv
+    assert assets["retries"] == 3
+    assert assets["delay"] == 2
+    assert assets["until"] == "openclaw_rebaseline_assets_preflight.rc == 0"
+    assert "no_log" not in assets
+    assert protected_assets["ansible.builtin.command"]["argv"][1:4] == [
+        "assets",
+        "--container-state",
+        "fenced",
+    ]
+    assert "--require-expected-token" in protected_assets["ansible.builtin.command"]["argv"]
+    assert_bounded_fail_closed_retry(protected_assets)
+    assert protected_assets["no_log"] is True
+    assert image_inspect["ansible.builtin.command"]["argv"] == [
+        "docker",
+        "image",
+        "inspect",
+        "{{ openclaw_retained_image_ref }}",
+    ]
+    assert image_inspect["failed_when"] is False
+    assert image_pull["ansible.builtin.command"]["argv"] == [
+        "docker",
+        "pull",
+        "--platform",
+        "linux/amd64",
+        "{{ openclaw_retained_image_ref }}",
+    ]
+    assert image_pull["when"] == "openclaw_rebaseline_image_inspect.rc != 0"
+    assert "args" not in image_pull
+    assert block.index(assets) < block.index(protected_assets) < block.index(image_inspect)
+    assert block.index(image_inspect) < block.index(image_pull)
 
     diagnostic_argv = diagnostic["ansible.builtin.command"]["argv"]
     assert diagnostic_argv[1:4] == ["preflight", "--container-state", "fenced"]
@@ -1300,12 +1350,12 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
         == "openclaw_rebaseline_nonsecret_preflight.rc == 0"
     )
     assert "no_log" not in diagnostic
-    assert block.index(diagnostic) < block.index(preflight)
+    assert block.index(image_pull) < block.index(diagnostic) < block.index(preflight)
     assert_bounded_fail_closed_retry(preflight)
     assert archive["ansible.builtin.copy"]["remote_src"] is True
     assert archive["ansible.builtin.copy"]["force"] is False
     assert remove["ansible.builtin.file"]["state"] == "absent"
-    assert block.index(preflight) < block.index(create) < block.index(archive)
+    assert block.index(preflight) < block.index(create) < block.index(candidate) < block.index(archive)
     assert block.index(archive) < block.index(archived) < block.index(remove)
     assert create["ansible.builtin.command"]["argv"] == [
         "docker",
@@ -1315,6 +1365,14 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
         "never",
         "openclaw-gateway",
     ]
+    assert candidate["ansible.builtin.command"]["argv"][1:4] == [
+        "candidate",
+        "--container-state",
+        "fenced",
+    ]
+    assert "--require-expected-token" in candidate["ansible.builtin.command"]["argv"]
+    assert_bounded_fail_closed_retry(candidate)
+    assert candidate["no_log"] is True
     assert seed["ansible.builtin.command"]["argv"][1:4] == [
         "seed",
         "--container-state",
@@ -1369,6 +1427,8 @@ def test_helper_enforces_full_runtime_hardening_and_mount_contract():
         '"/home/node/.openclaw"',
         '"/home/node/.config/openclaw"',
         '"/run/secrets/openclaw_gateway_token"',
+        'images[0].get("Os") == "linux"',
+        'images[0].get("Architecture") == "amd64"',
         "com.docker.compose.project",
         "com.docker.compose.service",
         "com.getarcaneapp.arcane.updater",
@@ -1386,6 +1446,30 @@ def test_helper_never_overwrites_or_removes_the_checkpoint():
     assert "os.replace" not in seed
     assert "os.rename" not in seed
     assert "os.unlink(path)" not in seed
+
+
+def test_helper_asset_only_mode_validates_static_contract_before_an_image_pull():
+    source = HELPER.read_text(encoding="utf-8")
+
+    assert 'choices=("assets", "preflight", "candidate", "seed", "require")' in source
+    asset_mode = source.split('if arguments.mode == "assets":', 1)[1].split(
+        'if arguments.mode == "preflight":', 1
+    )[0]
+    assert "asset validation requires the fenced retained Gateway state" in asset_mode
+    assert "require_local_pinned_image" not in asset_mode
+    assert "require_rendered_image(arguments)" in asset_mode
+    assert 'print("changed=false")' in asset_mode
+
+
+def test_helper_candidate_mode_validates_a_new_container_without_touching_checkpoint():
+    source = HELPER.read_text(encoding="utf-8")
+
+    candidate_mode = source.split('if arguments.mode == "candidate":', 1)[1].split(
+        "candidate = checkpoint_bytes(identity)", 1
+    )[0]
+    assert "candidate validation requires the fenced retained Gateway state" in candidate_mode
+    assert "require_checkpoint" not in candidate_mode
+    assert "seed_checkpoint" not in candidate_mode
 
 
 def test_checkpoint_publication_handles_success_collision_and_error(monkeypatch):

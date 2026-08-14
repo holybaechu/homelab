@@ -182,13 +182,18 @@ Only after explicit production review, use **Actions → cd → Run workflow** o
 rebaseline**. The manual-only playbook requires native OpenClaw `/readyz`, the
 permanent source hold, no retained container at all, the last known-good
 persistent verifier, and the existing root-owned checkpoint. It validates the
-current retained assets and local pinned image before changing state; archives
-the old checkpoint at
+current retained assets before changing state. If the exact immutable pinned
+image is no longer local, select the additional **Approve the retained
+OpenClaw rollback image pull** checkbox too; it fetches only that
+digest-qualified `linux/amd64` image and then validates the downloaded image
+before proceeding. No unpinned image is ever pulled. It archives the old
+checkpoint at
 `/opt/homelab-control/openclaw/retained-gateway-identity.pre-rebaseline.json`;
 creates one stopped/default-network-only container using `docker compose create
 --pull never`; and immediately seeds and proves a new fenced checkpoint. It
-never starts the retained Gateway, pulls an image, or attaches the proxy. The
-root-owned audit marker
+validates that new inert container before it archives the prior checkpoint.
+It never starts the retained Gateway or attaches the proxy, and Compose itself
+never pulls an image. The root-owned audit marker
 `/opt/homelab-control/openclaw/retained-gateway-rebaseline-v1.json` makes the
 operation non-repeatable. If any precondition fails, stop and perform a fresh
 review rather than weakening the normal fence.

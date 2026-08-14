@@ -899,6 +899,8 @@ def require_local_pinned_image(rendered_image: str) -> tuple[str, dict[str, Any]
     image_config = images[0].get("Config") or {}
     require(isinstance(image_config, dict), "pinned image config is malformed")
     require(isinstance(image_id, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", image_id), "invalid retained image ID")
+    require(images[0].get("Os") == "linux", "pinned image operating system drifted")
+    require(images[0].get("Architecture") == "amd64", "pinned image architecture drifted")
     return image_id, image_config
 
 
@@ -1115,7 +1117,7 @@ def seed_checkpoint(path: Path, candidate: bytes) -> bool:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("preflight", "seed", "require"))
+    parser.add_argument("mode", choices=("assets", "preflight", "candidate", "seed", "require"))
     parser.add_argument("--container-state", choices=("fenced", "stopped", "rollback", "running"), required=True)
     parser.add_argument(
         "--config-state",
@@ -1154,6 +1156,14 @@ def main() -> int:
     try:
         arguments = parse_arguments()
         require_assets(arguments)
+        if arguments.mode == "assets":
+            require(
+                arguments.container_state == "fenced",
+                "asset validation requires the fenced retained Gateway state",
+            )
+            require_rendered_image(arguments)
+            print("changed=false")
+            return 0
         if arguments.mode == "preflight":
             require(
                 arguments.container_state == "fenced",
@@ -1163,6 +1173,14 @@ def main() -> int:
             print("changed=false")
             return 0
         identity = require_container(arguments)
+        if arguments.mode == "candidate":
+            require(
+                arguments.container_state == "fenced",
+                "candidate validation requires the fenced retained Gateway state",
+            )
+            print("changed=false")
+            print(f"container_id={identity['container_id']}")
+            return 0
         candidate = checkpoint_bytes(identity)
         if arguments.mode == "seed":
             require(arguments.container_state == "fenced", "checkpoint seeding requires a fenced Gateway")

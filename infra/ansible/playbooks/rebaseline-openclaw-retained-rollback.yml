@@ -7,6 +7,10 @@
     # This value is supplied only by the manual, production-gated CD step. It
     # is deliberately not part of normal deployment variables or secrets.
     openclaw_retained_gateway_rebaseline_approved: false
+    # Pulling an immutable image is an additional external state change. Keep
+    # it separate from the identity-rebaseline approval so a missing local
+    # cache can never turn an ordinary manual rebaseline into a registry pull.
+    openclaw_retained_gateway_image_pull_approved: false
     openclaw_rebaseline_checkpoint_archive_path: >-
       {{ openclaw_control_root }}/retained-gateway-identity.pre-rebaseline.json
     openclaw_rebaseline_audit_path: >-
@@ -23,6 +27,8 @@
         that:
           - openclaw_retained_gateway_rebaseline_approved is boolean
           - openclaw_retained_gateway_rebaseline_approved | bool
+          - openclaw_retained_gateway_image_pull_approved is boolean
+          - openclaw_retained_gateway_image_pull_approved | bool
           - hostvars['openclaw'].openclaw_native_activate is boolean
           - hostvars['openclaw'].openclaw_native_activate | bool
           - openclaw_docker_rollback_activate is boolean
@@ -36,8 +42,9 @@
             [{'url': openclaw_traefik_backend_url}]
         fail_msg: >-
           Retained OpenClaw identity rebaseline is a one-time manual recovery
-          operation. Refusing without its explicit production approval while
-          native OpenClaw is the sole active Gateway owner.
+          operation. Refusing without its explicit production rebaseline and
+          exact-image-pull approvals while native OpenClaw is the sole active
+          Gateway owner.
       vars:
         openclaw_tracked_route: >-
           {{
@@ -236,6 +243,120 @@
             group: root
             mode: "0755"
 
+        - name: Verify retained rollback assets before acquiring the pinned image
+          ansible.builtin.command:
+            argv:
+              - "{{ openclaw_rebaseline_verifier.path }}"
+              - assets
+              - --container-state
+              - fenced
+              - --config-state
+              - foundation-or-rollback
+              - --compose-root
+              - "{{ openclaw_compose_root }}"
+              - --setup-root
+              - "{{ openclaw_setup_root }}"
+              - --config
+              - "{{ openclaw_config_path }}"
+              - --runtime-root
+              - "{{ openclaw_runtime_root }}"
+              - --state-root
+              - "{{ openclaw_state_root }}"
+              - --auth-root
+              - "{{ openclaw_auth_profile_secret_root }}"
+              - --control-root
+              - "{{ openclaw_control_root }}"
+              - --token
+              - "{{ openclaw_gateway_token_path }}"
+              - --checkpoint
+              - "{{ openclaw_retained_gateway_identity_path }}"
+              - --expected-image
+              - "{{ openclaw_retained_image_ref }}"
+              - --hostname
+              - "{{ openclaw_hostname }}"
+              - --port
+              - "{{ openclaw_gateway_port | string }}"
+              - --uid
+              - "{{ openclaw_uid | string }}"
+              - --gid
+              - "{{ openclaw_gid | string }}"
+          register: openclaw_rebaseline_assets_preflight
+          changed_when: false
+          retries: 3
+          delay: 2
+          until: openclaw_rebaseline_assets_preflight.rc == 0
+
+        - name: Verify retained rollback asset token before acquiring the pinned image
+          ansible.builtin.command:
+            argv:
+              - "{{ openclaw_rebaseline_verifier.path }}"
+              - assets
+              - --container-state
+              - fenced
+              - --config-state
+              - foundation-or-rollback
+              - --compose-root
+              - "{{ openclaw_compose_root }}"
+              - --setup-root
+              - "{{ openclaw_setup_root }}"
+              - --config
+              - "{{ openclaw_config_path }}"
+              - --runtime-root
+              - "{{ openclaw_runtime_root }}"
+              - --state-root
+              - "{{ openclaw_state_root }}"
+              - --auth-root
+              - "{{ openclaw_auth_profile_secret_root }}"
+              - --control-root
+              - "{{ openclaw_control_root }}"
+              - --token
+              - "{{ openclaw_gateway_token_path }}"
+              - --checkpoint
+              - "{{ openclaw_retained_gateway_identity_path }}"
+              - --expected-image
+              - "{{ openclaw_retained_image_ref }}"
+              - --hostname
+              - "{{ openclaw_hostname }}"
+              - --port
+              - "{{ openclaw_gateway_port | string }}"
+              - --uid
+              - "{{ openclaw_uid | string }}"
+              - --gid
+              - "{{ openclaw_gid | string }}"
+              - --require-expected-token
+          args:
+            stdin: "{{ openclaw_gateway_token | trim }}\n"
+            stdin_add_newline: false
+          register: openclaw_rebaseline_protected_assets_preflight
+          changed_when: false
+          retries: 3
+          delay: 2
+          until: openclaw_rebaseline_protected_assets_preflight.rc == 0
+          no_log: true
+
+        - name: Inspect the exact retained rollback image cache
+          ansible.builtin.command:
+            argv:
+              - docker
+              - image
+              - inspect
+              - "{{ openclaw_retained_image_ref }}"
+          register: openclaw_rebaseline_image_inspect
+          changed_when: false
+          failed_when: false
+
+        - name: Acquire the exact pinned retained rollback image when absent
+          ansible.builtin.command:
+            argv:
+              - docker
+              - pull
+              - --platform
+              - linux/amd64
+              - "{{ openclaw_retained_image_ref }}"
+          register: openclaw_rebaseline_image_pull
+          changed_when: true
+          when: openclaw_rebaseline_image_inspect.rc != 0
+
         - name: Diagnose non-secret retained rollback assets before identity rebaseline
           ansible.builtin.command:
             argv:
@@ -343,6 +464,54 @@
             'Created' in (
               openclaw_rebaseline_create.stdout ~ openclaw_rebaseline_create.stderr
             )
+
+        - name: Validate the new fenced retained Docker Gateway before replacement
+          ansible.builtin.command:
+            argv:
+              - "{{ openclaw_rebaseline_verifier.path }}"
+              - candidate
+              - --container-state
+              - fenced
+              - --config-state
+              - foundation-or-rollback
+              - --compose-root
+              - "{{ openclaw_compose_root }}"
+              - --setup-root
+              - "{{ openclaw_setup_root }}"
+              - --config
+              - "{{ openclaw_config_path }}"
+              - --runtime-root
+              - "{{ openclaw_runtime_root }}"
+              - --state-root
+              - "{{ openclaw_state_root }}"
+              - --auth-root
+              - "{{ openclaw_auth_profile_secret_root }}"
+              - --control-root
+              - "{{ openclaw_control_root }}"
+              - --token
+              - "{{ openclaw_gateway_token_path }}"
+              - --checkpoint
+              - "{{ openclaw_retained_gateway_identity_path }}"
+              - --expected-image
+              - "{{ openclaw_retained_image_ref }}"
+              - --hostname
+              - "{{ openclaw_hostname }}"
+              - --port
+              - "{{ openclaw_gateway_port | string }}"
+              - --uid
+              - "{{ openclaw_uid | string }}"
+              - --gid
+              - "{{ openclaw_gid | string }}"
+              - --require-expected-token
+          args:
+            stdin: "{{ openclaw_gateway_token | trim }}\n"
+            stdin_add_newline: false
+          register: openclaw_rebaseline_candidate
+          changed_when: false
+          retries: 3
+          delay: 2
+          until: openclaw_rebaseline_candidate.rc == 0
+          no_log: true
 
         - name: Archive the prior retained rollback identity before replacement
           ansible.builtin.copy:
