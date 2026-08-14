@@ -15,6 +15,8 @@ def seed_required_environment(monkeypatch, module):
     monkeypatch.setenv("ARCANE_ENCRYPTION_KEY", "ab" * 32)
     monkeypatch.setenv("ARCANE_JWT_SECRET", "j" * 32)
     monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "cd" * 32)
+    monkeypatch.setenv("OPENCLAW_CTF_GATEWAY_TOKEN", "ef" * 32)
+    monkeypatch.setenv("OPENCLAW_CTF_OPENAI_API_KEY", "ctf-openai-api-key")
     monkeypatch.setenv(
         "COPYPARTY_USERS_JSON",
         json.dumps([{"name": "test", "password": "test-password"}]),
@@ -53,7 +55,27 @@ def test_openclaw_gateway_token_is_mapped_after_shape_validation(monkeypatch):
     assert mapping["openclaw_gateway_token"] == "cd" * 32
 
 
-def test_optional_shared_discord_secret_and_boolean_are_mapped(monkeypatch):
+def test_ctf_gateway_token_is_mapped_after_shape_validation(monkeypatch):
+    module = runpy.run_path(str(SCRIPT))
+    seed_required_environment(monkeypatch, module)
+    monkeypatch.setenv("OPENCLAW_CTF_GATEWAY_TOKEN", f"{'ef' * 32}\r\n")
+
+    mapping = module["build_mapping"]()
+
+    assert mapping["openclaw_ctf_gateway_token"] == "ef" * 32
+
+
+def test_dedicated_ctf_openai_api_key_is_trimmed_and_mapped(monkeypatch):
+    module = runpy.run_path(str(SCRIPT))
+    seed_required_environment(monkeypatch, module)
+    monkeypatch.setenv("OPENCLAW_CTF_OPENAI_API_KEY", " ctf-openai-api-key\r\n")
+
+    mapping = module["build_mapping"]()
+
+    assert mapping["openclaw_ctf_openai_api_key"] == "ctf-openai-api-key"
+
+
+def test_optional_discord_relay_secret_and_boolean_are_mapped(monkeypatch):
     module = runpy.run_path(str(SCRIPT))
     seed_required_environment(monkeypatch, module)
     monkeypatch.setenv("OPENCLAW_DISCORD_BOT_TOKEN", "discord-token")
@@ -62,7 +84,7 @@ def test_optional_shared_discord_secret_and_boolean_are_mapped(monkeypatch):
     mapping = module["build_mapping"]()
 
     assert mapping["openclaw_discord_bot_token"] == "discord-token"
-    assert mapping["openclaw_discord_enabled"] is True
+    assert mapping["openclaw_discord_relay_enabled"] is True
 
 
 def test_invalid_shared_discord_boolean_is_rejected(monkeypatch):
@@ -102,6 +124,16 @@ def test_retired_hermes_environment_is_not_mapped():
             "OPENCLAW_GATEWAY_TOKEN",
             "not-hex",
             "OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters",
+        ),
+        (
+            "OPENCLAW_CTF_GATEWAY_TOKEN",
+            "not-hex",
+            "OPENCLAW_CTF_GATEWAY_TOKEN must be exactly 64 hexadecimal characters",
+        ),
+        (
+            "OPENCLAW_CTF_OPENAI_API_KEY",
+            " \r\n",
+            "OPENCLAW_CTF_OPENAI_API_KEY must not be blank",
         ),
     ],
 )

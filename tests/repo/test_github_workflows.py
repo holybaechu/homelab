@@ -26,6 +26,8 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
         "HERMES_DISCORD_BOT_TOKEN",
         "COPYPARTY_USERS_JSON",
         "OPENCLAW_GATEWAY_TOKEN",
+        "OPENCLAW_CTF_GATEWAY_TOKEN",
+        "OPENCLAW_CTF_OPENAI_API_KEY",
     ):
         assert f"{secret_name}:" not in job_env
 
@@ -37,15 +39,29 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     assert "ARCANE_ENCRYPTION_KEY:" in workflow
     assert "ARCANE_JWT_SECRET:" in workflow
     assert "OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}" in workflow
+    assert (
+        "OPENCLAW_CTF_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_CTF_GATEWAY_TOKEN }}"
+        in workflow
+    )
+    assert (
+        "OPENCLAW_CTF_OPENAI_API_KEY: ${{ secrets.OPENCLAW_CTF_OPENAI_API_KEY }}"
+        in workflow
+    )
     assert "OPENCLAW_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_DISCORD_BOT_TOKEN }}" in workflow
     assert "OPENCLAW_DISCORD_ENABLED: ${{ vars.OPENCLAW_DISCORD_ENABLED }}" in workflow
     secret_step = workflow.split(
         "- name: Validate and write Ansible service secrets", maxsplit=1
     )[1].split("- name: Prepare one-time lowest-ID cutover", maxsplit=1)[0]
     assert "OPENCLAW_GATEWAY_TOKEN:" in secret_step
+    assert "OPENCLAW_CTF_GATEWAY_TOKEN:" in secret_step
+    assert "OPENCLAW_CTF_OPENAI_API_KEY:" in secret_step
     assert "OPENCLAW_DISCORD_BOT_TOKEN:" in secret_step
     assert workflow.count("OPENCLAW_GATEWAY_TOKEN:") == 1
+    assert workflow.count("OPENCLAW_CTF_GATEWAY_TOKEN:") == 1
+    assert workflow.count("OPENCLAW_CTF_OPENAI_API_KEY:") == 1
     assert "OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters" in script
+    assert "OPENCLAW_CTF_GATEWAY_TOKEN must be exactly 64 hexadecimal characters" in script
+    assert "OPENCLAW_CTF_OPENAI_API_KEY must not be blank" in script
     assert "64 hexadecimal characters" in script
     assert "at least 32 characters" in script
     assert "COPYPARTY_PASSWORD_HASH_SALT:" not in workflow
@@ -84,26 +100,34 @@ def test_cd_workflow_fail_closes_openclaw_allocation_before_cutover_and_tofu():
     )
 
     collections = workflow.index("- name: Install Ansible collections")
-    preflight = workflow.index("- name: Preflight dedicated OpenClaw LXC allocation")
+    core_preflight = workflow.index("- name: Preflight dedicated OpenClaw LXC allocation")
+    ctf_preflight = workflow.index("- name: Preflight isolated CTF executor LXC allocation")
     cutover = workflow.index("- name: Prepare one-time lowest-ID cutover")
     plan = workflow.index("- name: OpenTofu plan")
     apply = workflow.index("- name: OpenTofu apply")
 
-    assert collections < preflight < cutover < plan < apply
-    preflight_step = workflow[preflight:].split(
+    assert collections < core_preflight < ctf_preflight < cutover < plan < apply
+    core_preflight_step = workflow[core_preflight:ctf_preflight]
+    ctf_preflight_step = workflow[ctf_preflight:].split(
         "- name: Trust Docker application LXC access for identity proof", maxsplit=1
     )[0]
-    assert "steps.scope.outputs.deployment_scope == 'full'" in preflight_step
-    assert "infra/ansible/playbooks/preflight-openclaw-lxc.yml" in preflight_step
-    assert "PVE_ROOT_DATASTORE_ID: ${{ vars.PVE_ROOT_DATASTORE_ID }}" in preflight_step
-    assert '"openclaw_root_datastore_id=${PVE_ROOT_DATASTORE_ID}"' in preflight_step
-    assert "ANSIBLE_EXTRA_VARS_PATH" not in preflight_step
+    assert "steps.scope.outputs.deployment_scope == 'full'" in core_preflight_step
+    assert "infra/ansible/playbooks/preflight-openclaw-lxc.yml" in core_preflight_step
+    assert "PVE_ROOT_DATASTORE_ID: ${{ vars.PVE_ROOT_DATASTORE_ID }}" in core_preflight_step
+    assert '"openclaw_root_datastore_id=${PVE_ROOT_DATASTORE_ID}"' in core_preflight_step
+    assert "infra/ansible/playbooks/preflight-ctf-executor-lxc.yml" in ctf_preflight_step
+    assert "steps.scope.outputs.deployment_scope == 'full'" in ctf_preflight_step
+    assert "ANSIBLE_EXTRA_VARS_PATH" not in core_preflight_step
+    assert "ANSIBLE_EXTRA_VARS_PATH" not in ctf_preflight_step
     for secret_name in (
         "PROXMOX_API_TOKEN",
         "OPENCLAW_GATEWAY_TOKEN",
+        "OPENCLAW_CTF_GATEWAY_TOKEN",
+        "OPENCLAW_CTF_OPENAI_API_KEY",
         "CLOUDFLARE_TRAEFIK_TOKEN",
     ):
-        assert secret_name not in preflight_step
+        assert secret_name not in core_preflight_step
+        assert secret_name not in ctf_preflight_step
 
 
 def test_ci_syntax_checks_the_native_openclaw_cutover_finalizer():
@@ -336,12 +360,36 @@ def test_parallel_ansible_runner_derives_service_targets_from_topology():
     assert 'f"{name}:svc_{name}"' in target_renderer
     assert runner.index('tailnet_entry=""') < runner.index('openclaw_entry=""')
     assert runner.index('ctf_executor_entry=""') < runner.index('openclaw_entry=""')
-    assert runner.index('"${tailnet_entry}"') < runner.index('"${openclaw_entry}"')
-    assert runner.index('"${ctf_executor_entry}"') < runner.index('"${openclaw_entry}"')
-    assert runner.index('"${openclaw_entry}"') < runner.index('"${docker_apps_entry}"')
-    assert runner.index('"${docker_apps_entry}"') < runner.index('"${pve_entry}"')
-    assert '--tags ctf_executor' in runner
-    assert '--tags ctf_transport' in runner
+    tailnet_call = '''target="${tailnet_entry%%:*}"
+  limit="${tailnet_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" "$@"; then'''
+    executor_call = '''target="${ctf_executor_entry%%:*}"
+  limit="${ctf_executor_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" --tags ctf_executor "$@"; then'''
+    gateway_call = '''target="${openclaw_entry%%:*}"
+  limit="${openclaw_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" --tags openclaw_native,ctf_gateway "$@"; then'''
+    transport_call = '''target="${ctf_executor_entry%%:*}"
+  limit="${ctf_executor_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" --tags ctf_transport "$@"; then'''
+    relay_call = '''target="${openclaw_entry%%:*}"
+  limit="${openclaw_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" --tags discord_relay "$@"; then'''
+    docker_call = '''target="${required_entry%%:*}"
+    limit="${required_entry#*:}"
+    if run_foreground_target "${target}" "${limit}" "$@"; then'''
+
+    assert tailnet_call in runner
+    assert executor_call in runner
+    assert gateway_call in runner
+    assert transport_call in runner
+    assert relay_call in runner
+    assert docker_call in runner
+    assert runner.index(tailnet_call) < runner.index(executor_call)
+    assert runner.index(executor_call) < runner.index(gateway_call)
+    assert runner.index(gateway_call) < runner.index(transport_call)
+    assert runner.index(transport_call) < runner.index(relay_call)
+    assert runner.index(relay_call) < runner.index(docker_call)
 
 
 def test_parallel_validate_runner_includes_pve_drift_validation_target():
@@ -400,6 +448,12 @@ def test_parallel_ansible_runner_orders_tailnet_openclaw_docker_then_pve_cleanup
         "OpenClaw completed after tailnet"
     )
     assert result.stdout.index("OpenClaw completed after tailnet") < result.stdout.index(
+        "CTF transport completed after OpenClaw"
+    )
+    assert result.stdout.index("CTF transport completed after OpenClaw") < result.stdout.index(
+        "Discord relay completed after CTF transport"
+    )
+    assert result.stdout.index("Discord relay completed after CTF transport") < result.stdout.index(
         "docker started after tailnet"
     )
     assert result.stdout.index("docker started after tailnet") < result.stdout.index(

@@ -15,7 +15,9 @@ ctf_executor_ip: "{{ hostvars['ctf_executor'].ansible_host }}"
 openclaw_ctf_shared_host_path: "{{ homelab_data_mount }}/openclaw-ctf"
 openclaw_ctf_sandbox_skills_host_path: "{{ homelab_data_mount }}/openclaw-ctf-sandbox-skills"
 openclaw_ctf_workspace_root: /srv/openclaw-ctf
-openclaw_ctf_sandbox_skills_root: /var/lib/openclaw/sandbox/skills-workspaces
+openclaw_ctf_sandbox_skills_root: /var/lib/openclaw-ctf/sandbox/skills-workspaces
+openclaw_ctf_uid: 1001
+openclaw_ctf_gid: 1001
 openclaw_ctf_docker_user: openclaw-ctf-docker
 openclaw_ctf_docker_host: "ssh://{{ openclaw_ctf_docker_user }}@{{ ctf_executor_ip }}"
 openclaw_ctf_docker_client_key_path: /etc/openclaw/secrets/ctf_docker_client_key
@@ -108,8 +110,8 @@ pve_lxc_root_options:
     bind_mount_sources:
       - "{{ openclaw_ctf_shared_host_path }}"
       - "{{ openclaw_ctf_sandbox_skills_host_path }}"
-    bind_mount_source_owner: "{{ (homelab_container_uid_offset | int) + (service_uid | int) }}"
-    bind_mount_source_group: "{{ (homelab_container_uid_offset | int) + (service_gid | int) }}"
+    bind_mount_source_owner: "{{ (homelab_container_uid_offset | int) + (openclaw_ctf_uid | int) }}"
+    bind_mount_source_group: "{{ (homelab_container_uid_offset | int) + (openclaw_ctf_gid | int) }}"
     bind_mount_source_mode: "0700"
     settings:
       - description: mount the dedicated CTF workspace once
@@ -133,8 +135,8 @@ pve_lxc_root_options:
     bind_mount_sources:
       - "{{ openclaw_ctf_shared_host_path }}"
       - "{{ openclaw_ctf_sandbox_skills_host_path }}"
-    bind_mount_source_owner: "{{ (homelab_container_uid_offset | int) + (service_uid | int) }}"
-    bind_mount_source_group: "{{ (homelab_container_uid_offset | int) + (service_gid | int) }}"
+    bind_mount_source_owner: "{{ (homelab_container_uid_offset | int) + (openclaw_ctf_uid | int) }}"
+    bind_mount_source_group: "{{ (homelab_container_uid_offset | int) + (openclaw_ctf_gid | int) }}"
     bind_mount_source_mode: "0700"
     settings:
       - description: enable nesting for the isolated CTF Docker executor

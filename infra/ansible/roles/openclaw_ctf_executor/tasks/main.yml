@@ -130,8 +130,8 @@
     that:
       - openclaw_ctf_workspace_stat.stat.isdir | default(false)
       - not (openclaw_ctf_workspace_stat.stat.islnk | default(true))
-      - (openclaw_ctf_workspace_stat.stat.uid | int) == (service_uid | int)
-      - (openclaw_ctf_workspace_stat.stat.gid | int) == (service_gid | int)
+      - (openclaw_ctf_workspace_stat.stat.uid | int) == (openclaw_ctf_uid | int)
+      - (openclaw_ctf_workspace_stat.stat.gid | int) == (openclaw_ctf_gid | int)
       - openclaw_ctf_workspace_stat.stat.mode == '0700'
     fail_msg: >-
       The CTF executor must receive only the dedicated, service-owned CTF
@@ -148,8 +148,8 @@
     that:
       - openclaw_ctf_sandbox_skills_stat.stat.isdir | default(false)
       - not (openclaw_ctf_sandbox_skills_stat.stat.islnk | default(true))
-      - (openclaw_ctf_sandbox_skills_stat.stat.uid | int) == (service_uid | int)
-      - (openclaw_ctf_sandbox_skills_stat.stat.gid | int) == (service_gid | int)
+      - (openclaw_ctf_sandbox_skills_stat.stat.uid | int) == (openclaw_ctf_uid | int)
+      - (openclaw_ctf_sandbox_skills_stat.stat.gid | int) == (openclaw_ctf_gid | int)
       - openclaw_ctf_sandbox_skills_stat.stat.mode == '0700'
     fail_msg: >-
       The CTF executor must receive the generated sandbox-skill source at the

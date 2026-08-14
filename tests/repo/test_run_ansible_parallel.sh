@@ -9,6 +9,7 @@ docker_marker="${test_root}/docker-retirement-complete"
 openclaw_marker="${test_root}/openclaw-complete"
 ctf_executor_marker="${test_root}/ctf-executor-complete"
 ctf_transport_marker="${test_root}/ctf-transport-complete"
+relay_marker="${test_root}/discord-relay-complete"
 pve_marker="${test_root}/pve-cleanup-started"
 mkdir -p "${fake_bin}"
 
@@ -56,6 +57,10 @@ case "$*" in
       printf '%s\n' 'docker started before CTF transport completed' >&2
       exit 99
     fi
+    if [ ! -f "${DISCORD_RELAY_COMPLETE_MARKER}" ]; then
+      printf '%s\n' 'docker started before Discord relay completed' >&2
+      exit 100
+    fi
     if [ "${FAKE_DOCKER_FAIL:-0}" = "1" ]; then
       printf '%s\n' 'docker retirement failed deliberately' >&2
       exit 93
@@ -64,7 +69,7 @@ case "$*" in
     : > "${DOCKER_RETIREMENT_COMPLETE_MARKER}"
     printf '%s\n' 'docker started after tailnet'
     ;;
-  *'--limit svc_openclaw'*)
+  *'site.yml'*'--limit svc_openclaw'*'--tags openclaw_native,ctf_gateway'*)
     if [ ! -f "${TAILNET_COMPLETE_MARKER}" ]; then
       printf '%s\n' 'OpenClaw started before tailnet completed' >&2
       exit 95
@@ -83,6 +88,14 @@ case "$*" in
     fi
     : > "${CTF_TRANSPORT_COMPLETE_MARKER}"
     printf '%s\n' 'CTF transport completed after OpenClaw'
+    ;;
+  *'site.yml'*'--limit svc_openclaw'*'--tags discord_relay'*)
+    if [ ! -f "${CTF_TRANSPORT_COMPLETE_MARKER}" ]; then
+      printf '%s\n' 'Discord relay started before CTF transport completed' >&2
+      exit 101
+    fi
+    : > "${DISCORD_RELAY_COMPLETE_MARKER}"
+    printf '%s\n' 'Discord relay completed after CTF transport'
     ;;
   *'site.yml'*'--limit pve_hosts'*)
     if [ ! -f "${DOCKER_RETIREMENT_COMPLETE_MARKER}" ]; then
@@ -123,6 +136,7 @@ fast_path_output="$(
   OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
   CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
   CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
+  DISCORD_RELAY_COMPLETE_MARKER="${relay_marker}" \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" validate
 )"
@@ -139,10 +153,11 @@ PVE_CLEANUP_STARTED_MARKER="${pve_marker}" \
 OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
 CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
 CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
+DISCORD_RELAY_COMPLETE_MARKER="${relay_marker}" \
 ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
   sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
 
-rm -f "${marker}" "${docker_marker}" "${openclaw_marker}" "${ctf_executor_marker}" "${ctf_transport_marker}" "${pve_marker}"
+rm -f "${marker}" "${docker_marker}" "${openclaw_marker}" "${ctf_executor_marker}" "${ctf_transport_marker}" "${relay_marker}" "${pve_marker}"
 set +e
 docker_failure_output="$({
   PATH="${fake_bin}:${PATH}" \
@@ -152,6 +167,7 @@ docker_failure_output="$({
   OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
   CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
   CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
+  DISCORD_RELAY_COMPLETE_MARKER="${relay_marker}" \
   FAKE_DOCKER_FAIL=1 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=10 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
@@ -169,7 +185,7 @@ if printf '%s\n' "${docker_failure_output}" | grep -F \
   exit 1
 fi
 
-rm -f "${marker}" "${docker_marker}" "${openclaw_marker}" "${ctf_executor_marker}" "${ctf_transport_marker}"
+rm -f "${marker}" "${docker_marker}" "${openclaw_marker}" "${ctf_executor_marker}" "${ctf_transport_marker}" "${relay_marker}"
 set +e
 timeout_output="$({
   PATH="${fake_bin}:${PATH}" \
@@ -179,6 +195,7 @@ timeout_output="$({
   OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
   CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
   CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
+  DISCORD_RELAY_COMPLETE_MARKER="${relay_marker}" \
   FAKE_TAILNET_DELAY_SECONDS=3 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=1 \
     sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
@@ -194,6 +211,7 @@ printf '%s\n' "${timeout_output}" | grep -F 'timed out after 1 seconds'
 : > "${openclaw_marker}"
 : > "${ctf_executor_marker}"
 : > "${ctf_transport_marker}"
+: > "${relay_marker}"
 set +e
 background_timeout_output="$({
   PATH="${fake_bin}:${PATH}" \
@@ -203,6 +221,7 @@ background_timeout_output="$({
   OPENCLAW_COMPLETE_MARKER="${openclaw_marker}" \
   CTF_EXECUTOR_COMPLETE_MARKER="${ctf_executor_marker}" \
   CTF_TRANSPORT_COMPLETE_MARKER="${ctf_transport_marker}" \
+  DISCORD_RELAY_COMPLETE_MARKER="${relay_marker}" \
   FAKE_TAILNET_DELAY_SECONDS=0 \
   FAKE_DOCKER_DELAY_SECONDS=3 \
   ANSIBLE_TARGET_TIMEOUT_SECONDS=1 \

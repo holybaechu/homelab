@@ -1,0 +1,287 @@
+---
+- name: Require the isolated Discord relay contract
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Linux'
+      - openclaw_discord_relay_enabled is defined
+      - openclaw_discord_relay_enabled is boolean
+      - openclaw_discord_relay_user is string
+      - openclaw_discord_relay_group is string
+      - openclaw_discord_relay_user != 'root'
+      - openclaw_discord_relay_group != 'root'
+      - openclaw_discord_relay_user != openclaw_user
+      - openclaw_discord_relay_uid | int > 999
+      - openclaw_discord_relay_gid | int > 999
+      - openclaw_discord_relay_uid | int != openclaw_uid | int
+      - openclaw_discord_relay_gid | int != openclaw_gid | int
+      - openclaw_discord_relay_uid | int != 1001
+      - openclaw_discord_relay_gid | int != 1001
+      - openclaw_discord_relay_state_root == '/var/lib/openclaw-discord-relay'
+      - openclaw_discord_relay_routes_path == '/etc/openclaw/discord-relay/routes.json'
+      - openclaw_discord_bot_token_path == openclaw_secret_root + '/discord_bot_token'
+      - openclaw_relay_core_hmac_path == openclaw_secret_root + '/discord_relay_core_hmac'
+      - openclaw_relay_ctf_hmac_path == openclaw_secret_root + '/discord_relay_ctf_hmac'
+      - openclaw_gateway_port | int == 18789
+      - openclaw_ctf_gateway_port | int == 19789
+      - openclaw_gateway_port | int != openclaw_ctf_gateway_port | int
+      - openclaw_setup_root.startswith('/')
+      - openclaw_node_current_root.startswith('/')
+      - openclaw_current_root.startswith('/')
+    fail_msg: >-
+      The isolated Discord relay must use its own non-root identity, a fixed
+      route file, the shared bot credential, and distinct core/CTF HMAC files.
+
+- name: Create the isolated Discord relay group
+  ansible.builtin.group:
+    name: "{{ openclaw_discord_relay_group }}"
+    gid: "{{ openclaw_discord_relay_gid }}"
+    system: true
+    state: present
+
+- name: Create the isolated Discord relay user
+  ansible.builtin.user:
+    name: "{{ openclaw_discord_relay_user }}"
+    uid: "{{ openclaw_discord_relay_uid }}"
+    group: "{{ openclaw_discord_relay_group }}"
+    home: "{{ openclaw_discord_relay_state_root }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    system: true
+    password_lock: true
+    state: present
+
+- name: Create isolated Discord relay directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: /usr/local/libexec
+      owner: root
+      group: root
+      mode: "0755"
+    - path: "{{ openclaw_secret_root }}"
+      owner: root
+      group: root
+      mode: "0700"
+    - path: "{{ openclaw_discord_relay_state_root }}"
+      owner: "{{ openclaw_discord_relay_user }}"
+      group: "{{ openclaw_discord_relay_group }}"
+      mode: "0700"
+    - path: "{{ openclaw_discord_relay_routes_path | dirname }}"
+      owner: root
+      group: "{{ openclaw_discord_relay_group }}"
+      mode: "0750"
+
+- name: Install the isolated Discord relay program
+  ansible.builtin.copy:
+    src: openclaw-discord-relay.cjs
+    dest: /usr/local/libexec/openclaw-discord-relay.cjs
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart isolated Discord relay
+
+- name: Validate the isolated Discord relay program syntax
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_node_current_root }}/bin/node"
+      - --check
+      - /usr/local/libexec/openclaw-discord-relay.cjs
+  changed_when: false
+
+- name: Install the isolated Discord relay systemd unit
+  ansible.builtin.template:
+    src: openclaw-discord-relay.service.j2
+    dest: /etc/systemd/system/openclaw-discord-relay.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd for isolated Discord relay
+    - Restart isolated Discord relay
+
+- name: Require the shared Discord bot token before relay activation
+  ansible.builtin.assert:
+    that:
+      - openclaw_discord_bot_token is defined
+      - openclaw_discord_bot_token is string
+      - openclaw_discord_bot_token | trim | length > 0
+    fail_msg: >-
+      Configure OPENCLAW_DISCORD_BOT_TOKEN in the production secret store
+      before enabling the isolated Discord relay.
+  no_log: true
+  when: openclaw_discord_relay_enabled | bool
+
+- name: Install the shared Discord bot token outside Git
+  ansible.builtin.copy:
+    content: "{{ openclaw_discord_bot_token | trim }}\n"
+    dest: "{{ openclaw_discord_bot_token_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+  when: openclaw_discord_relay_enabled | bool
+  notify: Restart isolated Discord relay
+
+- name: Inspect protected relay credentials before activation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ openclaw_discord_bot_token_path }}"
+    - "{{ openclaw_relay_core_hmac_path }}"
+    - "{{ openclaw_relay_ctf_hmac_path }}"
+  register: openclaw_discord_relay_credential_stats
+  no_log: true
+  when: openclaw_discord_relay_enabled | bool
+
+- name: Require protected relay credentials before activation
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.uid == 0
+      - item.stat.gid == 0
+      - item.stat.mode == '0600'
+    fail_msg: >-
+      The Discord relay credential files must be root-owned regular files with
+      mode 0600 before the relay can be activated.
+  loop: "{{ openclaw_discord_relay_credential_stats.results }}"
+  no_log: true
+  when: openclaw_discord_relay_enabled | bool
+
+- name: Inspect the private Discord relay route configuration
+  ansible.builtin.stat:
+    path: "{{ openclaw_setup_root }}/config/discord-relay-routes.json"
+    follow: false
+  register: openclaw_discord_relay_route_source
+  when: openclaw_discord_relay_enabled | bool
+
+- name: Require the protected private Discord relay route configuration
+  ansible.builtin.assert:
+    that:
+      - openclaw_discord_relay_route_source.stat.isreg | default(false)
+      - not (openclaw_discord_relay_route_source.stat.islnk | default(false))
+      - openclaw_discord_relay_route_source.stat.uid == 0
+      - openclaw_discord_relay_route_source.stat.mode == '0640'
+    fail_msg: >-
+      Add config/discord-relay-routes.json to the protected private setup
+      checkout before enabling the Discord relay.
+  when: openclaw_discord_relay_enabled | bool
+
+- name: Copy the private Discord relay route configuration outside the checkout
+  ansible.builtin.copy:
+    src: "{{ openclaw_setup_root }}/config/discord-relay-routes.json"
+    dest: "{{ openclaw_discord_relay_routes_path }}"
+    remote_src: true
+    owner: root
+    group: "{{ openclaw_discord_relay_group }}"
+    mode: "0640"
+  when: openclaw_discord_relay_enabled | bool
+  notify: Restart isolated Discord relay
+
+- name: Validate the staged Discord relay route configuration
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_node_current_root }}/bin/node"
+      - -e
+      - >-
+        const fs=require('node:fs'); const relay=require(process.argv[1]);
+        relay.parseRoutes(JSON.parse(fs.readFileSync(process.argv[2], 'utf8')));
+      - /usr/local/libexec/openclaw-discord-relay.cjs
+      - "{{ openclaw_discord_relay_routes_path }}"
+  environment:
+    NODE_PATH: "{{ openclaw_current_root }}/lib/node_modules/openclaw/node_modules"
+  changed_when: false
+  when: openclaw_discord_relay_enabled | bool
+
+- name: Require Discord relay route coverage to match Gateway allowlists
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_node_current_root }}/bin/node"
+      - -e
+      - >-
+        const assert=require('node:assert/strict'); const fs=require('node:fs');
+        const relay=require(process.argv[1]);
+        const routes=relay.parseRoutes(JSON.parse(fs.readFileSync(process.argv[2], 'utf8')));
+        const configs={core:JSON.parse(fs.readFileSync(process.argv[3], 'utf8')),
+        ctf:JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))};
+        const plugins={core:'openclaw-discord-relay-core',ctf:'openclaw-discord-relay-ctf'};
+        for (const target of ['core','ctf']) {
+          const ids=configs[target]?.plugins?.entries?.[plugins[target]]?.config?.allowedChannelIds;
+          assert.ok(Array.isArray(ids)); assert.equal(new Set(ids).size,ids.length);
+          assert.ok(ids.every((id)=>typeof id==='string' && /^\d{17,20}$/.test(id)));
+          const routed=[...routes.entries()].filter(([,value])=>value===target).map(([id])=>id).sort();
+          assert.deepEqual(routed,[...ids].sort());
+        }
+      - /usr/local/libexec/openclaw-discord-relay.cjs
+      - "{{ openclaw_discord_relay_routes_path }}"
+      - "{{ openclaw_config_path }}"
+      - "{{ openclaw_ctf_gateway_source_config_path }}"
+  environment:
+    NODE_PATH: "{{ openclaw_current_root }}/lib/node_modules/openclaw/node_modules"
+  changed_when: false
+  no_log: true
+  when: openclaw_discord_relay_enabled | bool
+
+- name: Verify the staged CTF publish-tool handler before relay activation
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_node_current_root }}/bin/node"
+      - -e
+      - >-
+        const assert=require('node:assert/strict');
+        const fs=require('node:fs');
+        const manifest=JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+        assert.deepEqual(manifest.contracts?.tools,['ctf_publish']);
+        assert.equal(manifest.activation?.onStartup,true);
+        const source=fs.readFileSync(process.argv[2], 'utf8');
+        for (const fragment of ['registerTool', 'ctf_publish', 'media/inbound', 'runEmbeddedAgent', 'exports'])
+        assert(source.includes(fragment));
+      - "{{ openclaw_ctf_plugin_root }}/openclaw.plugin.json"
+      - "{{ openclaw_ctf_plugin_root }}/index.js"
+  changed_when: false
+  no_log: true
+  when: openclaw_discord_relay_enabled | bool
+
+- name: Verify the bounded CTF ZIP artifact contract before relay activation
+  ansible.builtin.command:
+    argv:
+      - "{{ openclaw_node_current_root }}/bin/node"
+      - -e
+      - >-
+        const assert=require('node:assert/strict');
+        const relay=require(process.argv[1]);
+        const zip=Buffer.from([0x50,0x4b,0x03,0x04]).toString('base64');
+        const accepted=relay.parsePluginResponse({text:'',artifact:{filename:'ctf-result.zip',base64:zip}});
+        assert.equal(accepted.artifact.bytes.length,4);
+        for (const artifact of [
+          {filename:'../escape.zip',base64:zip},
+          {filename:'ctf-result.zip',base64:Buffer.from('not-a-zip').toString('base64')}
+        ]) assert.throws(() => relay.parsePluginResponse({text:'',artifact}));
+      - /usr/local/libexec/openclaw-discord-relay.cjs
+  environment:
+    NODE_PATH: "{{ openclaw_current_root }}/lib/node_modules/openclaw/node_modules"
+  changed_when: false
+  when: openclaw_discord_relay_enabled | bool
+
+- name: Apply isolated Discord relay unit changes before lifecycle management
+  ansible.builtin.meta: flush_handlers
+
+- name: Keep the isolated Discord relay disabled until explicitly activated
+  ansible.builtin.systemd_service:
+    name: openclaw-discord-relay.service
+    enabled: false
+    state: stopped
+  when: not (openclaw_discord_relay_enabled | bool)
+
+- name: Enable the isolated Discord relay after all checks pass
+  ansible.builtin.systemd_service:
+    name: openclaw-discord-relay.service
+    enabled: true
+    state: started
+  when: openclaw_discord_relay_enabled | bool

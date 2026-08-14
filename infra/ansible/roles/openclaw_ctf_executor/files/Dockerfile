@@ -36,8 +36,8 @@ RUN apt-get update \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd --gid 1000 ctf \
-    && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/ctf \
+RUN groupadd --gid 1001 ctf \
+    && useradd --uid 1001 --gid 1001 --create-home --home-dir /home/ctf \
       --shell /bin/bash ctf
 
 LABEL org.opencontainers.image.title="OpenClaw isolated CTF Kali sandbox" \
@@ -46,6 +46,6 @@ LABEL org.opencontainers.image.title="OpenClaw isolated CTF Kali sandbox" \
 ENV HOME=/home/ctf \
     PATH=/home/ctf/.local/bin:${PATH}
 
-USER 1000:1000
+USER 1001:1001
 WORKDIR /workspace
 CMD ["/bin/bash"]

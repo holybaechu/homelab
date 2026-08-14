@@ -1,0 +1,95 @@
+[Unit]
+Description=OpenClaw isolated CTF Gateway {{ openclaw_version }}
+Documentation=https://docs.openclaw.ai/gateway
+Wants=network-online.target
+Requires=nftables.service openclaw-gateway.service
+After=network-online.target nftables.service openclaw-gateway.service
+PartOf=openclaw-gateway.service
+BindsTo=openclaw-gateway.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{ openclaw_ctf_user }}
+Group={{ openclaw_ctf_group }}
+WorkingDirectory={{ openclaw_ctf_state_root }}
+UMask=0077
+LimitCORE=0
+RuntimeDirectory=openclaw-ctf-gateway
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=no
+
+Environment=HOME={{ openclaw_ctf_home }}
+Environment=PATH={{ openclaw_ctf_docker_cli_path | dirname }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TZ={{ openclaw_timezone }}
+Environment=NODE_COMPILE_CACHE={{ openclaw_ctf_compile_cache_root }}
+Environment=NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+Environment=NODE_OPTIONS=--max-old-space-size=2048
+Environment=OPENCLAW_HOME={{ openclaw_ctf_home }}
+Environment=OPENCLAW_STATE_DIR={{ openclaw_ctf_state_root }}
+Environment=OPENCLAW_CONFIG_PATH={{ openclaw_ctf_gateway_config_path }}
+Environment=OPENCLAW_WORKSPACE_DIR={{ openclaw_ctf_workspace_root }}
+Environment=OPENCLAW_DISABLE_BONJOUR=1
+Environment=OPENCLAW_NO_AUTO_UPDATE=1
+Environment=OPENCLAW_NO_RESPAWN=1
+Environment=OPENCLAW_SERVICE_REPAIR_POLICY=external
+Environment=OPENCLAW_SUPERVISOR_MODE=external
+Environment=OPENCLAW_CTF_GATEWAY_TOKEN_FILE=/run/openclaw-ctf-gateway/gateway_token
+Environment=OPENCLAW_CTF_OPENAI_API_KEY_FILE=%d/ctf_openai_api_key
+Environment=OPENCLAW_DISCORD_RELAY_CTF_HMAC_FILE=%d/discord_relay_ctf_hmac
+Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}
+Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}
+
+LoadCredential=openclaw_ctf_gateway_token:{{ openclaw_ctf_gateway_token_path }}
+LoadCredential=ctf_openai_api_key:{{ openclaw_ctf_openai_api_key_path }}
+LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}
+LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}
+LoadCredential=discord_relay_ctf_hmac:{{ openclaw_relay_ctf_hmac_path }}
+
+ExecStartPre=/usr/local/libexec/materialize-openclaw-credential --owner {{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} %d/openclaw_ctf_gateway_token /run/openclaw-ctf-gateway/gateway_token
+ExecStart={{ openclaw_node_current_root }}/bin/node {{ openclaw_entrypoint }} gateway --port {{ openclaw_ctf_gateway_port }}
+Restart=always
+RestartSec=5
+RestartPreventExitStatus=78
+TimeoutStartSec=90
+TimeoutStopSec=30
+SuccessExitStatus=0 143
+KillMode=control-group
+OOMPolicy=continue
+
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=read-only
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadOnlyPaths={{ openclaw_ctf_gateway_config_path }}
+ReadOnlyPaths={{ openclaw_ctf_plugin_root }}
+ReadWritePaths={{ openclaw_ctf_state_root }}
+ReadWritePaths={{ openclaw_ctf_cache_root }}
+ReadWritePaths={{ openclaw_ctf_auth_profile_secret_root }}
+ReadWritePaths={{ openclaw_ctf_workspace_root }}
+InaccessiblePaths={{ openclaw_home }}
+InaccessiblePaths={{ openclaw_state_root }}
+InaccessiblePaths={{ openclaw_workspace_root }}
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=openclaw-ctf-gateway
+
+[Install]
+WantedBy=multi-user.target

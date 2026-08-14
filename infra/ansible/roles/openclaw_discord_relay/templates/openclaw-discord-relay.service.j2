@@ -1,0 +1,93 @@
+[Unit]
+Description=Isolated OpenClaw Discord relay
+Documentation=https://discord.com/developers/docs/events/gateway
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{ openclaw_discord_relay_user }}
+Group={{ openclaw_discord_relay_group }}
+WorkingDirectory={{ openclaw_discord_relay_state_root }}
+UMask=0077
+LimitCORE=0
+RuntimeDirectory=openclaw-discord-relay
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=no
+
+Environment=HOME={{ openclaw_discord_relay_state_root }}
+Environment=PATH={{ openclaw_node_current_root }}/bin:/usr/local/bin:/usr/bin:/bin
+Environment=NODE_PATH={{ openclaw_current_root }}/lib/node_modules/openclaw/node_modules
+Environment=NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+Environment=NODE_OPTIONS=--max-old-space-size=256
+Environment=HTTP_PROXY=
+Environment=HTTPS_PROXY=
+Environment=ALL_PROXY=
+Environment=NO_PROXY=*
+Environment=OPENCLAW_DISCORD_RELAY_ROUTES_PATH={{ openclaw_discord_relay_routes_path }}
+Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=%d/discord_bot_token
+Environment=OPENCLAW_RELAY_CORE_HMAC_FILE=%d/relay_core_hmac
+Environment=OPENCLAW_RELAY_CTF_HMAC_FILE=%d/relay_ctf_hmac
+Environment=OPENCLAW_RELAY_CORE_ENDPOINT=http://127.0.0.1:{{ openclaw_gateway_port }}/internal/discord-relay
+Environment=OPENCLAW_RELAY_CTF_ENDPOINT=http://127.0.0.1:{{ openclaw_ctf_gateway_port }}/internal/discord-relay
+
+LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}
+LoadCredential=relay_core_hmac:{{ openclaw_relay_core_hmac_path }}
+LoadCredential=relay_ctf_hmac:{{ openclaw_relay_ctf_hmac_path }}
+
+ExecStart={{ openclaw_node_current_root }}/bin/node /usr/local/libexec/openclaw-discord-relay.cjs
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=30
+SuccessExitStatus=0 143
+KillMode=control-group
+OOMPolicy=stop
+
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProtectSystem=strict
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+InaccessiblePaths={{ openclaw_secret_root }}
+InaccessiblePaths=/srv/openclaw-ctf
+InaccessiblePaths={{ openclaw_ctf_home }}
+InaccessiblePaths={{ openclaw_ctf_state_root }}
+InaccessiblePaths={{ openclaw_ctf_cache_root }}
+InaccessiblePaths={{ openclaw_ctf_plugin_root }}
+InaccessiblePaths={{ openclaw_ctf_docker_cli_path | dirname }}
+InaccessiblePaths=/run/docker.sock
+InaccessiblePaths=/var/run/docker.sock
+ReadOnlyPaths=/usr/local/libexec/openclaw-discord-relay.cjs
+ReadOnlyPaths={{ openclaw_discord_relay_routes_path }}
+ReadOnlyPaths={{ openclaw_node_current_root }}
+ReadOnlyPaths={{ openclaw_current_root }}
+ReadWritePaths={{ openclaw_discord_relay_state_root }}
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=openclaw-discord-relay
+
+[Install]
+WantedBy=multi-user.target

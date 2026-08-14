@@ -33,6 +33,10 @@ def test_materializer_has_a_fixed_silent_fail_closed_contract():
     assert "EXPECTED_FILE_MODE = 0o400" in source
     assert 're.compile(rb"[0-9A-Fa-f]{64}\\n\\Z")' in source
     assert "MAX_READ_BYTES = 66" in source
+    assert "def parse_arguments(" in source
+    assert 'argv[1] != "--owner"' in source
+    assert "owner.count(\":\") != 1" in source
+    assert "uid < 1 or gid < 1" in source
     assert "os.O_EXCL" in source
     assert "os.O_NOFOLLOW" in source
     assert "os.fchmod(temp_fd, EXPECTED_FILE_MODE)" in source
@@ -46,6 +50,27 @@ def test_materializer_has_a_fixed_silent_fail_closed_contract():
     assert "print(" not in source
     assert "sys.stdout" not in source
     assert "sys.stderr" not in source
+
+
+def test_materializer_accepts_the_explicit_ctf_service_owner_without_changing_core_default():
+    helper = load_helper()
+
+    assert helper.parse_arguments([str(HELPER), "source", "gateway_token"]) == (
+        1000,
+        1000,
+        "source",
+        "gateway_token",
+    )
+    assert helper.parse_arguments(
+        [str(HELPER), "--owner", "1001:1001", "source", "gateway_token"]
+    ) == (1001, 1001, "source", "gateway_token")
+    for invalid in (
+        [str(HELPER), "--owner", "1001", "source", "gateway_token"],
+        [str(HELPER), "--owner", "0:1001", "source", "gateway_token"],
+        [str(HELPER), "--owner", "1001:0", "source", "gateway_token"],
+        [str(HELPER), "--owner", "1001:1001:1", "source", "gateway_token"],
+    ):
+        assert helper.parse_arguments(invalid) is None
 
 
 @pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership required")
@@ -88,6 +113,43 @@ def test_materializer_atomically_replaces_a_planted_symlink_without_touching_tar
     assert target_stat.st_nlink == 1
     assert target_stat.st_size == 65
     assert not list(runtime.glob(".gateway_token.*"))
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership required")
+def test_materializer_honors_an_explicit_service_owner(
+    tmp_path, monkeypatch, capsys
+):
+    helper = load_helper()
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    runtime.chmod(0o700)
+    source = tmp_path / "credential"
+    payload = b"a1" * 32 + b"\n"
+    source.write_bytes(payload)
+    source.chmod(0o400)
+    destination = runtime / "gateway_token"
+
+    monkeypatch.setattr(
+        helper.sys,
+        "argv",
+        [
+            str(HELPER),
+            "--owner",
+            f"{os.getuid()}:{os.getgid()}",
+            str(source),
+            str(destination),
+        ],
+    )
+
+    assert helper.main() == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    target_stat = destination.lstat()
+    assert stat.S_ISREG(target_stat.st_mode)
+    assert stat.S_IMODE(target_stat.st_mode) == 0o400
+    assert target_stat.st_uid == os.getuid()
+    assert target_stat.st_gid == os.getgid()
 
 
 @pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership required")

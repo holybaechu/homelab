@@ -11,23 +11,23 @@
       - openclaw_ip != ctf_executor_ip
     fail_msg: The isolated CTF Docker SSH transport variables are invalid.
 
-- name: Read the Gateway CTF Docker transport public key
+- name: Read the isolated CTF Gateway Docker transport public key
   ansible.builtin.slurp:
     src: "{{ openclaw_ctf_docker_client_key_path }}.pub"
   delegate_to: openclaw
   register: openclaw_ctf_gateway_transport_public_key
   no_log: true
 
-- name: Require the Gateway CTF Docker transport public-key type
+- name: Require the isolated CTF Gateway Docker transport public-key type
   ansible.builtin.assert:
     that:
       - >-
         (openclaw_ctf_gateway_transport_public_key.content | b64decode | trim)
         is match('^ssh-ed25519 [A-Za-z0-9+/]+(?: [^\s]+)?$')
-    fail_msg: The Gateway CTF Docker transport public key is not an ed25519 key.
+    fail_msg: The isolated CTF Gateway Docker transport public key is not an ed25519 key.
   no_log: true
 
-- name: Install the Gateway-only forced Docker transport key
+- name: Install the CTF-Gateway-only forced Docker transport key
   ansible.builtin.copy:
     content: |
       from="{{ openclaw_ip }}",command="/usr/bin/docker system dial-stdio",no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding {{ openclaw_ctf_gateway_transport_public_key.content | b64decode | trim }}
@@ -44,7 +44,7 @@
   register: openclaw_ctf_executor_host_public_key
   no_log: true
 
-- name: Pin the isolated CTF executor host key for the Gateway Docker transport
+- name: Pin the isolated CTF executor host key for the CTF Gateway Docker transport
   ansible.builtin.copy:
     content: >-
       {{ ctf_executor_ip }} {{ openclaw_ctf_executor_host_public_key.content | b64decode | trim }}
@@ -54,13 +54,13 @@
     mode: "0600"
   delegate_to: openclaw
   no_log: true
-  notify: Restart OpenClaw Gateway after CTF transport update
+  notify: Restart OpenClaw CTF Gateway after transport update
 
 - name: Validate the restricted remote CTF Docker transport
   when: hostvars['openclaw'].openclaw_native_activate | default(false) | bool
   no_log: true
   block:
-    - name: Create a temporary Gateway CTF Docker transport credential directory
+    - name: Create a temporary CTF Gateway Docker transport credential directory
       ansible.builtin.tempfile:
         state: directory
         path: /run
@@ -68,12 +68,12 @@
       delegate_to: openclaw
       register: openclaw_ctf_transport_credential_dir
 
-    - name: Protect the temporary Gateway CTF Docker transport credential directory
+    - name: Protect the temporary CTF Gateway Docker transport credential directory
       ansible.builtin.file:
         path: "{{ openclaw_ctf_transport_credential_dir.path }}"
         state: directory
         owner: root
-        group: "{{ hostvars['openclaw'].openclaw_group }}"
+        group: "{{ hostvars['openclaw'].openclaw_ctf_group }}"
         mode: "0750"
       delegate_to: openclaw
 
@@ -82,8 +82,8 @@
         src: "{{ openclaw_ctf_docker_client_key_path }}"
         dest: "{{ openclaw_ctf_transport_credential_dir.path }}/ctf_docker_client_key"
         remote_src: true
-        owner: "{{ hostvars['openclaw'].openclaw_user }}"
-        group: "{{ hostvars['openclaw'].openclaw_group }}"
+        owner: "{{ hostvars['openclaw'].openclaw_ctf_user }}"
+        group: "{{ hostvars['openclaw'].openclaw_ctf_group }}"
         mode: "0400"
       delegate_to: openclaw
 
@@ -92,18 +92,18 @@
         src: "{{ openclaw_ctf_docker_known_hosts_path }}"
         dest: "{{ openclaw_ctf_transport_credential_dir.path }}/ctf_docker_known_hosts"
         remote_src: true
-        owner: "{{ hostvars['openclaw'].openclaw_user }}"
-        group: "{{ hostvars['openclaw'].openclaw_group }}"
+        owner: "{{ hostvars['openclaw'].openclaw_ctf_user }}"
+        group: "{{ hostvars['openclaw'].openclaw_ctf_group }}"
         mode: "0400"
       delegate_to: openclaw
 
-    - name: Prove the Gateway can reach only the remote CTF Docker API
+    - name: Prove only the isolated CTF Gateway identity can reach the remote Docker API
       ansible.builtin.command:
         argv:
-          - /usr/bin/docker
+          - "{{ hostvars['openclaw'].openclaw_ctf_docker_cli_path }}"
           - version
       become: true
-      become_user: "{{ hostvars['openclaw'].openclaw_user }}"
+      become_user: "{{ hostvars['openclaw'].openclaw_ctf_user }}"
       environment:
         DOCKER_HOST: "{{ openclaw_ctf_docker_host }}"
         DOCKER_SSH_COMMAND: >-
@@ -124,5 +124,5 @@
       when: openclaw_ctf_transport_credential_dir.path is defined
       failed_when: false
 
-- name: Reload CTF transport credentials in the Gateway service
+- name: Reload CTF transport credentials in the isolated CTF Gateway service
   ansible.builtin.meta: flush_handlers

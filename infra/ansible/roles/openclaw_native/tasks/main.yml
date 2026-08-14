@@ -29,13 +29,6 @@
       - openclaw_workspace_root == openclaw_state_root + '/workspace'
       - openclaw_auth_profile_secret_root == openclaw_home + '/.config/openclaw'
       - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
-      - openclaw_ctf_workspace_root == '/srv/openclaw-ctf'
-      - openclaw_ctf_sandbox_skills_root == openclaw_state_root + '/sandbox/skills-workspaces'
-      - openclaw_ctf_docker_client_key_path == openclaw_secret_root + '/ctf_docker_client_key'
-      - openclaw_ctf_docker_known_hosts_path == openclaw_secret_root + '/ctf_docker_known_hosts'
-      - openclaw_ctf_docker_host == 'ssh://' + openclaw_ctf_docker_user + '@' + ctf_executor_ip
-      - openclaw_ctf_docker_network == 'openclaw-ctf'
-      - openclaw_discord_enabled is boolean
       - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
       - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
       - openclaw_native_activate is boolean
@@ -128,8 +121,6 @@
     - {path: "{{ openclaw_runtime_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_state_root }}/sandbox", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_ctf_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_ctf_sandbox_skills_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_home }}/.config", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
     - {path: "{{ openclaw_auth_profile_secret_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: /usr/local/libexec, owner: root, group: root, mode: "0755"}
@@ -138,108 +129,6 @@
     - {path: "{{ openclaw_secret_root }}", owner: root, group: root, mode: "0700"}
   loop_control:
     label: "{{ item.path }}"
-
-- name: Create Docker CLI apt keyring directory for the CTF executor transport
-  ansible.builtin.file:
-    path: /etc/apt/keyrings
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
-- name: Install Docker CLI apt signing key for the CTF executor transport
-  ansible.builtin.get_url:
-    url: https://download.docker.com/linux/debian/gpg
-    dest: /etc/apt/keyrings/docker.asc
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Configure Docker CLI apt repository for the CTF executor transport
-  ansible.builtin.apt_repository:
-    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
-    filename: docker
-    state: present
-    update_cache: true
-
-- name: Install only the Docker CLI on the native Gateway
-  ansible.builtin.apt:
-    name: docker-ce-cli
-    state: present
-    update_cache: true
-
-- name: Generate the CTF executor Docker transport identity
-  ansible.builtin.command:
-    argv:
-      - /usr/bin/ssh-keygen
-      - -q
-      - -t
-      - ed25519
-      - -N
-      - ""
-      - -f
-      - "{{ openclaw_ctf_docker_client_key_path }}"
-      - -C
-      - openclaw-ctf-docker-transport
-  args:
-    creates: "{{ openclaw_ctf_docker_client_key_path }}"
-  no_log: true
-  notify: Restart OpenClaw Gateway
-
-- name: Protect the CTF executor Docker transport identity
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    owner: root
-    group: root
-    mode: "{{ item.mode }}"
-  loop:
-    - {path: "{{ openclaw_ctf_docker_client_key_path }}", mode: "0600"}
-    - {path: "{{ openclaw_ctf_docker_client_key_path }}.pub", mode: "0644"}
-  no_log: true
-
-- name: Initialize the pinned CTF executor Docker host key file
-  ansible.builtin.copy:
-    content: ""
-    dest: "{{ openclaw_ctf_docker_known_hosts_path }}"
-    owner: root
-    group: root
-    mode: "0600"
-    force: false
-  no_log: true
-  notify: Restart OpenClaw Gateway
-
-- name: Install the CTF executor Docker SSH wrapper
-  ansible.builtin.template:
-    src: openclaw-ctf-docker-ssh.j2
-    dest: "{{ openclaw_ctf_docker_ssh_wrapper_path }}"
-    owner: root
-    group: root
-    mode: "0755"
-  notify: Restart OpenClaw Gateway
-
-- name: Require an explicit optional shared Discord bot token
-  ansible.builtin.assert:
-    that:
-      - openclaw_discord_bot_token is defined
-      - openclaw_discord_bot_token is string
-      - openclaw_discord_bot_token | trim | length > 0
-    fail_msg: >-
-      Configure OPENCLAW_DISCORD_BOT_TOKEN in the production secret store
-      before enabling the shared Discord credential.
-  no_log: true
-  when: openclaw_discord_enabled | bool
-
-- name: Install the optional shared Discord bot token outside Git
-  ansible.builtin.copy:
-    content: "{{ openclaw_discord_bot_token | trim }}\n"
-    dest: "{{ openclaw_discord_bot_token_path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-  diff: false
-  when: openclaw_discord_enabled | bool
-  notify: Restart OpenClaw Gateway
 
 - name: Install the OpenClaw Gateway token outside Git
   ansible.builtin.copy:
@@ -250,6 +139,37 @@
     mode: "0600"
   no_log: true
   diff: false
+  notify: Restart OpenClaw Gateway
+
+- name: Inspect the core Discord-relay HMAC credential
+  ansible.builtin.stat:
+    path: "{{ openclaw_relay_core_hmac_path }}"
+    follow: false
+  register: openclaw_relay_core_hmac_stat
+  no_log: true
+
+- name: Generate the core Discord-relay HMAC credential
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/openssl
+      - rand
+      - -hex
+      - '32'
+  register: openclaw_relay_core_hmac_generated
+  changed_when: true
+  no_log: true
+  when: not (openclaw_relay_core_hmac_stat.stat.exists | default(false))
+
+- name: Store the core Discord-relay HMAC credential outside Git
+  ansible.builtin.copy:
+    content: "{{ openclaw_relay_core_hmac_generated.stdout }}\n"
+    dest: "{{ openclaw_relay_core_hmac_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+  when: not (openclaw_relay_core_hmac_stat.stat.exists | default(false))
   notify: Restart OpenClaw Gateway
 
 - name: Download the pinned official Node.js archive
@@ -686,6 +606,10 @@
     - "{{ openclaw_setup_root }}"
     - "{{ openclaw_setup_root }}/.git"
     - "{{ openclaw_config_path }}"
+    - "{{ openclaw_setup_root }}/plugins/openclaw-discord-relay-core"
+    - "{{ openclaw_setup_root }}/plugins/openclaw-discord-relay-core/index.js"
+    - "{{ openclaw_setup_root }}/plugins/openclaw-discord-relay-core/package.json"
+    - "{{ openclaw_setup_root }}/plugins/openclaw-discord-relay-core/openclaw.plugin.json"
   register: openclaw_setup_paths
   when: openclaw_native_activate | bool
 
@@ -705,9 +629,17 @@
       - openclaw_setup_paths.results[2].stat.uid == 0
       - openclaw_setup_paths.results[2].stat.gid == openclaw_gid | int
       - openclaw_setup_paths.results[2].stat.mode == '0640'
+      - openclaw_setup_paths.results[3].stat.isdir | default(false)
+      - not (openclaw_setup_paths.results[3].stat.islnk | default(true))
+      - openclaw_setup_paths.results[4].stat.isreg | default(false)
+      - not (openclaw_setup_paths.results[4].stat.islnk | default(true))
+      - openclaw_setup_paths.results[5].stat.isreg | default(false)
+      - not (openclaw_setup_paths.results[5].stat.islnk | default(true))
+      - openclaw_setup_paths.results[6].stat.isreg | default(false)
+      - not (openclaw_setup_paths.results[6].stat.islnk | default(true))
     fail_msg: >-
       Transfer the clean, protected openclaw-setup checkout and its regular
-      native config before activating the Gateway.
+      native config and relay plugin before activating the core Gateway.
   when: openclaw_native_activate | bool
 
 - name: Require a clean tracked native OpenClaw config on main
@@ -734,8 +666,15 @@
     git_safe diff --quiet --no-ext-diff --no-textconv
     git_safe diff --cached --quiet --no-ext-diff --no-textconv
     git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
-    test -z "$(git_safe --no-pager ls-files -- .env)"
+    git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-core/index.js >/dev/null
+    git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-core/package.json >/dev/null
+    git_safe --no-pager ls-files --error-unmatch plugins/openclaw-discord-relay-core/openclaw.plugin.json >/dev/null
     for tracked_path in \
+      config/openclaw-ctf.json \
+      config/discord-relay-routes.json \
+      plugins/openclaw-discord-relay-ctf/index.js \
+      plugins/openclaw-discord-relay-ctf/package.json \
+      plugins/openclaw-discord-relay-ctf/openclaw.plugin.json \
       workspaces/ctf/AGENTS.md \
       workspaces/ctf/templates/writeup.md \
       workspaces/ctf/skills/ctf-artifacts/SKILL.md \
@@ -743,6 +682,7 @@
       workspaces/ctf/scripts/export-ctf-package.py; do
       git_safe --no-pager ls-files --error-unmatch "${tracked_path}" >/dev/null
     done
+    test -z "$(git_safe --no-pager ls-files -- .env)"
   args:
     executable: /bin/sh
     chdir: "{{ openclaw_setup_root }}"
@@ -773,40 +713,7 @@
   no_log: true
   when: openclaw_native_activate | bool
 
-- name: Create the durable CTF workspace layout outside the private checkout
-  ansible.builtin.file:
-    path: "{{ openclaw_ctf_workspace_root }}/{{ item }}"
-    state: directory
-    owner: "{{ openclaw_user }}"
-    group: "{{ openclaw_group }}"
-    mode: "0700"
-  loop:
-    - challenges
-    - exports
-    - media/inbound
-    - scripts
-    - templates
-    - skills/ctf-artifacts
-  when: openclaw_native_activate | bool
-
-- name: Seed tracked CTF instructions and artifact helpers into the durable workspace
-  ansible.builtin.copy:
-    src: "{{ openclaw_setup_root }}/{{ item.source }}"
-    dest: "{{ openclaw_ctf_workspace_root }}/{{ item.destination }}"
-    remote_src: true
-    owner: "{{ openclaw_user }}"
-    group: "{{ openclaw_group }}"
-    mode: "{{ item.mode }}"
-  loop:
-    - {source: workspaces/ctf/AGENTS.md, destination: AGENTS.md, mode: "0640"}
-    - {source: workspaces/ctf/templates/writeup.md, destination: templates/writeup.md, mode: "0640"}
-    - {source: workspaces/ctf/skills/ctf-artifacts/SKILL.md, destination: skills/ctf-artifacts/SKILL.md, mode: "0640"}
-    - {source: workspaces/ctf/scripts/init-ctf-challenge.py, destination: scripts/init-ctf-challenge.py, mode: "0750"}
-    - {source: workspaces/ctf/scripts/export-ctf-package.py, destination: scripts/export-ctf-package.py, mode: "0750"}
-  when: openclaw_native_activate | bool
-  notify: Restart OpenClaw Gateway
-
-- name: Require the protected native OpenClaw SecretRef schema
+- name: Require the protected core-only OpenClaw Gateway schema
   ansible.builtin.assert:
     that:
       - >-
@@ -815,17 +722,7 @@
           {
             'gateway_token_file': {'source': 'file', 'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'}
           }
-        } or
-        (
-          openclaw_discord_enabled | bool and
-          (openclaw_native_config.content | b64decode | from_json).secrets ==
-          {'providers':
-            {
-              'gateway_token_file': {'source': 'file', 'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'},
-              'discord_bot_token_file': {'source': 'file', 'path': '${OPENCLAW_DISCORD_BOT_TOKEN_FILE}', 'mode': 'singleValue'}
-            }
-          }
-        )
+        }
       - >-
         (openclaw_native_config.content | b64decode |
         from_json).gateway.auth.token ==
@@ -838,121 +735,37 @@
         selectattr('id', 'equalto', 'main') | map(attribute='default') | list) == [true]
       - >-
         ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('id', 'equalto', 'ctf') | map(attribute='workspace') | list) ==
-        [openclaw_ctf_workspace_root]
+        selectattr('id', 'equalto', 'ctf') | list | length) == 0
       - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('id', 'equalto', 'ctf') | map(attribute='sandbox.backend') | list) ==
-        ['docker']
+        (openclaw_native_config.content | b64decode | from_json).get('channels', {}) | length == 0
       - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('id', 'equalto', 'ctf') | map(attribute='sandbox.scope') | list) ==
-        ['session']
+        (openclaw_native_config.content | b64decode | from_json).get('bindings', []) | length == 0
       - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('id', 'equalto', 'ctf') |
-        map(attribute='sandbox.docker.network') | list) == [openclaw_ctf_docker_network]
+        (openclaw_native_config.content | b64decode | from_json).plugins.entries['openclaw-discord-relay-core'].enabled | bool
       - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('id', 'equalto', 'ctf') |
-        map(attribute='tools.elevated.enabled') | list) == [false]
+        (openclaw_native_config.content | b64decode | from_json).plugins.entries['openclaw-discord-relay-core'].config.allowedChannelIds | length > 0
     fail_msg: >-
-      The protected native config must retain the exact Gateway token provider
-      and token SecretRef schema.
+      The core Gateway must retain only its token SecretRef, contain no CTF
+      agent or Discord account, and expose only the narrow core relay plugin.
   no_log: true
   when: openclaw_native_activate | bool
 
-- name: Require channel-only shared Discord routing
+- name: Forbid Discord credentials and channel bindings in the core Gateway
   ansible.builtin.assert:
     that:
-      - openclaw_discord.enabled | bool
-      - (openclaw_discord.accounts | list | sort) == ['shared']
-      - openclaw_discord_account.enabled | bool
-      - openclaw_discord_account.dmPolicy == 'disabled'
-      - openclaw_discord_account.groupPolicy == 'allowlist'
-      - not (openclaw_discord_account.configWrites | bool)
-      - not (openclaw_discord_account.allowBots | bool)
+      - (openclaw_native_config_parsed.get('channels', {}) | length) == 0
+      - (openclaw_native_config_parsed.get('bindings', []) | length) == 0
       - >-
-        openclaw_discord_account.token ==
-        {'source': 'file', 'provider': 'discord_bot_token_file', 'id': 'value'}
-      - (openclaw_discord_guilds | list | sort) == ['*']
-      - openclaw_discord_account.allowFrom | default([]) | length == 0
-      - openclaw_discord_account.groupAllowFrom | default([]) | length == 0
-      - openclaw_discord_account.users | default([]) | length == 0
-      - openclaw_discord_account.roles | default([]) | length == 0
-      - openclaw_discord_wildcard.users | default([]) | length == 0
-      - openclaw_discord_wildcard.roles | default([]) | length == 0
-      - openclaw_discord_allowed_channels | length > 0
-      - >-
-        (openclaw_discord_allowed_channels | list |
-        select('match', '^[0-9]{17,20}$') | list | length) ==
-        (openclaw_discord_allowed_channels | length)
-      - >-
-        (openclaw_discord_allowed_channels | dict2items |
-        selectattr('value.enabled', 'defined') |
-        selectattr('value.enabled', 'equalto', true) | list | length) ==
-        (openclaw_discord_allowed_channels | length)
-      - >-
-        (openclaw_discord_allowed_channels | dict2items |
-        selectattr('value.users', 'defined') | list | length) == 0
-      - >-
-        (openclaw_discord_allowed_channels | dict2items |
-        selectattr('value.roles', 'defined') | list | length) == 0
-      - openclaw_discord_bindings | length > 0
-      - >-
-        (openclaw_discord_bindings |
-        selectattr('match.accountId', 'equalto', 'shared') | list | length) ==
-        (openclaw_discord_bindings | length)
-      - >-
-        (openclaw_discord_bindings |
-        selectattr('match.peer.kind', 'equalto', 'channel') | list | length) ==
-        (openclaw_discord_bindings | length)
-      - >-
-        (openclaw_discord_bindings |
-        selectattr('match.guildId', 'defined') | list | length) == 0
-      - >-
-        (openclaw_discord_bindings | map(attribute='match.peer.id') |
-        select('match', '^[0-9]{17,20}$') | list | length) ==
-        (openclaw_discord_bindings | length)
-      - >-
-        (openclaw_discord_bindings | map(attribute='match.peer.id') |
-        list | unique | list | length) ==
-        (openclaw_discord_bindings | length)
-      - >-
-        (openclaw_discord_bindings | map(attribute='match.peer.id') |
-        list | sort) == (openclaw_discord_allowed_channels | list | sort)
-      - >-
-        (openclaw_discord_bindings | map(attribute='agentId') | list |
-        difference(openclaw_native_config_parsed.agents.list |
-        map(attribute='id') | list) | length) == 0
-      - >-
-        (openclaw_discord_bindings |
-        selectattr('agentId', 'equalto', 'ctf') | list | length) > 0
+        'discord_bot_token_file' not in
+        openclaw_native_config_parsed.secrets.providers
     fail_msg: >-
-      The shared Discord account must use numeric channel IDs as its only
-      authorization and routing keys. Every allowed channel must have exactly
-      one binding to a configured agent; user, role, guild, and DM allowlists
-      are not permitted.
+      Discord ingress belongs to the dedicated relay daemon. The core Gateway
+      must not hold a Discord token, channel binding, or user-facing allowlist.
   vars:
     openclaw_native_config_parsed: >-
       {{ openclaw_native_config.content | b64decode | from_json }}
-    openclaw_discord: >-
-      {{ openclaw_native_config_parsed.get('channels', {}).get('discord', {}) }}
-    openclaw_discord_account: >-
-      {{ openclaw_discord.get('accounts', {}).get('shared', {}) }}
-    openclaw_discord_guilds: >-
-      {{ openclaw_discord_account.get('guilds', {}) }}
-    openclaw_discord_wildcard: >-
-      {{ openclaw_discord_guilds.get('*', {}) }}
-    openclaw_discord_allowed_channels: >-
-      {{ openclaw_discord_wildcard.get('channels', {}) }}
-    openclaw_discord_bindings: >-
-      {{ openclaw_native_config_parsed.get('bindings', []) |
-      selectattr('match.channel', 'equalto', 'discord') | list }}
   no_log: true
-  when:
-    - openclaw_native_activate | bool
-    - openclaw_discord_enabled | bool
+  when: openclaw_native_activate | bool
 
 - name: Validate native config through an isolated service-user credential
   when: openclaw_native_activate | bool
@@ -984,15 +797,14 @@
       no_log: true
       diff: false
 
-    - name: Materialize a read-only service-user shared Discord credential
+    - name: Materialize a read-only core relay HMAC validation credential
       ansible.builtin.copy:
-        src: "{{ openclaw_discord_bot_token_path }}"
-        dest: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
+        src: "{{ openclaw_relay_core_hmac_path }}"
+        dest: "{{ openclaw_validation_credential_dir.path }}/discord_relay_core_hmac"
         remote_src: true
         owner: "{{ openclaw_user }}"
         group: "{{ openclaw_group }}"
         mode: "0400"
-      when: openclaw_discord_enabled | bool
       no_log: true
       diff: false
 
@@ -1018,7 +830,7 @@
         OPENCLAW_SERVICE_REPAIR_POLICY: external
         OPENCLAW_SUPERVISOR_MODE: external
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
-        OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
+        OPENCLAW_DISCORD_RELAY_CORE_HMAC_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_relay_core_hmac"
       register: openclaw_config_file_preflight
       changed_when: false
       failed_when: >-
@@ -1044,6 +856,27 @@
         openclaw_config_validation_preflight.rc != 0 or
         not (openclaw_config_validation_preflight.stdout | from_json).valid or
         (openclaw_config_validation_preflight.stdout | from_json).warnings | length > 0
+
+    - name: Inspect the core relay plugin runtime before startup
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_release_root }}/bin/node"
+          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
+          - plugins
+          - inspect
+          - openclaw-discord-relay-core
+          - --runtime
+          - --json
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: *openclaw_native_cli_environment
+      register: openclaw_core_plugin_runtime_inspection
+      changed_when: false
+      failed_when: >-
+        openclaw_core_plugin_runtime_inspection.rc != 0 or
+        (openclaw_core_plugin_runtime_inspection.stdout | from_json).plugin.id != 'openclaw-discord-relay-core' or
+        (openclaw_core_plugin_runtime_inspection.stdout | from_json).plugin.status != 'loaded'
+      no_log: true
 
     - name: Require the proxy-only native OpenClaw config values
       ansible.builtin.command:

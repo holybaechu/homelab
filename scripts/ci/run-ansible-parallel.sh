@@ -119,10 +119,11 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
     esac
   done
 
-  # The CTF executor must exist before the Gateway is activated, but its
-  # transport can only be connected after the Gateway generates its dedicated
-  # SSH identity. The native Gateway must then be ready before Docker-host
-  # Traefik is reconciled.
+  # The CTF executor must exist before either Gateway is activated, but its
+  # transport can only be connected after the isolated CTF Gateway generates
+  # its dedicated SSH identity. The sole Discord ingress is deliberately
+  # enabled only after that transport succeeds, so no CTF message can reach a
+  # service whose sandbox executor is not ready.
   # On the initial staged deployment it remains deliberately stopped, while
   # after cutover this ordering prevents routing to an unready rebuilt LXC.
   for required_entry in \
@@ -155,7 +156,7 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
 
   target="${openclaw_entry%%:*}"
   limit="${openclaw_entry#*:}"
-  if run_foreground_target "${target}" "${limit}" "$@"; then
+  if run_foreground_target "${target}" "${limit}" --tags openclaw_native,ctf_gateway "$@"; then
     :
   else
     exit $?
@@ -164,6 +165,14 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
   target="${ctf_executor_entry%%:*}"
   limit="${ctf_executor_entry#*:}"
   if run_foreground_target "${target}" "${limit}" --tags ctf_transport "$@"; then
+    :
+  else
+    exit $?
+  fi
+
+  target="${openclaw_entry%%:*}"
+  limit="${openclaw_entry#*:}"
+  if run_foreground_target "${target}" "${limit}" --tags discord_relay "$@"; then
     :
   else
     exit $?

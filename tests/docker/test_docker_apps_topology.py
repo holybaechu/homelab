@@ -68,6 +68,9 @@ def test_openclaw_lxc_has_no_nested_features_tun_and_only_ctf_scoped_mounts():
     assert "device_passthrough" not in topology
     assert "mount_point" not in topology
     assert 'bind_mount_sources:' in openclaw
+    assert "bind_mount_source_owner: \"{{ (homelab_container_uid_offset | int) + (openclaw_ctf_uid | int) }}\"" in openclaw
+    assert "bind_mount_source_group: \"{{ (homelab_container_uid_offset | int) + (openclaw_ctf_gid | int) }}\"" in openclaw
+    assert "service_uid" not in openclaw
     assert '"{{ openclaw_ctf_shared_host_path }}"' in openclaw
     assert '"{{ openclaw_ctf_sandbox_skills_host_path }}"' in openclaw
     assert "mount the dedicated CTF workspace once" in openclaw

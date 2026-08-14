@@ -19,6 +19,30 @@ openclaw_uid: 1000
 openclaw_gid: 1000
 openclaw_home: /home/openclaw
 
+# The CTF runner is a second local Gateway with a separate Unix identity.
+# It owns the only remote-Docker credential; the core gateway cannot read its
+# state, workspace, or credential directory.
+openclaw_ctf_user: openclaw-ctf
+openclaw_ctf_group: openclaw-ctf
+openclaw_ctf_home: /home/openclaw-ctf
+openclaw_ctf_state_root: /var/lib/openclaw-ctf
+openclaw_ctf_workspace_root: /srv/openclaw-ctf
+openclaw_ctf_cache_root: /var/cache/openclaw-ctf
+openclaw_ctf_compile_cache_root: "{{ openclaw_ctf_cache_root }}/node-compile-cache"
+openclaw_ctf_auth_profile_secret_root: "{{ openclaw_ctf_home }}/.config/openclaw"
+openclaw_ctf_gateway_config_path: /etc/openclaw/ctf-gateway.json
+openclaw_ctf_gateway_source_config_path: "{{ openclaw_setup_root }}/config/openclaw-ctf.json"
+openclaw_ctf_plugin_source_root: "{{ openclaw_setup_root }}/plugins/openclaw-discord-relay-ctf"
+openclaw_ctf_plugin_root: /opt/openclaw-ctf-plugins/openclaw-discord-relay-ctf
+openclaw_ctf_gateway_token_path: "{{ openclaw_secret_root }}/ctf_gateway_token"
+openclaw_ctf_openai_api_key_path: "{{ openclaw_secret_root }}/ctf_openai_api_key"
+openclaw_ctf_gateway_port: 19789
+openclaw_ctf_gateway_bind_host: 127.0.0.1
+openclaw_ctf_docker_cli_path: /opt/openclaw-ctf/bin/docker
+openclaw_ctf_docker_ssh_wrapper_path: /opt/openclaw-ctf/bin/openclaw-ctf-docker-ssh
+openclaw_relay_core_hmac_path: "{{ openclaw_secret_root }}/discord_relay_core_hmac"
+openclaw_relay_ctf_hmac_path: "{{ openclaw_secret_root }}/discord_relay_ctf_hmac"
+
 openclaw_install_root: /opt/openclaw
 openclaw_release_root: "{{ openclaw_install_root }}/releases/{{ openclaw_version }}"
 openclaw_current_root: "{{ openclaw_install_root }}/current"
@@ -40,8 +64,15 @@ openclaw_cache_root: /var/cache/openclaw
 openclaw_compile_cache_root: "{{ openclaw_cache_root }}/node-compile-cache"
 openclaw_secret_root: /etc/openclaw/secrets
 openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
-openclaw_ctf_docker_ssh_wrapper_path: /usr/local/libexec/openclaw-ctf-docker-ssh
-openclaw_discord_enabled: false
+# Discord is owned by a dedicated relay, not either OpenClaw Gateway. The
+# GitHub production variable OPENCLAW_DISCORD_ENABLED maps to this value.
+openclaw_discord_relay_enabled: false
+openclaw_discord_relay_user: openclaw-discord-relay
+openclaw_discord_relay_group: openclaw-discord-relay
+openclaw_discord_relay_uid: 1002
+openclaw_discord_relay_gid: 1002
+openclaw_discord_relay_state_root: /var/lib/openclaw-discord-relay
+openclaw_discord_relay_routes_path: /etc/openclaw/discord-relay/routes.json
 openclaw_discord_bot_token_path: "{{ openclaw_secret_root }}/discord_bot_token"
 
 openclaw_gateway_port: 18789

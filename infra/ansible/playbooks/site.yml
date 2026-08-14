@@ -72,21 +72,31 @@
     - role: openclaw_ctf_executor
       tags: [openclaw, ctf, ctf_executor]
 
-- name: Stage or activate the dedicated native OpenClaw Gateway
+- name: Stage or activate the separated core and CTF OpenClaw Gateways
   hosts: svc_openclaw
   gather_facts: true
   any_errors_fatal: true
   roles:
     - role: openclaw_native
       tags: [openclaw, openclaw_native]
+    - role: openclaw_ctf_gateway
+      tags: [openclaw, ctf, ctf_gateway]
 
-- name: Connect the native OpenClaw Gateway to the isolated CTF executor
+- name: Connect the isolated CTF Gateway to the isolated CTF executor
   hosts: svc_ctf_executor
   gather_facts: false
   any_errors_fatal: true
   roles:
     - role: openclaw_ctf_transport
       tags: [openclaw, ctf, ctf_transport]
+
+- name: Configure the sole Discord ingress relay after both Gateways are ready
+  hosts: svc_openclaw
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: openclaw_discord_relay
+      tags: [openclaw, discord, discord_relay]
 
 - name: Configure Docker Compose application LXC
   hosts: svc_docker_apps

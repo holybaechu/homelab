@@ -18,6 +18,27 @@ TOKEN_PATTERN = re.compile(rb"[0-9A-Fa-f]{64}\n\Z")
 MAX_READ_BYTES = 66
 
 
+def parse_arguments(argv: list[str]) -> tuple[int, int, str, str] | None:
+    """Accept the fixed core owner or an explicit root-owned service owner."""
+    if len(argv) == 3:
+        source, destination = argv[1:]
+        return EXPECTED_UID, EXPECTED_GID, source, destination
+
+    if len(argv) != 5 or argv[1] != "--owner":
+        return None
+
+    owner, source, destination = argv[2:]
+    if owner.count(":") != 1:
+        return None
+    raw_uid, raw_gid = owner.split(":", 1)
+    if not raw_uid.isdecimal() or not raw_gid.isdecimal():
+        return None
+    uid, gid = int(raw_uid), int(raw_gid)
+    if uid < 1 or gid < 1 or uid > 2**31 - 1 or gid > 2**31 - 1:
+        return None
+    return uid, gid, source, destination
+
+
 def require_regular_file(path: str, expected_uid: int, expected_gid: int) -> os.stat_result:
     file_stat = os.lstat(path)
     if not stat.S_ISREG(file_stat.st_mode):
@@ -32,17 +53,18 @@ def require_regular_file(path: str, expected_uid: int, expected_gid: int) -> os.
 
 
 def _main() -> int:
-    if len(sys.argv) != 3:
+    arguments = parse_arguments(sys.argv)
+    if arguments is None:
         return 64
 
-    source, destination = sys.argv[1:]
+    expected_uid, expected_gid, source, destination = arguments
     runtime_directory = os.path.dirname(destination)
     if not runtime_directory or os.path.basename(destination) != "gateway_token":
         return 65
 
     uid = os.getuid()
     gid = os.getgid()
-    if uid != EXPECTED_UID or gid != EXPECTED_GID:
+    if uid != expected_uid or gid != expected_gid:
         return 66
 
     directory_stat = os.lstat(runtime_directory)

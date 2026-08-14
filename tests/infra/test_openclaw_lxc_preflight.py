@@ -65,7 +65,7 @@ def ctf_executor_allocation():
         required_features=frozenset({"nesting", "keyctl"}),
         expected_bind_mounts=(
             "/var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf",
-            "/var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces",
+            "/var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw-ctf/sandbox/skills-workspaces",
         ),
         allow_missing_expected_bind_mounts=True,
     )
@@ -81,7 +81,7 @@ def exact_ctf_executor_config(extra: str = "") -> str:
         "hwaddr=02:00:00:BA:EC:06,ip=192.168.0.6/24,type=veth\n"
         "features: nesting=1,keyctl=1\n"
         "mp0: /var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf\n"
-        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces\n"
+        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw-ctf/sandbox/skills-workspaces\n"
         f"{extra}"
     )
 
@@ -162,7 +162,7 @@ def test_existing_ctf_executor_requires_its_exact_docker_profile(
 def test_staged_ctf_executor_may_be_missing_only_a_declared_mount(config_root):
     allocation = ctf_executor_allocation()
     staged = exact_ctf_executor_config().replace(
-        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces\n",
+        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw-ctf/sandbox/skills-workspaces\n",
         "",
     )
     write_config(config_root, "lxc", 119, staged)

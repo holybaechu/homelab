@@ -25,7 +25,12 @@ def test_ctf_executor_is_a_dedicated_unprivileged_lxc_before_the_gateway():
     assert "openclaw_ctf_shared_host_path" in all_vars
     assert "openclaw_ctf_sandbox_skills_host_path" in all_vars
     assert "openclaw_ctf_workspace_root: /srv/openclaw-ctf" in all_vars
-    assert "openclaw_ctf_sandbox_skills_root: /var/lib/openclaw/sandbox/skills-workspaces" in all_vars
+    assert (
+        "openclaw_ctf_sandbox_skills_root: "
+        "/var/lib/openclaw-ctf/sandbox/skills-workspaces"
+    ) in all_vars
+    assert "openclaw_ctf_uid: 1001" in all_vars
+    assert "openclaw_ctf_gid: 1001" in all_vars
     assert "openclaw_ctf_docker_network: openclaw-ctf" in all_vars
     assert "openclaw_ctf_docker_network_cidr: 172.30.0.0/24" in all_vars
     assert "ctf_executor_lxc_allocation:" in all_vars
@@ -51,6 +56,8 @@ def test_only_the_ctf_executor_gets_docker_lxc_features_and_the_ctf_mount():
     )[0]
 
     assert "bind_mount_source_owner" in openclaw
+    assert "openclaw_ctf_uid" in openclaw
+    assert "openclaw_ctf_gid" in openclaw
     assert "bind_mount_source_mode: \"0700\"" in openclaw
     assert "-mp0 {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}" in openclaw
     assert "-mp1 {{ openclaw_ctf_sandbox_skills_host_path }},mp={{ openclaw_ctf_sandbox_skills_root }}" in openclaw
@@ -94,7 +101,7 @@ def test_ctf_executor_role_builds_a_nonroot_kali_image_without_socket_mounts():
         "nmap",
     ):
         assert package in dockerfile
-    assert "USER 1000:1000" in dockerfile
+    assert "USER 1001:1001" in dockerfile
     assert "docker-ce" not in dockerfile
     assert "docker.io" not in dockerfile
     assert "/var/run/docker.sock" not in dockerfile
@@ -112,27 +119,144 @@ def test_ctf_executor_role_builds_a_nonroot_kali_image_without_socket_mounts():
     assert '"1.0.0.1"' in daemon
 
 
-def test_gateway_uses_credential_scoped_remote_docker_without_a_socket():
+def test_ctf_gateway_is_a_separate_uid_scoped_to_the_ctf_config_and_workspace():
+    tasks = yaml.safe_load(
+        read("infra/ansible/roles/openclaw_ctf_gateway/tasks/main.yml")
+    )
     service = read(
+        "infra/ansible/roles/openclaw_ctf_gateway/"
+        "templates/openclaw-ctf-gateway.service.j2"
+    )
+    contract = next(
+        task
+        for task in tasks
+        if task["name"] == "Require the isolated OpenClaw CTF Gateway contract"
+    )
+    assertions = contract["ansible.builtin.assert"]["that"]
+
+    for required in (
+        "openclaw_ctf_user == 'openclaw-ctf'",
+        "openclaw_ctf_group == 'openclaw-ctf'",
+        "openclaw_ctf_uid | int == 1001",
+        "openclaw_ctf_gid | int == 1001",
+        "openclaw_ctf_gateway_port | int == 19789",
+        "openclaw_ctf_workspace_root == '/srv/openclaw-ctf'",
+        "openclaw_ctf_sandbox_skills_root == openclaw_ctf_state_root + '/sandbox/skills-workspaces'",
+        "openclaw_ctf_openai_api_key_path == openclaw_secret_root + '/ctf_openai_api_key'",
+    ):
+        assert required in assertions
+
+    config_contract = next(
+        task
+        for task in tasks
+        if task["name"] == "Require CTF-only Gateway config and narrow relay route"
+    )
+    config_assertions = " ".join(config_contract["ansible.builtin.assert"]["that"])
+    for required in (
+        "ctf_gateway_token_file",
+        "ctf_openai_api_key_file",
+        "OPENCLAW_CTF_OPENAI_API_KEY_FILE",
+        "models.providers.openai",
+        "openai/gpt-5.5",
+        "agents.list | map(attribute='id') | list == ['ctf']",
+        "sandbox.backend == 'docker'",
+        "sandbox.scope == 'session'",
+        "sandbox.docker.user == (openclaw_ctf_uid | string) + ':' + (openclaw_ctf_gid | string)",
+        "get('channels', {}) | length == 0",
+        "get('bindings', []) | length == 0",
+        "tools.alsoAllow == ['ctf_publish']",
+        "tools.sandbox.tools.allow",
+        "openclaw-discord-relay-ctf",
+    ):
+        assert required in config_assertions
+
+    assert (
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential --owner "
+        "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} "
+        "%d/openclaw_ctf_gateway_token /run/openclaw-ctf-gateway/gateway_token"
+    ) in service
+    assert "Environment=OPENCLAW_CTF_OPENAI_API_KEY_FILE=%d/ctf_openai_api_key" in service
+    assert "LoadCredential=ctf_openai_api_key:{{ openclaw_ctf_openai_api_key_path }}" in service
+    assert "openclaw.plugin.json" in read(
+        "infra/ansible/roles/openclaw_ctf_gateway/tasks/main.yml"
+    )
+    assert "contracts.tools == ['ctf_publish']" in read(
+        "infra/ansible/roles/openclaw_ctf_gateway/tasks/main.yml"
+    )
+    validation_block = next(
+        task
+        for task in tasks
+        if task["name"] == "Validate the isolated CTF config with a service-user token"
+    )
+    runtime_check = next(
+        task
+        for task in validation_block["block"]
+        if task["name"] == "Inspect the CTF relay plugin runtime before startup"
+    )
+    assert runtime_check["ansible.builtin.command"]["argv"][-5:] == [
+        "plugins",
+        "inspect",
+        "openclaw-discord-relay-ctf",
+        "--runtime",
+        "--json",
+    ]
+    assert runtime_check["become_user"] == "{{ openclaw_ctf_user }}"
+    assert ".plugin.id != 'openclaw-discord-relay-ctf'" in runtime_check["failed_when"]
+    assert ".plugin.status != 'loaded'" in runtime_check["failed_when"]
+    assert "ctf_publish" in runtime_check["failed_when"]
+    assert runtime_check["no_log"] is True
+
+
+def test_only_the_ctf_gateway_uses_credential_scoped_remote_docker_without_a_socket():
+    core_service = read(
         "infra/ansible/roles/openclaw_native/templates/openclaw-gateway.service.j2"
     )
+    ctf_service = read(
+        "infra/ansible/roles/openclaw_ctf_gateway/"
+        "templates/openclaw-ctf-gateway.service.j2"
+    )
     wrapper = read(
-        "infra/ansible/roles/openclaw_native/templates/openclaw-ctf-docker-ssh.j2"
+        "infra/ansible/roles/openclaw_ctf_gateway/"
+        "templates/openclaw-ctf-docker-ssh.j2"
     )
     transport = read("infra/ansible/roles/openclaw_ctf_transport/tasks/main.yml")
 
-    assert "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}" in service
-    assert "Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}" in service
-    assert "LoadCredential=ctf_docker_client_key:" in service
-    assert "LoadCredential=ctf_docker_known_hosts:" in service
-    assert "ReadWritePaths={{ openclaw_ctf_workspace_root }}" in service
-    assert "/var/run/docker.sock" not in service
+    for forbidden in (
+        "Environment=DOCKER_HOST=",
+        "Environment=DOCKER_SSH_COMMAND=",
+        "LoadCredential=ctf_docker_client_key:",
+        "LoadCredential=ctf_docker_known_hosts:",
+        "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
+        "LoadCredential=discord_bot_token:",
+        "OPENCLAW_CTF_OPENAI_API_KEY_FILE",
+        "LoadCredential=ctf_openai_api_key:",
+    ):
+        assert forbidden not in core_service
+    assert "InaccessiblePaths={{ openclaw_ctf_workspace_root }}" in core_service
+    assert "InaccessiblePaths={{ openclaw_ctf_state_root }}" in core_service
+    assert "InaccessiblePaths={{ openclaw_ctf_home }}" in core_service
+
+    for required in (
+        "User={{ openclaw_ctf_user }}",
+        "Group={{ openclaw_ctf_group }}",
+        "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
+        "Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}",
+        "LoadCredential=ctf_docker_client_key:",
+        "LoadCredential=ctf_docker_known_hosts:",
+        "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
+    ):
+        assert required in ctf_service
+    assert "LoadCredential=discord_bot_token:" not in ctf_service
+    assert "/var/run/docker.sock" not in core_service
+    assert "/var/run/docker.sock" not in ctf_service
     assert "StrictHostKeyChecking=yes" in wrapper
     assert "IdentitiesOnly=yes" in wrapper
     assert "CREDENTIALS_DIRECTORY" in wrapper
     assert "no-port-forwarding" in transport
     assert "docker system dial-stdio" in transport
     assert "/var/run/docker.sock" not in transport
+    assert "openclaw_ctf_docker_cli_path" in transport
+    assert "openclaw_ctf_user" in transport
 
 
 def test_transport_key_is_a_real_newline_terminated_ed25519_authorized_key():
@@ -142,12 +266,13 @@ def test_transport_key_is_a_real_newline_terminated_ed25519_authorized_key():
     key_type_check = next(
         task
         for task in tasks
-        if task["name"] == "Require the Gateway CTF Docker transport public-key type"
+        if task["name"]
+        == "Require the isolated CTF Gateway Docker transport public-key type"
     )
     install = next(
         task
         for task in tasks
-        if task["name"] == "Install the Gateway-only forced Docker transport key"
+        if task["name"] == "Install the CTF-Gateway-only forced Docker transport key"
     )
 
     expression = key_type_check["ansible.builtin.assert"]["that"][0]
@@ -158,17 +283,29 @@ def test_transport_key_is_a_real_newline_terminated_ed25519_authorized_key():
     assert content.count("docker system dial-stdio") == 1
 
 
-def test_ctf_executor_deploys_before_gateway_and_transport_links_after_it():
+def test_ctf_executor_transport_precedes_the_discord_relay():
     plays = yaml.safe_load(read("infra/ansible/playbooks/site.yml"))
     names = [play["name"] for play in plays]
 
     executor_index = names.index("Configure the isolated CTF Docker executor")
-    gateway_index = names.index("Stage or activate the dedicated native OpenClaw Gateway")
-    transport_index = names.index(
-        "Connect the native OpenClaw Gateway to the isolated CTF executor"
+    gateway_index = names.index(
+        "Stage or activate the separated core and CTF OpenClaw Gateways"
     )
-    assert executor_index < gateway_index < transport_index
+    transport_index = names.index(
+        "Connect the isolated CTF Gateway to the isolated CTF executor"
+    )
+    relay_index = names.index(
+        "Configure the sole Discord ingress relay after both Gateways are ready"
+    )
+    assert executor_index < gateway_index < transport_index < relay_index
     assert plays[executor_index]["hosts"] == "svc_ctf_executor"
+    assert plays[gateway_index]["hosts"] == "svc_openclaw"
     assert plays[transport_index]["hosts"] == "svc_ctf_executor"
+    assert plays[relay_index]["hosts"] == "svc_openclaw"
     assert plays[executor_index]["roles"][0]["role"] == "openclaw_ctf_executor"
+    assert [role["role"] for role in plays[gateway_index]["roles"]] == [
+        "openclaw_native",
+        "openclaw_ctf_gateway",
+    ]
     assert plays[transport_index]["roles"][0]["role"] == "openclaw_ctf_transport"
+    assert plays[relay_index]["roles"][0]["role"] == "openclaw_discord_relay"
