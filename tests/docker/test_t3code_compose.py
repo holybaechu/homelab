@@ -10,7 +10,7 @@ def test_t3code_uses_pinned_kali_base_and_supported_node_runtime():
     dockerfile = (CODE_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     assert "FROM kalilinux/kali-rolling:latest@sha256:" in dockerfile
-    assert "FROM node:24.18.0-bookworm-slim@sha256:" in dockerfile
+    assert "FROM node:24.19.0-bookworm-slim@sha256:" in dockerfile
     assert "ARG T3_VERSION=0.0.28" in dockerfile
     assert 'CMD ["t3", "serve", "--host", "0.0.0.0"]' in dockerfile
     assert "USER 1000:1000" in dockerfile
