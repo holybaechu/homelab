@@ -109,7 +109,7 @@ def test_direct_requirements_are_exact():
     collection = read("infra/ansible/requirements.yml")
 
     assert requirements == ["pytest==9.1.1", "Jinja2==3.1.6", "PyYAML==6.0.3"]
-    assert 'version: "13.2.0"' in collection
+    assert 'version: "13.3.0"' in collection
 
 
 def test_opentofu_updates_trigger_cd():
