@@ -67,13 +67,12 @@ such binding.
 After the CTF bridge/service split is deployed:
 
 1. Copy the structure in private
-   `config/discord.example.json` into the active private config and replace
-   or delete its illustrative channel-ID placeholders. Do not add Discord
-   user IDs, channel names/slugs, or guild IDs. For every campaign channel,
-   add its numeric channel ID once under `guilds["*"].channels` and once as an
-   exact binding's `match.peer.id`. Several bindings may use the same
-   `agentId`; other agents use the same pattern. All bindings use the shared
-   Discord account.
+   `config/discord.example.json` into the active private config. Do not add
+   Discord user IDs, channel names/slugs, or guild IDs. For every campaign
+   channel, add its numeric channel ID once under `guilds["*"].channels` and
+   once as an exact binding's `match.peer.id`. Several bindings may use the
+   same `agentId`; other agents use the same pattern. All bindings use the
+   shared Discord account.
 2. Keep `dmPolicy: disabled`, `groupPolicy: allowlist`, `configWrites: false`,
    and `allowBots: false`. Do not give the bot permissions outside explicitly
    allowlisted agent channels. Discord channel/category permissions are the
