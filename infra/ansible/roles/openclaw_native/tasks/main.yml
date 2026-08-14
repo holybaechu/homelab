@@ -28,6 +28,7 @@
       - openclaw_state_root == openclaw_runtime_root
       - openclaw_workspace_root == openclaw_state_root + '/workspace'
       - openclaw_auth_profile_secret_root == openclaw_home + '/.config/openclaw'
+      - openclaw_npm_cache_root == openclaw_cache_root + '/npm'
       - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
       - openclaw_ctf_workspace_root == '/srv/openclaw-ctf'
       - openclaw_ctf_sandbox_skills_root == openclaw_state_root + '/sandbox/skills-workspaces'
@@ -131,6 +132,7 @@
     - {path: "{{ openclaw_release_root }}", owner: root, group: root, mode: "0755"}
     - {path: "{{ openclaw_home }}", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
     - {path: "{{ openclaw_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_npm_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_cache_root }}/downloads", owner: root, group: root, mode: "0755"}
     - {path: "{{ openclaw_compile_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_runtime_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
@@ -1095,6 +1097,7 @@
         OPENCLAW_SUPERVISOR_MODE: external
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
         OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
+        NPM_CONFIG_CACHE: "{{ openclaw_npm_cache_root }}"
       notify: Restart OpenClaw Gateway
 
     - name: Install the pinned core Discord channel plugin
@@ -1122,8 +1125,19 @@
       become: true
       become_user: "{{ openclaw_user }}"
       environment: &openclaw_native_cli_environment
-        <<: *openclaw_native_plugin_install_environment
+        HOME: "{{ openclaw_home }}"
+        PATH: "{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin"
+        OPENCLAW_HOME: "{{ openclaw_home }}"
+        OPENCLAW_STATE_DIR: "{{ openclaw_state_root }}"
         OPENCLAW_CONFIG_PATH: "{{ openclaw_config_path }}"
+        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_workspace_root }}"
+        OPENCLAW_DISABLE_BONJOUR: "1"
+        OPENCLAW_NO_AUTO_UPDATE: "1"
+        OPENCLAW_NO_RESPAWN: "1"
+        OPENCLAW_SERVICE_REPAIR_POLICY: external
+        OPENCLAW_SUPERVISOR_MODE: external
+        OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
+        OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
       register: openclaw_config_file_preflight
       changed_when: false
       failed_when: >-

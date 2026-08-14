@@ -43,6 +43,7 @@ openclaw_state_root: /var/lib/openclaw
 openclaw_workspace_root: "{{ openclaw_state_root }}/workspace"
 openclaw_auth_profile_secret_root: "{{ openclaw_home }}/.config/openclaw"
 openclaw_cache_root: /var/cache/openclaw
+openclaw_npm_cache_root: "{{ openclaw_cache_root }}/npm"
 openclaw_compile_cache_root: "{{ openclaw_cache_root }}/node-compile-cache"
 # Every agent, including ctf, uses this one subscription-backed profile unless
 # it deliberately inherits the same model through the config defaults.

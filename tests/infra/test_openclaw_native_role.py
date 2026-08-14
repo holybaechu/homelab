@@ -607,6 +607,24 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_all_agen
         assert required in assertions
     assert "apiKey" not in assertions
 
+    npm_cache_directories = next(
+        task
+        for task in all_tasks
+        if task["name"]
+        == "Create native OpenClaw installation and runtime directories"
+    )
+    assert variables["openclaw_cache_root"] == "/var/cache/openclaw"
+    assert variables["openclaw_npm_cache_root"] == (
+        "{{ openclaw_cache_root }}/npm"
+    )
+    assert {
+        "path": "{{ openclaw_npm_cache_root }}",
+        "owner": "{{ openclaw_user }}",
+        "group": "{{ openclaw_group }}",
+        "mode": "0700",
+    } in npm_cache_directories["loop"]
+    assert "{{ openclaw_home }}/.npm" not in read(ROLE / "tasks/main.yml")
+
     install = next(
         task
         for task in all_tasks
@@ -624,6 +642,9 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_all_agen
         "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
     )
     assert install["environment"]["OPENCLAW_STATE_DIR"] == "{{ openclaw_state_root }}"
+    assert install["environment"]["NPM_CONFIG_CACHE"] == (
+        "{{ openclaw_npm_cache_root }}"
+    )
 
     writable_config = next(
         task
@@ -654,6 +675,7 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_all_agen
     assert ".plugin.id != 'codex'" in runtime["failed_when"]
     assert ".plugin.status != 'loaded'" in runtime["failed_when"]
     assert runtime["no_log"] is True
+    assert "NPM_CONFIG_CACHE" not in runtime["environment"]
 
     assert "openclaw_ctf_codex_profile_id" not in variables
 
@@ -677,6 +699,9 @@ def test_native_openclaw_installs_and_loads_the_pinned_discord_channel_plugin():
     assert install["become_user"] == "{{ openclaw_user }}"
     assert install["environment"]["OPENCLAW_CONFIG_PATH"] == (
         "{{ openclaw_validation_credential_dir.path }}/plugin-install-config.json"
+    )
+    assert install["environment"]["NPM_CONFIG_CACHE"] == (
+        "{{ openclaw_npm_cache_root }}"
     )
 
     runtime = next(
