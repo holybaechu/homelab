@@ -15,6 +15,15 @@ PREFLIGHT = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = PREFLIGHT
 SPEC.loader.exec_module(PREFLIGHT)
 
+DESIRED_CTF_BIND_MOUNTS = (
+    "/var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf",
+    "/var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces",
+)
+LEGACY_CTF_BIND_MOUNTS = (
+    "/var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf",
+    "/var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw-ctf/sandbox/skills-workspaces",
+)
+
 
 @pytest.fixture
 def allocation():
@@ -25,6 +34,9 @@ def allocation():
         mac_address="02:00:00:BA:EC:05",
         datastore_id="local-lvm",
         required_storage_bytes=32 * 1024**3,
+        expected_bind_mounts=DESIRED_CTF_BIND_MOUNTS,
+        transitional_bind_mounts=LEGACY_CTF_BIND_MOUNTS,
+        allow_missing_expected_bind_mounts=True,
     )
 
 
@@ -49,6 +61,8 @@ def exact_openclaw_config(extra: str = "") -> str:
         "rootfs: local-lvm:subvol-118-disk-0,size=32G\n"
         "net0: name=veth0,bridge=vmbr0,gw=192.168.0.1,"
         "hwaddr=02:00:00:BA:EC:05,ip=192.168.0.5/24,type=veth\n"
+        "mp0: /var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf\n"
+        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces\n"
         f"{extra}"
     )
 
@@ -63,10 +77,8 @@ def ctf_executor_allocation():
         required_storage_bytes=64 * 1024**3,
         role_tag="role-ctf-executor",
         required_features=frozenset({"nesting", "keyctl"}),
-        expected_bind_mounts=(
-            "/var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf",
-            "/var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw-ctf/sandbox/skills-workspaces",
-        ),
+        expected_bind_mounts=DESIRED_CTF_BIND_MOUNTS,
+        transitional_bind_mounts=LEGACY_CTF_BIND_MOUNTS,
         allow_missing_expected_bind_mounts=True,
     )
 
@@ -81,7 +93,7 @@ def exact_ctf_executor_config(extra: str = "") -> str:
         "hwaddr=02:00:00:BA:EC:06,ip=192.168.0.6/24,type=veth\n"
         "features: nesting=1,keyctl=1\n"
         "mp0: /var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf\n"
-        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw-ctf/sandbox/skills-workspaces\n"
+        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces\n"
         f"{extra}"
     )
 
@@ -129,6 +141,55 @@ def test_exact_existing_unprivileged_lxc_is_idempotently_accepted(
     assert result["storage"]["required_additional_bytes"] == 0
 
 
+def test_existing_openclaw_accepts_only_its_exact_legacy_ctf_mount_set(
+    config_root, allocation
+):
+    legacy = exact_openclaw_config().replace(
+        "/var/lib/openclaw/sandbox/skills-workspaces",
+        "/var/lib/openclaw-ctf/sandbox/skills-workspaces",
+    )
+    write_config(config_root, "lxc", 118, legacy)
+
+    result = PREFLIGHT.preflight(
+        allocation,
+        config_root,
+        probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
+        storage_probe=storage_ok,
+    )
+
+    assert result["status"] == "existing-managed-target"
+
+    write_config(
+        config_root,
+        "lxc",
+        118,
+        legacy + "mp2: /var/lib/homelab/unrelated,mp=/srv/unrelated\n",
+    )
+    with pytest.raises(PREFLIGHT.PreflightError, match="unexpected bind mount set"):
+        PREFLIGHT.preflight(
+            allocation,
+            config_root,
+            probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
+            storage_probe=storage_ok,
+        )
+
+    write_config(
+        config_root,
+        "lxc",
+        118,
+        legacy.replace(
+            "mp0: /var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf\n", ""
+        ),
+    )
+    with pytest.raises(PREFLIGHT.PreflightError, match="unexpected bind mount set"):
+        PREFLIGHT.preflight(
+            allocation,
+            config_root,
+            probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
+            storage_probe=storage_ok,
+        )
+
+
 def test_existing_ctf_executor_requires_its_exact_docker_profile(
     config_root,
 ):
@@ -162,7 +223,7 @@ def test_existing_ctf_executor_requires_its_exact_docker_profile(
 def test_staged_ctf_executor_may_be_missing_only_a_declared_mount(config_root):
     allocation = ctf_executor_allocation()
     staged = exact_ctf_executor_config().replace(
-        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw-ctf/sandbox/skills-workspaces\n",
+        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces\n",
         "",
     )
     write_config(config_root, "lxc", 119, staged)
@@ -402,6 +463,13 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     playbook = (
         REPO_ROOT / "infra" / "ansible" / "playbooks" / "preflight-openclaw-lxc.yml"
     ).read_text(encoding="utf-8")
+    executor_playbook = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "playbooks"
+        / "preflight-ctf-executor-lxc.yml"
+    ).read_text(encoding="utf-8")
     variables = (
         REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "all.yml"
     ).read_text(encoding="utf-8")
@@ -413,8 +481,12 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     assert "openclaw_lxc_allocation.datastore_id" in playbook
     assert "openclaw_lxc_allocation.required_storage_gb" in playbook
     assert "--expected-bind-mount" in playbook
+    assert "--transitional-bind-mount" in playbook
     assert "openclaw_ctf_sandbox_skills_host_path" in playbook
     assert "openclaw_ctf_sandbox_skills_root" in playbook
+    assert "openclaw_ctf_preflight_legacy_sandbox_skills_root" in playbook
+    assert "--transitional-bind-mount" in executor_playbook
+    assert "openclaw_ctf_preflight_legacy_sandbox_skills_root" in executor_playbook
     assert "--allow-missing-expected-bind-mounts" in playbook
     assert "changed_when: false" in playbook
     assert "vmid: 118" in variables
@@ -422,5 +494,9 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     assert "mac_address: 02:00:00:BA:EC:05" in variables
     assert 'datastore_id: "{{ openclaw_root_datastore_id }}"' in variables
     assert "required_storage_gb: 32" in variables
+    assert (
+        "openclaw_ctf_preflight_legacy_sandbox_skills_root: "
+        "/var/lib/openclaw-ctf/sandbox/skills-workspaces"
+    ) in variables
     for mutating_command in ("pct set", "pct create", "qm set", "qm create"):
         assert mutating_command not in SCRIPT.read_text(encoding="utf-8")

@@ -34,6 +34,7 @@ class Allocation:
     required_features: frozenset[str] = field(default_factory=frozenset)
     expected_bind_mounts: tuple[str, ...] = ()
     allow_missing_expected_bind_mounts: bool = False
+    transitional_bind_mounts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -77,20 +78,31 @@ def parse_allocation(args: argparse.Namespace) -> Allocation:
             "unsupported required LXC feature(s): "
             + ", ".join(sorted(unsupported_features))
         )
-    expected_bind_mounts = tuple(sorted(args.expected_bind_mount))
-    if len(set(expected_bind_mounts)) != len(expected_bind_mounts):
-        raise ValueError("expected bind mounts must not contain duplicates")
-    for bind_mount in expected_bind_mounts:
-        source, separator, destination = bind_mount.partition(",mp=")
-        if (
-            separator != ",mp="
-            or not source.startswith("/")
-            or not destination.startswith("/")
-            or "," in destination
-        ):
-            raise ValueError(
-                "expected bind mounts must use /source,mp=/destination syntax"
-            )
+    def parse_bind_mounts(values: list[str], label: str) -> tuple[str, ...]:
+        bind_mounts = tuple(sorted(values))
+        if len(set(bind_mounts)) != len(bind_mounts):
+            raise ValueError(f"{label} bind mounts must not contain duplicates")
+        for bind_mount in bind_mounts:
+            source, separator, destination = bind_mount.partition(",mp=")
+            if (
+                separator != ",mp="
+                or not source.startswith("/")
+                or not destination.startswith("/")
+                or "," in destination
+            ):
+                raise ValueError(
+                    f"{label} bind mounts must use /source,mp=/destination syntax"
+                )
+        return bind_mounts
+
+    expected_bind_mounts = parse_bind_mounts(
+        args.expected_bind_mount, "expected"
+    )
+    transitional_bind_mounts = parse_bind_mounts(
+        args.transitional_bind_mount, "transitional"
+    )
+    if transitional_bind_mounts == expected_bind_mounts and transitional_bind_mounts:
+        raise ValueError("transitional bind mounts must differ from the expected set")
     if args.allow_missing_expected_bind_mounts and not expected_bind_mounts:
         raise ValueError(
             "allow_missing_expected_bind_mounts requires an expected bind mount"
@@ -106,6 +118,7 @@ def parse_allocation(args: argparse.Namespace) -> Allocation:
         required_features,
         expected_bind_mounts,
         args.allow_missing_expected_bind_mounts,
+        transitional_bind_mounts,
     )
 
 
@@ -228,7 +241,11 @@ def validate_existing_target(config: GuestConfig, allocation: Allocation) -> Non
             if re.fullmatch(r"mp[0-9]+", key)
         )
     )
-    if actual_bind_mounts != allocation.expected_bind_mounts:
+    valid_transitional_set = (
+        bool(allocation.transitional_bind_mounts)
+        and actual_bind_mounts == allocation.transitional_bind_mounts
+    )
+    if actual_bind_mounts != allocation.expected_bind_mounts and not valid_transitional_set:
         if not (
             allocation.allow_missing_expected_bind_mounts
             and len(actual_bind_mounts) == len(set(actual_bind_mounts))
@@ -506,6 +523,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--role-tag", default="role-openclaw")
     parser.add_argument("--required-feature", action="append", default=[])
     parser.add_argument("--expected-bind-mount", action="append", default=[])
+    parser.add_argument("--transitional-bind-mount", action="append", default=[])
     parser.add_argument("--allow-missing-expected-bind-mounts", action="store_true")
     parser.add_argument("--config-root", type=Path, default=Path("/etc/pve"))
     return parser

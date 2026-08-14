@@ -19,6 +19,9 @@ openclaw_ctf_workspace_root: /srv/openclaw-ctf
 # challenge and generated-skill data. The executor itself remains a separate
 # LXC and exposes Docker only through the forced SSH command below.
 openclaw_ctf_sandbox_skills_root: /var/lib/openclaw/sandbox/skills-workspaces
+# CD preflight accepts this one former managed destination only until the
+# root-options role rewrites mp1 to the one-Gateway destination above.
+openclaw_ctf_preflight_legacy_sandbox_skills_root: /var/lib/openclaw-ctf/sandbox/skills-workspaces
 openclaw_ctf_uid: "{{ service_uid }}"
 openclaw_ctf_gid: "{{ service_gid }}"
 openclaw_ctf_docker_user: openclaw-ctf-docker
