@@ -119,13 +119,17 @@ def test_cd_workflow_fail_closes_openclaw_allocation_before_cutover_and_tofu():
         assert secret_name not in ctf_preflight_step
 
 
-def test_ci_syntax_checks_the_native_openclaw_cutover_finalizer():
+def test_ci_syntax_checks_the_native_openclaw_recovery_playbooks():
     workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8"
     )
 
     assert (
         "infra/ansible/playbooks/finalize-openclaw-native-cutover.yml "
+        "--syntax-check"
+    ) in workflow
+    assert (
+        "infra/ansible/playbooks/rebaseline-openclaw-retained-rollback.yml "
         "--syntax-check"
     ) in workflow
 
@@ -204,6 +208,55 @@ def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_push
     )[0]
     assert "compose-identities.before.tsv" in cleanup
     assert "compose-identities.after.tsv" in cleanup
+
+
+def test_cd_workflow_limits_retained_gateway_rebaseline_to_explicit_manual_dispatch():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+    extra_vars_script = (
+        REPO_ROOT / "scripts" / "ci" / "write_ansible_extra_vars.py"
+    ).read_text(encoding="utf-8")
+
+    input_name = "approve_openclaw_retained_gateway_rebaseline"
+    approval_var = "openclaw_retained_gateway_rebaseline_approved"
+    dispatch_inputs = workflow.split("  workflow_dispatch:", maxsplit=1)[1].split(
+        "  push:", maxsplit=1
+    )[0]
+    approval_input = dispatch_inputs.split(f"      {input_name}:", maxsplit=1)[1]
+    approval_input = approval_input.split("  push:", maxsplit=1)[0]
+
+    assert f"{input_name}:" in dispatch_inputs
+    assert "default: false" in approval_input
+    assert "type: boolean" in approval_input
+
+    bootstrap = workflow.index("infra/ansible/playbooks/bootstrap.yml")
+    recovery = workflow.index("- name: Rebaseline retained Docker OpenClaw rollback assets")
+    fence = workflow.index("- name: Fence retained Docker OpenClaw before native reconciliation")
+    assert bootstrap < recovery < fence
+
+    recovery_step = workflow[recovery:fence]
+    assert "github.event_name == 'workflow_dispatch'" in recovery_step
+    assert f"inputs.{input_name} == true" in recovery_step
+    assert "steps.scope.outputs.deployment_scope == 'full'" in recovery_step
+    assert (
+        "infra/ansible/playbooks/rebaseline-openclaw-retained-rollback.yml"
+        in recovery_step
+    )
+    assert '--extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"' in recovery_step
+    assert f"--extra-vars '{{\"{approval_var}\":true}}'" in recovery_step
+    recovery_command = recovery_step.split("        run: >-", maxsplit=1)[1]
+    assert f"inputs.{input_name}" not in recovery_command
+    assert f"${{{{ inputs.{input_name} }}}}" not in recovery_command
+
+    # The privileged boolean is supplied only to the dedicated recovery
+    # playbook: it is neither an ordinary deployment secret nor a push input.
+    assert approval_var not in extra_vars_script
+    assert approval_var not in workflow.replace(recovery_step, "")
+    push_trigger = workflow.split("  push:", maxsplit=1)[1].split(
+        "permissions:", maxsplit=1
+    )[0]
+    assert input_name not in push_trigger
 
 
 def test_cd_workflow_fast_tracks_known_workloads_through_arcane():

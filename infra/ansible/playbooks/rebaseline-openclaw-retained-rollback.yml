@@ -1,0 +1,495 @@
+---
+- name: Rebaseline the lost retained Docker OpenClaw rollback identity
+  hosts: svc_docker_apps
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    # This value is supplied only by the manual, production-gated CD step. It
+    # is deliberately not part of normal deployment variables or secrets.
+    openclaw_retained_gateway_rebaseline_approved: false
+    openclaw_rebaseline_checkpoint_archive_path: >-
+      {{ openclaw_control_root }}/retained-gateway-identity.pre-rebaseline.json
+    openclaw_rebaseline_audit_path: >-
+      {{ openclaw_control_root }}/retained-gateway-rebaseline-v1.json
+    # The verifier installed by the last known-good native deployment. This
+    # protects this one-time migration from treating an arbitrary executable as
+    # evidence of the prior rollback contract.
+    openclaw_rebaseline_legacy_verifier_sha256: >-
+      5676d458c508c8e95ffadc6e47eeaffdb6a4026e5d40980001ab9fe6ad196e61
+
+  tasks:
+    - name: Require explicit production approval for the retained identity rebaseline
+      ansible.builtin.assert:
+        that:
+          - openclaw_retained_gateway_rebaseline_approved is boolean
+          - openclaw_retained_gateway_rebaseline_approved | bool
+          - hostvars['openclaw'].openclaw_native_activate is boolean
+          - hostvars['openclaw'].openclaw_native_activate | bool
+          - openclaw_docker_rollback_activate is boolean
+          - not (openclaw_docker_rollback_activate | bool)
+          - openclaw_tracked_route.http.routers.openclaw.rule == 'Host(`openclaw.home.hchu.me`)'
+          - openclaw_tracked_route.http.routers.openclaw.entryPoints == ['websecure']
+          - openclaw_tracked_route.http.routers.openclaw.middlewares == ['private-only', 'secure-headers']
+          - openclaw_tracked_route.http.routers.openclaw.service == 'openclaw'
+          - >-
+            openclaw_tracked_route.http.services.openclaw.loadBalancer.servers ==
+            [{'url': openclaw_traefik_backend_url}]
+        fail_msg: >-
+          Retained OpenClaw identity rebaseline is a one-time manual recovery
+          operation. Refusing without its explicit production approval while
+          native OpenClaw is the sole active Gateway owner.
+      vars:
+        openclaw_tracked_route: >-
+          {{
+            lookup(
+              'file',
+              playbook_dir + '/../../../apps/compose/platform/dynamic/routes.yml'
+            ) | from_yaml
+          }}
+
+    - name: Inspect the permanent native cutover source hold for rebaseline
+      ansible.builtin.stat:
+        path: "{{ openclaw_native_cutover_marker_path }}"
+        follow: false
+      register: openclaw_rebaseline_source_hold
+
+    - name: Read the permanent native cutover source hold for rebaseline
+      ansible.builtin.slurp:
+        src: "{{ openclaw_native_cutover_marker_path }}"
+      register: openclaw_rebaseline_source_hold_content
+      when: openclaw_rebaseline_source_hold.stat.exists | default(false)
+      no_log: true
+
+    - name: Require the exact permanent source hold for rebaseline
+      ansible.builtin.assert:
+        that:
+          - openclaw_rebaseline_source_hold.stat.exists | default(false)
+          - openclaw_rebaseline_source_hold.stat.isreg | default(false)
+          - not (openclaw_rebaseline_source_hold.stat.islnk | default(false))
+          - openclaw_rebaseline_source_hold.stat.uid | default(-1) == 0
+          - openclaw_rebaseline_source_hold.stat.gid | default(-1) == 0
+          - openclaw_rebaseline_source_hold.stat.mode | default('') == '0600'
+          - >-
+            (openclaw_rebaseline_source_hold_content.content | default('') | b64decode) ==
+            openclaw_native_transition_marker_value + '\n'
+        fail_msg: >-
+          The permanent OpenClaw source hold is absent or malformed; refusing
+          to create a new retained rollback identity.
+      no_log: true
+
+    - name: Require the native OpenClaw Gateway before rebaseline
+      ansible.builtin.uri:
+        url: >-
+          http://{{ hostvars['openclaw'].ansible_host }}:{{ openclaw_gateway_port }}/readyz
+        method: GET
+        status_code: 200
+        return_content: false
+      register: openclaw_rebaseline_native_readiness
+      changed_when: false
+      retries: 6
+      delay: 5
+      until: openclaw_rebaseline_native_readiness.status == 200
+
+    - name: Inspect all retained Docker Gateway containers before rebaseline
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - ps
+          - --all
+          - -q
+          - openclaw-gateway
+      args:
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_rebaseline_containers
+      changed_when: false
+
+    - name: Inspect running retained Docker Gateway containers before rebaseline
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - ps
+          - --status
+          - running
+          - -q
+          - openclaw-gateway
+      args:
+        chdir: "{{ openclaw_compose_root }}"
+      register: openclaw_rebaseline_running_containers
+      changed_when: false
+
+    - name: Require the lost retained Docker Gateway state for rebaseline
+      ansible.builtin.assert:
+        that:
+          - openclaw_rebaseline_containers.stdout | trim | length == 0
+          - openclaw_rebaseline_running_containers.stdout | trim | length == 0
+        fail_msg: >-
+          Rebaseline is permitted only after the retained Docker Gateway has
+          disappeared completely; never replace an extant rollback container.
+
+    - name: Inspect rebaseline checkpoint, archive, and audit boundaries
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+        checksum_algorithm: sha256
+      loop:
+        - "{{ openclaw_retained_gateway_identity_path }}"
+        - "{{ openclaw_rebaseline_checkpoint_archive_path }}"
+        - "{{ openclaw_rebaseline_audit_path }}"
+      register: openclaw_rebaseline_checkpoint_boundaries
+
+    - name: Inspect the retained verifier executable boundary for rebaseline
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+        checksum_algorithm: sha256
+      loop:
+        - /usr/local
+        - /usr/local/libexec
+        - "{{ openclaw_retained_gateway_verifier_path }}"
+      register: openclaw_rebaseline_verifier_boundary
+
+    - name: Require an archived identity has not already been rebaselined
+      ansible.builtin.assert:
+        that:
+          - openclaw_rebaseline_checkpoint_boundaries.results[0].stat.exists | default(false)
+          - openclaw_rebaseline_checkpoint_boundaries.results[0].stat.isreg | default(false)
+          - not (openclaw_rebaseline_checkpoint_boundaries.results[0].stat.islnk | default(false))
+          - openclaw_rebaseline_checkpoint_boundaries.results[0].stat.uid | default(-1) == 0
+          - openclaw_rebaseline_checkpoint_boundaries.results[0].stat.gid | default(-1) == 0
+          - openclaw_rebaseline_checkpoint_boundaries.results[0].stat.mode | default('') == '0600'
+          - openclaw_rebaseline_checkpoint_boundaries.results[0].stat.nlink | default(-1) == 1
+          - openclaw_rebaseline_checkpoint_boundaries.results[0].stat.checksum | default('') | length == 64
+          - not (openclaw_rebaseline_checkpoint_boundaries.results[1].stat.exists | default(false))
+          - not (openclaw_rebaseline_checkpoint_boundaries.results[1].stat.islnk | default(false))
+          - not (openclaw_rebaseline_checkpoint_boundaries.results[2].stat.exists | default(false))
+          - not (openclaw_rebaseline_checkpoint_boundaries.results[2].stat.islnk | default(false))
+        fail_msg: >-
+          Rebaseline requires exactly one pre-existing checkpoint and no prior
+          archive or audit marker. It is intentionally not repeatable.
+
+    - name: Read the prior retained rollback identity for archival validation
+      ansible.builtin.slurp:
+        src: "{{ openclaw_retained_gateway_identity_path }}"
+      register: openclaw_rebaseline_old_checkpoint
+      no_log: true
+
+    - name: Require the prior retained rollback identity schema before archival
+      ansible.builtin.assert:
+        that:
+          - >-
+            (openclaw_rebaseline_old_checkpoint.content | b64decode | from_json).keys() | list | sort ==
+            ['container_created', 'container_id', 'image_id', 'image_ref', 'schema']
+          - >-
+            (openclaw_rebaseline_old_checkpoint.content | b64decode | from_json).schema ==
+            'homelab-openclaw-retained-gateway-v1'
+          - >-
+            (openclaw_rebaseline_old_checkpoint.content | b64decode | from_json).image_ref ==
+            openclaw_retained_image_ref
+        fail_msg: >-
+          The prior retained rollback checkpoint has an unexpected schema; do
+          not archive or replace an unverifiable rollback identity.
+      no_log: true
+
+    - name: Require the known-good persistent verifier boundary for rebaseline
+      ansible.builtin.assert:
+        that:
+          - openclaw_rebaseline_verifier_boundary.results[0].stat.isdir | default(false)
+          - not (openclaw_rebaseline_verifier_boundary.results[0].stat.islnk | default(false))
+          - openclaw_rebaseline_verifier_boundary.results[0].stat.uid | default(-1) == 0
+          - openclaw_rebaseline_verifier_boundary.results[0].stat.gid | default(-1) == 0
+          - openclaw_rebaseline_verifier_boundary.results[0].stat.mode | default('') == '0755'
+          - openclaw_rebaseline_verifier_boundary.results[1].stat.isdir | default(false)
+          - not (openclaw_rebaseline_verifier_boundary.results[1].stat.islnk | default(false))
+          - openclaw_rebaseline_verifier_boundary.results[1].stat.uid | default(-1) == 0
+          - openclaw_rebaseline_verifier_boundary.results[1].stat.gid | default(-1) == 0
+          - openclaw_rebaseline_verifier_boundary.results[1].stat.mode | default('') == '0755'
+          - openclaw_rebaseline_verifier_boundary.results[2].stat.exists | default(false)
+          - openclaw_rebaseline_verifier_boundary.results[2].stat.isreg | default(false)
+          - not (openclaw_rebaseline_verifier_boundary.results[2].stat.islnk | default(false))
+          - openclaw_rebaseline_verifier_boundary.results[2].stat.uid | default(-1) == 0
+          - openclaw_rebaseline_verifier_boundary.results[2].stat.gid | default(-1) == 0
+          - openclaw_rebaseline_verifier_boundary.results[2].stat.mode | default('') == '0755'
+          - openclaw_rebaseline_verifier_boundary.results[2].stat.nlink | default(-1) == 1
+          - >-
+            openclaw_rebaseline_verifier_boundary.results[2].stat.checksum | default('') ==
+            openclaw_rebaseline_legacy_verifier_sha256
+        fail_msg: >-
+          The persistent verifier is not the last known-good native-cutover
+          verifier; refusing to use it as the rebaseline boundary.
+
+    - name: Create and prove the new retained rollback identity
+      block:
+        - name: Allocate an ephemeral retained rollback rebaseline verifier
+          ansible.builtin.tempfile:
+            path: /run
+            prefix: .openclaw-retained-gateway-rebaseline.
+            state: file
+          register: openclaw_rebaseline_verifier
+
+        - name: Install the ephemeral current retained rollback verifier
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/../roles/openclaw_foundation/files/openclaw_retained_gateway.py"
+            dest: "{{ openclaw_rebaseline_verifier.path }}"
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Preflight retained rollback assets before identity rebaseline
+          ansible.builtin.command:
+            argv:
+              - "{{ openclaw_rebaseline_verifier.path }}"
+              - preflight
+              - --container-state
+              - fenced
+              - --config-state
+              - foundation-or-rollback
+              - --compose-root
+              - "{{ openclaw_compose_root }}"
+              - --setup-root
+              - "{{ openclaw_setup_root }}"
+              - --config
+              - "{{ openclaw_config_path }}"
+              - --runtime-root
+              - "{{ openclaw_runtime_root }}"
+              - --state-root
+              - "{{ openclaw_state_root }}"
+              - --auth-root
+              - "{{ openclaw_auth_profile_secret_root }}"
+              - --control-root
+              - "{{ openclaw_control_root }}"
+              - --token
+              - "{{ openclaw_gateway_token_path }}"
+              - --checkpoint
+              - "{{ openclaw_retained_gateway_identity_path }}"
+              - --expected-image
+              - "{{ openclaw_retained_image_ref }}"
+              - --hostname
+              - "{{ openclaw_hostname }}"
+              - --port
+              - "{{ openclaw_gateway_port | string }}"
+              - --uid
+              - "{{ openclaw_uid | string }}"
+              - --gid
+              - "{{ openclaw_gid | string }}"
+              - --require-expected-token
+          args:
+            stdin: "{{ openclaw_gateway_token | trim }}\n"
+            stdin_add_newline: false
+          register: openclaw_rebaseline_preflight
+          changed_when: false
+          retries: 3
+          delay: 2
+          until: openclaw_rebaseline_preflight.rc == 0
+          no_log: true
+
+        - name: Create a new fenced retained Docker Gateway without pull or start
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - create
+              - --pull
+              - never
+              - openclaw-gateway
+          args:
+            chdir: "{{ openclaw_compose_root }}"
+          register: openclaw_rebaseline_create
+          changed_when: >-
+            'Created' in (
+              openclaw_rebaseline_create.stdout ~ openclaw_rebaseline_create.stderr
+            )
+
+        - name: Archive the prior retained rollback identity before replacement
+          ansible.builtin.copy:
+            src: "{{ openclaw_retained_gateway_identity_path }}"
+            dest: "{{ openclaw_rebaseline_checkpoint_archive_path }}"
+            remote_src: true
+            force: false
+            owner: root
+            group: root
+            mode: "0600"
+          no_log: true
+
+        - name: Prove the archived retained rollback identity is exact
+          ansible.builtin.stat:
+            path: "{{ openclaw_rebaseline_checkpoint_archive_path }}"
+            follow: false
+            checksum_algorithm: sha256
+          register: openclaw_rebaseline_checkpoint_archive
+
+        - name: Require the archived prior identity boundary
+          ansible.builtin.assert:
+            that:
+              - openclaw_rebaseline_checkpoint_archive.stat.isreg | default(false)
+              - not (openclaw_rebaseline_checkpoint_archive.stat.islnk | default(false))
+              - openclaw_rebaseline_checkpoint_archive.stat.uid | default(-1) == 0
+              - openclaw_rebaseline_checkpoint_archive.stat.gid | default(-1) == 0
+              - openclaw_rebaseline_checkpoint_archive.stat.mode | default('') == '0600'
+              - openclaw_rebaseline_checkpoint_archive.stat.nlink | default(-1) == 1
+              - >-
+                openclaw_rebaseline_checkpoint_archive.stat.checksum | default('') ==
+                openclaw_rebaseline_checkpoint_boundaries.results[0].stat.checksum
+            fail_msg: >-
+              The prior retained identity was not preserved exactly; refusing
+              to replace the live checkpoint.
+          no_log: true
+
+        - name: Remove the archived live checkpoint under explicit rebaseline approval
+          ansible.builtin.file:
+            path: "{{ openclaw_retained_gateway_identity_path }}"
+            state: absent
+
+        - name: Seed the new fenced retained rollback identity
+          ansible.builtin.command:
+            argv:
+              - "{{ openclaw_rebaseline_verifier.path }}"
+              - seed
+              - --container-state
+              - fenced
+              - --config-state
+              - foundation-or-rollback
+              - --compose-root
+              - "{{ openclaw_compose_root }}"
+              - --setup-root
+              - "{{ openclaw_setup_root }}"
+              - --config
+              - "{{ openclaw_config_path }}"
+              - --runtime-root
+              - "{{ openclaw_runtime_root }}"
+              - --state-root
+              - "{{ openclaw_state_root }}"
+              - --auth-root
+              - "{{ openclaw_auth_profile_secret_root }}"
+              - --control-root
+              - "{{ openclaw_control_root }}"
+              - --token
+              - "{{ openclaw_gateway_token_path }}"
+              - --checkpoint
+              - "{{ openclaw_retained_gateway_identity_path }}"
+              - --expected-image
+              - "{{ openclaw_retained_image_ref }}"
+              - --hostname
+              - "{{ openclaw_hostname }}"
+              - --port
+              - "{{ openclaw_gateway_port | string }}"
+              - --uid
+              - "{{ openclaw_uid | string }}"
+              - --gid
+              - "{{ openclaw_gid | string }}"
+              - --require-expected-token
+          args:
+            stdin: "{{ openclaw_gateway_token | trim }}\n"
+            stdin_add_newline: false
+          register: openclaw_rebaseline_seed
+          changed_when: "'changed=true' in openclaw_rebaseline_seed.stdout_lines"
+          retries: 3
+          delay: 2
+          until: openclaw_rebaseline_seed.rc == 0
+          no_log: true
+
+        - name: Require the new fenced retained rollback identity
+          ansible.builtin.command:
+            argv:
+              - "{{ openclaw_rebaseline_verifier.path }}"
+              - require
+              - --container-state
+              - fenced
+              - --config-state
+              - foundation-or-rollback
+              - --compose-root
+              - "{{ openclaw_compose_root }}"
+              - --setup-root
+              - "{{ openclaw_setup_root }}"
+              - --config
+              - "{{ openclaw_config_path }}"
+              - --runtime-root
+              - "{{ openclaw_runtime_root }}"
+              - --state-root
+              - "{{ openclaw_state_root }}"
+              - --auth-root
+              - "{{ openclaw_auth_profile_secret_root }}"
+              - --control-root
+              - "{{ openclaw_control_root }}"
+              - --token
+              - "{{ openclaw_gateway_token_path }}"
+              - --checkpoint
+              - "{{ openclaw_retained_gateway_identity_path }}"
+              - --expected-image
+              - "{{ openclaw_retained_image_ref }}"
+              - --hostname
+              - "{{ openclaw_hostname }}"
+              - --port
+              - "{{ openclaw_gateway_port | string }}"
+              - --uid
+              - "{{ openclaw_uid | string }}"
+              - --gid
+              - "{{ openclaw_gid | string }}"
+              - --require-expected-token
+          args:
+            stdin: "{{ openclaw_gateway_token | trim }}\n"
+            stdin_add_newline: false
+          register: openclaw_rebaseline_require
+          changed_when: false
+          retries: 3
+          delay: 2
+          until: openclaw_rebaseline_require.rc == 0
+          no_log: true
+
+        - name: Inspect the new retained rollback identity checkpoint
+          ansible.builtin.stat:
+            path: "{{ openclaw_retained_gateway_identity_path }}"
+            follow: false
+            checksum_algorithm: sha256
+          register: openclaw_rebaseline_new_checkpoint
+
+        - name: Require the new retained rollback identity checkpoint boundary
+          ansible.builtin.assert:
+            that:
+              - openclaw_rebaseline_new_checkpoint.stat.isreg | default(false)
+              - not (openclaw_rebaseline_new_checkpoint.stat.islnk | default(false))
+              - openclaw_rebaseline_new_checkpoint.stat.uid | default(-1) == 0
+              - openclaw_rebaseline_new_checkpoint.stat.gid | default(-1) == 0
+              - openclaw_rebaseline_new_checkpoint.stat.mode | default('') == '0600'
+              - openclaw_rebaseline_new_checkpoint.stat.nlink | default(-1) == 1
+              - openclaw_rebaseline_new_checkpoint.stat.checksum | default('') | length == 64
+          no_log: true
+
+        - name: Record the explicitly approved retained rollback rebaseline
+          ansible.builtin.copy:
+            content: |
+              {"schema":"homelab-openclaw-retained-gateway-rebaseline-v1","approval":"workflow_dispatch","archived_checkpoint_sha256":"{{ openclaw_rebaseline_checkpoint_archive.stat.checksum }}","new_checkpoint_sha256":"{{ openclaw_rebaseline_new_checkpoint.stat.checksum }}","image_ref":"{{ openclaw_retained_image_ref }}"}
+            dest: "{{ openclaw_rebaseline_audit_path }}"
+            force: false
+            owner: root
+            group: root
+            mode: "0600"
+          no_log: true
+
+        - name: Prove the retained rollback rebaseline audit boundary
+          ansible.builtin.stat:
+            path: "{{ openclaw_rebaseline_audit_path }}"
+            follow: false
+            checksum_algorithm: sha256
+          register: openclaw_rebaseline_audit
+
+        - name: Require the retained rollback rebaseline audit boundary
+          ansible.builtin.assert:
+            that:
+              - openclaw_rebaseline_audit.stat.isreg | default(false)
+              - not (openclaw_rebaseline_audit.stat.islnk | default(false))
+              - openclaw_rebaseline_audit.stat.uid | default(-1) == 0
+              - openclaw_rebaseline_audit.stat.gid | default(-1) == 0
+              - openclaw_rebaseline_audit.stat.mode | default('') == '0600'
+              - openclaw_rebaseline_audit.stat.nlink | default(-1) == 1
+              - openclaw_rebaseline_audit.stat.checksum | default('') | length == 64
+          no_log: true
+      always:
+        - name: Remove the ephemeral retained rollback rebaseline verifier
+          ansible.builtin.file:
+            path: "{{ openclaw_rebaseline_verifier.path }}"
+            state: absent
+          when:
+            - openclaw_rebaseline_verifier is defined
+            - openclaw_rebaseline_verifier.path is defined

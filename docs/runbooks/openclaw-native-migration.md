@@ -169,6 +169,30 @@ Guest nftables accepts port 18789 only from `192.168.0.3`; the Gateway retains
 token authentication, exact HTTPS origin validation, rate limiting, and a
 disabled terminal. The Control UI is never published directly to the LAN.
 
+### Exceptional retained rollback identity rebaseline
+
+If the retained Docker container disappears after a checkpoint has already
+been established, ordinary CD must fail closed. Do not delete the checkpoint,
+start a replacement container, or use a push deployment to repair it. A new
+rollback identity is an exceptional, audited baseline—not restoration of the
+lost container.
+
+Only after explicit production review, use **Actions → cd → Run workflow** on
+`main` and select **Approve the one-time retained OpenClaw rollback identity
+rebaseline**. The manual-only playbook requires native OpenClaw `/readyz`, the
+permanent source hold, no retained container at all, the last known-good
+persistent verifier, and the existing root-owned checkpoint. It validates the
+current retained assets and local pinned image before changing state; archives
+the old checkpoint at
+`/opt/homelab-control/openclaw/retained-gateway-identity.pre-rebaseline.json`;
+creates one stopped/default-network-only container using `docker compose create
+--pull never`; and immediately seeds and proves a new fenced checkpoint. It
+never starts the retained Gateway, pulls an image, or attaches the proxy. The
+root-owned audit marker
+`/opt/homelab-control/openclaw/retained-gateway-rebaseline-v1.json` makes the
+operation non-repeatable. If any precondition fails, stop and perform a fresh
+review rather than weakening the normal fence.
+
 ## Rollback
 
 During the one-time transfer, workflow failures triggered guarded rollback in

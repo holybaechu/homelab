@@ -39,6 +39,7 @@ FENCE = (
     / "fence-openclaw-docker-before-native.yml"
 )
 FENCE_ASSETS = FENCE.with_name("fence-openclaw-retained-assets.yml")
+REBASELINE = FENCE.with_name("rebaseline-openclaw-retained-rollback.yml")
 COMPOSE = REPO_ROOT / "apps" / "compose" / "openclaw" / "compose.yml"
 
 
@@ -1222,6 +1223,102 @@ def test_one_time_checkpoint_bootstrap_mode_for_all_existence_tuples(
     ).strip()
 
     assert mode == expected_mode
+
+
+def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity():
+    play = yaml.safe_load(REBASELINE.read_text(encoding="utf-8"))[0]
+    assert play["hosts"] == "svc_docker_apps"
+    assert play["gather_facts"] is False
+    assert play["any_errors_fatal"] is True
+    assert play["vars"]["openclaw_retained_gateway_rebaseline_approved"] is False
+    assert play["vars"]["openclaw_rebaseline_legacy_verifier_sha256"] == (
+        "5676d458c508c8e95ffadc6e47eeaffdb6a4026e5d40980001ab9fe6ad196e61"
+    )
+
+    tasks = play["tasks"]
+    approval = task_by_name(
+        tasks,
+        "Require explicit production approval for the retained identity rebaseline",
+    )
+    native_ready = task_by_name(tasks, "Require the native OpenClaw Gateway before rebaseline")
+    absent = task_by_name(tasks, "Require the lost retained Docker Gateway state for rebaseline")
+    checkpoint_boundary = task_by_name(
+        tasks, "Require an archived identity has not already been rebaselined"
+    )
+    verifier_boundary = task_by_name(
+        tasks, "Require the known-good persistent verifier boundary for rebaseline"
+    )
+    transaction = task_by_name(tasks, "Create and prove the new retained rollback identity")
+
+    requirements = approval["ansible.builtin.assert"]["that"]
+    assert "openclaw_retained_gateway_rebaseline_approved is boolean" in requirements
+    assert "openclaw_retained_gateway_rebaseline_approved | bool" in requirements
+    assert "hostvars['openclaw'].openclaw_native_activate | bool" in requirements
+    assert "not (openclaw_docker_rollback_activate | bool)" in requirements
+    assert any("openclaw_tracked_route.http.routers.openclaw.rule" in value for value in requirements)
+    assert any("openclaw_tracked_route.http.services.openclaw.loadBalancer.servers" in value for value in requirements)
+    assert native_ready["ansible.builtin.uri"]["status_code"] == 200
+    assert absent["ansible.builtin.assert"]["that"] == [
+        "openclaw_rebaseline_containers.stdout | trim | length == 0",
+        "openclaw_rebaseline_running_containers.stdout | trim | length == 0",
+    ]
+    checkpoint_requirements = checkpoint_boundary["ansible.builtin.assert"]["that"]
+    assert any("results[0].stat.isreg" in value for value in checkpoint_requirements)
+    assert any("results[0].stat.mode" in value and "0600" in value for value in checkpoint_requirements)
+    assert any("results[1].stat.exists" in value for value in checkpoint_requirements)
+    assert any("results[2].stat.exists" in value for value in checkpoint_requirements)
+    verifier_requirements = verifier_boundary["ansible.builtin.assert"]["that"]
+    assert any("results[2].stat.checksum" in value for value in verifier_requirements)
+    assert any("openclaw_rebaseline_legacy_verifier_sha256" in value for value in verifier_requirements)
+
+    block = transaction["block"]
+    preflight = task_by_name(block, "Preflight retained rollback assets before identity rebaseline")
+    archive = task_by_name(block, "Archive the prior retained rollback identity before replacement")
+    archived = task_by_name(block, "Require the archived prior identity boundary")
+    remove = task_by_name(
+        block, "Remove the archived live checkpoint under explicit rebaseline approval"
+    )
+    create = task_by_name(block, "Create a new fenced retained Docker Gateway without pull or start")
+    seed = task_by_name(block, "Seed the new fenced retained rollback identity")
+    require = task_by_name(block, "Require the new fenced retained rollback identity")
+    audit = task_by_name(block, "Record the explicitly approved retained rollback rebaseline")
+    audit_boundary = task_by_name(block, "Require the retained rollback rebaseline audit boundary")
+    cleanup = task_by_name(
+        transaction["always"], "Remove the ephemeral retained rollback rebaseline verifier"
+    )
+
+    assert_bounded_fail_closed_retry(preflight)
+    assert archive["ansible.builtin.copy"]["remote_src"] is True
+    assert archive["ansible.builtin.copy"]["force"] is False
+    assert remove["ansible.builtin.file"]["state"] == "absent"
+    assert block.index(preflight) < block.index(create) < block.index(archive)
+    assert block.index(archive) < block.index(archived) < block.index(remove)
+    assert create["ansible.builtin.command"]["argv"] == [
+        "docker",
+        "compose",
+        "create",
+        "--pull",
+        "never",
+        "openclaw-gateway",
+    ]
+    assert seed["ansible.builtin.command"]["argv"][1:4] == [
+        "seed",
+        "--container-state",
+        "fenced",
+    ]
+    assert require["ansible.builtin.command"]["argv"][1:4] == [
+        "require",
+        "--container-state",
+        "fenced",
+    ]
+    assert_bounded_fail_closed_retry(seed)
+    assert_bounded_fail_closed_retry(require)
+    assert block.index(remove) < block.index(seed) < block.index(require) < block.index(audit)
+    assert audit["ansible.builtin.copy"]["force"] is False
+    assert "workflow_dispatch" in audit["ansible.builtin.copy"]["content"]
+    assert "0600" in audit_boundary["ansible.builtin.assert"]["that"][4]
+    assert cleanup["ansible.builtin.file"]["state"] == "absent"
+    assert "openclaw_rebaseline" not in FENCE.read_text(encoding="utf-8")
 
 
 def test_helper_enforces_full_runtime_hardening_and_mount_contract():

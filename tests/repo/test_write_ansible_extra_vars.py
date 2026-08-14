@@ -35,6 +35,19 @@ def test_one_gateway_and_shared_discord_secrets_are_required(monkeypatch):
     assert "OPENCLAW_DISCORD_ENABLED" not in module["REQUIRED_ENV"].values()
 
 
+def test_retained_gateway_rebaseline_approval_is_not_a_persistent_extra_var(monkeypatch):
+    module = runpy.run_path(str(SCRIPT))
+    seed_required_environment(monkeypatch, module)
+
+    mapping = module["build_mapping"]()
+
+    assert "openclaw_retained_gateway_rebaseline_approved" not in mapping
+    assert (
+        "OPENCLAW_RETAINED_GATEWAY_REBASELINE_APPROVED"
+        not in module["REQUIRED_ENV"].values()
+    )
+
+
 def test_gateway_token_transport_newline_is_removed(monkeypatch):
     module = runpy.run_path(str(SCRIPT))
     seed_required_environment(monkeypatch, module)

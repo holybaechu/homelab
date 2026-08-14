@@ -76,6 +76,9 @@ jobs:
       - name: Check retained Docker OpenClaw fencing syntax
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/fence-openclaw-docker-before-native.yml --syntax-check
 
+      - name: Check explicit retained Docker OpenClaw rollback rebaseline syntax
+        run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/rebaseline-openclaw-retained-rollback.yml --syntax-check
+
       - name: Check Ansible lowest-ID cutover syntax
         run: ansible-playbook -i infra/ansible/inventory/prod/hosts.yml infra/ansible/playbooks/prepare-low-id-cutover.yml --syntax-check
 

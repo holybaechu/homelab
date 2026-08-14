@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      approve_openclaw_retained_gateway_rebaseline:
+        description: Approve the one-time retained OpenClaw rollback identity rebaseline
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -241,6 +246,19 @@ jobs:
         run: >-
           ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
           infra/ansible/playbooks/trust-docker-apps.yml
+
+      - name: Rebaseline retained Docker OpenClaw rollback assets
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.approve_openclaw_retained_gateway_rebaseline == true &&
+          steps.scope.outputs.deployment_scope == 'full'
+        env:
+          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
+          infra/ansible/playbooks/rebaseline-openclaw-retained-rollback.yml
+          --extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"
+          --extra-vars '{"openclaw_retained_gateway_rebaseline_approved":true}'
 
       - name: Fence retained Docker OpenClaw before native reconciliation
         if: steps.scope.outputs.deployment_scope == 'full'
