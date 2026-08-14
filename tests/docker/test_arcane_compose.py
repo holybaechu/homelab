@@ -20,8 +20,8 @@ def test_arcane_is_pinned_and_uses_a_private_socket_proxy():
         "2b7544497c99d766baaf204ed8d66e555352ef37714aab0b68b5713be0d204d3"
     )
     assert proxy["image"] == (
-        "tecnativa/docker-socket-proxy:v0.4.2@sha256:"
-        "1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476"
+        "tecnativa/docker-socket-proxy:v0.5.0@sha256:"
+        "1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459"
     )
     assert "/var/run/docker.sock:/var/run/docker.sock:ro" in proxy["volumes"]
     assert all("docker.sock" not in volume for volume in arcane["volumes"])
