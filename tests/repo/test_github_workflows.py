@@ -428,9 +428,9 @@ def test_cd_workflow_pins_actions_and_tailscale_version():
     )
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    assert "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7" in workflow
+    assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7" in workflow
     assert "tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4" in workflow
-    assert "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7" in ci
+    assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7" in ci
     assert "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6" in ci
 
     connect_tailscale = workflow.split("- name: Connect Tailscale", maxsplit=1)[1]
