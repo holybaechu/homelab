@@ -164,6 +164,35 @@ def test_gateway_skill_transport_validation_uses_the_executor_image_scope():
     assert "{{ openclaw_ctf_executor_image }}" not in shell
 
 
+def test_gateway_skill_transport_validation_preserves_inner_shell_variables():
+    plays = yaml.safe_load(read("infra/ansible/playbooks/validate.yml"))
+    native_play = next(
+        play
+        for play in plays
+        if play["name"] == "Validate the dedicated native OpenClaw host"
+    )
+    skill_transport = next(
+        task
+        for task in native_play["tasks"]
+        if task["name"]
+        == "Prove remote Docker receives generated CTF sandbox skills at the pinned path"
+    )
+    shell = skill_transport["ansible.builtin.shell"]
+
+    # systemd-run expands a single $ before it invokes /bin/sh.  Keep these
+    # variables escaped so the shell that owns the temporary fixture receives
+    # them intact.
+    for required in (
+        'fixture="$$(mktemp -d {{ openclaw_ctf_sandbox_skills_root }}/validate.XXXXXX)"',
+        'cleanup() { rm -rf "$${fixture}"; }',
+        'skill_dir="$${fixture}/.openclaw/sandbox-skills/skills/ctf-artifacts"',
+        'mkdir -p "$${skill_dir}"',
+        'printf "%s\\\\n" ctf-sandbox-skill-transport > "$${skill_dir}/SKILL.md"',
+        '--volume "$${fixture}/.openclaw/sandbox-skills/skills:/workspace/.openclaw/sandbox-skills/skills:ro"',
+    ):
+        assert required in shell
+
+
 def test_one_gateway_limit_is_explicitly_documented_and_not_overclaimed():
     runbook = read("docs/runbooks/openclaw-ctf.md")
 

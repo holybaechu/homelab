@@ -230,12 +230,12 @@
           --setenv='DOCKER_HOST={{ openclaw_ctf_docker_host }}' \
           --setenv='PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:/usr/local/bin:/usr/bin:/bin' \
           /bin/sh -ceu '
-            fixture="$(mktemp -d {{ openclaw_ctf_sandbox_skills_root }}/validate.XXXXXX)"
-            cleanup() { rm -rf "${fixture}"; }
+            fixture="$$(mktemp -d {{ openclaw_ctf_sandbox_skills_root }}/validate.XXXXXX)"
+            cleanup() { rm -rf "$${fixture}"; }
             trap cleanup EXIT
-            skill_dir="${fixture}/.openclaw/sandbox-skills/skills/ctf-artifacts"
-            mkdir -p "${skill_dir}"
-            printf "%s\\n" ctf-sandbox-skill-transport > "${skill_dir}/SKILL.md"
+            skill_dir="$${fixture}/.openclaw/sandbox-skills/skills/ctf-artifacts"
+            mkdir -p "$${skill_dir}"
+            printf "%s\\n" ctf-sandbox-skill-transport > "$${skill_dir}/SKILL.md"
             docker run --rm \
               --network none \
               --read-only \
@@ -244,7 +244,7 @@
               --tmpfs /run \
               --cap-drop ALL \
               --user {{ openclaw_uid }}:{{ openclaw_gid }} \
-              --volume "${fixture}/.openclaw/sandbox-skills/skills:/workspace/.openclaw/sandbox-skills/skills:ro" \
+              --volume "$${fixture}/.openclaw/sandbox-skills/skills:/workspace/.openclaw/sandbox-skills/skills:ro" \
               {{ hostvars['ctf_executor'].openclaw_ctf_executor_image }} \
               /bin/sh -ceu "test -r /workspace/.openclaw/sandbox-skills/skills/ctf-artifacts/SKILL.md; grep -Fx ctf-sandbox-skill-transport /workspace/.openclaw/sandbox-skills/skills/ctf-artifacts/SKILL.md"
           '
