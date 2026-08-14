@@ -142,7 +142,9 @@ def test_ctf_gateway_is_a_separate_uid_scoped_to_the_ctf_config_and_workspace():
         "openclaw_ctf_gateway_port | int == 19789",
         "openclaw_ctf_workspace_root == '/srv/openclaw-ctf'",
         "openclaw_ctf_sandbox_skills_root == openclaw_ctf_state_root + '/sandbox/skills-workspaces'",
-        "openclaw_ctf_openai_api_key_path == openclaw_secret_root + '/ctf_openai_api_key'",
+            "openclaw_ctf_codex_profile_id == 'openai:ctf'",
+            "openclaw_ctf_codex_model == 'openai/gpt-5.5'",
+            "openclaw_ctf_codex_plugin_spec == 'npm:@openclaw/codex@2026.7.1-1'",
     ):
         assert required in assertions
 
@@ -154,10 +156,10 @@ def test_ctf_gateway_is_a_separate_uid_scoped_to_the_ctf_config_and_workspace():
     config_assertions = " ".join(config_contract["ansible.builtin.assert"]["that"])
     for required in (
         "ctf_gateway_token_file",
-        "ctf_openai_api_key_file",
-        "OPENCLAW_CTF_OPENAI_API_KEY_FILE",
-        "models.providers.openai",
-        "openai/gpt-5.5",
+        "auth.order.openai == [openclaw_ctf_codex_profile_id]",
+        "models.providers.openai ==",
+        "'agentRuntime': {'id': 'codex'}",
+        "agents.list[0].model.primary == openclaw_ctf_codex_model",
         "agents.list | map(attribute='id') | list == ['ctf']",
         "sandbox.backend == 'docker'",
         "sandbox.scope == 'session'",
@@ -167,16 +169,18 @@ def test_ctf_gateway_is_a_separate_uid_scoped_to_the_ctf_config_and_workspace():
         "tools.alsoAllow == ['ctf_publish']",
         "tools.sandbox.tools.allow",
         "openclaw-discord-relay-ctf",
+        "plugins.entries.codex.enabled",
     ):
         assert required in config_assertions
+    assert "no OpenAI API key" in config_contract["ansible.builtin.assert"]["fail_msg"]
 
     assert (
         "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential --owner "
         "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} "
         "%d/openclaw_ctf_gateway_token /run/openclaw-ctf-gateway/gateway_token"
     ) in service
-    assert "Environment=OPENCLAW_CTF_OPENAI_API_KEY_FILE=%d/ctf_openai_api_key" in service
-    assert "LoadCredential=ctf_openai_api_key:{{ openclaw_ctf_openai_api_key_path }}" in service
+    assert "OPENCLAW_CTF_OPENAI_API_KEY_FILE" not in service
+    assert "LoadCredential=ctf_openai_api_key:" not in service
     assert "openclaw.plugin.json" in read(
         "infra/ansible/roles/openclaw_ctf_gateway/tasks/main.yml"
     )
@@ -188,6 +192,53 @@ def test_ctf_gateway_is_a_separate_uid_scoped_to_the_ctf_config_and_workspace():
         for task in tasks
         if task["name"] == "Validate the isolated CTF config with a service-user token"
     )
+    install = next(
+        task
+        for task in validation_block["block"]
+        if task["name"] == "Install the pinned CTF Codex harness"
+    )
+    assert install["ansible.builtin.command"]["argv"][-5:] == [
+        "plugins",
+        "install",
+        "{{ openclaw_ctf_codex_plugin_spec }}",
+        "--pin",
+        "--force",
+    ]
+    install_environment = install["environment"]
+    assert install_environment["OPENCLAW_CONFIG_PATH"] == (
+        "{{ openclaw_ctf_validation_credential_dir.path }}"
+        "/plugin-install-config.json"
+    )
+    install_config = next(
+        task
+        for task in validation_block["block"]
+        if task["name"] == "Materialize a writable CTF plugin-install config"
+    )
+    assert install_config["ansible.builtin.copy"]["dest"] == (
+        "{{ openclaw_ctf_validation_credential_dir.path }}"
+        "/plugin-install-config.json"
+    )
+    config_validation = next(
+        task
+        for task in validation_block["block"]
+        if task["name"] == "Validate the CTF-only OpenClaw config schema"
+    )
+    assert config_validation["environment"]["OPENCLAW_CONFIG_PATH"] == (
+        "{{ openclaw_ctf_gateway_config_path }}"
+    )
+    codex_runtime_check = next(
+        task
+        for task in validation_block["block"]
+        if task["name"] == "Inspect the CTF Codex harness runtime before startup"
+    )
+    assert codex_runtime_check["ansible.builtin.command"]["argv"][-5:] == [
+        "plugins",
+        "inspect",
+        "codex",
+        "--runtime",
+        "--json",
+    ]
+    assert ".plugin.id != 'codex'" in codex_runtime_check["failed_when"]
     runtime_check = next(
         task
         for task in validation_block["block"]
@@ -228,8 +279,7 @@ def test_only_the_ctf_gateway_uses_credential_scoped_remote_docker_without_a_soc
         "LoadCredential=ctf_docker_known_hosts:",
         "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
         "LoadCredential=discord_bot_token:",
-        "OPENCLAW_CTF_OPENAI_API_KEY_FILE",
-        "LoadCredential=ctf_openai_api_key:",
+        "OPENAI_API_KEY=",
     ):
         assert forbidden not in core_service
     assert "InaccessiblePaths={{ openclaw_ctf_workspace_root }}" in core_service

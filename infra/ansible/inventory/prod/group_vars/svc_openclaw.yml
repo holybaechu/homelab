@@ -35,7 +35,9 @@ openclaw_ctf_gateway_source_config_path: "{{ openclaw_setup_root }}/config/openc
 openclaw_ctf_plugin_source_root: "{{ openclaw_setup_root }}/plugins/openclaw-discord-relay-ctf"
 openclaw_ctf_plugin_root: /opt/openclaw-ctf-plugins/openclaw-discord-relay-ctf
 openclaw_ctf_gateway_token_path: "{{ openclaw_secret_root }}/ctf_gateway_token"
-openclaw_ctf_openai_api_key_path: "{{ openclaw_secret_root }}/ctf_openai_api_key"
+openclaw_ctf_codex_profile_id: openai:ctf
+openclaw_ctf_codex_model: openai/gpt-5.5
+openclaw_ctf_codex_plugin_spec: npm:@openclaw/codex@2026.7.1-1
 openclaw_ctf_gateway_port: 19789
 openclaw_ctf_gateway_bind_host: 127.0.0.1
 openclaw_ctf_docker_cli_path: /opt/openclaw-ctf/bin/docker

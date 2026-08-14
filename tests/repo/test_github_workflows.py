@@ -27,7 +27,6 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
         "COPYPARTY_USERS_JSON",
         "OPENCLAW_GATEWAY_TOKEN",
         "OPENCLAW_CTF_GATEWAY_TOKEN",
-        "OPENCLAW_CTF_OPENAI_API_KEY",
     ):
         assert f"{secret_name}:" not in job_env
 
@@ -43,10 +42,7 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
         "OPENCLAW_CTF_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_CTF_GATEWAY_TOKEN }}"
         in workflow
     )
-    assert (
-        "OPENCLAW_CTF_OPENAI_API_KEY: ${{ secrets.OPENCLAW_CTF_OPENAI_API_KEY }}"
-        in workflow
-    )
+    assert "OPENCLAW_CTF_OPENAI_API_KEY" not in workflow
     assert "OPENCLAW_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_DISCORD_BOT_TOKEN }}" in workflow
     assert "OPENCLAW_DISCORD_ENABLED: ${{ vars.OPENCLAW_DISCORD_ENABLED }}" in workflow
     secret_step = workflow.split(
@@ -54,14 +50,12 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     )[1].split("- name: Prepare one-time lowest-ID cutover", maxsplit=1)[0]
     assert "OPENCLAW_GATEWAY_TOKEN:" in secret_step
     assert "OPENCLAW_CTF_GATEWAY_TOKEN:" in secret_step
-    assert "OPENCLAW_CTF_OPENAI_API_KEY:" in secret_step
     assert "OPENCLAW_DISCORD_BOT_TOKEN:" in secret_step
     assert workflow.count("OPENCLAW_GATEWAY_TOKEN:") == 1
     assert workflow.count("OPENCLAW_CTF_GATEWAY_TOKEN:") == 1
-    assert workflow.count("OPENCLAW_CTF_OPENAI_API_KEY:") == 1
     assert "OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters" in script
     assert "OPENCLAW_CTF_GATEWAY_TOKEN must be exactly 64 hexadecimal characters" in script
-    assert "OPENCLAW_CTF_OPENAI_API_KEY must not be blank" in script
+    assert "OPENCLAW_CTF_OPENAI_API_KEY" not in script
     assert "64 hexadecimal characters" in script
     assert "at least 32 characters" in script
     assert "COPYPARTY_PASSWORD_HASH_SALT:" not in workflow
@@ -123,7 +117,6 @@ def test_cd_workflow_fail_closes_openclaw_allocation_before_cutover_and_tofu():
         "PROXMOX_API_TOKEN",
         "OPENCLAW_GATEWAY_TOKEN",
         "OPENCLAW_CTF_GATEWAY_TOKEN",
-        "OPENCLAW_CTF_OPENAI_API_KEY",
         "CLOUDFLARE_TRAEFIK_TOKEN",
     ):
         assert secret_name not in core_preflight_step

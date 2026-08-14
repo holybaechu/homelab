@@ -36,13 +36,11 @@ Environment=OPENCLAW_NO_RESPAWN=1
 Environment=OPENCLAW_SERVICE_REPAIR_POLICY=external
 Environment=OPENCLAW_SUPERVISOR_MODE=external
 Environment=OPENCLAW_CTF_GATEWAY_TOKEN_FILE=/run/openclaw-ctf-gateway/gateway_token
-Environment=OPENCLAW_CTF_OPENAI_API_KEY_FILE=%d/ctf_openai_api_key
 Environment=OPENCLAW_DISCORD_RELAY_CTF_HMAC_FILE=%d/discord_relay_ctf_hmac
 Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}
 Environment=DOCKER_SSH_COMMAND={{ openclaw_ctf_docker_ssh_wrapper_path }}
 
 LoadCredential=openclaw_ctf_gateway_token:{{ openclaw_ctf_gateway_token_path }}
-LoadCredential=ctf_openai_api_key:{{ openclaw_ctf_openai_api_key_path }}
 LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}
 LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}
 LoadCredential=discord_relay_ctf_hmac:{{ openclaw_relay_ctf_hmac_path }}

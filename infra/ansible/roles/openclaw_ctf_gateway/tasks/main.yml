@@ -18,7 +18,9 @@
       - openclaw_ctf_docker_host == 'ssh://' + openclaw_ctf_docker_user + '@' + ctf_executor_ip
       - openclaw_ctf_docker_client_key_path == openclaw_secret_root + '/ctf_docker_client_key'
       - openclaw_ctf_docker_known_hosts_path == openclaw_secret_root + '/ctf_docker_known_hosts'
-      - openclaw_ctf_openai_api_key_path == openclaw_secret_root + '/ctf_openai_api_key'
+      - openclaw_ctf_codex_profile_id == 'openai:ctf'
+      - openclaw_ctf_codex_model == 'openai/gpt-5.5'
+      - openclaw_ctf_codex_plugin_spec == 'npm:@openclaw/codex@2026.7.1-1'
       - openclaw_relay_ctf_hmac_path == openclaw_secret_root + '/discord_relay_ctf_hmac'
       - openclaw_native_activate is boolean
       - openclaw_docker_rollback_activate is boolean
@@ -33,20 +35,6 @@
     fail_msg: >-
       Configure OPENCLAW_CTF_GATEWAY_TOKEN as exactly 64 hexadecimal characters
       in the production secret store before activating the isolated CTF Gateway.
-  no_log: true
-  when:
-    - openclaw_native_activate | bool
-    - not (openclaw_docker_rollback_activate | bool)
-
-- name: Require the dedicated CTF OpenAI API key before native activation
-  ansible.builtin.assert:
-    that:
-      - openclaw_ctf_openai_api_key is defined
-      - openclaw_ctf_openai_api_key is string
-      - openclaw_ctf_openai_api_key | trim | length > 0
-    fail_msg: >-
-      Configure OPENCLAW_CTF_OPENAI_API_KEY in the production secret store
-      before activating the isolated CTF Gateway.
   no_log: true
   when:
     - openclaw_native_activate | bool
@@ -192,8 +180,7 @@
         openclaw_ctf_gateway_config.secrets ==
         {'providers':
           {
-            'ctf_gateway_token_file': {'source': 'file', 'path': '${OPENCLAW_CTF_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'},
-            'ctf_openai_api_key_file': {'source': 'file', 'path': '${OPENCLAW_CTF_OPENAI_API_KEY_FILE}', 'mode': 'singleValue'}
+            'ctf_gateway_token_file': {'source': 'file', 'path': '${OPENCLAW_CTF_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'}
           }
         }
       - >-
@@ -204,12 +191,11 @@
       - openclaw_ctf_gateway_config.gateway.controlUi.enabled == false
       - openclaw_ctf_gateway_config.gateway.terminal.enabled == false
       - openclaw_ctf_gateway_config.agents.list | map(attribute='id') | list == ['ctf']
-      - openclaw_ctf_gateway_config.agents.list[0].model.primary == 'openai/gpt-5.5'
+      - openclaw_ctf_gateway_config.agents.list[0].model.primary == openclaw_ctf_codex_model
+      - openclaw_ctf_gateway_config.auth.order.openai == [openclaw_ctf_codex_profile_id]
       - >-
         openclaw_ctf_gateway_config.models.providers.openai ==
-        {'apiKey':
-          {'source': 'file', 'provider': 'ctf_openai_api_key_file', 'id': 'value'},
-         'auth': 'api-key', 'agentRuntime': {'id': 'openclaw'}}
+        {'agentRuntime': {'id': 'codex'}}
       - openclaw_ctf_gateway_config.agents.list[0].workspace == openclaw_ctf_workspace_root
       - openclaw_ctf_gateway_config.agents.list[0].sandbox.backend == 'docker'
       - openclaw_ctf_gateway_config.agents.list[0].sandbox.scope == 'session'
@@ -223,13 +209,15 @@
       - openclaw_ctf_gateway_config.get('channels', {}) | length == 0
       - openclaw_ctf_gateway_config.get('bindings', []) | length == 0
       - openclaw_ctf_gateway_config.plugins.load.paths == [openclaw_ctf_plugin_root]
+      - openclaw_ctf_gateway_config.plugins.entries.codex.enabled | bool
       - openclaw_ctf_gateway_config.plugins.entries['openclaw-discord-relay-ctf'].enabled | bool
       - >-
         openclaw_ctf_gateway_config.plugins.entries['openclaw-discord-relay-ctf']
         ['config']['allowedChannelIds'] | length > 0
     fail_msg: >-
       The isolated CTF config must contain only the Docker-sandboxed CTF agent,
-      no Discord account or bindings, and a fixed CTF relay endpoint.
+      Codex-subscription OAuth routing, no OpenAI API key, no Discord account
+      or bindings, and a fixed CTF relay endpoint.
   vars:
     openclaw_ctf_gateway_config: "{{ openclaw_ctf_gateway_source_config.content | b64decode | from_json }}"
   no_log: true
@@ -385,15 +373,10 @@
     - not (openclaw_docker_rollback_activate | bool)
   notify: Restart OpenClaw CTF Gateway
 
-- name: Install the dedicated CTF OpenAI API key outside Git
-  ansible.builtin.copy:
-    content: "{{ openclaw_ctf_openai_api_key | trim }}\n"
-    dest: "{{ openclaw_ctf_openai_api_key_path }}"
-    owner: root
-    group: root
-    mode: '0600'
-  no_log: true
-  diff: false
+- name: Remove the retired CTF OpenAI API-key credential
+  ansible.builtin.file:
+    path: "{{ openclaw_secret_root }}/ctf_openai_api_key"
+    state: absent
   when:
     - openclaw_native_activate | bool
     - not (openclaw_docker_rollback_activate | bool)
@@ -474,16 +457,44 @@
       no_log: true
       diff: false
 
-    - name: Materialize a CTF service-user OpenAI API-key validation credential
+    - name: Materialize a writable CTF plugin-install config
       ansible.builtin.copy:
-        src: "{{ openclaw_ctf_openai_api_key_path }}"
-        dest: "{{ openclaw_ctf_validation_credential_dir.path }}/ctf_openai_api_key"
+        src: "{{ openclaw_ctf_gateway_config_path }}"
+        dest: "{{ openclaw_ctf_validation_credential_dir.path }}/plugin-install-config.json"
         remote_src: true
         owner: "{{ openclaw_ctf_user }}"
         group: "{{ openclaw_ctf_group }}"
-        mode: '0400'
+        mode: '0600'
       no_log: true
       diff: false
+
+    - name: Install the pinned CTF Codex harness
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_current_root }}/bin/node"
+          - "{{ openclaw_entrypoint }}"
+          - plugins
+          - install
+          - "{{ openclaw_ctf_codex_plugin_spec }}"
+          - --pin
+          - --force
+      become: true
+      become_user: "{{ openclaw_ctf_user }}"
+      environment: &openclaw_ctf_plugin_install_environment
+        HOME: "{{ openclaw_ctf_home }}"
+        PATH: "{{ openclaw_ctf_docker_cli_path | dirname }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin"
+        OPENCLAW_HOME: "{{ openclaw_ctf_home }}"
+        OPENCLAW_STATE_DIR: "{{ openclaw_ctf_state_root }}"
+        OPENCLAW_CONFIG_PATH: "{{ openclaw_ctf_validation_credential_dir.path }}/plugin-install-config.json"
+        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_ctf_workspace_root }}"
+        OPENCLAW_DISABLE_BONJOUR: '1'
+        OPENCLAW_NO_AUTO_UPDATE: '1'
+        OPENCLAW_NO_RESPAWN: '1'
+        OPENCLAW_SERVICE_REPAIR_POLICY: external
+        OPENCLAW_SUPERVISOR_MODE: external
+        OPENCLAW_CTF_GATEWAY_TOKEN_FILE: "{{ openclaw_ctf_validation_credential_dir.path }}/gateway_token"
+        OPENCLAW_DISCORD_RELAY_CTF_HMAC_FILE: "{{ openclaw_ctf_validation_credential_dir.path }}/discord_relay_ctf_hmac"
+      notify: Restart OpenClaw CTF Gateway
 
     - name: Validate the CTF-only OpenClaw config schema
       ansible.builtin.command:
@@ -496,26 +507,34 @@
       become: true
       become_user: "{{ openclaw_ctf_user }}"
       environment: &openclaw_ctf_cli_environment
-        HOME: "{{ openclaw_ctf_home }}"
-        PATH: "{{ openclaw_ctf_docker_cli_path | dirname }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin"
-        OPENCLAW_HOME: "{{ openclaw_ctf_home }}"
-        OPENCLAW_STATE_DIR: "{{ openclaw_ctf_state_root }}"
+        <<: *openclaw_ctf_plugin_install_environment
         OPENCLAW_CONFIG_PATH: "{{ openclaw_ctf_gateway_config_path }}"
-        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_ctf_workspace_root }}"
-        OPENCLAW_DISABLE_BONJOUR: '1'
-        OPENCLAW_NO_AUTO_UPDATE: '1'
-        OPENCLAW_NO_RESPAWN: '1'
-        OPENCLAW_SERVICE_REPAIR_POLICY: external
-        OPENCLAW_SUPERVISOR_MODE: external
-        OPENCLAW_CTF_GATEWAY_TOKEN_FILE: "{{ openclaw_ctf_validation_credential_dir.path }}/gateway_token"
-        OPENCLAW_CTF_OPENAI_API_KEY_FILE: "{{ openclaw_ctf_validation_credential_dir.path }}/ctf_openai_api_key"
-        OPENCLAW_DISCORD_RELAY_CTF_HMAC_FILE: "{{ openclaw_ctf_validation_credential_dir.path }}/discord_relay_ctf_hmac"
       register: openclaw_ctf_config_validation_preflight
       changed_when: false
       failed_when: >-
         openclaw_ctf_config_validation_preflight.rc != 0 or
         not (openclaw_ctf_config_validation_preflight.stdout | from_json).valid or
         (openclaw_ctf_config_validation_preflight.stdout | from_json).warnings | length > 0
+
+    - name: Inspect the CTF Codex harness runtime before startup
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_current_root }}/bin/node"
+          - "{{ openclaw_entrypoint }}"
+          - plugins
+          - inspect
+          - codex
+          - --runtime
+          - --json
+      become: true
+      become_user: "{{ openclaw_ctf_user }}"
+      environment: *openclaw_ctf_cli_environment
+      register: openclaw_ctf_codex_runtime_inspection
+      changed_when: false
+      failed_when: >-
+        openclaw_ctf_codex_runtime_inspection.rc != 0 or
+        (openclaw_ctf_codex_runtime_inspection.stdout | from_json).plugin.id != 'codex' or
+        (openclaw_ctf_codex_runtime_inspection.stdout | from_json).plugin.status != 'loaded'
 
     - name: Inspect the CTF relay plugin runtime before startup
       ansible.builtin.command:

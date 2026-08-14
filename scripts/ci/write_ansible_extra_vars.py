@@ -20,7 +20,6 @@ REQUIRED_ENV = {
     "arcane_jwt_secret": "ARCANE_JWT_SECRET",
     "openclaw_gateway_token": "OPENCLAW_GATEWAY_TOKEN",
     "openclaw_ctf_gateway_token": "OPENCLAW_CTF_GATEWAY_TOKEN",
-    "openclaw_ctf_openai_api_key": "OPENCLAW_CTF_OPENAI_API_KEY",
 }
 
 OPTIONAL_ENV: dict[str, str] = {
@@ -72,7 +71,6 @@ def build_mapping() -> dict[str, Any]:
     mapping["arcane_jwt_secret"] = mapping["arcane_jwt_secret"].strip()
     mapping["openclaw_gateway_token"] = mapping["openclaw_gateway_token"].strip()
     mapping["openclaw_ctf_gateway_token"] = mapping["openclaw_ctf_gateway_token"].strip()
-    mapping["openclaw_ctf_openai_api_key"] = mapping["openclaw_ctf_openai_api_key"].strip()
 
     if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["arcane_encryption_key"]) is None:
         raise SystemExit("ARCANE_ENCRYPTION_KEY must be exactly 64 hexadecimal characters")
@@ -82,8 +80,6 @@ def build_mapping() -> dict[str, Any]:
         raise SystemExit("OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters")
     if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["openclaw_ctf_gateway_token"]) is None:
         raise SystemExit("OPENCLAW_CTF_GATEWAY_TOKEN must be exactly 64 hexadecimal characters")
-    if not mapping["openclaw_ctf_openai_api_key"]:
-        raise SystemExit("OPENCLAW_CTF_OPENAI_API_KEY must not be blank")
 
     for var_name, env_name in OPTIONAL_ENV.items():
         value = os.environ.get(env_name)

@@ -16,7 +16,6 @@ def seed_required_environment(monkeypatch, module):
     monkeypatch.setenv("ARCANE_JWT_SECRET", "j" * 32)
     monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "cd" * 32)
     monkeypatch.setenv("OPENCLAW_CTF_GATEWAY_TOKEN", "ef" * 32)
-    monkeypatch.setenv("OPENCLAW_CTF_OPENAI_API_KEY", "ctf-openai-api-key")
     monkeypatch.setenv(
         "COPYPARTY_USERS_JSON",
         json.dumps([{"name": "test", "password": "test-password"}]),
@@ -65,14 +64,14 @@ def test_ctf_gateway_token_is_mapped_after_shape_validation(monkeypatch):
     assert mapping["openclaw_ctf_gateway_token"] == "ef" * 32
 
 
-def test_dedicated_ctf_openai_api_key_is_trimmed_and_mapped(monkeypatch):
+def test_ctf_codex_subscription_does_not_require_an_api_key(monkeypatch):
     module = runpy.run_path(str(SCRIPT))
     seed_required_environment(monkeypatch, module)
-    monkeypatch.setenv("OPENCLAW_CTF_OPENAI_API_KEY", " ctf-openai-api-key\r\n")
 
     mapping = module["build_mapping"]()
 
-    assert mapping["openclaw_ctf_openai_api_key"] == "ctf-openai-api-key"
+    assert "openclaw_ctf_openai_api_key" not in mapping
+    assert "OPENCLAW_CTF_OPENAI_API_KEY" not in module["REQUIRED_ENV"].values()
 
 
 def test_optional_discord_relay_secret_and_boolean_are_mapped(monkeypatch):
@@ -129,11 +128,6 @@ def test_retired_hermes_environment_is_not_mapped():
             "OPENCLAW_CTF_GATEWAY_TOKEN",
             "not-hex",
             "OPENCLAW_CTF_GATEWAY_TOKEN must be exactly 64 hexadecimal characters",
-        ),
-        (
-            "OPENCLAW_CTF_OPENAI_API_KEY",
-            " \r\n",
-            "OPENCLAW_CTF_OPENAI_API_KEY must not be blank",
         ),
     ],
 )

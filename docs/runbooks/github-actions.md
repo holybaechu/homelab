@@ -77,8 +77,6 @@ router reservation aligned with that tracked contract.
 - `OPENCLAW_CTF_GATEWAY_TOKEN`, exactly 64 hexadecimal characters representing
   32 bytes; the required, separate bearer token for the loopback-only CTF
   Gateway
-- `OPENCLAW_CTF_OPENAI_API_KEY`, the dedicated model-provider API key for the
-  CTF Gateway. It is never supplied to the core Gateway or Discord relay.
 - `OPENCLAW_DISCORD_BOT_TOKEN`, optional; the one shared bot token, required
   only when `OPENCLAW_DISCORD_ENABLED=true`. It is loaded by the isolated
   Discord relay only, never by the core or CTF Gateway.
@@ -102,12 +100,16 @@ and CTF services receive only their respective systemd credential. Keep both
 GitHub values stable and recoverable; rotating either invalidates clients of
 that Gateway only.
 
-Store `OPENCLAW_CTF_OPENAI_API_KEY` separately from both Gateway bearer tokens.
-Ansible writes it as the root-owned mode-`0600`
-`/etc/openclaw/secrets/ctf_openai_api_key` source and passes it only to
-`openclaw-ctf-gateway.service` as a systemd credential. Do not place it in the
-core OpenClaw auth profile, core configuration, Discord relay, or a private
-route file.
+The CTF Gateway has no OpenAI API-key secret in GitHub. After deployment, its
+`openai:ctf` profile is created with the owner's ChatGPT/Codex device-code
+OAuth login and is retained only in the CTF service account's isolated
+OpenClaw auth/state storage. Do not put an OpenAI API key, ChatGPT session
+token, OAuth refresh token, or a copy of desktop `~/.codex` in GitHub secrets,
+the core configuration, the Discord relay, or a private route file. Follow the
+production sign-in procedure in `docs/runbooks/openclaw-ctf.md`.
+After a successful deployment of this OAuth version, delete any obsolete
+`OPENCLAW_CTF_OPENAI_API_KEY` GitHub secret so it cannot become a stale
+production credential.
 
 Do not create per-agent Discord secrets. The single generic
 `OPENCLAW_DISCORD_BOT_TOKEN` is supplied only to
