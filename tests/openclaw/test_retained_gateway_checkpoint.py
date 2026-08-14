@@ -618,7 +618,9 @@ def test_rollback_alias_may_be_free_or_self_owned_but_never_collide(monkeypatch)
             helper.require_rollback_alias_available(container_id)
 
 
-def live_endpoint(container_id: str, proxy: bool, running: bool = True) -> dict:
+def live_endpoint(
+    container_id: str, proxy: bool, running: bool = True, created: bool = False
+) -> dict:
     if proxy:
         aliases = ["openclaw-rollback"]
         dns_names = [
@@ -635,7 +637,7 @@ def live_endpoint(container_id: str, proxy: bool, running: bool = True) -> dict:
         ]
     return {
         "Aliases": aliases,
-        "DNSNames": dns_names,
+        "DNSNames": None if created else dns_names,
         "IPAMConfig": None,
         "DriverOpts": None,
         "Links": None,
@@ -664,6 +666,68 @@ def test_exact_retained_container_dns_identity_accepts_only_the_live_shape():
         None,
         False,
     )
+    helper.validate_container_dns_identity(
+        "/openclaw-openclaw-gateway-1",
+        container_id[:12],
+        container_id,
+        live_endpoint(container_id, proxy=False, running=False, created=True),
+        None,
+        False,
+        True,
+    )
+
+
+def test_created_retained_container_requires_an_unallocated_dns_endpoint():
+    helper = load_helper()
+    container_id = "a" * 64
+    endpoint = live_endpoint(container_id, proxy=False, running=False, created=True)
+
+    helper.validate_container_dns_identity(
+        "/openclaw-openclaw-gateway-1",
+        container_id[:12],
+        container_id,
+        endpoint,
+        None,
+        False,
+        True,
+    )
+
+    endpoint["DNSNames"] = []
+    with pytest.raises(helper.ContractError):
+        helper.validate_container_dns_identity(
+            "/openclaw-openclaw-gateway-1",
+            container_id[:12],
+            container_id,
+            endpoint,
+            None,
+            False,
+            True,
+        )
+
+    endpoint["DNSNames"] = None
+    endpoint["MacAddress"] = "02:42:ac:14:00:05"
+    with pytest.raises(helper.ContractError):
+        helper.validate_container_dns_identity(
+            "/openclaw-openclaw-gateway-1",
+            container_id[:12],
+            container_id,
+            endpoint,
+            None,
+            False,
+            True,
+        )
+
+    endpoint["MacAddress"] = ""
+    with pytest.raises(helper.ContractError):
+        helper.validate_container_dns_identity(
+            "/openclaw-openclaw-gateway-1",
+            container_id[:12],
+            container_id,
+            endpoint,
+            live_endpoint(container_id, proxy=True, running=False, created=True),
+            False,
+            True,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1242,7 +1306,15 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
         "Require explicit production approval for the retained identity rebaseline",
     )
     native_ready = task_by_name(tasks, "Require the native OpenClaw Gateway before rebaseline")
-    absent = task_by_name(tasks, "Require the lost retained Docker Gateway state for rebaseline")
+    candidate_count = task_by_name(
+        tasks, "Require no more than one retained Docker Gateway candidate for rebaseline"
+    )
+    candidate_state = task_by_name(
+        tasks, "Inspect an extant retained Docker Gateway candidate for rebaseline"
+    )
+    absent = task_by_name(
+        tasks, "Require a missing or inert created retained Docker Gateway for rebaseline"
+    )
     checkpoint_boundary = task_by_name(
         tasks, "Require an archived identity has not already been rebaselined"
     )
@@ -1261,10 +1333,19 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
     assert any("openclaw_tracked_route.http.routers.openclaw.rule" in value for value in requirements)
     assert any("openclaw_tracked_route.http.services.openclaw.loadBalancer.servers" in value for value in requirements)
     assert native_ready["ansible.builtin.uri"]["status_code"] == 200
-    assert absent["ansible.builtin.assert"]["that"] == [
-        "openclaw_rebaseline_containers.stdout | trim | length == 0",
-        "openclaw_rebaseline_running_containers.stdout | trim | length == 0",
+    assert "length <= 1" in candidate_count["ansible.builtin.assert"]["that"][0]
+    assert candidate_state["ansible.builtin.command"]["argv"] == [
+        "docker",
+        "inspect",
+        "--format",
+        "{% raw %}{{.State.Status}}{% endraw %}",
+        "{{ openclaw_rebaseline_containers.stdout | trim }}",
     ]
+    assert candidate_state["when"] == "openclaw_rebaseline_containers.stdout | trim | length > 0"
+    absent_requirements = absent["ansible.builtin.assert"]["that"]
+    assert "openclaw_rebaseline_running_containers.stdout | trim | length == 0" in absent_requirements
+    assert any("openclaw_rebaseline_existing_candidate_state" in value for value in absent_requirements)
+    assert any("== 'created'" in value for value in absent_requirements)
     checkpoint_requirements = checkpoint_boundary["ansible.builtin.assert"]["that"]
     assert any("results[0].stat.isreg" in value for value in checkpoint_requirements)
     assert any("results[0].stat.mode" in value and "0600" in value for value in checkpoint_requirements)
@@ -1365,6 +1446,7 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
         "never",
         "openclaw-gateway",
     ]
+    assert create["when"] == "openclaw_rebaseline_containers.stdout | trim | length == 0"
     assert candidate["ansible.builtin.command"]["argv"][1:4] == [
         "candidate",
         "--container-state",
@@ -1464,10 +1546,13 @@ def test_helper_asset_only_mode_validates_static_contract_before_an_image_pull()
 def test_helper_candidate_mode_validates_a_new_container_without_touching_checkpoint():
     source = HELPER.read_text(encoding="utf-8")
 
-    candidate_mode = source.split('if arguments.mode == "candidate":', 1)[1].split(
+    candidate_mode = source.split(
+        'identity = require_container(arguments)\n        if arguments.mode == "candidate":', 1
+    )[1].split(
         "candidate = checkpoint_bytes(identity)", 1
     )[0]
     assert "candidate validation requires the fenced retained Gateway state" in candidate_mode
+    assert "rebaseline candidate must be a newly created inert Gateway" in source
     assert "require_checkpoint" not in candidate_mode
     assert "seed_checkpoint" not in candidate_mode
 

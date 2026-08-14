@@ -180,11 +180,15 @@ lost container.
 Only after explicit production review, use **Actions → cd → Run workflow** on
 `main` and select **Approve the one-time retained OpenClaw rollback identity
 rebaseline**. The manual-only playbook requires native OpenClaw `/readyz`, the
-permanent source hold, no retained container at all, the last known-good
-persistent verifier, and the existing root-owned checkpoint. It validates the
-current retained assets before changing state. If the exact immutable pinned
-image is no longer local, select the additional **Approve the retained
-OpenClaw rollback image pull** checkbox too; it fetches only that
+permanent source hold, the last known-good persistent verifier, and the
+existing root-owned checkpoint. It normally requires no retained container at
+all. After an interrupted approved rebaseline, it may instead reuse exactly
+one never-started, default-network-only `created` candidate; it validates that
+candidate before it can replace the checkpoint. Any running, exited, multiple,
+or otherwise mismatched container fails closed. It validates the current
+retained assets before changing state. If the exact immutable pinned image is
+no longer local, select the additional **Approve pulling the exact pinned
+retained OpenClaw rollback image** checkbox too; it fetches only that
 digest-qualified `linux/amd64` image and then validates the downloaded image
 before proceeding. No unpinned image is ever pulled. It archives the old
 checkpoint at

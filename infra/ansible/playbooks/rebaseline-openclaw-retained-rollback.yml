@@ -126,14 +126,41 @@
       register: openclaw_rebaseline_running_containers
       changed_when: false
 
-    - name: Require the lost retained Docker Gateway state for rebaseline
+    - name: Require no more than one retained Docker Gateway candidate for rebaseline
       ansible.builtin.assert:
         that:
-          - openclaw_rebaseline_containers.stdout | trim | length == 0
-          - openclaw_rebaseline_running_containers.stdout | trim | length == 0
+          - >-
+            openclaw_rebaseline_containers.stdout_lines | reject('equalto', '') | list | length <= 1
         fail_msg: >-
-          Rebaseline is permitted only after the retained Docker Gateway has
-          disappeared completely; never replace an extant rollback container.
+          Rebaseline refuses ambiguous retained Docker Gateway candidates.
+
+    - name: Inspect an extant retained Docker Gateway candidate for rebaseline
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{% raw %}{{.State.Status}}{% endraw %}"
+          - "{{ openclaw_rebaseline_containers.stdout | trim }}"
+      register: openclaw_rebaseline_existing_candidate_state
+      changed_when: false
+      when: openclaw_rebaseline_containers.stdout | trim | length > 0
+
+    - name: Require a missing or inert created retained Docker Gateway for rebaseline
+      ansible.builtin.assert:
+        that:
+          - openclaw_rebaseline_running_containers.stdout | trim | length == 0
+          - >-
+            (openclaw_rebaseline_containers.stdout | trim | length == 0) or
+            (
+              openclaw_rebaseline_containers.stdout_lines | reject('equalto', '') | list | length == 1 and
+              (openclaw_rebaseline_existing_candidate_state.stdout | default('') | trim) == 'created'
+            )
+        fail_msg: >-
+          Rebaseline is permitted only when the retained Docker Gateway has
+          disappeared completely or is the one inert, never-started candidate
+          from this explicitly approved recovery. Never replace an extant
+          rollback container.
 
     - name: Inspect rebaseline checkpoint, archive, and audit boundaries
       ansible.builtin.stat:
@@ -464,6 +491,7 @@
             'Created' in (
               openclaw_rebaseline_create.stdout ~ openclaw_rebaseline_create.stderr
             )
+          when: openclaw_rebaseline_containers.stdout | trim | length == 0
 
         - name: Validate the new fenced retained Docker Gateway before replacement
           ansible.builtin.command:

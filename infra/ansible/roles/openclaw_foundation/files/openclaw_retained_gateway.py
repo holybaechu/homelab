@@ -665,22 +665,32 @@ def require_endpoint_names(
     expected_dns_names: list[str],
     label: str,
     running: bool,
+    created: bool = False,
 ) -> None:
     require(isinstance(endpoint, dict), f"{label} attachment is malformed")
     aliases = endpoint.get("Aliases")
     dns_names = endpoint.get("DNSNames")
     require(type(aliases) is list, f"{label} aliases are malformed")
-    require(type(dns_names) is list, f"{label} DNS names are malformed")
+    if created:
+        # Docker does not allocate a network endpoint until the container is
+        # started.  A newly created, never-started container therefore has
+        # the Compose aliases but deliberately reports DNSNames as null.  It
+        # is inert at this point; exited/running containers still require the
+        # fully materialised DNS identity below.
+        require(dns_names is None, f"{label} created DNS names drifted")
+    else:
+        require(type(dns_names) is list, f"{label} DNS names are malformed")
     require(
         all(type(alias) is str for alias in aliases),
         f"{label} aliases contain a non-string value",
     )
-    require(
-        all(type(name) is str for name in dns_names),
-        f"{label} DNS names contain a non-string value",
-    )
     require(aliases == expected_aliases, f"{label} aliases drifted")
-    require(dns_names == expected_dns_names, f"{label} DNS names drifted")
+    if not created:
+        require(
+            all(type(name) is str for name in dns_names),
+            f"{label} DNS names contain a non-string value",
+        )
+        require(dns_names == expected_dns_names, f"{label} DNS names drifted")
     require(endpoint.get("IPAMConfig") is None, f"{label} static IPAM config drifted")
     require(endpoint.get("DriverOpts") is None, f"{label} driver options drifted")
     require(endpoint.get("Links") is None, f"{label} links drifted")
@@ -689,7 +699,9 @@ def require_endpoint_names(
         f"{label} Gateway priority drifted",
     )
     mac_address = endpoint.get("MacAddress")
-    if running:
+    if created:
+        require(mac_address == "", f"{label} created MAC address drifted")
+    elif running:
         require(
             type(mac_address) is str
             and re.fullmatch(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", mac_address)
@@ -710,6 +722,7 @@ def validate_container_dns_identity(
     default_network: object,
     rollback_network: object,
     running: bool,
+    created: bool = False,
 ) -> None:
     require(
         container_name == "/openclaw-openclaw-gateway-1",
@@ -723,7 +736,14 @@ def validate_container_dns_identity(
         ["openclaw-openclaw-gateway-1", "openclaw-gateway", short_id],
         "retained default network",
         running,
+        created,
     )
+    if created:
+        require(
+            rollback_network is None,
+            "created retained Gateway is attached to the rollback proxy",
+        )
+        return
     if rollback_network is None:
         return
     require_endpoint_names(
@@ -935,6 +955,10 @@ def require_container(arguments: argparse.Namespace) -> dict[str, str]:
     host = container.get("HostConfig") or {}
     state = container.get("State") or {}
     labels = config.get("Labels") or {}
+    require(isinstance(state, dict), "retained container state is malformed")
+    running = state.get("Running") is True and state.get("Status") == "running"
+    stopped = state.get("Running") is False and state.get("Status") == "exited"
+    is_created = state.get("Running") is False and state.get("Status") == "created"
     require(config.get("Image") == rendered_image, "retained container image reference drifted")
     require(config.get("User") == f"{arguments.uid}:{arguments.gid}", "retained container user drifted")
     validate_runtime_shape(config, image_config, arguments.deployment_revision)
@@ -971,10 +995,6 @@ def require_container(arguments: argparse.Namespace) -> dict[str, str]:
     networks = (container.get("NetworkSettings") or {}).get("Networks") or {}
     default_network = networks.get("openclaw_default")
     rollback_network = networks.get("homelab_proxy")
-    require(isinstance(state, dict), "retained container state is malformed")
-    running = state.get("Running") is True and state.get("Status") == "running"
-    stopped = state.get("Running") is False and state.get("Status") == "exited"
-    fenced = state.get("Running") is False and state.get("Status") in {"created", "exited"}
     validate_container_dns_identity(
         container.get("Name"),
         config.get("Hostname"),
@@ -982,7 +1002,9 @@ def require_container(arguments: argparse.Namespace) -> dict[str, str]:
         default_network,
         rollback_network,
         running,
+        is_created,
     )
+    fenced = is_created or stopped
     require_default_network()
     require_rollback_network()
     if arguments.container_state == "stopped":
@@ -1018,12 +1040,23 @@ def require_container(arguments: argparse.Namespace) -> dict[str, str]:
         )
         require_rollback_alias_unique(container_id)
 
-    created = container.get("Created")
-    require(isinstance(created, str) and created and "\0" not in created, "invalid retained container creation time")
+    if arguments.mode == "candidate":
+        require(
+            is_created,
+            "rebaseline candidate must be a newly created inert Gateway",
+        )
+
+    container_created = container.get("Created")
+    require(
+        isinstance(container_created, str)
+        and container_created
+        and "\0" not in container_created,
+        "invalid retained container creation time",
+    )
     return {
         "schema": CHECKPOINT_SCHEMA,
         "container_id": container_id,
-        "container_created": created,
+        "container_created": container_created,
         "image_id": image_id,
         "image_ref": rendered_image,
     }
