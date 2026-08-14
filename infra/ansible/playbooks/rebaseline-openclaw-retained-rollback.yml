@@ -236,6 +236,49 @@
             group: root
             mode: "0755"
 
+        - name: Diagnose non-secret retained rollback assets before identity rebaseline
+          ansible.builtin.command:
+            argv:
+              - "{{ openclaw_rebaseline_verifier.path }}"
+              - preflight
+              - --container-state
+              - fenced
+              - --config-state
+              - foundation-or-rollback
+              - --compose-root
+              - "{{ openclaw_compose_root }}"
+              - --setup-root
+              - "{{ openclaw_setup_root }}"
+              - --config
+              - "{{ openclaw_config_path }}"
+              - --runtime-root
+              - "{{ openclaw_runtime_root }}"
+              - --state-root
+              - "{{ openclaw_state_root }}"
+              - --auth-root
+              - "{{ openclaw_auth_profile_secret_root }}"
+              - --control-root
+              - "{{ openclaw_control_root }}"
+              - --token
+              - "{{ openclaw_gateway_token_path }}"
+              - --checkpoint
+              - "{{ openclaw_retained_gateway_identity_path }}"
+              - --expected-image
+              - "{{ openclaw_retained_image_ref }}"
+              - --hostname
+              - "{{ openclaw_hostname }}"
+              - --port
+              - "{{ openclaw_gateway_port | string }}"
+              - --uid
+              - "{{ openclaw_uid | string }}"
+              - --gid
+              - "{{ openclaw_gid | string }}"
+          register: openclaw_rebaseline_nonsecret_preflight
+          changed_when: false
+          retries: 3
+          delay: 2
+          until: openclaw_rebaseline_nonsecret_preflight.rc == 0
+
         - name: Preflight retained rollback assets before identity rebaseline
           ansible.builtin.command:
             argv:

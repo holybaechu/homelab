@@ -1272,6 +1272,9 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
     assert any("openclaw_rebaseline_legacy_verifier_sha256" in value for value in verifier_requirements)
 
     block = transaction["block"]
+    diagnostic = task_by_name(
+        block, "Diagnose non-secret retained rollback assets before identity rebaseline"
+    )
     preflight = task_by_name(block, "Preflight retained rollback assets before identity rebaseline")
     archive = task_by_name(block, "Archive the prior retained rollback identity before replacement")
     archived = task_by_name(block, "Require the archived prior identity boundary")
@@ -1287,6 +1290,17 @@ def test_manual_rebaseline_archives_then_replaces_only_a_lost_retained_identity(
         transaction["always"], "Remove the ephemeral retained rollback rebaseline verifier"
     )
 
+    diagnostic_argv = diagnostic["ansible.builtin.command"]["argv"]
+    assert diagnostic_argv[1:4] == ["preflight", "--container-state", "fenced"]
+    assert "--require-expected-token" not in diagnostic_argv
+    assert diagnostic["retries"] == 3
+    assert diagnostic["delay"] == 2
+    assert (
+        diagnostic["until"]
+        == "openclaw_rebaseline_nonsecret_preflight.rc == 0"
+    )
+    assert "no_log" not in diagnostic
+    assert block.index(diagnostic) < block.index(preflight)
     assert_bounded_fail_closed_retry(preflight)
     assert archive["ansible.builtin.copy"]["remote_src"] is True
     assert archive["ansible.builtin.copy"]["force"] is False
