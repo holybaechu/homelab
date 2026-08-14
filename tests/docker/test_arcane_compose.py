@@ -16,8 +16,8 @@ def test_arcane_is_pinned_and_uses_a_private_socket_proxy():
     proxy = compose["services"]["docker-socket-proxy"]
 
     assert arcane["image"] == (
-        "ghcr.io/getarcaneapp/manager:v2.6.0@sha256:"
-        "2b7544497c99d766baaf204ed8d66e555352ef37714aab0b68b5713be0d204d3"
+        "ghcr.io/getarcaneapp/manager:v2.8.0@sha256:"
+        "9146935e0797ce14a340616ceab2f77b3bc61d1b10befb0718a4be7f01485e2c"
     )
     assert proxy["image"] == (
         "tecnativa/docker-socket-proxy:v0.5.0@sha256:"
