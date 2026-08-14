@@ -597,7 +597,7 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_all_agen
         "agents.defaults.model.primary == openclaw_codex_model",
         "agents.defaults.thinkingDefault == openclaw_codex_thinking_default",
         "'order': {'openai': [openclaw_codex_profile_id]}",
-        "models.providers.openai.agentRuntime.id",
+        "models.providers.openai ==",
         "plugins.entries.codex.enabled",
         "plugins.entries.discord.enabled",
         "openclaw_ctf_agents | length == 1",
@@ -840,6 +840,7 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         item["path"]: item
         for item in cli["loop"]
         if "cli_value" in item
+        and item["path"].startswith("secrets.providers.")
     }
     assert set(redacted) == {
         "secrets.providers.gateway_token_file.source",
@@ -857,6 +858,15 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         "${OPENCLAW_GATEWAY_TOKEN_FILE}",
         "singleValue",
         "${OPENCLAW_DISCORD_BOT_TOKEN_FILE}",
+    }
+    provider_runtime = next(
+        item
+        for item in cli["loop"]
+        if item["path"] == "models.providers.openai.agentRuntime.id"
+    )
+    assert provider_runtime == {
+        "path": "models.providers.openai.agentRuntime.id",
+        "value": "codex",
     }
     assert all(
         "cli_value" not in item
@@ -1068,16 +1078,30 @@ def test_native_openclaw_activation_validates_before_starting():
     ]
     assert gateway_handshake["become_user"] == "{{ openclaw_user }}"
     assert gateway_handshake["no_log"] is True
-    assert gateway_handshake["environment"]["OPENCLAW_STATE_DIR"] == (
-        "{{ openclaw_validation_handshake_state_dir.path }}"
+    assert gateway_handshake["environment"] == {
+        "HOME": "{{ openclaw_home }}",
+        "PATH": "{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin",
+        "OPENCLAW_HOME": "{{ openclaw_home }}",
+        "OPENCLAW_STATE_DIR": "{{ openclaw_validation_handshake_state_dir.path }}",
+        "OPENCLAW_CONFIG_PATH": "{{ openclaw_config_path }}",
+        "OPENCLAW_WORKSPACE_DIR": "{{ openclaw_validation_handshake_state_dir.path }}/workspace",
+        "OPENCLAW_DISABLE_BONJOUR": "1",
+        "OPENCLAW_NO_AUTO_UPDATE": "1",
+        "OPENCLAW_NO_RESPAWN": "1",
+        "OPENCLAW_SERVICE_REPAIR_POLICY": "external",
+        "OPENCLAW_SUPERVISOR_MODE": "external",
+        "OPENCLAW_AUTH_STORE_READONLY": "1",
+        "OPENCLAW_GATEWAY_TOKEN_FILE": "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token",
+    }
+    handshake_source = tasks.split(
+        "    - name: Collect the active native Gateway scope-limited token handshake\n", 1
+    )[1].split("      register: openclaw_native_gateway_handshake\n", 1)[0]
+    assert "<<:" not in handshake_source
+    handshake_environment_source = handshake_source.split("      environment:\n", 1)[1]
+    handshake_environment_keys = re.findall(
+        r"^        ([A-Z_]+):", handshake_environment_source, flags=re.MULTILINE
     )
-    assert gateway_handshake["environment"]["OPENCLAW_WORKSPACE_DIR"] == (
-        "{{ openclaw_validation_handshake_state_dir.path }}/workspace"
-    )
-    assert gateway_handshake["environment"]["OPENCLAW_AUTH_STORE_READONLY"] == "1"
-    assert gateway_handshake["environment"]["OPENCLAW_GATEWAY_TOKEN_FILE"] == (
-        "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token"
-    )
+    assert len(handshake_environment_keys) == len(set(handshake_environment_keys))
     assert gateway_handshake["failed_when"] is False
     assert gateway_handshake["ansible.builtin.command"]["argv"][:4] == [
         "/usr/bin/timeout",

@@ -882,8 +882,8 @@
         (openclaw_native_config.content | b64decode | from_json).auth ==
         {'order': {'openai': [openclaw_codex_profile_id]}}
       - >-
-        (openclaw_native_config.content | b64decode | from_json).models.providers.openai.agentRuntime.id ==
-        'codex'
+        (openclaw_native_config.content | b64decode | from_json).models.providers.openai ==
+        {'agentRuntime': {'id': 'codex'}}
       - >-
         openclaw_ctf_agents[0].workspace == openclaw_ctf_workspace_root
       - >-
@@ -1257,7 +1257,10 @@
         - {path: gateway.tailscale.mode, value: "off"}
         - {path: gateway.tailscale.resetOnExit, value: false}
         - {path: auth.order.openai, value: ["{{ openclaw_codex_profile_id }}"]}
-        - {path: models.providers.openai, value: {agentRuntime: {id: codex}}}
+        # The CLI adds provider defaults to the parent object. The protected
+        # config slurp above asserts the literal schema; query the runtime
+        # setting itself here.
+        - {path: models.providers.openai.agentRuntime.id, value: codex}
         - {path: agents.defaults.model.primary, value: "{{ openclaw_codex_model }}"}
         - {path: agents.defaults.thinkingDefault, value: "{{ openclaw_codex_thinking_default }}"}
         - {path: plugins.entries.codex.enabled, value: true}
@@ -1472,9 +1475,17 @@
       become: true
       become_user: "{{ openclaw_user }}"
       environment:
-        <<: *openclaw_native_cli_environment
+        HOME: "{{ openclaw_home }}"
+        PATH: "{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin"
+        OPENCLAW_HOME: "{{ openclaw_home }}"
         OPENCLAW_STATE_DIR: "{{ openclaw_validation_handshake_state_dir.path }}"
+        OPENCLAW_CONFIG_PATH: "{{ openclaw_config_path }}"
         OPENCLAW_WORKSPACE_DIR: "{{ openclaw_validation_handshake_state_dir.path }}/workspace"
+        OPENCLAW_DISABLE_BONJOUR: "1"
+        OPENCLAW_NO_AUTO_UPDATE: "1"
+        OPENCLAW_NO_RESPAWN: "1"
+        OPENCLAW_SERVICE_REPAIR_POLICY: external
+        OPENCLAW_SUPERVISOR_MODE: external
         OPENCLAW_AUTH_STORE_READONLY: "1"
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token"
       register: openclaw_native_gateway_handshake
