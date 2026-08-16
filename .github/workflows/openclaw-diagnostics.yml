@@ -119,6 +119,14 @@ jobs:
               "journal_container_create": r"(create|creating).{0,48}container|container.{0,48}(create|creating)",
               "journal_workspace_failure": r"workspace.{0,64}(denied|error|failed|missing|not found)",
               "journal_tool_unavailable": r"tool.{0,64}(unavailable|not found|denied|not allowed)",
+              "journal_host_key_failure": r"host key verification failed|known[_ -]?hosts.{0,64}(failed|missing|mismatch)",
+              "journal_ssh_auth_failure": r"permission denied \(publickey|publickey.{0,64}(failed|denied)|ssh.{0,64}authentication failed",
+              "journal_ssh_shim_denied": r"ssh invocation denied|docker ssh.{0,64}denied",
+              "journal_daemon_unreachable": r"cannot connect to the docker daemon|docker daemon.{0,64}(unavailable|unreachable|failed)",
+              "journal_dial_stdio_failure": r"dial-stdio.{0,64}(error|failed)|docker system dial-stdio.{0,64}(error|failed)",
+              "journal_credential_failure": r"credential.{0,64}(unavailable|missing|failed)|credentials_directory.{0,64}(missing|unset)",
+              "journal_codex_runtime_failure": r"codex.{0,96}(runtime|app.server|turn|dynamic tool).{0,96}(error|failed|unavailable)",
+              "journal_sandbox_transport_failure": r"sandbox.{0,128}docker.{0,128}(error|failed|unavailable)|docker.{0,128}sandbox.{0,128}(error|failed|unavailable)",
           }
           print("journal_present=" + ("yes" if text.strip() else "no"))
           for name, pattern in categories.items():

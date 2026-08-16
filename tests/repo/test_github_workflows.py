@@ -768,4 +768,6 @@ def test_openclaw_diagnostics_is_fixed_read_only_and_redacts_session_content():
     assert "journal_docker_transport" in workflow
     assert "journal_permission_denied" in workflow
     assert "journal_network_missing" in workflow
+    assert "journal_host_key_failure" in workflow
+    assert "journal_codex_runtime_failure" in workflow
     assert "workflow_dispatch:\n    inputs:" not in workflow
