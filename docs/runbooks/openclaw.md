@@ -192,7 +192,10 @@ The production validation must prove:
 - nftables permits port 18789 only from Traefik;
 - the active config path is the private regular file and schema validation has
   no warnings;
-- `secrets audit --check` is clean and the token is absent from Git;
+- `secrets audit --check` reports no plaintext, unresolved, or shadowed
+  credentials; the only tolerated finding is the informational OAuth residue
+  for the expected `openai:main` Codex subscription profile, and the token is
+  absent from Git;
 - runtime/auth state is outside the private checkout;
 - `https://openclaw.home.hchu.me` serves the Control UI through Traefik; and
 - the retained Docker Gateway is stopped while its rollback assets and

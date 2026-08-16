@@ -1530,15 +1530,30 @@
     - name: Require a clean native OpenClaw secret audit
       ansible.builtin.assert:
         that:
-          - openclaw_secrets_audit_preflight.rc == 0
-          - openclaw_secrets_audit_result.status == 'clean'
           - openclaw_secrets_audit_result.summary.plaintextCount == 0
           - openclaw_secrets_audit_result.summary.unresolvedRefCount == 0
+          - openclaw_secrets_audit_result.summary.shadowedRefCount == 0
+          - openclaw_secrets_audit_result.summary.legacyResidueCount in [0, 1]
+          - openclaw_secrets_audit_result.findings | length == openclaw_secrets_audit_result.summary.legacyResidueCount
+          - >-
+            (openclaw_secrets_audit_result.summary.legacyResidueCount == 0 and
+             openclaw_secrets_audit_preflight.rc == 0 and
+             openclaw_secrets_audit_result.status == 'clean') or
+            (openclaw_secrets_audit_result.summary.legacyResidueCount == 1 and
+             openclaw_secrets_audit_preflight.rc == 2 and
+             openclaw_secrets_audit_result.status == 'findings' and
+             openclaw_secrets_audit_result.findings[0].code == 'LEGACY_RESIDUE' and
+             openclaw_secrets_audit_result.findings[0].severity == 'info' and
+             openclaw_secrets_audit_result.findings[0].jsonPath == 'profiles.' + openclaw_codex_profile_id and
+             openclaw_secrets_audit_result.findings[0].provider == 'openai' and
+             openclaw_secrets_audit_result.findings[0].profileId == openclaw_codex_profile_id)
         fail_msg: >-
           OpenClaw secret audit failed:
           status={{ openclaw_secrets_audit_result.status | default('missing') }},
           plaintext={{ openclaw_secrets_audit_result.summary.plaintextCount | default('unknown') }},
           unresolved={{ openclaw_secrets_audit_result.summary.unresolvedRefCount | default('unknown') }},
+          shadowed={{ openclaw_secrets_audit_result.summary.shadowedRefCount | default('unknown') }},
+          legacy={{ openclaw_secrets_audit_result.summary.legacyResidueCount | default('unknown') }},
           codes={{ openclaw_secrets_audit_result.findings | default([]) | map(attribute='code') | list | unique | sort | join(',') }},
           paths={{ openclaw_secrets_audit_result.findings | default([]) | map(attribute='jsonPath') | list | unique | sort | join(',') }}
   always:

@@ -598,6 +598,13 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert "secrets\n          - audit\n          - --check\n          - --json" in tasks
     assert "openclaw_secrets_audit_result.summary.plaintextCount == 0" in tasks
     assert "openclaw_secrets_audit_result.summary.unresolvedRefCount == 0" in tasks
+    assert "openclaw_secrets_audit_result.summary.shadowedRefCount == 0" in tasks
+    assert "openclaw_secrets_audit_result.summary.legacyResidueCount in [0, 1]" in tasks
+    assert "findings[0].code == 'LEGACY_RESIDUE'" in tasks
+    assert "findings[0].severity == 'info'" in tasks
+    assert "findings[0].jsonPath == 'profiles.' + openclaw_codex_profile_id" in tasks
+    assert "findings[0].provider == 'openai'" in tasks
+    assert "findings[0].profileId == openclaw_codex_profile_id" in tasks
     assert "codes={{ openclaw_secrets_audit_result.findings" in tasks
     assert "paths={{ openclaw_secrets_audit_result.findings" in tasks
     assert 'owner: root\n    group: root\n    mode: "0600"' in tasks
