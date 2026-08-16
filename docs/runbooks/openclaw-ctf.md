@@ -65,6 +65,17 @@ campaign channels as wanted, add each numeric channel ID to the same shared
 account map, and bind it to the intended agent. A channel name is not an
 authorization value and can change without redeploying.
 
+## CTF Codex model instructions
+
+The CTF agent alone uses the tracked
+`config/codex/gpt-5.6-sol-unrestricted-v45.md` file from the private setup
+repository. Deployment verifies its pinned SHA-256, installs it as mode `0600`
+under `/var/lib/openclaw/agents/ctf/agent/codex-home`, and sets the top-level
+`model_instructions_file` value in that agent's `config.toml`. The main agent's
+Codex home is not changed. Updating either the pinned file or its configured
+path restarts the Gateway; begin a new CTF session after deployment so Codex
+loads the instructions.
+
 ## Production secrets and deployment
 
 GitHub Actions needs only these OpenClaw secrets:

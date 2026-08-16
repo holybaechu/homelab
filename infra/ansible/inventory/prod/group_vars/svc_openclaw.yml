@@ -57,6 +57,12 @@ openclaw_codex_profile_id: openai:main
 openclaw_codex_model: openai/gpt-5.6-terra
 openclaw_codex_thinking_default: xhigh
 openclaw_codex_plugin_spec: npm:@openclaw/codex@2026.7.1-1
+# Keep the third-party CTF prompt outside the workspace bootstrap so it is
+# applied by Codex itself and only to the ctf agent's isolated Codex home.
+openclaw_ctf_codex_home: "{{ openclaw_state_root }}/agents/ctf/agent/codex-home"
+openclaw_ctf_model_instructions_source: "{{ openclaw_setup_root }}/config/codex/gpt-5.6-sol-unrestricted-v45.md"
+openclaw_ctf_model_instructions_path: "{{ openclaw_ctf_codex_home }}/gpt-5.6-sol-unrestricted-v45.md"
+openclaw_ctf_model_instructions_sha256: c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7
 # @openclaw/discord@2026.7.1 declares pluginApi >=2026.7.1 and peer
 # openclaw >=2026.7.1, so it is compatible with the pinned 2026.7.1-2 core.
 openclaw_discord_plugin_spec: npm:@openclaw/discord@2026.7.1

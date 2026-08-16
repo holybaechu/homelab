@@ -294,6 +294,19 @@
         executable: /bin/sh
       changed_when: false
 
+    - name: Check the isolated CTF Codex model instructions
+      ansible.builtin.shell: |
+        set -eu
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_codex_home }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_model_instructions_path }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 600"
+        test "$(sha256sum '{{ openclaw_ctf_model_instructions_path }}' | cut -d ' ' -f 1)" = '{{ openclaw_ctf_model_instructions_sha256 }}'
+        runuser -u '{{ openclaw_user }}' -- /usr/bin/python3 -c \
+          "import pathlib,tomllib; p=pathlib.Path('{{ openclaw_ctf_codex_home }}/config.toml'); d=tomllib.loads(p.read_text(encoding='utf-8')); assert d.get('model_instructions_file') == '{{ openclaw_ctf_model_instructions_path }}'"
+        test ! -e '{{ openclaw_state_root }}/agents/main/agent/codex-home/gpt-5.6-sol-unrestricted-v45.md'
+      args:
+        executable: /bin/sh
+      changed_when: false
+
     - name: Validate unified workspaces and autonomous skill promotion
       ansible.builtin.shell: |
         set -eux

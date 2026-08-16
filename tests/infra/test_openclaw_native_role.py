@@ -624,6 +624,106 @@ def test_native_openclaw_installs_and_loads_the_pinned_discord_channel_plugin():
     assert runtime["no_log"] is True
 
 
+def test_native_ctf_uses_a_pinned_model_instructions_file_in_its_codex_home():
+    variables = yaml.safe_load(read(VARS))
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    all_tasks = list(walk_tasks(tasks))
+
+    assert variables["openclaw_ctf_codex_home"] == (
+        "{{ openclaw_state_root }}/agents/ctf/agent/codex-home"
+    )
+    assert variables["openclaw_ctf_model_instructions_source"] == (
+        "{{ openclaw_setup_root }}/config/codex/gpt-5.6-sol-unrestricted-v45.md"
+    )
+    assert variables["openclaw_ctf_model_instructions_path"] == (
+        "{{ openclaw_ctf_codex_home }}/gpt-5.6-sol-unrestricted-v45.md"
+    )
+    assert variables["openclaw_ctf_model_instructions_sha256"] == (
+        "c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7"
+    )
+
+    clean_checkout = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Require a clean tracked native OpenClaw config on main"
+    )
+    assert "config/codex/gpt-5.6-sol-unrestricted-v45.md" in (
+        clean_checkout["ansible.builtin.shell"]
+    )
+
+    create_home = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Create the isolated CTF Codex home"
+    )
+    assert create_home["ansible.builtin.file"] == {
+        "path": "{{ openclaw_ctf_codex_home }}",
+        "state": "directory",
+        "owner": "{{ openclaw_user }}",
+        "group": "{{ openclaw_group }}",
+        "mode": "0700",
+    }
+
+    source_check = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Require the pinned CTF model instructions source"
+    )
+    source_assertions = " ".join(source_check["ansible.builtin.assert"]["that"])
+    assert "stat.isreg" in source_assertions
+    assert "not (openclaw_ctf_model_instructions_source_stat.stat.islnk" in source_assertions
+    assert "stat.checksum == openclaw_ctf_model_instructions_sha256" in source_assertions
+
+    install = next(
+        task
+        for task in all_tasks
+        if task["name"]
+        == "Install the pinned CTF model instructions into its isolated Codex home"
+    )
+    assert install["ansible.builtin.copy"] == {
+        "src": "{{ openclaw_ctf_model_instructions_source }}",
+        "dest": "{{ openclaw_ctf_model_instructions_path }}",
+        "remote_src": True,
+        "owner": "{{ openclaw_user }}",
+        "group": "{{ openclaw_group }}",
+        "mode": "0600",
+    }
+    assert install["notify"] == "Restart OpenClaw Gateway"
+
+    configure = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Configure the CTF Codex model instructions file"
+    )
+    assert configure["ansible.builtin.lineinfile"] == {
+        "path": "{{ openclaw_ctf_codex_home }}/config.toml",
+        "regexp": "^model_instructions_file\\s*=",
+        "line": 'model_instructions_file = "{{ openclaw_ctf_model_instructions_path }}"',
+        "insertbefore": "BOF",
+        "create": True,
+        "owner": "{{ openclaw_user }}",
+        "group": "{{ openclaw_group }}",
+        "mode": "0600",
+    }
+    assert configure["notify"] == "Restart OpenClaw Gateway"
+
+    validation = yaml.safe_load(read(VALIDATE))
+    native_play = next(
+        play
+        for play in validation
+        if play["name"] == "Validate the dedicated native OpenClaw host"
+    )
+    runtime_check = next(
+        task
+        for task in native_play["tasks"]
+        if task["name"] == "Check the isolated CTF Codex model instructions"
+    )
+    shell = runtime_check["ansible.builtin.shell"]
+    assert "sha256sum '{{ openclaw_ctf_model_instructions_path }}'" in shell
+    assert "d.get('model_instructions_file')" in shell
+    assert "agents/main/agent/codex-home/gpt-5.6-sol-unrestricted-v45.md" in shell
+
+
 def test_native_config_path_preflight_normalizes_only_the_cli_home_display_prefix():
     tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
     preflight = next(

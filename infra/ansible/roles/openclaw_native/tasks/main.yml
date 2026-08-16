@@ -48,6 +48,10 @@
       - openclaw_codex_model == 'openai/gpt-5.6-terra'
       - openclaw_codex_thinking_default == 'xhigh'
       - openclaw_codex_plugin_spec == 'npm:@openclaw/codex@2026.7.1-1'
+      - openclaw_ctf_codex_home == openclaw_state_root + '/agents/ctf/agent/codex-home'
+      - openclaw_ctf_model_instructions_source == openclaw_setup_root + '/config/codex/gpt-5.6-sol-unrestricted-v45.md'
+      - openclaw_ctf_model_instructions_path == openclaw_ctf_codex_home + '/gpt-5.6-sol-unrestricted-v45.md'
+      - openclaw_ctf_model_instructions_sha256 == 'c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7'
       - openclaw_discord_plugin_spec == 'npm:@openclaw/discord@2026.7.1'
       - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
       - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
@@ -794,7 +798,8 @@
       workspaces/ctf/templates/writeup.md \
       workspaces/ctf/skills/ctf-artifacts/SKILL.md \
       workspaces/ctf/scripts/init-ctf-challenge.py \
-      workspaces/ctf/scripts/export-ctf-package.py; do
+      workspaces/ctf/scripts/export-ctf-package.py \
+      config/codex/gpt-5.6-sol-unrestricted-v45.md; do
       git_safe --no-pager ls-files --error-unmatch "${tracked_path}" >/dev/null
     done
     test -z "$(git_safe --no-pager ls-files -- .env)"
@@ -861,6 +866,70 @@
     - {source: workspaces/ctf/scripts/export-ctf-package.py, destination: scripts/export-ctf-package.py, mode: "0750"}
   when: openclaw_native_activate | bool
   notify: Restart OpenClaw Gateway
+
+- name: Create the isolated CTF Codex home
+  ansible.builtin.file:
+    path: "{{ openclaw_ctf_codex_home }}"
+    state: directory
+    owner: "{{ openclaw_user }}"
+    group: "{{ openclaw_group }}"
+    mode: "0700"
+  when: openclaw_native_activate | bool
+
+- name: Inspect the tracked CTF model instructions
+  ansible.builtin.stat:
+    path: "{{ openclaw_ctf_model_instructions_source }}"
+    checksum_algorithm: sha256
+  register: openclaw_ctf_model_instructions_source_stat
+  when: openclaw_native_activate | bool
+
+- name: Require the pinned CTF model instructions source
+  ansible.builtin.assert:
+    that:
+      - openclaw_ctf_model_instructions_source_stat.stat.isreg | default(false)
+      - not (openclaw_ctf_model_instructions_source_stat.stat.islnk | default(false))
+      - openclaw_ctf_model_instructions_source_stat.stat.checksum == openclaw_ctf_model_instructions_sha256
+    fail_msg: The tracked CTF model instructions do not match the pinned v45 source.
+  when: openclaw_native_activate | bool
+
+- name: Install the pinned CTF model instructions into its isolated Codex home
+  ansible.builtin.copy:
+    src: "{{ openclaw_ctf_model_instructions_source }}"
+    dest: "{{ openclaw_ctf_model_instructions_path }}"
+    remote_src: true
+    owner: "{{ openclaw_user }}"
+    group: "{{ openclaw_group }}"
+    mode: "0600"
+  when: openclaw_native_activate | bool
+  notify: Restart OpenClaw Gateway
+
+- name: Configure the CTF Codex model instructions file
+  ansible.builtin.lineinfile:
+    path: "{{ openclaw_ctf_codex_home }}/config.toml"
+    regexp: '^model_instructions_file\s*='
+    line: 'model_instructions_file = "{{ openclaw_ctf_model_instructions_path }}"'
+    insertbefore: BOF
+    create: true
+    owner: "{{ openclaw_user }}"
+    group: "{{ openclaw_group }}"
+    mode: "0600"
+  when: openclaw_native_activate | bool
+  notify: Restart OpenClaw Gateway
+
+- name: Validate the isolated CTF Codex model instructions configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - >-
+        import pathlib, tomllib;
+        path = pathlib.Path({{ (openclaw_ctf_codex_home + '/config.toml') | to_json }});
+        data = tomllib.loads(path.read_text(encoding='utf-8'));
+        assert data.get('model_instructions_file') == {{ openclaw_ctf_model_instructions_path | to_json }}
+  become: true
+  become_user: "{{ openclaw_user }}"
+  changed_when: false
+  when: openclaw_native_activate | bool
 
 - name: Create the managed autonomous skill roots
   ansible.builtin.file:
