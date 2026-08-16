@@ -55,6 +55,7 @@ def test_skill_sync_validation_exposes_commands_but_never_secret_values():
     assert task.get("no_log") is not True
     assert "cat '{{ openclaw_skill_sync_github_token_path }}'" not in shell
     assert "LoadCredential=github_token:{{ openclaw_skill_sync_github_token_path }}" in shell
+    assert "openclaw_ctf_preflight_legacy_workspace_root" not in shell
 
 
 def test_executor_keeps_its_hardened_docker_and_network_contract():

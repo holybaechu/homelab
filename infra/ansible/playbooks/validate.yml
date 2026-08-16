@@ -302,7 +302,6 @@
         test -d '{{ openclaw_workspace_root }}/skills'
         test -d '{{ openclaw_ctf_workspace_root }}/skills'
         test ! -e '{{ openclaw_legacy_workspace_root }}'
-        test ! -e '{{ openclaw_ctf_preflight_legacy_workspace_root }}'
         test "$(stat -c '%U:%G %a' '{{ openclaw_skill_sync_state_root }}')" = '{{ openclaw_skill_sync_user }}:{{ openclaw_skill_sync_group }} 700'
         test "$(stat -c '%u:%g %a' '{{ openclaw_skill_sync_github_token_path }}')" = '0:0 600'
         systemctl is-enabled --quiet openclaw-skill-sync.timer
