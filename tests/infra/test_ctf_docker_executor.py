@@ -83,7 +83,8 @@ def test_executor_keeps_its_hardened_docker_and_network_contract():
     validation = read("infra/ansible/playbooks/validate.yml")
     assert "Run the convenience-oriented CTF Kali sandbox smoke test" in validation
     assert "for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark nmap uv" in validation
-    assert 'test "$$(id -u)" -eq 0' in validation
+    assert 'test "$(id -u)" -eq 0' in validation
+    assert 'test "$$(id -u)" -eq 0' not in validation
     assert "- AUDIT_WRITE" in validation
     assert "- MKNOD" in validation
 

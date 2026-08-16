@@ -151,7 +151,7 @@
           - >-
             for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark nmap uv;
             do command -v "$tool" >/dev/null; done;
-            test "$$(id -u)" -eq 0;
+            test "$(id -u)" -eq 0;
             test ! -e /var/run/docker.sock;
             test -w /workspace;
             test -w /root
