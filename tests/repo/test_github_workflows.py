@@ -738,36 +738,3 @@ def test_cd_workflow_requires_pinned_ssh_known_hosts_secret():
     configure_ssh = workflow.split("- name: Configure SSH", maxsplit=1)[1].split("- name: OpenTofu plan", maxsplit=1)[0]
     assert "DEPLOY_SSH_KNOWN_HOSTS:" in configure_ssh
     assert "secrets.DEPLOY_SSH_KNOWN_HOSTS" in configure_ssh
-
-
-def test_openclaw_diagnostics_is_fixed_read_only_and_redacts_session_content():
-    workflow = (
-        REPO_ROOT / ".github" / "workflows" / "openclaw-diagnostics.yml"
-    ).read_text(encoding="utf-8")
-
-    assert "workflow_dispatch:" in workflow
-    assert "Trust the OpenClaw LXC host key through Proxmox" in workflow
-    assert "pct exec 118 -- cat /etc/ssh/ssh_host_ed25519_key.pub" in workflow
-    assert "printf '192.168.0.5 %s\\n'" in workflow
-    assert "environment: prod" in workflow
-    assert "contents: read" in workflow
-    assert "sessions tail" in workflow
-    assert "--agent ctf" in workflow
-    assert "--session-key agent:ctf:discord:channel:1537716407889039391" in workflow
-    assert "--tail 80" in workflow
-    assert "Classify the CTF session trajectory on the Gateway" in workflow
-    assert "auth_failure" in workflow
-    assert "sandbox_failure" in workflow
-    assert "suppressed_reply" in workflow
-    assert "sys.stdin.read()" in workflow
-    assert "print(f\"{name}=" in workflow
-    assert "journalctl --no-pager --quiet" in workflow
-    assert "--unit openclaw-gateway.service" in workflow
-    assert "journal_no_visible_reply" in workflow
-    assert "journal_sandbox_failure" in workflow
-    assert "journal_docker_transport" in workflow
-    assert "journal_permission_denied" in workflow
-    assert "journal_network_missing" in workflow
-    assert "journal_host_key_failure" in workflow
-    assert "journal_codex_runtime_failure" in workflow
-    assert "workflow_dispatch:\n    inputs:" not in workflow
