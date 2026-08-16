@@ -19,7 +19,7 @@ fi
 
 credential_dir="${CREDENTIALS_DIRECTORY:?missing systemd credential directory}"
 client_key="${credential_dir}/ctf_docker_client_key"
-known_hosts="${credential_dir}/ctf_docker_known_hosts"
+known_hosts="{{ openclaw_ctf_docker_known_hosts_path }}"
 
 test -r "${client_key}"
 test -r "${known_hosts}"

@@ -39,7 +39,6 @@ Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_to
 
 LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}
 LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}
-LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}
 LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}
 
 ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/openclaw_gateway_token /run/openclaw-gateway/gateway_token

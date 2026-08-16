@@ -405,7 +405,6 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "ReadOnlyPaths={{ openclaw_config_path }}",
         "LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}",
         "LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}",
-        "LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}",
         "LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}",
         "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
         "Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin",
@@ -430,6 +429,7 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "openclaw-ctf-gateway.service",
         "openclaw-discord-relay.service",
         "DOCKER_SSH_COMMAND",
+        "LoadCredential=ctf_docker_known_hosts:",
     ):
         assert forbidden not in unit
     assert "systemctl --user" not in unit

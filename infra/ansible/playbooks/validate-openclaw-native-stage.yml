@@ -17,7 +17,8 @@
         ! systemctl cat containerd.service >/dev/null 2>&1
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_client_key_path }}')" = "0:0 600"
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_known_hosts_path }}')" = "0:0 600"
+        test "$(stat -c '%U:%G %a' '/etc/openclaw/trust')" = "root:{{ openclaw_group }} 750"
+        test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_known_hosts_path }}')" = "root:{{ openclaw_group }} 640"
       args:
         executable: /bin/sh
       changed_when: false

@@ -38,7 +38,7 @@
       - openclaw_ctf_gid | int == openclaw_gid | int
       - openclaw_ctf_docker_cli_path == '/usr/bin/docker'
       - openclaw_ctf_docker_client_key_path == openclaw_secret_root + '/ctf_docker_client_key'
-      - openclaw_ctf_docker_known_hosts_path == openclaw_secret_root + '/ctf_docker_known_hosts'
+      - openclaw_ctf_docker_known_hosts_path == '/etc/openclaw/trust/ctf_docker_known_hosts'
       - openclaw_ctf_docker_host == 'ssh://' + openclaw_ctf_docker_user + '@' + ctf_executor_ip
       - openclaw_ctf_docker_ssh_shim_dir == '/usr/local/libexec/openclaw-ctf-docker-bin'
       - openclaw_ctf_docker_network == 'openclaw-ctf'
@@ -238,6 +238,7 @@
     - {path: /run/openclaw-native-empty-hooks, owner: root, group: root, mode: "0700"}
     - {path: /etc/openclaw, owner: root, group: root, mode: "0755"}
     - {path: "{{ openclaw_secret_root }}", owner: root, group: root, mode: "0700"}
+    - {path: /etc/openclaw/trust, owner: root, group: "{{ openclaw_group }}", mode: "0750"}
   loop_control:
     label: "{{ item.path }}"
 
@@ -365,8 +366,8 @@
     content: ""
     dest: "{{ openclaw_ctf_docker_known_hosts_path }}"
     owner: root
-    group: root
-    mode: "0600"
+    group: "{{ openclaw_group }}"
+    mode: "0640"
     force: false
   no_log: true
   notify: Restart OpenClaw Gateway

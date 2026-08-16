@@ -131,7 +131,6 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
         "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
         "Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin",
         "LoadCredential=ctf_docker_client_key:",
-        "LoadCredential=ctf_docker_known_hosts:",
         "InaccessiblePaths=-/run/docker.sock",
         "InaccessiblePaths=-/var/run/docker.sock",
         "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
@@ -141,6 +140,7 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
         "StrictHostKeyChecking=yes",
         "IdentitiesOnly=yes",
         "CREDENTIALS_DIRECTORY",
+        'known_hosts="{{ openclaw_ctf_docker_known_hosts_path }}"',
         '[ "$#" -ne 7 ]',
         '[ "$2" != "{{ openclaw_ctf_docker_user }}" ]',
         '[ "$6" != "{{ ctf_executor_ip }}" ]',
@@ -152,6 +152,7 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
         assert required in wrapper
     assert '  "$@"' not in wrapper
     assert "DOCKER_SSH_COMMAND" not in service
+    assert "LoadCredential=ctf_docker_known_hosts:" not in service
     assert "DOCKER_SSH_COMMAND" not in transport
     assert "docker system dial-stdio" in transport
     assert "no-port-forwarding" in transport

@@ -178,7 +178,8 @@
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 710"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_client_key_path }}')" = "0:0 600"
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_known_hosts_path }}')" = "0:0 600"
+        test "$(stat -c '%U:%G %a' '/etc/openclaw/trust')" = "root:{{ openclaw_group }} 750"
+        test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_known_hosts_path }}')" = "root:{{ openclaw_group }} 640"
       args:
         executable: /bin/sh
       changed_when: false
@@ -189,7 +190,7 @@
         systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}'
         systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin'
         systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_client_key:'
-        systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_known_hosts:'
+        ! systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_known_hosts:'
         systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=-/run/docker.sock'
         systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=-/var/run/docker.sock'
         ! systemctl cat openclaw-gateway.service | grep -Eq '(^|[^A-Z_])OPENAI_API_KEY='
@@ -207,7 +208,6 @@
           --quiet \
           --uid='{{ openclaw_user }}' \
           --property='LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}' \
-          --property='LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}' \
           --setenv='DOCKER_HOST={{ openclaw_ctf_docker_host }}' \
           --setenv='PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:/usr/local/bin:/usr/bin:/bin' \
           '{{ openclaw_ctf_docker_cli_path }}' version >/dev/null
@@ -226,7 +226,6 @@
           --quiet \
           --uid='{{ openclaw_user }}' \
           --property='LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}' \
-          --property='LoadCredential=ctf_docker_known_hosts:{{ openclaw_ctf_docker_known_hosts_path }}' \
           --setenv='DOCKER_HOST={{ openclaw_ctf_docker_host }}' \
           --setenv='PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:/usr/local/bin:/usr/bin:/bin' \
           /bin/sh -ceu '

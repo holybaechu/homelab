@@ -5,7 +5,7 @@
       - openclaw_ctf_docker_user == 'openclaw-ctf-docker'
       - openclaw_ctf_docker_host == 'ssh://' + openclaw_ctf_docker_user + '@' + ctf_executor_ip
       - openclaw_ctf_docker_client_key_path == '/etc/openclaw/secrets/ctf_docker_client_key'
-      - openclaw_ctf_docker_known_hosts_path == '/etc/openclaw/secrets/ctf_docker_known_hosts'
+      - openclaw_ctf_docker_known_hosts_path == '/etc/openclaw/trust/ctf_docker_known_hosts'
       - openclaw_ip is match('^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$')
       - ctf_executor_ip is match('^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$')
       - openclaw_ip != ctf_executor_ip
@@ -52,8 +52,8 @@
       {{ ctf_executor_ip }} {{ openclaw_ctf_executor_host_public_key.content | b64decode | trim }}
     dest: "{{ openclaw_ctf_docker_known_hosts_path }}"
     owner: root
-    group: root
-    mode: "0600"
+    group: "{{ hostvars['openclaw'].openclaw_group }}"
+    mode: "0640"
   delegate_to: openclaw
   no_log: true
 
@@ -82,16 +82,6 @@
       ansible.builtin.copy:
         src: "{{ openclaw_ctf_docker_client_key_path }}"
         dest: "{{ openclaw_ctf_transport_credential_dir.path }}/ctf_docker_client_key"
-        remote_src: true
-        owner: "{{ hostvars['openclaw'].openclaw_user }}"
-        group: "{{ hostvars['openclaw'].openclaw_group }}"
-        mode: "0400"
-      delegate_to: openclaw
-
-    - name: Materialize a Gateway service-user pinned CTF executor host key
-      ansible.builtin.copy:
-        src: "{{ openclaw_ctf_docker_known_hosts_path }}"
-        dest: "{{ openclaw_ctf_transport_credential_dir.path }}/ctf_docker_known_hosts"
         remote_src: true
         owner: "{{ hostvars['openclaw'].openclaw_user }}"
         group: "{{ hostvars['openclaw'].openclaw_group }}"

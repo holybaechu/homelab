@@ -80,7 +80,9 @@ separate CTF bot token.
 The CTF executor SSH key is generated root-only on the Gateway host at
 `/etc/openclaw/secrets/ctf_docker_client_key`; the transport role installs only
 its public half in the executor's forced-command account and pins the
-executor's host key at `/etc/openclaw/secrets/ctf_docker_known_hosts`. Do not
+executor's public host key at `/etc/openclaw/trust/ctf_docker_known_hosts`. The
+root-owned trust file is group-readable by the Gateway, while the private
+client key remains a systemd credential. Do not
 copy either private credential into the private OpenClaw checkout or GitHub
 secrets.
 
