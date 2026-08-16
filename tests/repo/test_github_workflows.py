@@ -738,3 +738,25 @@ def test_cd_workflow_requires_pinned_ssh_known_hosts_secret():
     configure_ssh = workflow.split("- name: Configure SSH", maxsplit=1)[1].split("- name: OpenTofu plan", maxsplit=1)[0]
     assert "DEPLOY_SSH_KNOWN_HOSTS:" in configure_ssh
     assert "secrets.DEPLOY_SSH_KNOWN_HOSTS" in configure_ssh
+
+
+def test_openclaw_diagnostics_is_fixed_read_only_and_redacts_session_content():
+    workflow = (
+        REPO_ROOT / ".github" / "workflows" / "openclaw-diagnostics.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    assert "environment: prod" in workflow
+    assert "contents: read" in workflow
+    assert "sessions tail" in workflow
+    assert "--agent ctf" in workflow
+    assert "--session-key agent:ctf:discord:channel:1537716407889039391" in workflow
+    assert "--tail 80" in workflow
+    assert "Classify the CTF session trajectory on the Gateway" in workflow
+    assert "auth_failure" in workflow
+    assert "sandbox_failure" in workflow
+    assert "suppressed_reply" in workflow
+    assert "sys.stdin.read()" in workflow
+    assert "print(f\"{name}=" in workflow
+    assert "journalctl" not in workflow
+    assert "workflow_dispatch:\n    inputs:" not in workflow

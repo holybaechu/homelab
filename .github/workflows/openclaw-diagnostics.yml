@@ -1,0 +1,80 @@
+name: openclaw-diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    environment: prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Connect Tailscale
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          version: "1.102.2"
+          args: --accept-dns=false
+          ping: ${{ vars.PVE_TAILSCALE_IP }}
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: ./scripts/ci/configure-ssh.sh
+
+      - name: Classify the CTF session trajectory on the Gateway
+        run: |
+          set -eu
+          timeout --signal=TERM --kill-after=10s 90s ssh \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${HOME}/.ssh/known_hosts" \
+            -i "${HOME}/.ssh/id_ed25519" \
+            root@192.168.0.5 'sh -s' <<'REMOTE'
+          set -eu
+          runuser -u openclaw -- env \
+              HOME=/home/openclaw \
+              OPENCLAW_HOME=/home/openclaw \
+              OPENCLAW_STATE_DIR=/var/lib/openclaw \
+              OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
+              OPENCLAW_GATEWAY_TOKEN_FILE=/run/openclaw-gateway/gateway_token \
+              OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token \
+              PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
+              /opt/nodejs/current/bin/node \
+              /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \
+              sessions tail \
+              --agent ctf \
+              --session-key agent:ctf:discord:channel:1537716407889039391 \
+              --tail 80 | python3 -c '
+          import re
+          import sys
+
+          text = sys.stdin.read().lower()
+          categories = {
+              "auth_failure": r"authentication failed|http 401|unauthorized|token.{0,32}expired",
+              "sandbox_failure": r"sandbox.{0,48}(error|failed)|docker.{0,48}(error|failed)",
+              "context_failure": r"(context|workspace|skill).{0,48}(error|failed)",
+              "timeout_failure": r"timed? out|timeout",
+              "suppressed_reply": r"no_reply|silent reply|reply suppressed",
+              "generic_failure": r"\berror\b|\bfailed\b",
+              "successful_completion": r"terminal status.{0,24}(ok|done|success)|completion.{0,24}(ok|done|success)",
+          }
+          print("trajectory_present=" + ("yes" if text.strip() else "no"))
+          for name, pattern in categories.items():
+              print(f"{name}={len(re.findall(pattern, text))}")
+          '
+          REMOTE
+
+      - name: Disconnect Tailscale
+        if: always()
+        run: sudo tailscale logout || true
