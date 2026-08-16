@@ -291,7 +291,7 @@
 
     - name: Validate unified workspaces and autonomous skill promotion
       ansible.builtin.shell: |
-        set -eu
+        set -eux
         test -d '{{ openclaw_workspaces_root }}'
         test -d '{{ openclaw_workspace_root }}'
         test -d '{{ openclaw_workspace_root }}/skills'
@@ -316,7 +316,6 @@
       args:
         executable: /bin/sh
       changed_when: false
-      no_log: true
 
     - name: Check direct Discord credential state when explicitly enabled
       ansible.builtin.shell: |

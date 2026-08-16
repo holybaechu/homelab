@@ -37,6 +37,26 @@ def test_executor_validation_accounts_for_the_read_only_skill_sync_acl():
     )
 
 
+def test_skill_sync_validation_exposes_commands_but_never_secret_values():
+    validation = yaml.safe_load(read("infra/ansible/playbooks/validate.yml"))
+    play = next(
+        item
+        for item in validation
+        if item.get("name") == "Validate the dedicated native OpenClaw host"
+    )
+    task = next(
+        item
+        for item in play["tasks"]
+        if item["name"] == "Validate unified workspaces and autonomous skill promotion"
+    )
+    shell = task["ansible.builtin.shell"]
+
+    assert shell.startswith("set -eux\n")
+    assert task.get("no_log") is not True
+    assert "cat '{{ openclaw_skill_sync_github_token_path }}'" not in shell
+    assert "LoadCredential=github_token:{{ openclaw_skill_sync_github_token_path }}" in shell
+
+
 def test_executor_keeps_its_hardened_docker_and_network_contract():
     role_root = REPO_ROOT / "infra/ansible/roles/openclaw_ctf_executor"
     tasks = read("infra/ansible/roles/openclaw_ctf_executor/tasks/main.yml")
