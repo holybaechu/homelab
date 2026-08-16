@@ -605,6 +605,7 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert "findings[0].jsonPath == 'profiles.' + openclaw_codex_profile_id" in tasks
     assert "findings[0].provider == 'openai'" in tasks
     assert "findings[0].profileId == openclaw_codex_profile_id" in tasks
+    assert "openclaw_secrets_audit_preflight.rc == 1" in tasks
     assert "codes={{ openclaw_secrets_audit_result.findings" in tasks
     assert "paths={{ openclaw_secrets_audit_result.findings" in tasks
     assert 'owner: root\n    group: root\n    mode: "0600"' in tasks
