@@ -66,6 +66,10 @@ openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
 # because that config intentionally contains the file-backed bot SecretRef.
 openclaw_discord_enabled: true
 openclaw_discord_bot_token_path: "{{ openclaw_secret_root }}/discord_bot_token"
+# Owner-only operational commands stay separate from channel authorization.
+# Normal messages remain authorized exclusively by their configured channel IDs.
+openclaw_discord_owner_ids:
+  - "485289286246334476"
 
 # Autonomous Skill Workshop writes only to live workspace skill roots. A
 # separate least-privilege service validates and promotes those text files to

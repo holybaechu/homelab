@@ -30,6 +30,22 @@ def walk_tasks(tasks):
             yield from walk_tasks(task.get(section, []))
 
 
+def test_native_owner_commands_use_an_explicit_numeric_discord_operator_list():
+    variables = yaml.safe_load(read(VARS))
+    assert variables["openclaw_discord_owner_ids"] == ["485289286246334476"]
+
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    protected = next(
+        task
+        for task in tasks
+        if task["name"] == "Require the protected one-Gateway OpenClaw schema"
+    )
+    assertions = " ".join(protected["ansible.builtin.assert"]["that"])
+    assert ".commands.ownerAllowFrom" in assertions
+    assert "openclaw_discord_owner_ids" in assertions
+    assert "^[0-9]{17,20}$" in assertions
+
+
 def tracked_path_classifier():
     validation = yaml.safe_load(read(VALIDATE))
     native_play = next(
@@ -843,6 +859,8 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     assert "'id': 'value'" in assertions
     assert "discord_bot_token_file" in assertions
     assert "plugins.entries.discord.enabled" in assertions
+    assert ".commands.ownerAllowFrom" in assertions
+    assert "openclaw_discord_owner_ids" in assertions
     assert "openclaw_ctf_agents | length == 1" in assertions
     assert "openclaw_main_agents | length == 1" in assertions
     assert "sandbox.backend == 'docker'" in assertions

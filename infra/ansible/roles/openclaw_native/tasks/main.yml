@@ -1131,6 +1131,12 @@
         (openclaw_native_config.content | b64decode | from_json).models.providers.openai ==
         {'agentRuntime': {'id': 'codex'}}
       - >-
+        (openclaw_native_config.content | b64decode | from_json).commands.ownerAllowFrom ==
+        openclaw_discord_owner_ids
+      - >-
+        (openclaw_discord_owner_ids | select('match', '^[0-9]{17,20}$') |
+        list | length) == (openclaw_discord_owner_ids | length)
+      - >-
         openclaw_ctf_agents[0].workspace == openclaw_ctf_workspace_root
       - >-
         (openclaw_native_config.content | b64decode | from_json).skills.workshop ==
@@ -1173,7 +1179,9 @@
       The one Gateway must retain its token SecretRef, its shared Codex profile,
       and exactly one CTF agent with a session Docker sandbox. Its and main's
       approved direct Discord artifact-delivery tool must not cross contexts.
-      Both the Codex harness and direct Discord channel plugin must be enabled.
+      Both the Codex harness and direct Discord channel plugin must be enabled,
+      and owner-only commands must use the explicit operator ID list without
+      changing channel-only message authorization.
   vars:
     openclaw_ctf_agents: >-
       {{ (openclaw_native_config.content | b64decode | from_json).agents.list |

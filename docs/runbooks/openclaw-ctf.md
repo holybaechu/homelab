@@ -45,6 +45,8 @@ allowlists, select agents. The configuration validation requires:
 - A wildcard Discord guild channel map with enabled numeric channel IDs.
 - Exactly one direct Discord binding for each allowed channel; each binding
   names an existing agent and at least one names `ctf`.
+- A numeric `commands.ownerAllowFrom` operator list for guarded diagnostics;
+  it is separate from and does not weaken channel-only message authorization.
 - The `ctf` agent workspace `/var/lib/openclaw/workspaces/ctf`, Docker
   `session` sandbox on `openclaw-ctf`, elevated tools disabled, and the
   approved `message` tool in
