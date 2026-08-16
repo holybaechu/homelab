@@ -82,6 +82,15 @@
     - name: Check the dedicated CTF executor host and Docker Engine
       ansible.builtin.shell: |
         set -eu
+        printf 'hostname=%s uid=%s gid=%s docker_active=%s docker_enabled=%s socket=%s workspace=%s skills=%s\n' \
+          "$(hostname)" \
+          "$(id -u {{ openclaw_ctf_docker_user }} 2>/dev/null || printf missing)" \
+          "$(id -g {{ openclaw_ctf_docker_user }} 2>/dev/null || printf missing)" \
+          "$(systemctl is-active docker.service 2>/dev/null || true)" \
+          "$(systemctl is-enabled docker.service 2>/dev/null || true)" \
+          "$(test -S /var/run/docker.sock && printf present || printf missing)" \
+          "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}' 2>/dev/null || printf missing)" \
+          "$(stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}' 2>/dev/null || printf missing)"
         test "$(hostname)" = ctf-executor
         test "$(id -u {{ openclaw_ctf_docker_user }})" = "{{ openclaw_ctf_executor_user_uid }}"
         test "$(id -g {{ openclaw_ctf_docker_user }})" = "{{ openclaw_ctf_executor_user_gid }}"

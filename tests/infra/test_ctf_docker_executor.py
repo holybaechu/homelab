@@ -24,6 +24,17 @@ def test_ctf_executor_remains_a_dedicated_unprivileged_lxc():
     assert "openclaw_ctf_docker_network: openclaw-ctf" in all_vars
 
 
+def test_executor_validation_reports_only_nonsecret_contract_metadata_on_failure():
+    validation = read("infra/ansible/playbooks/validate.yml")
+
+    assert (
+        "hostname=%s uid=%s gid=%s docker_active=%s docker_enabled=%s "
+        "socket=%s workspace=%s skills=%s"
+    ) in validation
+    assert "stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}'" in validation
+    assert "stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}'" in validation
+
+
 def test_executor_keeps_its_hardened_docker_and_network_contract():
     role_root = REPO_ROOT / "infra/ansible/roles/openclaw_ctf_executor"
     tasks = read("infra/ansible/roles/openclaw_ctf_executor/tasks/main.yml")
