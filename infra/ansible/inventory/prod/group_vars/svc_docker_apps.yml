@@ -56,10 +56,6 @@ arcane_gitops_projects:
     compose_path: apps/compose/code/compose.yml
   - name: openclaw
     compose_path: apps/compose/openclaw/compose.yml
-arcane_retired_gitops_projects:
-  - name: hermes
-    compose_path: apps/compose/hermes/compose.yml
-
 traefik_acme_email: holybaechu@proton.me
 traefik_domain: hchu.me
 traefik_private_domain: home.hchu.me
@@ -95,30 +91,6 @@ copyparty_listen_port: 3923
 t3code_hostname: code.home.hchu.me
 t3code_data_root: /srv/homelab/docker-apps/t3code/home
 t3code_workspace_root: /srv/homelab/docker-apps/t3code/workspaces
-
-retired_docker_compose_projects:
-  - name: backup
-    dest: "{{ docker_apps_compose_root }}/backup"
-  - name: game
-    dest: "{{ docker_apps_compose_root }}/game"
-  - name: hermes
-    dest: "{{ docker_apps_compose_root }}/hermes"
-
-retired_docker_images:
-  - homelab/hermes-agent:local
-  - qmcgaw/gluetun:v3.41.3
-
-retired_docker_volumes:
-  - homelab_gluetun_data
-
-retired_docker_networks:
-  - media_default
-
-retired_docker_compose_services:
-  - project: media
-    service: gluetun
-  - project: media
-    service: qbittorrent-vpn
 
 docker_compose_projects:
   - name: platform

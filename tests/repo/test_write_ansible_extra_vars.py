@@ -67,6 +67,21 @@ def test_gateway_token_transport_newline_is_removed(monkeypatch):
     assert module["build_mapping"]()["openclaw_gateway_token"] == "cd" * 32
 
 
+def test_openclaw_scope_requires_only_openclaw_secrets(monkeypatch):
+    module = runpy.run_path(str(SCRIPT))
+    monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "cd" * 32)
+    monkeypatch.setenv("OPENCLAW_DISCORD_BOT_TOKEN", "discord-token")
+    monkeypatch.setenv("OPENCLAW_SKILL_SYNC_GITHUB_TOKEN", "github-token-" + "x" * 24)
+
+    mapping = module["build_mapping"]("openclaw")
+
+    assert set(mapping) == {
+        "openclaw_gateway_token",
+        "openclaw_discord_bot_token",
+        "openclaw_skill_sync_github_token",
+    }
+
+
 @pytest.mark.parametrize(
     ("name", "value", "message"),
     [

@@ -1,9 +1,8 @@
 # OpenClaw Foundation
 
 OpenClaw runs as a native system Gateway in dedicated unprivileged LXC VMID
-118. The audited migration from the isolated Docker foundation is complete;
-see `openclaw-native-migration.md` for the completed cutover and rollback
-contract. Native is primary and the exact Docker container and assets remain
+118. The audited migration from the isolated Docker foundation is complete.
+Native is primary and the exact Docker container and assets remain
 stopped under a permanent source hold. A tracked rollback never removes that
 hold or restores Arcane ownership.
 
@@ -87,15 +86,12 @@ protected, remote-free production checkout at the start of each homelab
 deployment. The role refuses a dirty checkout, fetches by URL without adding a
 persistent Git remote, stops the Gateway only when the commit changes, resets
 to the fetched commit, and reapplies the protected ownership and modes. Skill
-promotion itself updates GitHub immediately; the already-live skill stays in
-the workspace, while the inert production checkout receives that promoted
-commit on the next homelab deployment.
-
-The first deployment migrates the legacy main workspace from
-`/var/lib/openclaw/workspace` to `/var/lib/openclaw/workspaces/main`. It fails
-closed if both locations contain data. The old `/srv/openclaw-ctf` mount is
-accepted only during the preflight transition and is reconciled to
-`/var/lib/openclaw/workspaces/ctf` by the LXC configuration stage.
+promotion dispatches the returned squash-merge SHA to the homelab `openclaw`
+deployment scope. The production checkout fetches that exact 40-character SHA,
+verifies `FETCH_HEAD`, and never substitutes a later `main`. GitHub's serialized
+production concurrency lets a running promotion finish and safely supersedes
+older queued promotions; a failed dispatch is retried from the durable
+`last-dispatched-commit` marker.
 
 ## Core Codex subscription activation
 

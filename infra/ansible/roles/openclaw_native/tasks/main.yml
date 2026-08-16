@@ -100,6 +100,7 @@
       - openclaw_skill_sync_github_token | length <= 4096
       - openclaw_skill_sync_github_token is not search('\\s')
       - openclaw_skill_sync_repository == 'holybaechu/openclaw-setup'
+      - openclaw_skill_sync_deploy_repository == 'holybaechu/homelab'
       - openclaw_skill_sync_uid | int == 1002
       - openclaw_skill_sync_gid | int == 1002
       - openclaw_skill_sync_state_root == '/var/lib/openclaw-skill-sync'
@@ -164,49 +165,6 @@
     password_lock: true
     state: present
 
-- name: Migrate the legacy main workspace into the unified hierarchy
-  ansible.builtin.shell: |
-    set -eu
-    legacy={{ openclaw_legacy_workspace_root | quote }}
-    target={{ openclaw_workspace_root | quote }}
-    parent={{ openclaw_workspaces_root | quote }}
-
-    if [ ! -e "$legacy" ]; then
-      echo changed=no
-      exit 0
-    fi
-    test -d "$legacy"
-    test ! -L "$legacy"
-    systemctl stop openclaw-gateway.service 2>/dev/null || true
-    install -d -o {{ openclaw_user | quote }} -g {{ openclaw_group | quote }} -m 0700 "$parent"
-
-    if [ -e "$target" ]; then
-      test -d "$target"
-      test ! -L "$target"
-      legacy_item="$(find "$legacy" -mindepth 1 -print -quit)"
-      target_item="$(find "$target" -mindepth 1 -print -quit)"
-      if [ -n "$legacy_item" ] && [ -n "$target_item" ]; then
-        printf '%s\n' 'legacy and unified main workspaces both contain data' >&2
-        exit 1
-      fi
-      if [ -n "$legacy_item" ]; then
-        rmdir "$target"
-        mv "$legacy" "$target"
-      else
-        rmdir "$legacy"
-      fi
-    else
-      mv "$legacy" "$target"
-    fi
-    chown {{ openclaw_user | quote }}:{{ openclaw_group | quote }} "$target"
-    chmod 0700 "$target"
-    echo changed=yes
-  args:
-    executable: /bin/sh
-  register: openclaw_workspace_migration
-  changed_when: "'changed=yes' in openclaw_workspace_migration.stdout"
-  when: openclaw_native_activate | bool
-
 - name: Create native OpenClaw installation and runtime directories
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -242,56 +200,6 @@
     - {path: /etc/openclaw/trust, owner: root, group: "{{ openclaw_group }}", mode: "0750"}
   loop_control:
     label: "{{ item.path }}"
-
-- name: Retire the empty legacy CTF workspace mountpoint
-  ansible.builtin.shell: |
-    set -eu
-    legacy={{ openclaw_ctf_preflight_legacy_workspace_root | quote }}
-
-    if [ ! -e "$legacy" ]; then
-      echo changed=no
-      exit 0
-    fi
-    test -d "$legacy"
-    test ! -L "$legacy"
-    ! mountpoint -q "$legacy"
-    test -z "$(find "$legacy" -mindepth 1 -print -quit)"
-    rmdir "$legacy"
-    echo changed=yes
-  args:
-    executable: /bin/sh
-  register: openclaw_ctf_legacy_mountpoint_retirement
-  changed_when: "'changed=yes' in openclaw_ctf_legacy_mountpoint_retirement.stdout"
-  when: openclaw_native_activate | bool
-
-- name: Inspect retired split Gateway and relay unit files
-  ansible.builtin.stat:
-    path: "/etc/systemd/system/{{ item }}"
-    follow: false
-  loop:
-    - openclaw-ctf-gateway.service
-    - openclaw-discord-relay.service
-  register: openclaw_retired_split_units
-
-- name: Stop and disable retired split Gateway and relay services
-  ansible.builtin.systemd_service:
-    name: "{{ item.item }}"
-    enabled: false
-    state: stopped
-  loop: "{{ openclaw_retired_split_units.results }}"
-  loop_control:
-    label: "{{ item.item }}"
-  when: item.stat.exists | default(false)
-
-- name: Remove retired split Gateway and relay unit files
-  ansible.builtin.file:
-    path: "/etc/systemd/system/{{ item.item }}"
-    state: absent
-  loop: "{{ openclaw_retired_split_units.results }}"
-  loop_control:
-    label: "{{ item.item }}"
-  when: item.stat.exists | default(false)
-  notify: Reload systemd for OpenClaw
 
 - name: Install the OpenClaw Gateway token outside Git
   ansible.builtin.copy:
@@ -763,125 +671,6 @@
         executable: /bin/sh
       changed_when: false
 
-- name: Inspect the validated native OpenClaw transition marker
-  ansible.builtin.stat:
-    path: "{{ openclaw_native_transition_marker_path }}"
-    follow: false
-  register: openclaw_native_transition_marker
-  when: not (openclaw_native_activate | bool)
-
-- name: Read the validated native OpenClaw transition marker
-  ansible.builtin.slurp:
-    src: "{{ openclaw_native_transition_marker_path }}"
-  register: openclaw_native_transition_marker_content
-  when:
-    - not (openclaw_native_activate | bool)
-    - openclaw_native_transition_marker.stat.exists | default(false)
-  no_log: true
-
-- name: Require the exact validated native OpenClaw transition marker
-  ansible.builtin.assert:
-    that:
-      - openclaw_native_transition_marker.stat.isreg | default(false)
-      - not (openclaw_native_transition_marker.stat.islnk | default(false))
-      - openclaw_native_transition_marker.stat.uid == 0
-      - openclaw_native_transition_marker.stat.gid == 0
-      - openclaw_native_transition_marker.stat.mode == '0600'
-      - (openclaw_native_transition_marker_content.content | b64decode) == openclaw_native_transition_marker_value + '\n'
-    fail_msg: >-
-      The native transition marker exists but is malformed; refusing to stop
-      or preserve either Gateway until an operator resolves the ambiguity.
-  when:
-    - not (openclaw_native_activate | bool)
-    - openclaw_native_transition_marker.stat.exists | default(false)
-  no_log: true
-
-- name: Keep an uncut staged native OpenClaw service stopped
-  ansible.builtin.systemd_service:
-    name: openclaw-gateway.service
-    enabled: false
-    state: stopped
-    daemon_reload: true
-  when:
-    - not (openclaw_native_activate | bool)
-    - not (openclaw_native_transition_marker.stat.exists | default(false))
-
-- name: Read allowlisted retained staged OpenClaw failure properties
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - show
-      - openclaw-gateway.service
-      - --property=ActiveState
-      - --property=SubState
-      - --property=Result
-      - --property=ExecMainCode
-      - --property=ExecMainStatus
-      - --property=NRestarts
-  register: openclaw_staged_systemd_state
-  changed_when: false
-  when:
-    - not (openclaw_native_activate | bool)
-    - not (openclaw_native_transition_marker.stat.exists | default(false))
-
-- name: Report retained staged OpenClaw failure properties
-  ansible.builtin.debug:
-    msg: "{{ openclaw_staged_systemd_state.stdout_lines }}"
-  when:
-    - not (openclaw_native_activate | bool)
-    - not (openclaw_native_transition_marker.stat.exists | default(false))
-    - "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
-
-- name: Classify retained staged OpenClaw application failure journal
-  ansible.builtin.include_tasks: classify_gateway_journal.yml
-  vars:
-    openclaw_journal_require_cause: >-
-      {{
-        'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines and
-        'ExecMainCode=1' in openclaw_staged_systemd_state.stdout_lines and
-        'ExecMainStatus=1' in openclaw_staged_systemd_state.stdout_lines
-      }}
-  when:
-    - not (openclaw_native_activate | bool)
-    - not (openclaw_native_transition_marker.stat.exists | default(false))
-
-- name: Preserve retained state when the staged OpenClaw journal query fails
-  ansible.builtin.assert:
-    that:
-      - "'journal-query-failed=0' in openclaw_journal_classification.stdout_lines"
-    fail_msg: >-
-      The bounded native OpenClaw journal query failed; no retained failure
-      state was reset.
-  when:
-    - not (openclaw_native_activate | bool)
-    - not (openclaw_native_transition_marker.stat.exists | default(false))
-
-- name: Reset the retained staged OpenClaw failure state
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - reset-failed
-      - openclaw-gateway.service
-  changed_when: false
-  when:
-    - not (openclaw_native_activate | bool)
-    - not (openclaw_native_transition_marker.stat.exists | default(false))
-    - "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
-
-- name: Prove the uncut staged OpenClaw service remains fenced
-  ansible.builtin.shell: |
-    set -eu
-    test "$(systemctl is-enabled openclaw-gateway.service 2>/dev/null || true)" = disabled
-    test "$(systemctl is-active openclaw-gateway.service 2>/dev/null || true)" = inactive
-    listeners="$(ss -H -ltn 'sport = :{{ openclaw_gateway_port }}')"
-    test -z "${listeners}"
-  args:
-    executable: /bin/sh
-  changed_when: false
-  when:
-    - not (openclaw_native_activate | bool)
-    - not (openclaw_native_transition_marker.stat.exists | default(false))
-
 - name: Synchronize the protected private OpenClaw checkout from canonical main
   ansible.builtin.shell: |
     set -eu
@@ -893,10 +682,25 @@
     test -z "$(git -C "$setup" status --porcelain=v1 --untracked-files=all)"
     test -z "$(git -C "$setup" remote)"
 
+    expected={{ openclaw_setup_expected_commit | default('') | quote }}
+    if [ -z "$expected" ]; then
+      ref=refs/heads/main
+    else
+      printf '%s\n' "$expected" | grep -Eq '^[0-9a-f]{40}$'
+      ref="$expected"
+    fi
     git -C "$setup" fetch --no-tags \
       "https://github.com/{{ openclaw_skill_sync_repository }}.git" \
-      refs/heads/main
+      "$ref"
     fetched="$(git -C "$setup" rev-parse FETCH_HEAD)"
+    if [ -n "$expected" ]; then
+      test "$fetched" = "$expected"
+      git -C "$setup" fetch --no-tags \
+        "https://github.com/{{ openclaw_skill_sync_repository }}.git" \
+        refs/heads/main
+      promoted_main="$(git -C "$setup" rev-parse FETCH_HEAD)"
+      git -C "$setup" merge-base --is-ancestor "$fetched" "$promoted_main"
+    fi
     current="$(git -C "$setup" rev-parse HEAD)"
     if [ "$fetched" = "$current" ]; then
       echo changed=no
@@ -1607,17 +1411,6 @@
 - name: Flush validated OpenClaw handlers before activation
   ansible.builtin.meta: flush_handlers
 
-- name: Preserve the validated transitional native OpenClaw service
-  ansible.builtin.systemd_service:
-    name: openclaw-gateway.service
-    enabled: true
-    state: started
-    daemon_reload: true
-  when:
-    - not (openclaw_native_activate | bool)
-    - not (openclaw_docker_rollback_activate | bool)
-    - openclaw_native_transition_marker.stat.exists | default(false)
-
 - name: Activate only the native OpenClaw system service
   ansible.builtin.systemd_service:
     name: openclaw-gateway.service
@@ -1656,12 +1449,7 @@
   when: openclaw_docker_rollback_activate | bool
 
 - name: Wait for the native OpenClaw Gateway readiness endpoint
-  when: >-
-    not (openclaw_docker_rollback_activate | bool) and
-    (
-      openclaw_native_activate | bool or
-      openclaw_native_transition_marker.stat.exists | default(false)
-    )
+  when: not (openclaw_docker_rollback_activate | bool)
   block:
     - name: Probe the native OpenClaw Gateway readiness endpoint
       ansible.builtin.uri:

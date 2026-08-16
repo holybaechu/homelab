@@ -86,6 +86,7 @@ openclaw_skill_sync_script_path: /usr/local/libexec/openclaw-skill-sync
 openclaw_skill_sync_askpass_path: /usr/local/libexec/openclaw-skill-sync-askpass
 openclaw_skill_sync_github_token_path: "{{ openclaw_secret_root }}/skill_sync_github_token"
 openclaw_skill_sync_repository: holybaechu/openclaw-setup
+openclaw_skill_sync_deploy_repository: holybaechu/homelab
 openclaw_skill_sync_check_timeout: 900
 
 openclaw_gateway_port: 18789

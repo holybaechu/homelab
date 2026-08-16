@@ -84,6 +84,21 @@ set -e
 test "${fast_site_status}" -ne 0
 printf '%s\n' "${fast_site_output}" | grep -F 'Arcane scope deploys workloads through Arcane; Ansible site is disabled'
 
+rm -f "${executor_marker}" "${gateway_marker}" "${transport_marker}"
+PATH="${fake_bin}:${PATH}" \
+TAILNET_MARKER="${tailnet_marker}" \
+EXECUTOR_MARKER="${executor_marker}" \
+GATEWAY_MARKER="${gateway_marker}" \
+TRANSPORT_MARKER="${transport_marker}" \
+ANSIBLE_DEPLOYMENT_SCOPE=openclaw \
+  sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
+test -f "${executor_marker}"
+test -f "${gateway_marker}"
+test -f "${transport_marker}"
+
+none_output="$(PATH="${fake_bin}:${PATH}" ANSIBLE_DEPLOYMENT_SCOPE=none sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" validate)"
+test "${none_output}" = "No deployment targets were selected"
+
 set +e
 timeout_output="$(PATH="${fake_bin}:${PATH}" FAKE_DELAY_SECONDS=3 ANSIBLE_TARGET_TIMEOUT_SECONDS=1 sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" validate 2>&1)"
 timeout_status=$?

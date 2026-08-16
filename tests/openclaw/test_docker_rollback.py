@@ -90,8 +90,6 @@ def test_native_role_enforces_mutual_exclusion_and_a_hard_rollback_fence():
         "without activation'"
     ) in requirements
 
-    preserve = task_by_name(tasks, "Preserve the validated transitional native OpenClaw service")
-    assert "not (openclaw_docker_rollback_activate | bool)" in preserve["when"]
     activate = task_by_name(tasks, "Activate only the native OpenClaw system service")
     assert "not (openclaw_docker_rollback_activate | bool)" in activate["when"]
     stop = task_by_name(tasks, "Stop and disable native OpenClaw for tracked Docker rollback")

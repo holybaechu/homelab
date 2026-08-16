@@ -53,7 +53,7 @@ def test_mixed_empty_and_infrastructure_changes_use_full_path():
     )
     classify_paths = selector["classify_paths"]
 
-    assert classify_paths([]) == "full"
+    assert classify_paths([]) == "none"
     assert classify_paths(["apps/compose/media/compose.yml", "renovate.json"]) == "full"
     assert classify_paths(["infra/ansible/playbooks/site.yml"]) == "full"
     assert classify_paths(["apps/compose/arcane/compose.yml"]) == "full"
@@ -67,6 +67,25 @@ def test_mixed_empty_and_infrastructure_changes_use_full_path():
     ) == "full"
     assert classify_paths(["apps/compose/platform/traefik.yml"]) == "full"
     assert classify_paths(["apps/compose/hermes/compose.yml"]) == "full"
+
+
+def test_openclaw_and_no_deploy_paths_use_their_smallest_scopes():
+    selector = runpy.run_path(
+        str(REPO_ROOT / "scripts" / "ci" / "select-deployment-scope.py")
+    )
+    classify_paths = selector["classify_paths"]
+
+    assert classify_paths(["docs/runbooks/openclaw.md"]) == "none"
+    assert classify_paths(["tests/infra/test_openclaw_native_role.py"]) == "none"
+    assert classify_paths(
+        ["infra/ansible/roles/openclaw_native/tasks/main.yml"]
+    ) == "openclaw"
+    assert classify_paths(
+        [
+            "infra/ansible/roles/openclaw_native/tasks/main.yml",
+            "apps/compose/platform/compose.yml",
+        ]
+    ) == "full"
 
 
 def test_safe_workload_changes_still_use_arcane():
@@ -105,8 +124,21 @@ def test_protected_route_rename_cannot_bypass_the_full_deployment(monkeypatch, t
     monkeypatch.setenv("GITHUB_EVENT_BEFORE", before)
     monkeypatch.setenv("GITHUB_SHA", current)
 
-    scope, paths = selector["deployment_scope"](tmp_path)
+    scope, paths, promoted = selector["deployment_scope"](tmp_path)
 
     assert scope == "full"
     assert "apps/compose/platform/dynamic/routes.yml" in paths
     assert "apps/compose/platform/dynamic/renamed.yml" in paths
+    assert promoted == ""
+
+
+def test_repository_dispatch_uses_only_a_valid_exact_promoted_commit(monkeypatch):
+    selector = runpy.run_path(
+        str(REPO_ROOT / "scripts" / "ci" / "select-deployment-scope.py")
+    )
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "repository_dispatch")
+    commit = "a" * 40
+    monkeypatch.setenv("OPENCLAW_PROMOTED_COMMIT", commit)
+    assert selector["deployment_scope"](REPO_ROOT) == ("openclaw", [], commit)
+    monkeypatch.setenv("OPENCLAW_PROMOTED_COMMIT", "main")
+    assert selector["deployment_scope"](REPO_ROOT) == ("full", [], "")

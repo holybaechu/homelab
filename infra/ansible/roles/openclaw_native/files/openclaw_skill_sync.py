@@ -264,7 +264,7 @@ def wait_for_workflow(api: str, sha: str, token: str, timeout: int) -> None:
     raise Deferred("skill-promotion workflow is still pending")
 
 
-def merge_pr(api: str, number: int, sha: str, token: str) -> None:
+def merge_pr(api: str, number: int, sha: str, token: str) -> str:
     status, payload = request_json(
         "PUT",
         f"{api}/pulls/{number}/merge",
@@ -273,6 +273,29 @@ def merge_pr(api: str, number: int, sha: str, token: str) -> None:
     )
     if status != 200 or not isinstance(payload, dict) or payload.get("merged") is not True:
         raise Deferred("skill-promotion pull request is not mergeable yet")
+    merged_sha = payload.get("sha")
+    if not isinstance(merged_sha, str) or re.fullmatch(r"[0-9a-f]{40}", merged_sha) is None:
+        raise SyncError("skill-promotion merge did not return an exact commit")
+    return merged_sha
+
+
+def dispatch_deployment(repository: str, commit: str, token: str) -> None:
+    status, _ = request_json(
+        "POST",
+        f"https://api.github.com/repos/{repository}/dispatches",
+        token,
+        {"event_type": "openclaw-promoted", "client_payload": {"commit": commit}},
+    )
+    if status != 204:
+        raise SyncError("cannot dispatch the exact promoted OpenClaw commit")
+
+
+def record_dispatched_commit(state: Path, commit: str) -> None:
+    marker = state / "last-dispatched-commit"
+    temporary = state / ".last-dispatched-commit.tmp"
+    temporary.write_text(commit + "\n", encoding="ascii")
+    temporary.chmod(0o600)
+    temporary.replace(marker)
 
 
 def main() -> int:
@@ -286,6 +309,9 @@ def main() -> int:
     if not re.fullmatch(r"[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+", repository):
         raise SyncError("invalid GitHub repository identifier")
     owner = repository.split("/", 1)[0]
+    deploy_repository = require_env("OPENCLAW_SKILL_SYNC_DEPLOY_REPOSITORY")
+    if not re.fullmatch(r"[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+", deploy_repository):
+        raise SyncError("invalid deployment repository identifier")
     clone_url = f"https://github.com/{repository}.git"
     api = f"https://api.github.com/repos/{repository}"
     timeout = int(os.environ.get("OPENCLAW_SKILL_SYNC_CHECK_TIMEOUT", "900"))
@@ -315,7 +341,15 @@ def main() -> int:
         apply_collected(repo, collected)
         changed = run(["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd=repo, env=git_env)
         if not changed:
-            print("skill promotion: repository already matches live skills")
+            current = run(["git", "rev-parse", "HEAD"], cwd=repo, env=git_env)
+            marker = state / "last-dispatched-commit"
+            dispatched = marker.read_text(encoding="ascii").strip() if marker.exists() else ""
+            if dispatched != current:
+                dispatch_deployment(deploy_repository, current, token)
+                record_dispatched_commit(state, current)
+                print(f"skill promotion: dispatched existing commit {current[:12]}")
+            else:
+                print("skill promotion: repository already matches live skills")
             return 0
         names = run(["git", "diff", "--name-only", "--no-ext-diff"], cwd=repo, env=git_env).splitlines()
         names += run(["git", "ls-files", "--others", "--exclude-standard"], cwd=repo, env=git_env).splitlines()
@@ -337,9 +371,11 @@ def main() -> int:
             sha = local_sha
         number = find_or_create_pr(api, owner, branch, sha, token)
         wait_for_workflow(api, sha, token, timeout)
-        merge_pr(api, number, sha, token)
+        merged_sha = merge_pr(api, number, sha, token)
+        dispatch_deployment(deploy_repository, merged_sha, token)
+        record_dispatched_commit(state, merged_sha)
         request_json("DELETE", f"{api}/git/refs/heads/{urllib.parse.quote(branch, safe='')}", token)
-        print(f"skill promotion: merged pull request {number} at {sha[:12]}")
+        print(f"skill promotion: merged pull request {number} at {merged_sha[:12]}")
     return 0
 
 

@@ -9,6 +9,21 @@ import yaml
 from tests.helpers import REPO_ROOT
 
 
+def test_ci_runs_one_daily_full_suite_and_cd_uses_only_four_scopes():
+    ci = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    cd = (REPO_ROOT / ".github/workflows/cd.yml").read_text(encoding="utf-8")
+    runner = (REPO_ROOT / "scripts/ci/run-ansible-parallel.sh").read_text(
+        encoding="utf-8"
+    )
+    assert ci.count('cron: "17 18 * * *"') == 1
+    for scope in ("none", "openclaw", "arcane", "full"):
+        assert f"  {scope})" in runner
+    assert "repository_dispatch:" in cd
+    assert "types: [openclaw-promoted]" in cd
+    assert "OPENCLAW_PROMOTED_COMMIT:" in cd
+    assert "openclaw_setup_commit" in cd
+
+
 def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"
@@ -32,7 +47,7 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
         assert f"{secret_name}:" not in job_env
 
     assert "python3 scripts/ci/write_ansible_extra_vars.py" in workflow
-    assert workflow.index("Validate and write Ansible service secrets") < workflow.index("OpenTofu plan")
+    assert workflow.index("Validate and write scoped Ansible service secrets") < workflow.index("OpenTofu plan")
     assert "${{ runner.temp }}/ansible-extra-vars.json" in workflow
     assert "ADGUARD_ADMIN_PASSWORD:" in workflow
     assert "COPYPARTY_USERS_JSON:" in workflow
@@ -45,8 +60,8 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     assert "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN: ${{ secrets.OPENCLAW_SKILL_SYNC_GITHUB_TOKEN }}" in workflow
     assert "OPENCLAW_DISCORD_ENABLED" not in workflow
     secret_step = workflow.split(
-        "- name: Validate and write Ansible service secrets", maxsplit=1
-    )[1].split("- name: Prepare one-time lowest-ID cutover", maxsplit=1)[0]
+        "- name: Validate and write scoped Ansible service secrets", maxsplit=1
+    )[1].split("- name: OpenTofu plan", maxsplit=1)[0]
     assert "OPENCLAW_GATEWAY_TOKEN:" in secret_step
     assert "OPENCLAW_DISCORD_BOT_TOKEN:" in secret_step
     assert "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN:" in secret_step
@@ -88,54 +103,8 @@ def test_cd_workflow_runs_bootstrap_before_site_deploy():
     assert bootstrap < site
 
 
-def test_cd_workflow_fail_closes_openclaw_allocation_before_cutover_and_tofu():
-    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
-        encoding="utf-8"
-    )
-
-    collections = workflow.index("- name: Install Ansible collections")
-    core_preflight = workflow.index("- name: Preflight dedicated OpenClaw LXC allocation")
-    ctf_preflight = workflow.index("- name: Preflight isolated CTF executor LXC allocation")
-    cutover = workflow.index("- name: Prepare one-time lowest-ID cutover")
-    plan = workflow.index("- name: OpenTofu plan")
-    apply = workflow.index("- name: OpenTofu apply")
-
-    assert collections < core_preflight < ctf_preflight < cutover < plan < apply
-    core_preflight_step = workflow[core_preflight:ctf_preflight]
-    ctf_preflight_step = workflow[ctf_preflight:].split(
-        "- name: Trust Docker application LXC access for identity proof", maxsplit=1
-    )[0]
-    assert "steps.scope.outputs.deployment_scope == 'full'" in core_preflight_step
-    assert "infra/ansible/playbooks/preflight-openclaw-lxc.yml" in core_preflight_step
-    assert "PVE_ROOT_DATASTORE_ID: ${{ vars.PVE_ROOT_DATASTORE_ID }}" in core_preflight_step
-    assert '"openclaw_root_datastore_id=${PVE_ROOT_DATASTORE_ID}"' in core_preflight_step
-    assert "infra/ansible/playbooks/preflight-ctf-executor-lxc.yml" in ctf_preflight_step
-    assert "steps.scope.outputs.deployment_scope == 'full'" in ctf_preflight_step
-    assert "ANSIBLE_EXTRA_VARS_PATH" not in core_preflight_step
-    assert "ANSIBLE_EXTRA_VARS_PATH" not in ctf_preflight_step
-    for secret_name in (
-        "PROXMOX_API_TOKEN",
-        "OPENCLAW_GATEWAY_TOKEN",
-        "OPENCLAW_DISCORD_BOT_TOKEN",
-        "CLOUDFLARE_TRAEFIK_TOKEN",
-    ):
-        assert secret_name not in core_preflight_step
-        assert secret_name not in ctf_preflight_step
 
 
-def test_ci_syntax_checks_the_native_openclaw_recovery_playbooks():
-    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
-
-    assert (
-        "infra/ansible/playbooks/finalize-openclaw-native-cutover.yml "
-        "--syntax-check"
-    ) in workflow
-    assert (
-        "infra/ansible/playbooks/rebaseline-openclaw-retained-rollback.yml "
-        "--syntax-check"
-    ) in workflow
 
 
 def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_pushes():
@@ -150,11 +119,10 @@ def test_cd_workflow_can_prove_same_sha_workload_identity_without_affecting_push
     trust = workflow.index("Trust Docker application LXC access for identity proof")
     capture = workflow.index("Capture long-lived workload container identities")
     deploy = workflow.index("- name: Deploy services")
-    retire = workflow.index("- name: Retire the archived source pair")
     prove = workflow.index(
         "Prove long-lived workload container identities are unchanged"
     )
-    assert configure_ssh < install_collections < trust < capture < deploy < retire < prove
+    assert configure_ssh < install_collections < trust < capture < deploy < prove
 
     for step_name in (
         "Trust Docker application LXC access for identity proof",
@@ -326,8 +294,8 @@ def test_cd_workflow_fast_tracks_known_workloads_through_arcane():
         "Connect Tailscale"
     )
     secret_step = workflow.split(
-        "- name: Validate and write Ansible service secrets", maxsplit=1
-    )[1].split("- name: Prepare one-time lowest-ID cutover", maxsplit=1)[0]
+        "- name: Validate and write scoped Ansible service secrets", maxsplit=1
+    )[1].split("- name: OpenTofu plan", maxsplit=1)[0]
     assert "steps.scope.outputs.deployment_scope == 'full'" in secret_step
     deploy_step = workflow.split("- name: Deploy services", maxsplit=1)[1].split(
         "- name: Validate services", maxsplit=1
@@ -335,40 +303,8 @@ def test_cd_workflow_fast_tracks_known_workloads_through_arcane():
     assert "steps.scope.outputs.deployment_scope == 'full'" in deploy_step
 
 
-def test_cd_workflow_and_extra_vars_have_no_hermes_secret_dependencies():
-    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
-        encoding="utf-8"
-    )
-    script = (REPO_ROOT / "scripts" / "ci" / "write_ansible_extra_vars.py").read_text(
-        encoding="utf-8"
-    )
-
-    for removed_name in (
-        "HERMES_DISCORD_BOT_TOKEN",
-        "HERMES_DISCORD_ALLOWED_USERS",
-        "HERMES_DISCORD_HOME_CHANNEL",
-        "PARALLEL_API_KEY",
-        "FIRECRAWL_API_KEY",
-        "BROWSERBASE_API_KEY",
-        "BROWSERBASE_PROJECT_ID",
-        "HONCHO_API_KEY",
-        "OP_SERVICE_ACCOUNT_TOKEN",
-    ):
-        assert removed_name not in workflow
-        assert removed_name not in script
 
 
-def test_cd_workflow_and_extra_vars_have_no_retired_proton_secret_dependency():
-    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
-        encoding="utf-8"
-    )
-    script = (REPO_ROOT / "scripts" / "ci" / "write_ansible_extra_vars.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "PROTON_WIREGUARD_PRIVATE_KEY" not in workflow
-    assert "PROTON_WIREGUARD_PRIVATE_KEY" not in script
-    assert "proton_wireguard_private_key" not in script
 
 
 def test_fast_path_trusts_only_the_docker_lxc_via_proxmox():
@@ -627,27 +563,13 @@ def test_tofu_apply_is_guarded_against_destroying_lxcs():
     assert "prevent_destroy = true" not in module
     assert "tofu show -json prod.tfplan" in plan_script
     assert "check_tofu_plan_safe.py" in plan_script
-    assert "APPROVED_LOW_ID_TARGETS" in guard_script
-    assert "docker_apps" in guard_script and ": 110" in guard_script
-    assert "tailnet" in guard_script and ": 111" in guard_script
+    assert "APPROVED_LOW_ID_TARGETS" not in guard_script
     assert "ALLOW_TOFU_DESTROY" in guard_script
     assert "ALLOW_EMPTY_STATE_BOOTSTRAP" in guard_script
     assert '"delete" in actions' in guard_script
     assert "create-only" in guard_script
 
 
-def test_cd_workflow_does_not_plan_one_time_hermes_lxc_replacement():
-    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
-        encoding="utf-8"
-    )
-    plan_script = (REPO_ROOT / "scripts" / "ci" / "tofu-plan.sh").read_text(
-        encoding="utf-8"
-    )
-
-    assert "rebuild_hermes_lxc" not in workflow
-    assert "REBUILD_HERMES_LXC" not in workflow
-    assert 'module.lxc["hermes"].proxmox_virtual_environment_container.this' not in plan_script
-    assert "-replace=" not in plan_script
 
 
 def test_generated_tofu_secret_variable_files_are_ignored_and_topology_is_tracked():

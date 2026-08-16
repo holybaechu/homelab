@@ -21,7 +21,6 @@ openclaw_ctf_workspace_root: /var/lib/openclaw/workspaces/ctf
 openclaw_ctf_sandbox_skills_root: /var/lib/openclaw/sandbox/skills-workspaces
 # CD preflight accepts this one former managed workspace destination only
 # until the root-options role rewrites mp0 to the unified hierarchy above.
-openclaw_ctf_preflight_legacy_workspace_root: /srv/openclaw-ctf
 openclaw_ctf_uid: "{{ service_uid }}"
 openclaw_ctf_gid: "{{ service_gid }}"
 openclaw_ctf_docker_user: openclaw-ctf-docker
@@ -68,18 +67,6 @@ homelab_data_lv_size: 896G
 homelab_data_mount: /var/lib/homelab
 homelab_data_device: "/dev/pve/{{ homelab_data_lv_name }}"
 homelab_container_uid_offset: 100000
-retired_minecraft_data_path: /var/lib/homelab/minecraft
-
-legacy_lxcs:
-  - {name: downloads, vmid: 113}
-  - {name: files, vmid: 114}
-  - {name: hermes, vmid: 116}
-
-low_id_cutover_backup_storage: local
-low_id_cutover_mappings:
-  - {target_vmid: 110, legacy_name: edge, desired_name: docker-apps, source_vmid: 117, backup_mode: stop}
-  - {target_vmid: 111, legacy_name: dns, desired_name: tailnet, source_vmid: 112, backup_mode: snapshot}
-
 pve_lxc_root_options:
   - vmid: 111
     name: tailnet
@@ -107,10 +94,6 @@ pve_lxc_root_options:
       - description: mount the homelab data root once
         pattern: '^mp0: /var/lib/homelab,mp=/srv/homelab(,.*)?$'
         pct_args: '-mp0 /var/lib/homelab,mp=/srv/homelab'
-    absent_settings:
-      - description: retired Gluetun TUN device
-        pattern: '^dev0: /dev/net/tun(,.*)?$'
-        pct_args: '-delete dev0'
   - vmid: 118
     name: openclaw
     bind_mount_sources:

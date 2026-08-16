@@ -18,7 +18,6 @@
           --required-feature keyctl
           --expected-bind-mount {{ (openclaw_ctf_shared_host_path + ',mp=' + openclaw_ctf_workspace_root) | quote }}
           --expected-bind-mount {{ (openclaw_ctf_sandbox_skills_host_path + ',mp=' + openclaw_ctf_sandbox_skills_root) | quote }}
-          --transitional-bind-mount {{ (openclaw_ctf_shared_host_path + ',mp=' + openclaw_ctf_preflight_legacy_workspace_root) | quote }}
           --transitional-bind-mount {{ (openclaw_ctf_sandbox_skills_host_path + ',mp=' + openclaw_ctf_sandbox_skills_root) | quote }}
           --allow-missing-expected-bind-mounts
         executable: /usr/bin/python3

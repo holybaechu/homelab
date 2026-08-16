@@ -3,7 +3,6 @@
   hosts: pve_hosts
   gather_facts: false
   roles:
-    - pve_retire_legacy_lxcs
     - pve_homelab_storage
   post_tasks:
     - name: Read Proxmox root CA for the Traefik upstream trust store

@@ -54,28 +54,6 @@ def test_shared_data_and_isolated_state_use_the_intended_mounts():
     assert "gluetun" not in compose
 
 
-def test_vpn_and_proton_dependencies_are_not_deployed():
-    site = (REPO_ROOT / "infra/ansible/playbooks/site.yml").read_text(
-        encoding="utf-8"
-    )
-    active_files = [
-        REPO_ROOT / "apps/compose/media/compose.yml",
-        REPO_ROOT / "apps/compose/media/.env.example",
-        REPO_ROOT
-        / "infra/ansible/roles/docker_compose_project/templates/media.env.j2",
-        REPO_ROOT
-        / "infra/ansible/roles/docker_compose_project/tasks/main.yml",
-        REPO_ROOT / "scripts/ci/write_ansible_extra_vars.py",
-        REPO_ROOT / ".github/workflows/cd.yml",
-    ]
-
-    assert "downloads_vpn" not in site
-    assert "qbittorrent\n" not in site
-    assert "proton-natpmp" not in site
-    for path in active_files:
-        text = path.read_text(encoding="utf-8")
-        assert "WIREGUARD_PRIVATE_KEY" not in text
-        assert "proton_wireguard_private_key" not in text
 
 
 def test_copyparty_history_uses_the_backed_up_state_mount():

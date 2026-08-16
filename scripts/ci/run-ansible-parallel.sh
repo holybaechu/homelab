@@ -18,6 +18,7 @@ inventory="${repo_root}/infra/ansible/inventory/prod/hosts.yml"
 TARGETS="$(python3 "${repo_root}/scripts/ci/render_ansible_targets.py")"
 target_timeout_seconds="${ANSIBLE_TARGET_TIMEOUT_SECONDS:-1800}"
 deployment_scope="${ANSIBLE_DEPLOYMENT_SCOPE:-full}"
+openclaw_components="${OPENCLAW_COMPONENTS:-all}"
 
 case "${target_timeout_seconds}" in
   ''|*[!0-9]*|0)
@@ -50,8 +51,19 @@ case "${deployment_scope}" in
       exit 2
     fi
     ;;
+  openclaw)
+    case "${openclaw_components}" in
+      gateway) TARGETS="openclaw:svc_openclaw" ;;
+      all) TARGETS="ctf_executor:svc_ctf_executor openclaw:svc_openclaw" ;;
+      *) echo "OPENCLAW_COMPONENTS must be gateway or all" >&2; exit 2 ;;
+    esac
+    ;;
+  none)
+    echo "No deployment targets were selected"
+    exit 0
+    ;;
   *)
-    echo "ANSIBLE_DEPLOYMENT_SCOPE must be full or arcane" >&2
+    echo "ANSIBLE_DEPLOYMENT_SCOPE must be none, openclaw, arcane, or full" >&2
     exit 2
     ;;
 esac
@@ -99,6 +111,17 @@ run_foreground_target() {
   printf '::endgroup::\n'
   return "${result}"
 }
+
+if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "openclaw" ]; then
+  if [ "${openclaw_components}" = "gateway" ]; then
+    run_foreground_target openclaw svc_openclaw --tags openclaw_native "$@"
+    exit 0
+  fi
+  run_foreground_target ctf_executor svc_ctf_executor --tags ctf_executor "$@"
+  run_foreground_target openclaw svc_openclaw --tags openclaw_native "$@"
+  run_foreground_target ctf_executor svc_ctf_executor --tags ctf_transport "$@"
+  exit 0
+fi
 
 if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
   tailnet_entry=""

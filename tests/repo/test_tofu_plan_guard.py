@@ -128,50 +128,8 @@ def test_tofu_plan_guard_accepts_non_destructive_changes():
     assert "no unapproved destructive actions" in result.stdout
 
 
-def test_tofu_plan_guard_allows_only_exact_retained_source_low_id_targets():
-    result = run_guard(
-        {
-            "resource_changes": [
-                {
-                    "address": 'module.target_lxc["docker_apps"].proxmox_virtual_environment_container.this',
-                    "change": {
-                        "actions": ["create"],
-                        "after": {"vm_id": 110},
-                    },
-                },
-                {
-                    "address": 'module.target_lxc["tailnet"].proxmox_virtual_environment_container.this',
-                    "change": {
-                        "actions": ["create"],
-                        "after": {"vm_id": 111},
-                    },
-                },
-            ]
-        }
-    )
-
-    assert result.returncode == 0
-    assert "-> 110" in result.stdout
-    assert "-> 111" in result.stdout
 
 
-def test_tofu_plan_guard_rejects_almost_matching_low_id_target():
-    result = run_guard(
-        {
-            "resource_changes": [
-                {
-                    "address": 'module.target_lxc["docker_apps"].proxmox_virtual_environment_container.this',
-                    "change": {
-                        "actions": ["create"],
-                        "after": {"vm_id": 109},
-                    },
-                }
-            ]
-        }
-    )
-
-    assert result.returncode == 1
-    assert "expected VMID 110" in result.stderr
 
 
 def test_tofu_plan_guard_allows_only_exact_additive_openclaw_target():

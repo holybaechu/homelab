@@ -12,9 +12,6 @@ from tests.helpers import REPO_ROOT
 ROLE = REPO_ROOT / "infra/ansible/roles/openclaw_native"
 VARS = REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_openclaw.yml"
 VALIDATE = REPO_ROOT / "infra/ansible/playbooks/validate.yml"
-STAGE_VALIDATE = (
-    REPO_ROOT / "infra/ansible/playbooks/validate-openclaw-native-stage.yml"
-)
 MATERIALIZER = ROLE / "files/materialize_openclaw_credential.py"
 PROBE_UNIT = ROLE / "templates/openclaw-credential-probe.service.j2"
 
@@ -151,9 +148,7 @@ def test_native_openclaw_cli_version_output_is_exact_in_every_validation_path():
         "'{{ openclaw_cli_version_output }}'"
     )
     assert expected_shell_assertion in read(VALIDATE)
-    assert expected_shell_assertion in read(STAGE_VALIDATE)
     assert "openclaw_cli_version }}" not in read(VALIDATE)
-    assert "openclaw_cli_version }}" not in read(STAGE_VALIDATE)
 
 
 def test_native_runtime_install_recovers_only_exact_incomplete_version_prefixes():
@@ -208,171 +203,17 @@ def test_native_runtime_install_recovers_only_exact_incomplete_version_prefixes(
     assert "creates: \"{{ openclaw_release_root }}/lib/node_modules/openclaw/package.json\"" not in raw_tasks
 
 
-def test_native_openclaw_activation_is_an_explicit_tracked_owner():
+def test_native_openclaw_activation_is_the_only_supported_runtime_state():
     variables = yaml.safe_load(read(VARS))
-    tasks_text = read(ROLE / "tasks/main.yml")
-    tasks = yaml.safe_load(tasks_text)
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    assert variables["openclaw_native_activate"] is True
+    activation = next(task for task in tasks if task["name"] == "Activate only the native OpenClaw system service")
+    assert activation["ansible.builtin.systemd_service"]["state"] == "started"
+    names = {task["name"] for task in walk_tasks(tasks)}
+    assert "Keep an uncut staged native OpenClaw service stopped" not in names
+    assert "Preserve the validated transitional native OpenClaw service" not in names
 
-    assert isinstance(variables["openclaw_native_activate"], bool)
-    activation = next(
-        task
-        for task in tasks
-        if task["name"] == "Activate only the native OpenClaw system service"
-    )
-    assert activation["when"] == [
-        "openclaw_native_activate | bool",
-        "not (openclaw_docker_rollback_activate | bool)",
-    ]
-    assert activation["ansible.builtin.systemd_service"] == {
-        "name": "openclaw-gateway.service",
-        "enabled": True,
-        "state": "started",
-        "daemon_reload": True,
-    }
-    staged = next(
-        task
-        for task in tasks
-        if task["name"] == "Keep an uncut staged native OpenClaw service stopped"
-    )
-    assert staged["when"] == [
-        "not (openclaw_native_activate | bool)",
-        "not (openclaw_native_transition_marker.stat.exists | default(false))",
-    ]
-    assert staged["ansible.builtin.systemd_service"] == {
-        "name": "openclaw-gateway.service",
-        "enabled": False,
-        "state": "stopped",
-        "daemon_reload": True,
-    }
-    staged_when = [
-        "not (openclaw_native_activate | bool)",
-        "not (openclaw_native_transition_marker.stat.exists | default(false))",
-    ]
-    diagnostic = next(
-        task
-        for task in tasks
-        if task["name"] == "Read allowlisted retained staged OpenClaw failure properties"
-    )
-    assert diagnostic["when"] == staged_when
-    argv = diagnostic["ansible.builtin.command"]["argv"]
-    assert argv[:3] == ["systemctl", "show", "openclaw-gateway.service"]
-    assert set(argv[3:]) == {
-        "--property=ActiveState",
-        "--property=SubState",
-        "--property=Result",
-        "--property=ExecMainCode",
-        "--property=ExecMainStatus",
-        "--property=NRestarts",
-    }
-    report = next(
-        task
-        for task in tasks
-        if task["name"] == "Report retained staged OpenClaw failure properties"
-    )
-    assert report["when"] == staged_when + [
-        "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
-    ]
-    assert report["ansible.builtin.debug"]["msg"] == (
-        "{{ openclaw_staged_systemd_state.stdout_lines }}"
-    )
-    journal = next(
-        task
-        for task in tasks
-        if task["name"]
-        == "Classify retained staged OpenClaw application failure journal"
-    )
-    exact_failed_application_when = staged_when
-    assert journal["ansible.builtin.include_tasks"] == (
-        "classify_gateway_journal.yml"
-    )
-    assert journal["when"] == exact_failed_application_when
-    require_cause = journal["vars"]["openclaw_journal_require_cause"]
-    assert "'ActiveState=failed'" in require_cause
-    assert "'ExecMainCode=1'" in require_cause
-    assert "'ExecMainStatus=1'" in require_cause
-    query_guard = next(
-        task
-        for task in tasks
-        if task["name"]
-        == "Preserve retained state when the staged OpenClaw journal query fails"
-    )
-    assert query_guard["when"] == exact_failed_application_when
-    assert query_guard["ansible.builtin.assert"]["that"] == [
-        "'journal-query-failed=0' in openclaw_journal_classification.stdout_lines"
-    ]
-    assert query_guard["ansible.builtin.assert"]["fail_msg"] == (
-        "The bounded native OpenClaw journal query failed; no retained failure "
-        "state was reset."
-    )
-    reset = next(
-        task
-        for task in tasks
-        if task["name"] == "Reset the retained staged OpenClaw failure state"
-    )
-    assert reset["when"] == staged_when + [
-        "'ActiveState=failed' in openclaw_staged_systemd_state.stdout_lines"
-    ]
-    assert reset["changed_when"] is False
-    assert reset["ansible.builtin.command"]["argv"] == [
-        "systemctl",
-        "reset-failed",
-        "openclaw-gateway.service",
-    ]
-    proof = next(
-        task
-        for task in tasks
-        if task["name"] == "Prove the uncut staged OpenClaw service remains fenced"
-    )
-    assert proof["when"] == staged_when
-    proof_shell = proof["ansible.builtin.shell"]
-    assert "systemctl is-enabled openclaw-gateway.service" in proof_shell
-    assert "systemctl is-active openclaw-gateway.service" in proof_shell
-    assert "sport = :{{ openclaw_gateway_port }}" in proof_shell
-    assert 'listeners="$(ss -H -ltn' in proof_shell
-    assert 'test -z "${listeners}"' in proof_shell
-    assert "! ss " not in proof_shell
-    stage_task_names = [task["name"] for task in tasks]
-    assert stage_task_names.index(staged["name"]) < stage_task_names.index(
-        diagnostic["name"]
-    ) < stage_task_names.index(report["name"]) < stage_task_names.index(
-        journal["name"]
-    ) < stage_task_names.index(query_guard["name"]) < stage_task_names.index(
-        reset["name"]
-    ) < stage_task_names.index(proof["name"])
-    preserve = next(
-        task
-        for task in tasks
-        if task["name"] == "Preserve the validated transitional native OpenClaw service"
-    )
-    assert preserve["when"] == [
-        "not (openclaw_native_activate | bool)",
-        "not (openclaw_docker_rollback_activate | bool)",
-        "openclaw_native_transition_marker.stat.exists | default(false)",
-    ]
-    assert preserve["ansible.builtin.systemd_service"] == {
-        "name": "openclaw-gateway.service",
-        "enabled": True,
-        "state": "started",
-        "daemon_reload": True,
-    }
-    assert tasks_text.index("Flush validated OpenClaw handlers before activation") < (
-        tasks_text.index("Preserve the validated transitional native OpenClaw service")
-    )
-    readiness = next(
-        task
-        for task in tasks
-        if task["name"] == "Wait for the native OpenClaw Gateway readiness endpoint"
-    )
-    assert "openclaw_native_activate | bool or" in readiness["when"]
-    assert "openclaw_native_transition_marker.stat.exists | default(false)" in (
-        readiness["when"]
-    )
-    assert variables["openclaw_native_transition_marker_path"] == (
-        "/var/lib/.openclaw-native-migration-validated"
-    )
-    assert variables["openclaw_native_transition_marker_value"] == (
-        "homelab-openclaw-native-migration-v1"
-    )
+
 
 
 def test_native_openclaw_uses_an_external_hardened_system_service():
@@ -1030,20 +871,6 @@ def test_native_openclaw_activation_validates_before_starting():
     assert positions == sorted(positions)
     assert "Flush staged OpenClaw handlers before activation" not in tasks
 
-    retired_ctf_mountpoint = next(
-        task
-        for task in walk_tasks(parsed_tasks)
-        if task["name"] == "Retire the empty legacy CTF workspace mountpoint"
-    )
-    retirement = retired_ctf_mountpoint["ansible.builtin.shell"]
-    assert "test -d \"$legacy\"" in retirement
-    assert "test ! -L \"$legacy\"" in retirement
-    assert "! mountpoint -q \"$legacy\"" in retirement
-    assert "find \"$legacy\" -mindepth 1 -print -quit" in retirement
-    assert "rmdir \"$legacy\"" in retirement
-    assert "rm -r" not in retirement
-    assert retired_ctf_mountpoint["when"] == "openclaw_native_activate | bool"
-
     handlers = read(ROLE / "handlers/main.yml")
     assert "systemctl\n      - is-active\n      - --quiet" in handlers
     assert "openclaw_gateway_active_for_restart.rc == 0" in handlers
@@ -1444,7 +1271,6 @@ def test_site_and_validation_include_the_dedicated_openclaw_lxc():
 
 def test_native_validation_rechecks_the_runtime_credential_boundary():
     for validation_path, task_name in (
-        (STAGE_VALIDATE, "Check the staged or active native credential boundary"),
         (VALIDATE, "Check the native Gateway runtime credential boundary"),
     ):
         plays = yaml.safe_load(read(validation_path))
@@ -1671,34 +1497,6 @@ def test_active_native_tracked_path_classifier_handles_real_git_paths(
     assert result.stderr == ""
 
 
-def test_docker_host_has_a_minimal_native_cutover_finalizer():
-    finalizer_path = (
-        REPO_ROOT
-        / "infra/ansible/playbooks/finalize-openclaw-native-cutover.yml"
-    )
-    finalizer = yaml.safe_load(read(finalizer_path))
-
-    assert finalizer == [
-        {
-            "name": "Finalize the native OpenClaw cutover on the Docker host",
-            "hosts": "svc_docker_apps",
-            "gather_facts": True,
-            "any_errors_fatal": True,
-            "roles": [
-                {
-                    "role": "openclaw_foundation",
-                    "tags": ["openclaw", "openclaw_native_cutover"],
-                },
-                {
-                    "role": "arcane_manager",
-                    "vars": {"arcane_openclaw_cutover_only": True},
-                    "tags": ["arcane", "openclaw_native_cutover"],
-                },
-            ],
-        }
-    ]
-    ci = read(REPO_ROOT / ".github/workflows/ci.yml")
-    assert "finalize-openclaw-native-cutover.yml --syntax-check" in ci
 
 
 def test_docker_foundation_repository_guard_is_a_well_formed_assertion():

@@ -15,10 +15,6 @@ LXC_RESOURCE_SUFFIX = ".proxmox_virtual_environment_container.this"
 OPENCLAW_STAGE_ADDRESS = (
     f'module.target_lxc["openclaw"]{LXC_RESOURCE_SUFFIX}'
 )
-APPROVED_LOW_ID_TARGETS = {
-    f'module.target_lxc["docker_apps"]{LXC_RESOURCE_SUFFIX}': 110,
-    f'module.target_lxc["tailnet"]{LXC_RESOURCE_SUFFIX}': 111,
-}
 APPROVED_ADDITIVE_TARGETS = {
     OPENCLAW_STAGE_ADDRESS: 118,
 }
@@ -53,17 +49,6 @@ def _resource_changes(plan: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _actions(resource: dict[str, Any]) -> list[str]:
     return list(resource.get("change", {}).get("actions", []))
-
-
-def _is_approved_low_id_target(resource: dict[str, Any]) -> bool:
-    address = resource.get("address", "")
-    expected = APPROVED_LOW_ID_TARGETS.get(address)
-    if expected is None or _actions(resource) != ["create"]:
-        return False
-
-    change = resource.get("change", {})
-    after_vmid = (change.get("after") or {}).get("vm_id")
-    return after_vmid == expected
 
 
 def _is_approved_additive_target(resource: dict[str, Any]) -> bool:
@@ -389,11 +374,6 @@ def main(argv: list[str]) -> int:
             )
             return 1
 
-    approved_targets = [
-        resource.get("address", "<unknown>")
-        for resource in _resource_changes(plan)
-        if _is_approved_low_id_target(resource)
-    ]
     approved_additive_targets = [
         resource.get("address", "<unknown>")
         for resource in _resource_changes(plan)
@@ -417,21 +397,11 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
-    for address in approved_targets:
-        vmid = APPROVED_LOW_ID_TARGETS[address]
-        print(f"Approved one-time retained-source low-ID target: {address} -> {vmid}.")
     for address in approved_additive_targets:
         vmid = APPROVED_ADDITIVE_TARGETS[address]
         print(f"Approved additive dedicated OpenClaw target: {address} -> {vmid}.")
 
     create_only_lxcs = _create_only_lxc_changes(plan)
-    invalid_known_targets = [
-        resource.get("address", "<unknown>")
-        for resource in _resource_changes(plan)
-        if resource.get("address") in APPROVED_LOW_ID_TARGETS
-        and _actions(resource) == ["create"]
-        and not _is_approved_low_id_target(resource)
-    ]
     invalid_additive_targets = [
         resource.get("address", "<unknown>")
         for resource in _resource_changes(plan)
@@ -439,12 +409,6 @@ def main(argv: list[str]) -> int:
         and _actions(resource) == ["create"]
         and not _is_approved_additive_target(resource)
     ]
-    if invalid_known_targets:
-        print("OpenTofu plan uses an unexpected VMID for a protected low-ID target:", file=sys.stderr)
-        for address in invalid_known_targets:
-            print(f"- {address}: expected VMID {APPROVED_LOW_ID_TARGETS[address]}", file=sys.stderr)
-        return 1
-
     if invalid_additive_targets:
         print("OpenTofu plan uses an unexpected VMID for the dedicated OpenClaw target:", file=sys.stderr)
         for address in invalid_additive_targets:

@@ -137,6 +137,9 @@ def test_role_keeps_promotion_outside_gateway_and_auto_merges_checked_prs():
     assert '"event": "pull_request"' in script
     assert '"head_sha": sha' in script
     assert '"merge_method": "squash"' in script
+    assert '"event_type": "openclaw-promoted"' in script
+    assert '"client_payload": {"commit": commit}' in script
+    assert "last-dispatched-commit" in script
     assert '["git", "push", "origin", f"HEAD:refs/heads/{branch}"]' in script
     assert '["git", "push", "origin", "main"]' not in script
     assert role.index("Probe the native OpenClaw Gateway readiness endpoint") < role.index(
@@ -158,6 +161,8 @@ def test_role_syncs_canonical_setup_without_persisting_a_remote_or_token():
     assert "git -C \"$setup\" fetch --no-tags" in shell
     assert "https://github.com/{{ openclaw_skill_sync_repository }}.git" in shell
     assert "git -C \"$setup\" reset --hard \"$fetched\"" in shell
+    assert "openclaw_setup_expected_commit" in shell
+    assert "test \"$fetched\" = \"$expected\"" in shell
     assert "git -C \"$setup\" clean -fdx" in shell
     assert 'test -z "$(git -C "$setup" remote)"' in shell
     assert "systemctl stop openclaw-gateway.service" in shell

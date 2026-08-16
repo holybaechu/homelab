@@ -120,9 +120,6 @@ def test_compose_role_bootstraps_qbittorrent_and_live_reconciles_only_vuetorrent
     assert 'docker ps -q --filter "publish={{ qbittorrent_direct_peer_port }}"' not in tasks_text
     assert 'test "${owner}" = "${direct_container}"' in tasks_text
     assert tasks_text.index("Build and start Compose projects in dependency order") < tasks_text.index(
-        "Assert retired Compose service containers are absent"
-    )
-    assert tasks_text.index("Build and start Compose projects in dependency order") < tasks_text.index(
         "Restrict qBittorrent configuration metadata after live reconciliation"
     )
     assert tasks_text.index("Build and start Compose projects in dependency order") < tasks_text.index(
@@ -363,29 +360,6 @@ def test_compose_role_copies_only_declared_runtime_files():
         assert ".env.example" not in combined
 
 
-def test_compose_role_removes_retired_vpn_runtime_artifacts_after_orphans():
-    tasks = (
-        REPO_ROOT
-        / "infra/ansible/roles/docker_compose_project/tasks/main.yml"
-    ).read_text(encoding="utf-8")
-    variables = (
-        REPO_ROOT
-        / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
-    ).read_text(encoding="utf-8")
-    parsed_variables = yaml.safe_load(variables)
-
-    compose_up = tasks.index("Build and start Compose projects in dependency order")
-    assert compose_up < tasks.index("Assert retired Compose service containers are absent")
-    assert compose_up < tasks.index("Remove retired Docker volumes")
-    assert compose_up < tasks.index("Remove retired Docker networks")
-    assert compose_up < tasks.index("Remove retired local Docker images")
-    assert parsed_variables["retired_docker_compose_services"] == [
-        {"project": "media", "service": "gluetun"},
-        {"project": "media", "service": "qbittorrent-vpn"},
-    ]
-    assert parsed_variables["retired_docker_volumes"] == ["homelab_gluetun_data"]
-    assert parsed_variables["retired_docker_networks"] == ["media_default"]
-    assert "qmcgaw/gluetun:v3.41.3" in parsed_variables["retired_docker_images"]
 
 
 def test_compose_role_verifies_adguard_safe_search_runtime_without_logging_secrets():
@@ -410,50 +384,6 @@ def test_compose_role_verifies_adguard_safe_search_runtime_without_logging_secre
     assert any("json.enabled" in condition for condition in runtime_check["until"])
 
 
-def test_compose_role_removes_retired_projects_and_hermes_image():
-    tasks = (REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml").read_text(encoding="utf-8")
-    variables = (REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml").read_text(encoding="utf-8")
-    active_projects = variables.split("\ndocker_compose_projects:", 1)[1]
-    parsed_tasks = yaml.safe_load(tasks)
-    parsed_variables = yaml.safe_load(variables)
-
-    assert "docker compose down --volumes --remove-orphans" in tasks
-    assert "retired_docker_compose_projects" in tasks
-    assert "name: backup" in variables
-    assert "name: backup" not in active_projects
-    assert "name: hermes" not in active_projects
-    assert {"name": "hermes", "dest": "{{ docker_apps_compose_root }}/hermes"} in (
-        parsed_variables["retired_docker_compose_projects"]
-    )
-    assert parsed_variables["retired_docker_images"] == [
-        "homelab/hermes-agent:local",
-        "qmcgaw/gluetun:v3.41.3",
-    ]
-
-    remove_image = next(
-        task for task in parsed_tasks if task["name"] == "Remove retired local Docker images"
-    )
-    assert remove_image["ansible.builtin.command"]["argv"] == [
-        "docker",
-        "image",
-        "rm",
-        "{{ item.item }}",
-    ]
-
-    no_hermes = next(
-        task for task in parsed_tasks if task["name"] == "Assert no Hermes Compose containers remain"
-    )
-    assert no_hermes["ansible.builtin.command"]["argv"] == [
-        "docker",
-        "ps",
-        "--all",
-        "--quiet",
-        "--filter",
-        "label=com.docker.compose.project=hermes",
-    ]
-    assert no_hermes["failed_when"] == (
-        "retired_hermes_containers.stdout | trim | length > 0"
-    )
 
 
 def _posix_shell_command(script: str) -> list[str]:
@@ -497,21 +427,3 @@ def test_missing_compose_file_cannot_hide_surviving_game_containers():
     )
 
     assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
-
-
-def test_compose_role_always_runs_the_game_container_postcondition():
-    tasks = (REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml").read_text(encoding="utf-8")
-
-    assert tasks.index("Remove retired Compose project directories") < tasks.index(
-        "Assert no game Compose containers remain"
-    )
-    assert "assert-no-game-compose-containers.sh" in tasks
-
-
-def test_retired_data_cleanup_is_not_attempted_inside_unprivileged_lxc():
-    tasks = (REPO_ROOT / "infra/ansible/roles/docker_compose_project/tasks/main.yml").read_text(encoding="utf-8")
-    variables = (REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml").read_text(encoding="utf-8")
-
-    assert "retired_docker_data_paths" not in variables
-    assert "Validate retired Docker data paths" not in tasks
-    assert "Remove retired Docker data paths" not in tasks

@@ -59,21 +59,30 @@ def load_copyparty_users() -> list[dict[str, Any]]:
     return users
 
 
-def build_mapping() -> dict[str, Any]:
-    mapping = {var_name: require_env(env_name) for var_name, env_name in REQUIRED_ENV.items()}
+OPENCLAW_ENV = {
+    key: value for key, value in REQUIRED_ENV.items() if key.startswith("openclaw_")
+}
+
+
+def build_mapping(scope: str = "full") -> dict[str, Any]:
+    if scope not in {"full", "openclaw"}:
+        raise SystemExit("deployment scope must be full or openclaw")
+    required = REQUIRED_ENV if scope == "full" else OPENCLAW_ENV
+    mapping = {var_name: require_env(env_name) for var_name, env_name in required.items()}
 
     # Secret-setting CLIs commonly read from stdin, where an accidental final
     # CR/LF is transport framing rather than part of these generated values.
-    mapping["arcane_encryption_key"] = mapping["arcane_encryption_key"].strip()
-    mapping["arcane_jwt_secret"] = mapping["arcane_jwt_secret"].strip()
+    if scope == "full":
+        mapping["arcane_encryption_key"] = mapping["arcane_encryption_key"].strip()
+        mapping["arcane_jwt_secret"] = mapping["arcane_jwt_secret"].strip()
     mapping["openclaw_gateway_token"] = mapping["openclaw_gateway_token"].strip()
     mapping["openclaw_skill_sync_github_token"] = mapping[
         "openclaw_skill_sync_github_token"
     ].strip()
 
-    if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["arcane_encryption_key"]) is None:
+    if scope == "full" and re.fullmatch(r"[0-9a-fA-F]{64}", mapping["arcane_encryption_key"]) is None:
         raise SystemExit("ARCANE_ENCRYPTION_KEY must be exactly 64 hexadecimal characters")
-    if len(mapping["arcane_jwt_secret"]) < 32:
+    if scope == "full" and len(mapping["arcane_jwt_secret"]) < 32:
         raise SystemExit("ARCANE_JWT_SECRET must be at least 32 characters")
     if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["openclaw_gateway_token"]) is None:
         raise SystemExit("OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters")
@@ -84,9 +93,10 @@ def build_mapping() -> dict[str, Any]:
             "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN must be 20-4096 non-whitespace characters"
         )
 
-    mapping["copyparty_users"] = load_copyparty_users()
+    if scope == "full":
+        mapping["copyparty_users"] = load_copyparty_users()
 
-    adguard_admin_username = os.environ.get("ADGUARD_ADMIN_USERNAME")
+    adguard_admin_username = os.environ.get("ADGUARD_ADMIN_USERNAME") if scope == "full" else None
     if adguard_admin_username:
         mapping["adguard_admin_username"] = adguard_admin_username
 
@@ -109,10 +119,17 @@ def write_private_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        raise SystemExit("usage: write_ansible_extra_vars.py OUTPUT_JSON")
+    if len(argv) not in {2, 3}:
+        raise SystemExit("usage: write_ansible_extra_vars.py OUTPUT_JSON [full|openclaw]")
 
-    write_private_json(Path(argv[1]), build_mapping())
+    scope = argv[2] if len(argv) == 3 else "full"
+    payload = build_mapping(scope)
+    promoted = os.environ.get("OPENCLAW_SETUP_COMMIT", "")
+    if promoted:
+        if re.fullmatch(r"[0-9a-f]{40}", promoted) is None:
+            raise SystemExit("OPENCLAW_SETUP_COMMIT must be a lowercase 40-character SHA")
+        payload["openclaw_setup_expected_commit"] = promoted
+    write_private_json(Path(argv[1]), payload)
     return 0
 
 

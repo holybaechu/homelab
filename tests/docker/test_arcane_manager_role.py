@@ -121,9 +121,6 @@ def test_arcane_role_reconciles_exact_gitops_and_oidc_scope():
     assert "https://token.actions.githubusercontent.com" in variables
     assert "repo:holybaechu/homelab:environment:prod" in variables
     active_projects = variables.split("arcane_gitops_projects:", 1)[1].split(
-        "arcane_retired_gitops_projects:", 1
-    )[0]
-    retired_projects = variables.split("arcane_retired_gitops_projects:", 1)[1].split(
         "traefik_acme_email:", 1
     )[0]
 
@@ -133,9 +130,6 @@ def test_arcane_role_reconciles_exact_gitops_and_oidc_scope():
     assert "name: code" in active_projects
     assert "name: openclaw" in active_projects
     assert "compose_path: apps/compose/openclaw/compose.yml" in active_projects
-    assert "name: hermes" not in active_projects
-    assert "name: hermes" in retired_projects
-    assert "compose_path: apps/compose/hermes/compose.yml" in retired_projects
     assert "--retired-project {{ project.name }}={{ project.compose_path }}" in tasks
     assert "compose_path: apps/compose/arcane/" not in variables
 

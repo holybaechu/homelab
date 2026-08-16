@@ -1,6 +1,8 @@
 name: cd
 
 on:
+  repository_dispatch:
+    types: [openclaw-promoted]
   workflow_dispatch:
     inputs:
       tofu_force_unlock_id:
@@ -59,15 +61,18 @@ jobs:
         id: scope
         env:
           GITHUB_EVENT_BEFORE: ${{ github.event.before || '' }}
+          OPENCLAW_PROMOTED_COMMIT: ${{ github.event.client_payload.commit || '' }}
         run: python3 scripts/ci/select-deployment-scope.py "${GITHUB_OUTPUT}"
 
       - name: Pin the serialized Arcane deployment ref
+        if: steps.scope.outputs.deployment_scope == 'arcane'
         run: |
           git push --force origin "${GITHUB_SHA}:refs/heads/arcane-deploy"
           remote_sha="$(git ls-remote --heads origin refs/heads/arcane-deploy | awk '{print $1}')"
           test "${remote_sha}" = "${GITHUB_SHA}"
 
       - name: Connect Tailscale
+        if: steps.scope.outputs.deployment_scope != 'none'
         uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
@@ -90,18 +95,29 @@ jobs:
             --projects "${ARCANE_PROJECTS}" \
             --expected-commit "${GITHUB_SHA}"
 
+      - name: Set up cached deployment Python
+        if: steps.scope.outputs.deployment_scope != 'none'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-deploy.txt
+
       - name: Install tooling
+        if: steps.scope.outputs.deployment_scope != 'none'
         env:
           INSTALL_OPENTOFU: ${{ steps.scope.outputs.deployment_scope == 'full' }}
         run: ./scripts/ci/install-tools.sh
 
       - name: Configure SSH
+        if: steps.scope.outputs.deployment_scope != 'none'
         env:
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: ./scripts/ci/configure-ssh.sh
 
       - name: Install Ansible collections
+        if: steps.scope.outputs.deployment_scope != 'none'
         run: ansible-galaxy collection install -r infra/ansible/requirements.yml
 
       - name: Preflight dedicated OpenClaw LXC allocation
@@ -176,8 +192,8 @@ jobs:
             > "${WORKLOAD_IDENTITY_BASELINE}"
           test -s "${WORKLOAD_IDENTITY_BASELINE}"
 
-      - name: Validate and write Ansible service secrets
-        if: steps.scope.outputs.deployment_scope == 'full'
+      - name: Validate and write scoped Ansible service secrets
+        if: steps.scope.outputs.deployment_scope == 'full' || steps.scope.outputs.deployment_scope == 'openclaw'
         env:
           ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
           CLOUDFLARE_TRAEFIK_TOKEN: ${{ secrets.CLOUDFLARE_TRAEFIK_TOKEN || secrets.CLOUDFLARE_CADDY_TOKEN }}
@@ -192,19 +208,9 @@ jobs:
           OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
           OPENCLAW_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_DISCORD_BOT_TOKEN }}
           OPENCLAW_SKILL_SYNC_GITHUB_TOKEN: ${{ secrets.OPENCLAW_SKILL_SYNC_GITHUB_TOKEN }}
-        run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
-
-      - name: Prepare one-time lowest-ID cutover
-        if: steps.scope.outputs.deployment_scope == 'full'
-        env:
-          LOW_ID_CUTOVER_CONFIRMED: ${{ vars.LOW_ID_CUTOVER_CONFIRMED }}
-          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
-        run: >-
-          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
-          infra/ansible/playbooks/prepare-low-id-cutover.yml
-          --extra-vars
-          "low_id_cutover_confirmed=${LOW_ID_CUTOVER_CONFIRMED}"
-          --extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"
+          OPENCLAW_SETUP_COMMIT: ${{ steps.scope.outputs.openclaw_setup_commit }}
+          DEPLOYMENT_SCOPE: ${{ steps.scope.outputs.deployment_scope }}
+        run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}" "${DEPLOYMENT_SCOPE}"
 
       - name: OpenTofu plan
         if: steps.scope.outputs.deployment_scope == 'full'
@@ -278,43 +284,20 @@ jobs:
           --extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Deploy services
-        if: steps.scope.outputs.deployment_scope == 'full'
+        if: steps.scope.outputs.deployment_scope == 'full' || steps.scope.outputs.deployment_scope == 'openclaw'
         env:
           ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars.json
           ANSIBLE_DEPLOYMENT_SCOPE: ${{ steps.scope.outputs.deployment_scope }}
+          OPENCLAW_COMPONENTS: ${{ steps.scope.outputs.openclaw_components }}
         run: sh ./scripts/ci/run-ansible-parallel.sh site --extra-vars @"${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Validate services
+        if: steps.scope.outputs.deployment_scope != 'none'
         env:
           ANSIBLE_DEPLOYMENT_SCOPE: ${{ steps.scope.outputs.deployment_scope }}
+          OPENCLAW_COMPONENTS: ${{ steps.scope.outputs.openclaw_components }}
         run: sh ./scripts/ci/run-ansible-parallel.sh validate
 
-      - name: Arm failback and move the subnet route to VMID 111
-        if: steps.scope.outputs.deployment_scope == 'full'
-        run: >-
-          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
-          infra/ansible/playbooks/arm-low-id-retirement.yml
-
-      - name: Prove Proxmox remains reachable after VMID 112 stops
-        if: steps.scope.outputs.deployment_scope == 'full'
-        run: |
-          set -eu
-          for attempt in $(seq 1 48); do
-            if ansible pve_hosts -i infra/ansible/inventory/prod/hosts.yml \
-              -m ansible.builtin.shell \
-              -a "if pct config 112 >/dev/null 2>&1; then pct status 112 | grep -q 'status: stopped'; fi"; then
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "The new tailnet route was not proven; VMID 112 will restart automatically." >&2
-          exit 1
-
-      - name: Retire the archived source pair
-        if: steps.scope.outputs.deployment_scope == 'full'
-        run: >-
-          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
-          infra/ansible/playbooks/finalize-low-id-retirement.yml
 
       - name: Prove long-lived workload container identities are unchanged
         id: workload_identity_proof
@@ -380,5 +363,5 @@ jobs:
           infra/opentofu/envs/prod/ci.auto.tfvars.json
 
       - name: Disconnect Tailscale
-        if: always()
+        if: always() && steps.scope.outputs.deployment_scope != 'none'
         run: sudo tailscale logout || true

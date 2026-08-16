@@ -39,8 +39,6 @@ version available from their configured apt repositories.
 - `TOFU_STATE_REGION`: use `auto` for Cloudflare R2, or the AWS region for AWS S3
 - `TOFU_STATE_ENDPOINT`: S3-compatible endpoint, for example `https://<account-id>.r2.cloudflarestorage.com` for Cloudflare R2
 - `ADGUARD_ADMIN_USERNAME`: optional AdGuard Home admin username; defaults to the inventory value
-- `LOW_ID_CUTOVER_CONFIRMED`: set to `true` only for the first 117/112 to
-  110/111 renumber after reviewing the plan
 The native OpenClaw reservation is not duplicated as a GitHub variable. Its
 exact production identity (`192.168.0.5`, `02:00:00:BA:EC:05`) is hardcoded in
 the tracked OpenTofu topology and enforced by the LXC preflight. Keep the
@@ -169,9 +167,10 @@ normal plan and deployment. Leave the input empty for every normal deployment.
 
 ## CD Scope and Parallelism
 
-Pushes containing changes only under the known safe `platform`, `media`, and
-`code` Compose trees use the `arcane` fast path. OpenClaw changes use the full,
-marker-aware Ansible path because its Arcane sync is retired. Static
+CD selects exactly one of four scopes: `none`, `openclaw`, `arcane`, or `full`.
+Documentation/test-only pushes use `none`; isolated native OpenClaw, CTF
+executor, and CTF transport changes use `openclaw`; changes only under the
+known safe `platform`, `media`, and `code` Compose trees use `arcane`. Static
 `platform/traefik.yml` changes use the full path for forced recreation. The
 exact `platform/dynamic/routes.yml` ownership tuple also uses the full path so
 the pre-site OpenClaw source-hold, exclusive-owner, and route checks run before
@@ -183,10 +182,10 @@ validation.
 
 The runner deploys only affected projects through Arcane and requires the
 expected commit before the normal Docker-host validation runs. Arcane
-control-plane files, mixed pushes, workflow dispatches, and every
-infrastructure change use the full deployment path.
+control-plane files, mixed pushes, ambiguous paths, and unknown infrastructure
+changes use the safe `full` fallback.
 
-Before either path, the serialized workflow force-updates the dedicated
+Before the Arcane path, the serialized workflow force-updates the dedicated
 `arcane-deploy` branch to the current `GITHUB_SHA` and verifies the remote ref.
 Arcane syncs this CI-owned branch rather than mutable `main`, so a newer queued
 push cannot change an older job's deployment source. The workflow has
@@ -197,6 +196,12 @@ Arcane authentication uses GitHub OIDC, not a stored Arcane API key. Trust only
 subject `repo:holybaechu/homelab:environment:prod` with audience
 `https://arcane.home.hchu.me`, and map it to an environment-scoped deployment
 role with only `gitops:list`, `gitops:read`, and `gitops:sync` permissions.
+
+The `openclaw` path skips OpenTofu, global bootstrap, retained-Gateway fencing,
+and unrelated application roles. It reconciles only the CTF executor, native
+Gateway, credential-scoped transport, and their validations. Retained rollback
+roles, Compose ownership, Traefik route changes, and LXC allocation changes map
+to `full`, preserving the rollback boundary.
 
 The full path keeps allocation preflights, OpenTofu, and bootstrap operations
 serial. Service reconciliation is fail-fast in the order `tailnet`, native

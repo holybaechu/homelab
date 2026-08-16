@@ -12,6 +12,28 @@ import sys
 
 COMMIT_SHA = re.compile(r"[0-9a-fA-F]{40}")
 
+NO_DEPLOY_PREFIXES = (
+    "docs/",
+    "tests/",
+)
+NO_DEPLOY_PATHS = {
+    ".github/workflows/ci.yml",
+    ".github/dependabot.yml",
+    "requirements-dev.txt",
+    "renovate.json",
+}
+
+OPENCLAW_PREFIXES = (
+    "infra/ansible/roles/openclaw_native/",
+    "infra/ansible/roles/openclaw_ctf_executor/",
+    "infra/ansible/roles/openclaw_ctf_transport/",
+    "apps/openclaw-ctf-kali/",
+)
+OPENCLAW_PATHS = {
+    "infra/ansible/inventory/prod/group_vars/svc_openclaw.yml",
+    "infra/ansible/inventory/prod/group_vars/svc_ctf_executor.yml",
+}
+
 ARCANE_WORKLOAD_PREFIXES = {
     "platform": "apps/compose/platform/",
     "media": "apps/compose/media/",
@@ -29,8 +51,20 @@ FULL_DEPLOYMENT_PATHS = {
 
 def classify_paths(paths: list[str]) -> str:
     changed = [path for path in paths if path]
+    if not changed:
+        return "none"
+    if all(
+        path in NO_DEPLOY_PATHS or path.startswith(NO_DEPLOY_PREFIXES)
+        for path in changed
+    ):
+        return "none"
     if any(path in FULL_DEPLOYMENT_PATHS for path in changed):
         return "full"
+    if all(
+        path in OPENCLAW_PATHS or path.startswith(OPENCLAW_PREFIXES)
+        for path in changed
+    ):
+        return "openclaw"
     if changed and all(
         any(path.startswith(prefix) for prefix in ARCANE_WORKLOAD_PREFIXES.values())
         for path in changed
@@ -49,9 +83,15 @@ def select_arcane_projects(paths: list[str]) -> list[str]:
     ]
 
 
-def deployment_scope(repo_root: Path) -> tuple[str, list[str]]:
-    if os.environ.get("GITHUB_EVENT_NAME") != "push":
-        return "full", []
+def deployment_scope(repo_root: Path) -> tuple[str, list[str], str]:
+    event = os.environ.get("GITHUB_EVENT_NAME")
+    if event == "repository_dispatch":
+        promoted = os.environ.get("OPENCLAW_PROMOTED_COMMIT", "").lower()
+        if not COMMIT_SHA.fullmatch(promoted):
+            return "full", [], ""
+        return "openclaw", [], promoted
+    if event != "push":
+        return "full", [], ""
 
     before = os.environ.get("GITHUB_EVENT_BEFORE", "")
     current = os.environ.get("GITHUB_SHA", "")
@@ -60,7 +100,7 @@ def deployment_scope(repo_root: Path) -> tuple[str, list[str]]:
         or not COMMIT_SHA.fullmatch(current)
         or before == "0" * 40
     ):
-        return "full", []
+        return "full", [], ""
 
     try:
         result = subprocess.run(
@@ -72,10 +112,10 @@ def deployment_scope(repo_root: Path) -> tuple[str, list[str]]:
             encoding="utf-8",
         )
     except subprocess.CalledProcessError:
-        return "full", []
+        return "full", [], ""
 
     paths = result.stdout.splitlines()
-    return classify_paths(paths), paths
+    return classify_paths(paths), paths, ""
 
 
 def main() -> int:
@@ -83,12 +123,15 @@ def main() -> int:
         raise SystemExit("usage: select-deployment-scope.py GITHUB_OUTPUT")
 
     repo_root = Path(__file__).resolve().parents[2]
-    scope, paths = deployment_scope(repo_root)
+    scope, paths, promoted_commit = deployment_scope(repo_root)
     projects = select_arcane_projects(paths) if scope == "arcane" else []
+    openclaw_components = "gateway" if scope == "openclaw" and promoted_commit else "all"
     output_path = Path(sys.argv[1])
     with output_path.open("a", encoding="utf-8") as output:
         output.write(f"deployment_scope={scope}\n")
         output.write(f"arcane_projects={','.join(projects)}\n")
+        output.write(f"openclaw_setup_commit={promoted_commit}\n")
+        output.write(f"openclaw_components={openclaw_components}\n")
 
     print(f"Deployment scope: {scope}")
     if paths:

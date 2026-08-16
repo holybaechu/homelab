@@ -37,7 +37,6 @@ def test_validation_checks_compose_dns_qbittorrent_routes_and_arcane():
     assert "arcane.home.hchu.me" in validate or "arcane_hostname" in validate
     assert "dig +short @127.0.0.1" in validate
     assert "qbt.home.hchu.me" in validate
-    assert validate.count("public.qbt.home.hchu.me") == 2
     assert "qbt-vpn.home.hchu.me" not in validate
     assert validate.count("metube.home.hchu.me") >= 2
     assert "t3code_hostname" in validate
@@ -49,11 +48,6 @@ def test_validation_checks_compose_dns_qbittorrent_routes_and_arcane():
     assert "current_network_interface" not in validate
     assert "Check AdGuard Safe Search is disabled" in validate
     assert "safe_search_enabled" in validate
-    assert "Assert retired Compose service containers are absent" in validate
-    assert "Assert retired Docker volumes are absent" in validate
-    assert "Assert retired Docker networks are absent" in validate
-    assert "Assert retired local Docker images are absent" in validate
-    assert "hermes status" not in validate
     assert "Check Docker Engine reboot persistence" in validate
     assert "Check the OpenClaw CLI version" in validate
     assert "Check the active OpenClaw config path" in validate
@@ -73,9 +67,6 @@ def test_validation_proves_vuetorrent_assets_config_and_route():
     )
     assert "docker compose exec -T qbittorrent test -f" not in validation
     assert "qbt.home.hchu.me" in validation
-    assert "public.qbt.home.hchu.me" in validation
-    assert "--insecure" in validation
-    assert "retired_public_qbittorrent_route.stdout == '404'" in validation
 
 
 def test_vuetorrent_validator_reports_every_internal_diagnostic_before_failing():

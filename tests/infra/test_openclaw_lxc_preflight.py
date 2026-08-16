@@ -141,53 +141,6 @@ def test_exact_existing_unprivileged_lxc_is_idempotently_accepted(
     assert result["storage"]["required_additional_bytes"] == 0
 
 
-def test_existing_openclaw_accepts_staged_legacy_mounts_but_rejects_extras(
-    config_root, allocation
-):
-    legacy = exact_openclaw_config().replace(
-        "/var/lib/openclaw/workspaces/ctf",
-        "/srv/openclaw-ctf",
-    )
-    write_config(config_root, "lxc", 118, legacy)
-
-    result = PREFLIGHT.preflight(
-        allocation,
-        config_root,
-        probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
-        storage_probe=storage_ok,
-    )
-
-    assert result["status"] == "existing-managed-target"
-
-    write_config(
-        config_root,
-        "lxc",
-        118,
-        legacy + "mp2: /var/lib/homelab/unrelated,mp=/srv/unrelated\n",
-    )
-    with pytest.raises(PREFLIGHT.PreflightError, match="unexpected bind mount set"):
-        PREFLIGHT.preflight(
-            allocation,
-            config_root,
-            probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
-            storage_probe=storage_ok,
-        )
-
-    write_config(
-        config_root,
-        "lxc",
-        118,
-        legacy.replace(
-            "mp0: /var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf\n", ""
-        ),
-    )
-    result = PREFLIGHT.preflight(
-        allocation,
-        config_root,
-        probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
-        storage_probe=storage_ok,
-    )
-    assert result["status"] == "existing-managed-target"
 
 
 def test_existing_ctf_executor_requires_its_exact_docker_profile(
@@ -463,13 +416,6 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     playbook = (
         REPO_ROOT / "infra" / "ansible" / "playbooks" / "preflight-openclaw-lxc.yml"
     ).read_text(encoding="utf-8")
-    executor_playbook = (
-        REPO_ROOT
-        / "infra"
-        / "ansible"
-        / "playbooks"
-        / "preflight-ctf-executor-lxc.yml"
-    ).read_text(encoding="utf-8")
     variables = (
         REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "all.yml"
     ).read_text(encoding="utf-8")
@@ -481,12 +427,8 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     assert "openclaw_lxc_allocation.datastore_id" in playbook
     assert "openclaw_lxc_allocation.required_storage_gb" in playbook
     assert "--expected-bind-mount" in playbook
-    assert "--transitional-bind-mount" in playbook
     assert "openclaw_ctf_sandbox_skills_host_path" in playbook
     assert "openclaw_ctf_sandbox_skills_root" in playbook
-    assert "openclaw_ctf_preflight_legacy_workspace_root" in playbook
-    assert "--transitional-bind-mount" in executor_playbook
-    assert "openclaw_ctf_preflight_legacy_workspace_root" in executor_playbook
     assert "--allow-missing-expected-bind-mounts" in playbook
     assert "changed_when: false" in playbook
     assert "vmid: 118" in variables
@@ -494,8 +436,5 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     assert "mac_address: 02:00:00:BA:EC:05" in variables
     assert 'datastore_id: "{{ openclaw_root_datastore_id }}"' in variables
     assert "required_storage_gb: 32" in variables
-    assert (
-        "openclaw_ctf_preflight_legacy_workspace_root: /srv/openclaw-ctf"
-    ) in variables
     for mutating_command in ("pct set", "pct create", "qm set", "qm create"):
         assert mutating_command not in SCRIPT.read_text(encoding="utf-8")

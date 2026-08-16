@@ -101,9 +101,3 @@
       tags: [docker_apps, openclaw]
     - role: arcane_manager
       tags: [docker_apps, arcane]
-
-- name: Permanently remove retired Minecraft data from Proxmox storage
-  hosts: pve_hosts
-  gather_facts: false
-  roles:
-    - pve_retire_minecraft_data

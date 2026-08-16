@@ -61,13 +61,6 @@ def test_nonstandard_version_surfaces_have_focused_managers():
     assert "download.proxmox.com/images/system" in datasource_text
 
 
-def test_renovate_has_no_retired_hermes_or_onepassword_cli_manager():
-    config = json.loads(read("renovate.json"))
-    serialized = json.dumps(config).lower()
-
-    assert "hermes" not in serialized
-    assert "onepassword-cli" not in serialized
-    assert "app-updates.agilebits.com" not in serialized
 
 
 def test_vuetorrent_mod_manager_tracks_official_semver():
