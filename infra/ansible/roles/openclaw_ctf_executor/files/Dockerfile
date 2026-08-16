@@ -1,5 +1,7 @@
 FROM kalilinux/kali-rolling
 
+COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /usr/local/bin/
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_INPUT=1
@@ -41,7 +43,7 @@ RUN groupadd --gid 1001 ctf \
       --shell /bin/bash ctf
 
 LABEL org.opencontainers.image.title="OpenClaw isolated CTF Kali sandbox" \
-      org.opencontainers.image.description="Non-root CTF analysis image without Docker tooling or host socket mounts"
+      org.opencontainers.image.description="CTF analysis image with uv and without Docker tooling or host socket mounts"
 
 ENV HOME=/home/ctf \
     PATH=/home/ctf/.local/bin:${PATH}

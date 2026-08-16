@@ -795,8 +795,6 @@
     git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
     for tracked_path in \
       workspaces/ctf/AGENTS.md \
-      workspaces/ctf/templates/writeup.md \
-      workspaces/ctf/skills/ctf-artifacts/SKILL.md \
       workspaces/ctf/scripts/init-ctf-challenge.py \
       workspaces/ctf/scripts/export-ctf-package.py \
       config/codex/gpt-5.6-sol-unrestricted-v45.md; do
@@ -845,9 +843,17 @@
     - exports
     - media/inbound
     - scripts
-    - templates
+  when: openclaw_native_activate | bool
+
+- name: Remove retired CTF write-up and artifact-skill assets
+  ansible.builtin.file:
+    path: "{{ openclaw_ctf_workspace_root }}/{{ item }}"
+    state: absent
+  loop:
+    - templates/writeup.md
     - skills/ctf-artifacts
   when: openclaw_native_activate | bool
+  notify: Restart OpenClaw Gateway
 
 - name: Seed tracked CTF instructions and artifact helpers into the durable workspace
   ansible.builtin.copy:
@@ -860,8 +866,6 @@
     force: "{{ item.force | default(true) }}"
   loop:
     - {source: workspaces/ctf/AGENTS.md, destination: AGENTS.md, mode: "0640"}
-    - {source: workspaces/ctf/templates/writeup.md, destination: templates/writeup.md, mode: "0640"}
-    - {source: workspaces/ctf/skills/ctf-artifacts/SKILL.md, destination: skills/ctf-artifacts/SKILL.md, mode: "0640", force: false}
     - {source: workspaces/ctf/scripts/init-ctf-challenge.py, destination: scripts/init-ctf-challenge.py, mode: "0750"}
     - {source: workspaces/ctf/scripts/export-ctf-package.py, destination: scripts/export-ctf-package.py, mode: "0750"}
   when: openclaw_native_activate | bool
@@ -1038,6 +1042,26 @@
       - >-
         openclaw_ctf_agents[0].sandbox.docker.network == openclaw_ctf_docker_network
       - >-
+        openclaw_ctf_agents[0].sandbox.docker.user == '0:0'
+      - >-
+        not (openclaw_ctf_agents[0].sandbox.docker.readOnlyRoot | bool)
+      - >-
+        openclaw_ctf_agents[0].sandbox.docker.capDrop == ['AUDIT_WRITE', 'MKNOD']
+      - >-
+        openclaw_ctf_agents[0].sandbox.docker.env.HOME == '/root'
+      - >-
+        'skills' not in openclaw_ctf_agents[0]
+      - >-
+        'pidsLimit' not in openclaw_ctf_agents[0].sandbox.docker
+      - >-
+        'memory' not in openclaw_ctf_agents[0].sandbox.docker
+      - >-
+        'memorySwap' not in openclaw_ctf_agents[0].sandbox.docker
+      - >-
+        'cpus' not in openclaw_ctf_agents[0].sandbox.docker
+      - >-
+        'ulimits' not in openclaw_ctf_agents[0].sandbox.docker
+      - >-
         not (openclaw_ctf_agents[0].tools.elevated.enabled | bool)
       - >-
         'message' in (openclaw_ctf_agents[0].tools.alsoAllow | default([]))
@@ -1061,7 +1085,8 @@
         (openclaw_native_config.content | b64decode | from_json).plugins.entries.discord.enabled | bool
     fail_msg: >-
       The one Gateway must retain its token SecretRef, its shared Codex profile,
-      and exactly one CTF agent with a session Docker sandbox. Its and main's
+      and exactly one CTF agent with a root-capable, writable, unlimited,
+      per-session Docker sandbox. Its and main's
       approved direct Discord artifact-delivery tool must not cross contexts.
       Both the Codex harness and direct Discord channel plugin must be enabled,
       and owner-only commands must use the explicit operator ID list without

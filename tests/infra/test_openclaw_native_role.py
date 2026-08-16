@@ -807,6 +807,13 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     assert "openclaw_main_agents | length == 1" in assertions
     assert "sandbox.backend == 'docker'" in assertions
     assert "sandbox.scope == 'session'" in assertions
+    assert "sandbox.docker.user == '0:0'" in assertions
+    assert "sandbox.docker.readOnlyRoot | bool" in assertions
+    assert "sandbox.docker.capDrop == ['AUDIT_WRITE', 'MKNOD']" in assertions
+    assert "sandbox.docker.env.HOME == '/root'" in assertions
+    assert "'skills' not in openclaw_ctf_agents[0]" in assertions
+    for limit in ("pidsLimit", "memory", "memorySwap", "cpus", "ulimits"):
+        assert limit in assertions
     assert assertions.count("'message' in") == 3
     assert "'message' not in (openclaw_ctf_agents[0].tools.sandbox.tools.deny" in assertions
     assert "openclaw_ctf_agents[0].tools.message.crossContext" in assertions

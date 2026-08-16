@@ -52,10 +52,10 @@ def test_collector_validates_and_mirrors_both_managed_skill_roots(tmp_path):
     main = tmp_path / "live-main"
     ctf = tmp_path / "live-ctf"
     (main / "adaptive-main").mkdir(parents=True)
-    (ctf / "ctf-artifacts" / "references").mkdir(parents=True)
+    (ctf / "campaign-helper" / "references").mkdir(parents=True)
     (main / "adaptive-main" / "SKILL.md").write_text("main\n", encoding="utf-8")
-    (ctf / "ctf-artifacts" / "SKILL.md").write_text("ctf\n", encoding="utf-8")
-    (ctf / "ctf-artifacts" / "references" / "notes.md").write_text(
+    (ctf / "campaign-helper" / "SKILL.md").write_text("ctf\n", encoding="utf-8")
+    (ctf / "campaign-helper" / "references" / "notes.md").write_text(
         "notes\n", encoding="utf-8"
     )
 
@@ -76,7 +76,7 @@ def test_collector_validates_and_mirrors_both_managed_skill_roots(tmp_path):
 
     assert not (repo / "workspaces/main/skills/stale").exists()
     assert (repo / "workspaces/main/skills/adaptive-main/SKILL.md").read_text() == "main\n"
-    assert (repo / "workspaces/ctf/skills/ctf-artifacts/SKILL.md").read_text() == "ctf\n"
+    assert (repo / "workspaces/ctf/skills/campaign-helper/SKILL.md").read_text() == "ctf\n"
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX ownership contract")

@@ -48,11 +48,16 @@ allowlists, select agents. The configuration validation requires:
 - A numeric `commands.ownerAllowFrom` operator list for guarded diagnostics;
   it is separate from and does not weaken channel-only message authorization.
 - The `ctf` agent workspace `/var/lib/openclaw/workspaces/ctf`, Docker
-  `session` sandbox on `openclaw-ctf`, elevated tools disabled, and the
-  approved `message` tool in
+  `session` sandbox on `openclaw-ctf`, a writable root filesystem, container
+  UID/GID `0:0`, default Docker capabilities minus `AUDIT_WRITE` and `MKNOD`,
+  no configured CPU/memory/PID/ulimit caps, elevated OpenClaw tools disabled,
+  and the approved `message` tool in
   its CTF tool/sandbox policy so it can return bounded ZIP exports directly to
   the requesting Discord channel. Existing agents such as `main` may likewise
   keep their separately configured direct Discord attachment and ZIP handling.
+- The Kali image includes pinned `uv`. The CTF prompt allows agents to install
+  packages with `apt`, `uv`, or other methods available inside the sandbox;
+  those installations remain session-local.
 
 Native Discord file uploads and ZIP replies are approved for both the CTF and
 main channels. They remain subject to their channel bindings and each agent's

@@ -129,7 +129,7 @@
         executable: /bin/sh
       changed_when: false
 
-    - name: Run the hardened CTF Kali sandbox smoke test
+    - name: Run the convenience-oriented CTF Kali sandbox smoke test
       ansible.builtin.command:
         argv:
           - docker
@@ -137,27 +137,24 @@
           - --rm
           - --network
           - "{{ openclaw_ctf_docker_network }}"
-          - --read-only
-          - --tmpfs
-          - /tmp
-          - --tmpfs
-          - /var/tmp
-          - --tmpfs
-          - /run
           - --cap-drop
-          - ALL
+          - AUDIT_WRITE
+          - --cap-drop
+          - MKNOD
           - --user
-          - "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }}"
+          - "0:0"
           - --volume
           - "{{ openclaw_ctf_workspace_root }}:/workspace:rw"
           - "{{ openclaw_ctf_executor_image }}"
           - /bin/sh
           - -ceu
           - >-
-            for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark nmap;
+            for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark nmap uv;
             do command -v "$tool" >/dev/null; done;
+            test "$$(id -u)" -eq 0;
             test ! -e /var/run/docker.sock;
-            test -w /workspace
+            test -w /workspace;
+            test -w /root
       changed_when: false
 
 - name: Validate the dedicated native OpenClaw host
@@ -222,7 +219,7 @@
       changed_when: false
       no_log: true
 
-    - name: Prove remote Docker receives generated CTF sandbox skills at the pinned path
+    - name: Prove remote Docker receives generated sandbox skills at the pinned path
       ansible.builtin.shell: |
         set -eu
         systemd-run \
@@ -238,9 +235,9 @@
             fixture="$$(mktemp -d {{ openclaw_ctf_sandbox_skills_root }}/validate.XXXXXX)"
             cleanup() { rm -rf "$${fixture}"; }
             trap cleanup EXIT
-            skill_dir="$${fixture}/.openclaw/sandbox-skills/skills/ctf-artifacts"
+            skill_dir="$${fixture}/.openclaw/sandbox-skills/skills/validation-skill"
             mkdir -p "$${skill_dir}"
-            printf "%s\\n" ctf-sandbox-skill-transport > "$${skill_dir}/SKILL.md"
+            printf "%s\\n" sandbox-skill-transport > "$${skill_dir}/SKILL.md"
             docker run --rm \
               --network none \
               --read-only \
@@ -251,7 +248,7 @@
               --user {{ openclaw_uid }}:{{ openclaw_gid }} \
               --volume "$${fixture}/.openclaw/sandbox-skills/skills:/workspace/.openclaw/sandbox-skills/skills:ro" \
               {{ hostvars['ctf_executor'].openclaw_ctf_executor_image }} \
-              /bin/sh -ceu "test -r /workspace/.openclaw/sandbox-skills/skills/ctf-artifacts/SKILL.md; grep -Fx ctf-sandbox-skill-transport /workspace/.openclaw/sandbox-skills/skills/ctf-artifacts/SKILL.md"
+              /bin/sh -ceu "test -r /workspace/.openclaw/sandbox-skills/skills/validation-skill/SKILL.md; grep -Fx sandbox-skill-transport /workspace/.openclaw/sandbox-skills/skills/validation-skill/SKILL.md"
           '
       args:
         executable: /bin/sh
@@ -279,13 +276,13 @@
       ansible.builtin.shell: |
         set -eu
         test -f '{{ openclaw_ctf_workspace_root }}/AGENTS.md'
-        test -f '{{ openclaw_ctf_workspace_root }}/templates/writeup.md'
         test -x '{{ openclaw_ctf_workspace_root }}/scripts/init-ctf-challenge.py'
         test -x '{{ openclaw_ctf_workspace_root }}/scripts/export-ctf-package.py'
         test -d '{{ openclaw_ctf_workspace_root }}/challenges'
         test -d '{{ openclaw_ctf_workspace_root }}/exports'
         test -d '{{ openclaw_ctf_workspace_root }}/media/inbound'
-        test -d '{{ openclaw_ctf_workspace_root }}/skills/ctf-artifacts'
+        test ! -e '{{ openclaw_ctf_workspace_root }}/templates/writeup.md'
+        test ! -e '{{ openclaw_ctf_workspace_root }}/skills/ctf-artifacts'
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 710"
         setup="$(realpath '{{ openclaw_setup_root }}')"
         workspace="$(realpath '{{ openclaw_ctf_workspace_root }}')"

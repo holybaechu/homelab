@@ -71,12 +71,21 @@ def test_executor_keeps_its_hardened_docker_and_network_contract():
     assert "com.docker.network.bridge.enable_icc=false" in tasks
     assert "/var/run/docker.sock" not in dockerfile
     assert "FROM kalilinux/kali-rolling" in dockerfile
+    assert "ghcr.io/astral-sh/uv:0.11.32" in dockerfile
+    assert "/uv /uvx /usr/local/bin/" in dockerfile
     assert "USER 1001:1001" in dockerfile
     assert "docker system dial-stdio" in read(
         "infra/ansible/roles/openclaw_ctf_executor/templates/60-openclaw-ctf-docker.conf.j2"
     )
     for denied_cidr in ("10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16"):
         assert denied_cidr in firewall
+
+    validation = read("infra/ansible/playbooks/validate.yml")
+    assert "Run the convenience-oriented CTF Kali sandbox smoke test" in validation
+    assert "for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark nmap uv" in validation
+    assert 'test "$$(id -u)" -eq 0' in validation
+    assert "- AUDIT_WRITE" in validation
+    assert "- MKNOD" in validation
 
 
 def test_forced_docker_transport_key_is_root_managed_but_ssh_readable():
@@ -191,49 +200,28 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
     )
 
 
-def test_gateway_skill_transport_validation_uses_the_executor_image_scope():
+def test_gateway_skill_transport_validation_uses_a_generic_fixture():
     plays = yaml.safe_load(read("infra/ansible/playbooks/validate.yml"))
     native_play = next(
         play
         for play in plays
         if play["name"] == "Validate the dedicated native OpenClaw host"
     )
-    skill_transport = next(
+    task = next(
         task
         for task in native_play["tasks"]
         if task["name"]
-        == "Prove remote Docker receives generated CTF sandbox skills at the pinned path"
+        == "Prove remote Docker receives generated sandbox skills at the pinned path"
     )
-    shell = skill_transport["ansible.builtin.shell"]
+    shell = task["ansible.builtin.shell"]
 
     assert "{{ hostvars['ctf_executor'].openclaw_ctf_executor_image }}" in shell
-    assert "{{ openclaw_ctf_executor_image }}" not in shell
-
-
-def test_gateway_skill_transport_validation_preserves_inner_shell_variables():
-    plays = yaml.safe_load(read("infra/ansible/playbooks/validate.yml"))
-    native_play = next(
-        play
-        for play in plays
-        if play["name"] == "Validate the dedicated native OpenClaw host"
-    )
-    skill_transport = next(
-        task
-        for task in native_play["tasks"]
-        if task["name"]
-        == "Prove remote Docker receives generated CTF sandbox skills at the pinned path"
-    )
-    shell = skill_transport["ansible.builtin.shell"]
-
-    # systemd-run expands a single $ before it invokes /bin/sh.  Keep these
-    # variables escaped so the shell that owns the temporary fixture receives
-    # them intact.
+    assert "validation-skill" in shell
+    assert "sandbox-skill-transport" in shell
+    assert "ctf-artifacts" not in shell
     for required in (
         'fixture="$$(mktemp -d {{ openclaw_ctf_sandbox_skills_root }}/validate.XXXXXX)"',
         'cleanup() { rm -rf "$${fixture}"; }',
-        'skill_dir="$${fixture}/.openclaw/sandbox-skills/skills/ctf-artifacts"',
-        'mkdir -p "$${skill_dir}"',
-        'printf "%s\\\\n" ctf-sandbox-skill-transport > "$${skill_dir}/SKILL.md"',
         '--volume "$${fixture}/.openclaw/sandbox-skills/skills:/workspace/.openclaw/sandbox-skills/skills:ro"',
     ):
         assert required in shell
