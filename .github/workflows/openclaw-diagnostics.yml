@@ -31,6 +31,24 @@ jobs:
           DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: ./scripts/ci/configure-ssh.sh
 
+      - name: Trust the OpenClaw LXC host key through Proxmox
+        run: |
+          set -eu
+          umask 077
+          host_key="$(
+            timeout --signal=TERM --kill-after=5s 30s ssh \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="${HOME}/.ssh/known_hosts" \
+              -i "${HOME}/.ssh/id_ed25519" \
+              root@192.168.0.2 \
+              'pct exec 118 -- cat /etc/ssh/ssh_host_ed25519_key.pub'
+          )"
+          printf '%s\n' "${host_key}" | ssh-keygen -l -f - >/dev/null
+          ssh-keygen -R 192.168.0.5 -f "${HOME}/.ssh/known_hosts" >/dev/null 2>&1 || true
+          printf '192.168.0.5 %s\n' "${host_key}" >> "${HOME}/.ssh/known_hosts"
+
       - name: Classify the CTF session trajectory on the Gateway
         run: |
           set -eu

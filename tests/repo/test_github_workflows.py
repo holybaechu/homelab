@@ -746,6 +746,9 @@ def test_openclaw_diagnostics_is_fixed_read_only_and_redacts_session_content():
     ).read_text(encoding="utf-8")
 
     assert "workflow_dispatch:" in workflow
+    assert "Trust the OpenClaw LXC host key through Proxmox" in workflow
+    assert "pct exec 118 -- cat /etc/ssh/ssh_host_ed25519_key.pub" in workflow
+    assert "printf '192.168.0.5 %s\\n'" in workflow
     assert "environment: prod" in workflow
     assert "contents: read" in workflow
     assert "sessions tail" in workflow
