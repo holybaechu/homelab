@@ -761,5 +761,8 @@ def test_openclaw_diagnostics_is_fixed_read_only_and_redacts_session_content():
     assert "suppressed_reply" in workflow
     assert "sys.stdin.read()" in workflow
     assert "print(f\"{name}=" in workflow
-    assert "journalctl" not in workflow
+    assert "journalctl --no-pager --quiet" in workflow
+    assert "--unit openclaw-gateway.service" in workflow
+    assert "journal_no_visible_reply" in workflow
+    assert "journal_sandbox_failure" in workflow
     assert "workflow_dispatch:\n    inputs:" not in workflow

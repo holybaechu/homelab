@@ -91,6 +91,30 @@ jobs:
           for name, pattern in categories.items():
               print(f"{name}={len(re.findall(pattern, text))}")
           '
+          journalctl --no-pager --quiet \
+              --unit openclaw-gateway.service \
+              --since '2 hours ago' | python3 -c '
+          import re
+          import sys
+
+          text = sys.stdin.read().lower()
+          categories = {
+              "journal_ctf_channel": r"1537716407889039391",
+              "journal_ctf_agent": r"agent[:= ]+ctf|agentid[=: ]+ctf",
+              "journal_inbound": r"discord.{0,64}(inbound|received|message)",
+              "journal_dispatch": r"dispatch|route.{0,32}ctf",
+              "journal_no_visible_reply": r"command produced no visible reply|no visible reply",
+              "journal_empty_reply": r"empty.{0,32}reply|reply.{0,32}empty",
+              "journal_dropped": r"drop(ped|ping)?.{0,48}(message|reply)|suppress(ed)?.{0,48}reply",
+              "journal_codex_completion": r"codex.{0,64}(complete|done|success)",
+              "journal_codex_failure": r"codex.{0,64}(error|failed|401|unauthorized)",
+              "journal_sandbox_start": r"sandbox.{0,64}(start|spawn|create)",
+              "journal_sandbox_failure": r"sandbox.{0,64}(error|failed)|docker.{0,64}(error|failed)",
+          }
+          print("journal_present=" + ("yes" if text.strip() else "no"))
+          for name, pattern in categories.items():
+              print(f"{name}={len(re.findall(pattern, text))}")
+          '
           REMOTE
 
       - name: Disconnect Tailscale
