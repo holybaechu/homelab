@@ -1114,7 +1114,7 @@
       - >-
         (openclaw_native_config.content | b64decode | from_json).skills.workshop ==
         {
-          'autonomous': {'mode': 'auto'},
+          'autonomous': {'enabled': true},
           'approvalPolicy': 'auto',
           'allowSymlinkTargetWrites': false,
           'maxPending': 50,
@@ -1497,7 +1497,7 @@
         - {path: models.providers.openai.agentRuntime.id, value: codex}
         - {path: agents.defaults.model.primary, value: "{{ openclaw_codex_model }}"}
         - {path: agents.defaults.thinkingDefault, value: "{{ openclaw_codex_thinking_default }}"}
-        - {path: skills.workshop.autonomous.mode, value: auto}
+        - {path: skills.workshop.autonomous.enabled, value: true}
         - {path: skills.workshop.approvalPolicy, value: auto}
         - {path: skills.workshop.allowSymlinkTargetWrites, value: false}
         - {path: plugins.entries.codex.enabled, value: true}

@@ -66,8 +66,8 @@ on the remote executor. The rest of `/var/lib/openclaw` remains local to the
 Gateway, so sessions, auth state, registries, and unrelated agent data are not
 mirrored.
 
-Skill Workshop runs with autonomous mode and automatic approval. Runtime skill
-changes stay in the live `skills/` directories. Every five minutes,
+Skill Workshop runs with autonomous capture enabled and automatic approval.
+Runtime skill changes stay in the live `skills/` directories. Every five minutes,
 `openclaw-skill-sync.timer` starts a separate `openclaw-skill-sync` identity
 that can read those two skill roots but cannot write them or read Gateway auth
 state. It validates the files, clones `holybaechu/openclaw-setup`, opens a bot
