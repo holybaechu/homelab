@@ -26,11 +26,13 @@
       - not openclaw_setup_root.startswith(openclaw_runtime_root + '/')
       - openclaw_config_path == openclaw_setup_root + '/config/openclaw.json'
       - openclaw_state_root == openclaw_runtime_root
-      - openclaw_workspace_root == openclaw_state_root + '/workspace'
+      - openclaw_workspaces_root == openclaw_state_root + '/workspaces'
+      - openclaw_legacy_workspace_root == openclaw_state_root + '/workspace'
+      - openclaw_workspace_root == openclaw_workspaces_root + '/main'
       - openclaw_auth_profile_secret_root == openclaw_home + '/.config/openclaw'
       - openclaw_npm_cache_root == openclaw_cache_root + '/npm'
       - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
-      - openclaw_ctf_workspace_root == '/srv/openclaw-ctf'
+      - openclaw_ctf_workspace_root == openclaw_workspaces_root + '/ctf'
       - openclaw_ctf_sandbox_skills_root == openclaw_state_root + '/sandbox/skills-workspaces'
       - openclaw_ctf_uid | int == openclaw_uid | int
       - openclaw_ctf_gid | int == openclaw_gid | int
@@ -87,9 +89,32 @@
       in the production secret store.
   no_log: true
 
+- name: Require the autonomous skill-promotion GitHub credential
+  ansible.builtin.assert:
+    that:
+      - openclaw_skill_sync_enabled | bool
+      - openclaw_skill_sync_github_token is defined
+      - openclaw_skill_sync_github_token is string
+      - openclaw_skill_sync_github_token | length >= 20
+      - openclaw_skill_sync_github_token | length <= 4096
+      - openclaw_skill_sync_github_token is not search('\\s')
+      - openclaw_skill_sync_repository == 'holybaechu/openclaw-setup'
+      - openclaw_skill_sync_uid | int == 1002
+      - openclaw_skill_sync_gid | int == 1002
+      - openclaw_skill_sync_state_root == '/var/lib/openclaw-skill-sync'
+      - openclaw_skill_sync_script_path == '/usr/local/libexec/openclaw-skill-sync'
+      - openclaw_skill_sync_askpass_path == '/usr/local/libexec/openclaw-skill-sync-askpass'
+      - openclaw_skill_sync_github_token_path == openclaw_secret_root + '/skill_sync_github_token'
+      - openclaw_skill_sync_check_timeout | int == 900
+    fail_msg: >-
+      Configure OPENCLAW_SKILL_SYNC_GITHUB_TOKEN as a narrowly scoped token
+      with contents, pull-request, and Actions access to openclaw-setup.
+  no_log: true
+
 - name: Install native OpenClaw operating-system prerequisites
   ansible.builtin.apt:
     name:
+      - acl
       - git
       - ca-certificates
       - curl
@@ -119,6 +144,68 @@
     password_lock: true
     state: present
 
+- name: Create the isolated skill-promotion group
+  ansible.builtin.group:
+    name: "{{ openclaw_skill_sync_group }}"
+    gid: "{{ openclaw_skill_sync_gid }}"
+    system: true
+    state: present
+
+- name: Create the isolated skill-promotion user
+  ansible.builtin.user:
+    name: "{{ openclaw_skill_sync_user }}"
+    uid: "{{ openclaw_skill_sync_uid }}"
+    group: "{{ openclaw_skill_sync_group }}"
+    home: "{{ openclaw_skill_sync_state_root }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    system: true
+    password_lock: true
+    state: present
+
+- name: Migrate the legacy main workspace into the unified hierarchy
+  ansible.builtin.shell: |
+    set -eu
+    legacy={{ openclaw_legacy_workspace_root | quote }}
+    target={{ openclaw_workspace_root | quote }}
+    parent={{ openclaw_workspaces_root | quote }}
+
+    if [ ! -e "$legacy" ]; then
+      echo changed=no
+      exit 0
+    fi
+    test -d "$legacy"
+    test ! -L "$legacy"
+    systemctl stop openclaw-gateway.service 2>/dev/null || true
+    install -d -o {{ openclaw_user | quote }} -g {{ openclaw_group | quote }} -m 0700 "$parent"
+
+    if [ -e "$target" ]; then
+      test -d "$target"
+      test ! -L "$target"
+      legacy_item="$(find "$legacy" -mindepth 1 -print -quit)"
+      target_item="$(find "$target" -mindepth 1 -print -quit)"
+      if [ -n "$legacy_item" ] && [ -n "$target_item" ]; then
+        printf '%s\n' 'legacy and unified main workspaces both contain data' >&2
+        exit 1
+      fi
+      if [ -n "$legacy_item" ]; then
+        rmdir "$target"
+        mv "$legacy" "$target"
+      else
+        rmdir "$legacy"
+      fi
+    else
+      mv "$legacy" "$target"
+    fi
+    chown {{ openclaw_user | quote }}:{{ openclaw_group | quote }} "$target"
+    chmod 0700 "$target"
+    echo changed=yes
+  args:
+    executable: /bin/sh
+  register: openclaw_workspace_migration
+  changed_when: "'changed=yes' in openclaw_workspace_migration.stdout"
+  when: openclaw_native_activate | bool
+
 - name: Create native OpenClaw installation and runtime directories
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -137,10 +224,13 @@
     - {path: "{{ openclaw_cache_root }}/downloads", owner: root, group: root, mode: "0755"}
     - {path: "{{ openclaw_compile_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_runtime_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_workspaces_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_state_root }}/sandbox", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_ctf_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_ctf_sandbox_skills_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_skill_sync_state_root }}", owner: "{{ openclaw_skill_sync_user }}", group: "{{ openclaw_skill_sync_group }}", mode: "0700"}
+    - {path: "{{ openclaw_skill_sync_state_root }}/tmp", owner: "{{ openclaw_skill_sync_user }}", group: "{{ openclaw_skill_sync_group }}", mode: "0700"}
     - {path: "{{ openclaw_home }}/.config", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
     - {path: "{{ openclaw_auth_profile_secret_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: /usr/local/libexec, owner: root, group: root, mode: "0755"}
@@ -290,6 +380,16 @@
   no_log: true
   diff: false
   notify: Restart OpenClaw Gateway
+
+- name: Install the skill-promotion GitHub credential outside Git
+  ansible.builtin.copy:
+    content: "{{ openclaw_skill_sync_github_token }}\n"
+    dest: "{{ openclaw_skill_sync_github_token_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
 
 - name: Download the pinned official Node.js archive
   ansible.builtin.get_url:
@@ -528,6 +628,38 @@
     - Reload systemd for OpenClaw
     - Restart OpenClaw Gateway
 
+- name: Install the autonomous skill-promotion implementation
+  ansible.builtin.copy:
+    src: openclaw_skill_sync.py
+    dest: "{{ openclaw_skill_sync_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the credential-scoped skill-promotion Git askpass helper
+  ansible.builtin.template:
+    src: openclaw-skill-sync-askpass.j2
+    dest: "{{ openclaw_skill_sync_askpass_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render the autonomous skill-promotion service
+  ansible.builtin.template:
+    src: openclaw-skill-sync.service.j2
+    dest: /etc/systemd/system/openclaw-skill-sync.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render the autonomous skill-promotion timer
+  ansible.builtin.template:
+    src: openclaw-skill-sync.timer.j2
+    dest: /etc/systemd/system/openclaw-skill-sync.timer
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Validate the native systemd credential materialization contract
   when: not (openclaw_docker_rollback_activate | bool)
   no_log: true
@@ -718,6 +850,54 @@
     - not (openclaw_native_activate | bool)
     - not (openclaw_native_transition_marker.stat.exists | default(false))
 
+- name: Synchronize the protected private OpenClaw checkout from canonical main
+  ansible.builtin.shell: |
+    set -eu
+    setup={{ openclaw_setup_root | quote }}
+    test -d "$setup/.git"
+    test ! -L "$setup"
+    test ! -L "$setup/.git"
+    test "$(git -C "$setup" branch --show-current)" = main
+    test -z "$(git -C "$setup" status --porcelain=v1 --untracked-files=all)"
+    test -z "$(git -C "$setup" remote)"
+
+    git -C "$setup" fetch --no-tags \
+      "https://github.com/{{ openclaw_skill_sync_repository }}.git" \
+      refs/heads/main
+    fetched="$(git -C "$setup" rev-parse FETCH_HEAD)"
+    current="$(git -C "$setup" rev-parse HEAD)"
+    if [ "$fetched" = "$current" ]; then
+      echo changed=no
+      exit 0
+    fi
+
+    systemctl stop openclaw-gateway.service 2>/dev/null || true
+    git -C "$setup" reset --hard "$fetched"
+    git -C "$setup" clean -fdx
+    test "$(git -C "$setup" branch --show-current)" = main
+    test -z "$(git -C "$setup" status --porcelain=v1 --untracked-files=all)"
+    test -z "$(git -C "$setup" remote)"
+    chown root:{{ openclaw_group | quote }} "$setup"
+    chmod 0750 "$setup"
+    chown root:root "$setup/.git"
+    chmod 0700 "$setup/.git"
+    chown root:{{ openclaw_group | quote }} {{ openclaw_config_path | quote }}
+    chmod 0640 {{ openclaw_config_path | quote }}
+    echo changed=yes
+  args:
+    executable: /bin/sh
+  environment:
+    HOME: /root
+    GIT_TERMINAL_PROMPT: "0"
+    GIT_ASKPASS: "{{ openclaw_skill_sync_askpass_path }}"
+    GIT_CONFIG_NOSYSTEM: "1"
+    GIT_CONFIG_GLOBAL: /dev/null
+    OPENCLAW_SKILL_SYNC_GITHUB_TOKEN_FILE: "{{ openclaw_skill_sync_github_token_path }}"
+  register: openclaw_setup_sync
+  changed_when: "'changed=yes' in openclaw_setup_sync.stdout"
+  no_log: true
+  when: openclaw_native_activate | bool
+
 - name: Inspect the transferred private OpenClaw repository
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -836,14 +1016,53 @@
     owner: "{{ openclaw_user }}"
     group: "{{ openclaw_group }}"
     mode: "{{ item.mode }}"
+    force: "{{ item.force | default(true) }}"
   loop:
     - {source: workspaces/ctf/AGENTS.md, destination: AGENTS.md, mode: "0640"}
     - {source: workspaces/ctf/templates/writeup.md, destination: templates/writeup.md, mode: "0640"}
-    - {source: workspaces/ctf/skills/ctf-artifacts/SKILL.md, destination: skills/ctf-artifacts/SKILL.md, mode: "0640"}
+    - {source: workspaces/ctf/skills/ctf-artifacts/SKILL.md, destination: skills/ctf-artifacts/SKILL.md, mode: "0640", force: false}
     - {source: workspaces/ctf/scripts/init-ctf-challenge.py, destination: scripts/init-ctf-challenge.py, mode: "0750"}
     - {source: workspaces/ctf/scripts/export-ctf-package.py, destination: scripts/export-ctf-package.py, mode: "0750"}
   when: openclaw_native_activate | bool
   notify: Restart OpenClaw Gateway
+
+- name: Create the managed autonomous skill roots
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ openclaw_user }}"
+    group: "{{ openclaw_group }}"
+    mode: "0700"
+  loop:
+    - "{{ openclaw_workspace_root }}/skills"
+    - "{{ openclaw_ctf_workspace_root }}/skills"
+  when: openclaw_native_activate | bool
+
+- name: Grant the promotion identity read-only access to live skills
+  ansible.builtin.shell: |
+    set -eu
+    sync_user={{ openclaw_skill_sync_user | quote }}
+    for parent in \
+      {{ openclaw_state_root | quote }} \
+      {{ openclaw_workspaces_root | quote }}; do
+      setfacl -m "u:${sync_user}:--x" "$parent"
+    done
+    for workspace in \
+      {{ openclaw_workspace_root | quote }} \
+      {{ openclaw_ctf_workspace_root | quote }}; do
+      setfacl -m "u:${sync_user}:--x" "$workspace"
+    done
+    for root in \
+      {{ (openclaw_workspace_root + '/skills') | quote }} \
+      {{ (openclaw_ctf_workspace_root + '/skills') | quote }}; do
+      find "$root" -type d -exec setfacl \
+        -m "u:${sync_user}:r-x" -m "d:u:${sync_user}:r-x" {} +
+      find "$root" -type f -exec setfacl -m "u:${sync_user}:r--" {} +
+    done
+  args:
+    executable: /bin/sh
+  changed_when: false
+  when: openclaw_native_activate | bool
 
 - name: Require the protected one-Gateway OpenClaw schema
   ansible.builtin.assert:
@@ -867,6 +1086,10 @@
         ((openclaw_native_config.content | b64decode | from_json).agents.list |
         selectattr('id', 'equalto', 'main') | map(attribute='default') | list) == [true]
       - >-
+        ((openclaw_native_config.content | b64decode | from_json).agents.list |
+        selectattr('id', 'equalto', 'main') | map(attribute='workspace') | list) ==
+        [openclaw_workspace_root]
+      - >-
         (openclaw_native_config.content | b64decode | from_json).agents.defaults.model.primary ==
         openclaw_codex_model
       - >-
@@ -888,6 +1111,15 @@
         {'agentRuntime': {'id': 'codex'}}
       - >-
         openclaw_ctf_agents[0].workspace == openclaw_ctf_workspace_root
+      - >-
+        (openclaw_native_config.content | b64decode | from_json).skills.workshop ==
+        {
+          'autonomous': {'mode': 'auto'},
+          'approvalPolicy': 'auto',
+          'allowSymlinkTargetWrites': false,
+          'maxPending': 50,
+          'maxSkillBytes': 40000
+        }
       - >-
         openclaw_ctf_agents[0].sandbox.backend == 'docker'
       - >-
@@ -1265,6 +1497,9 @@
         - {path: models.providers.openai.agentRuntime.id, value: codex}
         - {path: agents.defaults.model.primary, value: "{{ openclaw_codex_model }}"}
         - {path: agents.defaults.thinkingDefault, value: "{{ openclaw_codex_thinking_default }}"}
+        - {path: skills.workshop.autonomous.mode, value: auto}
+        - {path: skills.workshop.approvalPolicy, value: auto}
+        - {path: skills.workshop.allowSymlinkTargetWrites, value: false}
         - {path: plugins.entries.codex.enabled, value: true}
         - {path: plugins.entries.discord.enabled, value: true}
       loop_control:
@@ -1325,6 +1560,14 @@
 - name: Stop and disable native OpenClaw for tracked Docker rollback
   ansible.builtin.systemd_service:
     name: openclaw-gateway.service
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when: openclaw_docker_rollback_activate | bool
+
+- name: Stop autonomous skill promotion for tracked Docker rollback
+  ansible.builtin.systemd_service:
+    name: openclaw-skill-sync.timer
     enabled: false
     state: stopped
     daemon_reload: true
@@ -1391,6 +1634,17 @@
           systemd state and fixed journal category counters above contain no
           environment, command line, config, raw journal, or credential
           material.
+
+- name: Enable autonomous OpenClaw skill promotion after Gateway readiness
+  ansible.builtin.systemd_service:
+    name: openclaw-skill-sync.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - openclaw_skill_sync_enabled | bool
+    - openclaw_native_activate | bool
+    - not (openclaw_docker_rollback_activate | bool)
 
 - name: Validate the native Gateway token handshake without operator scope
   when: openclaw_native_activate | bool

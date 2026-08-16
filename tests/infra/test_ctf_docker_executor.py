@@ -17,7 +17,7 @@ def test_ctf_executor_remains_a_dedicated_unprivileged_lxc():
     assert 'hostname         = "ctf-executor"' in topology
     assert "vmid             = 119" in topology
     assert "startup_order    = 3" in topology
-    assert "openclaw_ctf_workspace_root: /srv/openclaw-ctf" in all_vars
+    assert "openclaw_ctf_workspace_root: /var/lib/openclaw/workspaces/ctf" in all_vars
     assert "openclaw_ctf_sandbox_skills_root: /var/lib/openclaw/sandbox/skills-workspaces" in all_vars
     assert 'openclaw_ctf_uid: "{{ service_uid }}"' in all_vars
     assert 'openclaw_ctf_gid: "{{ service_gid }}"' in all_vars

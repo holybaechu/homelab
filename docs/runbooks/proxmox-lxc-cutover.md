@@ -19,11 +19,13 @@ rollback. The cutover gate is:
 - VMID 110 has no TUN passthrough; it retains nesting/keyctl and the single
   `/var/lib/homelab` bind mount.
 - VMID 118 has no nesting, keyctl, TUN passthrough, Docker daemon, or Docker
-  socket. Its sole host bind mount is `/srv/openclaw-ctf`, and port 18789
-  ingress is accepted only from Traefik on `192.168.0.3`.
+  socket. Its two narrow host binds expose the CTF workspace at
+  `/var/lib/openclaw/workspaces/ctf` and generated sandbox skills at
+  `/var/lib/openclaw/sandbox/skills-workspaces`; port 18789 ingress is accepted
+  only from Traefik on `192.168.0.3`.
 - VMID 119 has nesting/keyctl only for its local Docker Engine, no TUN, and
-  the same `/srv/openclaw-ctf` mount. No unrelated homelab data or Docker
-  socket is mounted into a CTF sandbox.
+  the same two path-identical workspace and generated-skill mounts. No
+  unrelated homelab data or Docker socket is mounted into a CTF sandbox.
 - The active Compose projects (`platform`, `media`, `code`, and `openclaw`) are
   running and Ansible live validation passes.
 - The media project has one direct qBittorrent instance at

@@ -27,6 +27,7 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
         "COPYPARTY_USERS_JSON",
         "OPENCLAW_GATEWAY_TOKEN",
         "OPENCLAW_DISCORD_BOT_TOKEN",
+        "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN",
     ):
         assert f"{secret_name}:" not in job_env
 
@@ -41,14 +42,17 @@ def test_cd_workflow_uses_step_scoped_service_secrets_and_extra_vars_script():
     assert "OPENCLAW_CTF_GATEWAY_TOKEN" not in workflow
     assert "OPENCLAW_CTF_OPENAI_API_KEY" not in workflow
     assert "OPENCLAW_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_DISCORD_BOT_TOKEN }}" in workflow
+    assert "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN: ${{ secrets.OPENCLAW_SKILL_SYNC_GITHUB_TOKEN }}" in workflow
     assert "OPENCLAW_DISCORD_ENABLED" not in workflow
     secret_step = workflow.split(
         "- name: Validate and write Ansible service secrets", maxsplit=1
     )[1].split("- name: Prepare one-time lowest-ID cutover", maxsplit=1)[0]
     assert "OPENCLAW_GATEWAY_TOKEN:" in secret_step
     assert "OPENCLAW_DISCORD_BOT_TOKEN:" in secret_step
+    assert "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN:" in secret_step
     assert workflow.count("OPENCLAW_GATEWAY_TOKEN:") == 1
     assert workflow.count("OPENCLAW_DISCORD_BOT_TOKEN:") == 1
+    assert workflow.count("OPENCLAW_SKILL_SYNC_GITHUB_TOKEN:") == 1
     assert "OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters" in script
     assert "OPENCLAW_CTF_GATEWAY_TOKEN" not in script
     assert "OPENCLAW_CTF_OPENAI_API_KEY" not in script

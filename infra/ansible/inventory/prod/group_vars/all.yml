@@ -14,14 +14,14 @@ ctf_executor_ip: "{{ hostvars['ctf_executor'].ansible_host }}"
 # surfaces are separate from the private checkout and normal Gateway state.
 openclaw_ctf_shared_host_path: "{{ homelab_data_mount }}/openclaw-ctf"
 openclaw_ctf_sandbox_skills_host_path: "{{ homelab_data_mount }}/openclaw-ctf-sandbox-skills"
-openclaw_ctf_workspace_root: /srv/openclaw-ctf
+openclaw_ctf_workspace_root: /var/lib/openclaw/workspaces/ctf
 # The one Gateway and its CTF sandbox share the service identity for mounted
 # challenge and generated-skill data. The executor itself remains a separate
 # LXC and exposes Docker only through the forced SSH command below.
 openclaw_ctf_sandbox_skills_root: /var/lib/openclaw/sandbox/skills-workspaces
-# CD preflight accepts this one former managed destination only until the
-# root-options role rewrites mp1 to the one-Gateway destination above.
-openclaw_ctf_preflight_legacy_sandbox_skills_root: /var/lib/openclaw-ctf/sandbox/skills-workspaces
+# CD preflight accepts this one former managed workspace destination only
+# until the root-options role rewrites mp0 to the unified hierarchy above.
+openclaw_ctf_preflight_legacy_workspace_root: /srv/openclaw-ctf
 openclaw_ctf_uid: "{{ service_uid }}"
 openclaw_ctf_gid: "{{ service_gid }}"
 openclaw_ctf_docker_user: openclaw-ctf-docker

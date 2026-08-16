@@ -43,7 +43,9 @@ openclaw_setup_root: /home/openclaw/openclaw-setup
 openclaw_config_path: "{{ openclaw_setup_root }}/config/openclaw.json"
 openclaw_runtime_root: /var/lib/openclaw
 openclaw_state_root: /var/lib/openclaw
-openclaw_workspace_root: "{{ openclaw_state_root }}/workspace"
+openclaw_workspaces_root: "{{ openclaw_state_root }}/workspaces"
+openclaw_legacy_workspace_root: "{{ openclaw_state_root }}/workspace"
+openclaw_workspace_root: "{{ openclaw_workspaces_root }}/main"
 openclaw_auth_profile_secret_root: "{{ openclaw_home }}/.config/openclaw"
 openclaw_cache_root: /var/cache/openclaw
 openclaw_npm_cache_root: "{{ openclaw_cache_root }}/npm"
@@ -64,6 +66,22 @@ openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
 # because that config intentionally contains the file-backed bot SecretRef.
 openclaw_discord_enabled: true
 openclaw_discord_bot_token_path: "{{ openclaw_secret_root }}/discord_bot_token"
+
+# Autonomous Skill Workshop writes only to live workspace skill roots. A
+# separate least-privilege service validates and promotes those text files to
+# the private setup repository without exposing its GitHub credential to the
+# Gateway process.
+openclaw_skill_sync_enabled: true
+openclaw_skill_sync_user: openclaw-skill-sync
+openclaw_skill_sync_group: openclaw-skill-sync
+openclaw_skill_sync_uid: 1002
+openclaw_skill_sync_gid: 1002
+openclaw_skill_sync_state_root: /var/lib/openclaw-skill-sync
+openclaw_skill_sync_script_path: /usr/local/libexec/openclaw-skill-sync
+openclaw_skill_sync_askpass_path: /usr/local/libexec/openclaw-skill-sync-askpass
+openclaw_skill_sync_github_token_path: "{{ openclaw_secret_root }}/skill_sync_github_token"
+openclaw_skill_sync_repository: holybaechu/openclaw-setup
+openclaw_skill_sync_check_timeout: 900
 
 openclaw_gateway_port: 18789
 openclaw_hostname: openclaw.home.hchu.me

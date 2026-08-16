@@ -289,6 +289,35 @@
         executable: /bin/sh
       changed_when: false
 
+    - name: Validate unified workspaces and autonomous skill promotion
+      ansible.builtin.shell: |
+        set -eu
+        test -d '{{ openclaw_workspaces_root }}'
+        test -d '{{ openclaw_workspace_root }}'
+        test -d '{{ openclaw_workspace_root }}/skills'
+        test -d '{{ openclaw_ctf_workspace_root }}/skills'
+        test ! -e '{{ openclaw_legacy_workspace_root }}'
+        test ! -e '{{ openclaw_ctf_preflight_legacy_workspace_root }}'
+        test "$(stat -c '%U:%G %a' '{{ openclaw_skill_sync_state_root }}')" = '{{ openclaw_skill_sync_user }}:{{ openclaw_skill_sync_group }} 700'
+        test "$(stat -c '%u:%g %a' '{{ openclaw_skill_sync_github_token_path }}')" = '0:0 600'
+        systemctl is-enabled --quiet openclaw-skill-sync.timer
+        systemctl is-active --quiet openclaw-skill-sync.timer
+        systemctl cat openclaw-skill-sync.service | grep -Fqx 'User={{ openclaw_skill_sync_user }}'
+        systemctl cat openclaw-skill-sync.service | grep -Fqx 'LoadCredential=github_token:{{ openclaw_skill_sync_github_token_path }}'
+        systemctl cat openclaw-skill-sync.service | grep -Fqx 'ReadOnlyPaths={{ openclaw_workspace_root }}/skills'
+        systemctl cat openclaw-skill-sync.service | grep -Fqx 'ReadOnlyPaths={{ openclaw_ctf_workspace_root }}/skills'
+        systemctl cat openclaw-skill-sync.service | grep -Fqx 'ReadWritePaths={{ openclaw_skill_sync_state_root }}'
+        runuser -u '{{ openclaw_skill_sync_user }}' -- test -r '{{ openclaw_workspace_root }}/skills'
+        runuser -u '{{ openclaw_skill_sync_user }}' -- test -r '{{ openclaw_ctf_workspace_root }}/skills'
+        ! runuser -u '{{ openclaw_skill_sync_user }}' -- test -w '{{ openclaw_workspace_root }}/skills'
+        ! runuser -u '{{ openclaw_skill_sync_user }}' -- test -w '{{ openclaw_ctf_workspace_root }}/skills'
+        ! runuser -u '{{ openclaw_skill_sync_user }}' -- test -r '{{ openclaw_state_root }}/agents'
+        ! runuser -u '{{ openclaw_skill_sync_user }}' -- test -r '{{ openclaw_auth_profile_secret_root }}'
+      args:
+        executable: /bin/sh
+      changed_when: false
+      no_log: true
+
     - name: Check direct Discord credential state when explicitly enabled
       ansible.builtin.shell: |
         set -eu

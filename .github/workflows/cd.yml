@@ -191,6 +191,7 @@ jobs:
           ARCANE_JWT_SECRET: ${{ secrets.ARCANE_JWT_SECRET }}
           OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
           OPENCLAW_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_DISCORD_BOT_TOKEN }}
+          OPENCLAW_SKILL_SYNC_GITHUB_TOKEN: ${{ secrets.OPENCLAW_SKILL_SYNC_GITHUB_TOKEN }}
         run: python3 scripts/ci/write_ansible_extra_vars.py "${ANSIBLE_EXTRA_VARS_PATH}"
 
       - name: Prepare one-time lowest-ID cutover

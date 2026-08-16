@@ -17,6 +17,9 @@ def seed_required_environment(monkeypatch, module):
     monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "cd" * 32)
     monkeypatch.setenv("OPENCLAW_DISCORD_BOT_TOKEN", "discord-token")
     monkeypatch.setenv(
+        "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN", "github-token-" + "x" * 24
+    )
+    monkeypatch.setenv(
         "COPYPARTY_USERS_JSON",
         json.dumps([{"name": "test", "password": "test-password"}]),
     )
@@ -30,6 +33,7 @@ def test_one_gateway_and_shared_discord_secrets_are_required(monkeypatch):
 
     assert mapping["openclaw_gateway_token"] == "cd" * 32
     assert mapping["openclaw_discord_bot_token"] == "discord-token"
+    assert mapping["openclaw_skill_sync_github_token"] == "github-token-" + "x" * 24
     assert "openclaw_ctf_gateway_token" not in mapping
     assert "OPENCLAW_CTF_GATEWAY_TOKEN" not in module["REQUIRED_ENV"].values()
     assert "OPENCLAW_DISCORD_ENABLED" not in module["REQUIRED_ENV"].values()

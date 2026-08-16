@@ -10,7 +10,7 @@
       - openclaw_ctf_docker_network == 'openclaw-ctf'
       - openclaw_ctf_docker_network_cidr == '172.30.0.0/24'
       - openclaw_ctf_docker_bridge == 'occtfbr0'
-      - openclaw_ctf_workspace_root == '/srv/openclaw-ctf'
+      - openclaw_ctf_workspace_root == '/var/lib/openclaw/workspaces/ctf'
       - openclaw_ctf_docker_user == 'openclaw-ctf-docker'
       - openclaw_ctf_executor_user_uid | int == 1001
       - openclaw_ctf_executor_user_gid | int == 1001

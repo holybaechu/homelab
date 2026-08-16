@@ -52,6 +52,51 @@ the one `openai:main` profile inside the one Gateway service account. No OAuth
 file, desktop `~/.codex` directory, or OpenAI API key is stored in either Git
 repository.
 
+## Unified workspaces and autonomous skill promotion
+
+OpenClaw keeps mutable state under `/var/lib/openclaw` and uses one explicit
+workspace subtree per agent:
+
+- `main`: `/var/lib/openclaw/workspaces/main`
+- `ctf`: `/var/lib/openclaw/workspaces/ctf`
+
+Only the CTF workspace and
+`/var/lib/openclaw/sandbox/skills-workspaces` are bind-mounted at the same paths
+on the remote executor. The rest of `/var/lib/openclaw` remains local to the
+Gateway, so sessions, auth state, registries, and unrelated agent data are not
+mirrored.
+
+Skill Workshop runs with autonomous mode and automatic approval. Runtime skill
+changes stay in the live `skills/` directories. Every five minutes,
+`openclaw-skill-sync.timer` starts a separate `openclaw-skill-sync` identity
+that can read those two skill roots but cannot write them or read Gateway auth
+state. It validates the files, clones `holybaechu/openclaw-setup`, opens a bot
+branch and pull request, waits for the private repository checks, and squash
+merges the PR automatically. No manual PR review is part of the steady-state
+flow.
+
+Before deployment, create a fine-grained GitHub token restricted to the private
+`holybaechu/openclaw-setup` repository with **Contents: read/write**, **Pull
+requests: read/write**, and **Actions: read**, then store it in the homelab
+production environment as `OPENCLAW_SKILL_SYNC_GITHUB_TOKEN`. The token is
+loaded only by the promotion oneshot service through a systemd credential; it
+is not exposed to the Gateway process.
+
+The same credential lets the Ansible role fetch canonical `main` into the
+protected, remote-free production checkout at the start of each homelab
+deployment. The role refuses a dirty checkout, fetches by URL without adding a
+persistent Git remote, stops the Gateway only when the commit changes, resets
+to the fetched commit, and reapplies the protected ownership and modes. Skill
+promotion itself updates GitHub immediately; the already-live skill stays in
+the workspace, while the inert production checkout receives that promoted
+commit on the next homelab deployment.
+
+The first deployment migrates the legacy main workspace from
+`/var/lib/openclaw/workspace` to `/var/lib/openclaw/workspaces/main`. It fails
+closed if both locations contain data. The old `/srv/openclaw-ctf` mount is
+accepted only during the preflight transition and is reconciled to
+`/var/lib/openclaw/workspaces/ctf` by the LXC configuration stage.
+
 ## Core Codex subscription activation
 
 After a deployment has installed the pinned `@openclaw/codex` harness, create
@@ -66,7 +111,7 @@ sudo -u openclaw env \
   OPENCLAW_HOME=/home/openclaw \
   OPENCLAW_STATE_DIR=/var/lib/openclaw \
   OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
-  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspace \
+  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspaces/main \
   PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
   /opt/nodejs/current/bin/node \
   /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \
@@ -77,7 +122,7 @@ sudo -u openclaw env \
   OPENCLAW_HOME=/home/openclaw \
   OPENCLAW_STATE_DIR=/var/lib/openclaw \
   OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
-  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspace \
+  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspaces/main \
   PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
    /opt/nodejs/current/bin/node \
    /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \
@@ -88,7 +133,7 @@ sudo -u openclaw env \
   OPENCLAW_HOME=/home/openclaw \
   OPENCLAW_STATE_DIR=/var/lib/openclaw \
   OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
-  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspace \
+  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspaces/main \
   PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
   /opt/nodejs/current/bin/node \
   /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \

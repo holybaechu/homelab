@@ -45,8 +45,9 @@ allowlists, select agents. The configuration validation requires:
 - A wildcard Discord guild channel map with enabled numeric channel IDs.
 - Exactly one direct Discord binding for each allowed channel; each binding
   names an existing agent and at least one names `ctf`.
-- The `ctf` agent workspace `/srv/openclaw-ctf`, Docker `session` sandbox on
-  `openclaw-ctf`, elevated tools disabled, and the approved `message` tool in
+- The `ctf` agent workspace `/var/lib/openclaw/workspaces/ctf`, Docker
+  `session` sandbox on `openclaw-ctf`, elevated tools disabled, and the
+  approved `message` tool in
   its CTF tool/sandbox policy so it can return bounded ZIP exports directly to
   the requesting Discord channel. Existing agents such as `main` may likewise
   keep their separately configured direct Discord attachment and ZIP handling.

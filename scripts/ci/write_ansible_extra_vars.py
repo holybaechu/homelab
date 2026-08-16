@@ -20,6 +20,7 @@ REQUIRED_ENV = {
     "arcane_jwt_secret": "ARCANE_JWT_SECRET",
     "openclaw_gateway_token": "OPENCLAW_GATEWAY_TOKEN",
     "openclaw_discord_bot_token": "OPENCLAW_DISCORD_BOT_TOKEN",
+    "openclaw_skill_sync_github_token": "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN",
 }
 
 
@@ -66,6 +67,9 @@ def build_mapping() -> dict[str, Any]:
     mapping["arcane_encryption_key"] = mapping["arcane_encryption_key"].strip()
     mapping["arcane_jwt_secret"] = mapping["arcane_jwt_secret"].strip()
     mapping["openclaw_gateway_token"] = mapping["openclaw_gateway_token"].strip()
+    mapping["openclaw_skill_sync_github_token"] = mapping[
+        "openclaw_skill_sync_github_token"
+    ].strip()
 
     if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["arcane_encryption_key"]) is None:
         raise SystemExit("ARCANE_ENCRYPTION_KEY must be exactly 64 hexadecimal characters")
@@ -73,6 +77,12 @@ def build_mapping() -> dict[str, Any]:
         raise SystemExit("ARCANE_JWT_SECRET must be at least 32 characters")
     if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["openclaw_gateway_token"]) is None:
         raise SystemExit("OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters")
+    if not 20 <= len(mapping["openclaw_skill_sync_github_token"]) <= 4096 or any(
+        character.isspace() for character in mapping["openclaw_skill_sync_github_token"]
+    ):
+        raise SystemExit(
+            "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN must be 20-4096 non-whitespace characters"
+        )
 
     mapping["copyparty_users"] = load_copyparty_users()
 
