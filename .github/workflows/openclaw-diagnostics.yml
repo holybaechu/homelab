@@ -110,6 +110,15 @@ jobs:
               "journal_codex_failure": r"codex.{0,64}(error|failed|401|unauthorized)",
               "journal_sandbox_start": r"sandbox.{0,64}(start|spawn|create)",
               "journal_sandbox_failure": r"sandbox.{0,64}(error|failed)|docker.{0,64}(error|failed)",
+              "journal_codex_auth": r"(codex|openai).{0,96}(401|unauthorized|authentication failed|token expired)",
+              "journal_docker_transport": r"docker.{0,96}(ssh|dial|transport|daemon|host key|connection refused)",
+              "journal_image_missing": r"(image|manifest).{0,64}(not found|missing|no such)",
+              "journal_network_missing": r"network.{0,64}(not found|missing|no such)",
+              "journal_mount_failure": r"(mount|bind).{0,64}(denied|error|failed|missing|not found)",
+              "journal_permission_denied": r"permission denied|operation not permitted|eacces|eperm",
+              "journal_container_create": r"(create|creating).{0,48}container|container.{0,48}(create|creating)",
+              "journal_workspace_failure": r"workspace.{0,64}(denied|error|failed|missing|not found)",
+              "journal_tool_unavailable": r"tool.{0,64}(unavailable|not found|denied|not allowed)",
           }
           print("journal_present=" + ("yes" if text.strip() else "no"))
           for name, pattern in categories.items():

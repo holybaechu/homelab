@@ -765,4 +765,7 @@ def test_openclaw_diagnostics_is_fixed_read_only_and_redacts_session_content():
     assert "--unit openclaw-gateway.service" in workflow
     assert "journal_no_visible_reply" in workflow
     assert "journal_sandbox_failure" in workflow
+    assert "journal_docker_transport" in workflow
+    assert "journal_permission_denied" in workflow
+    assert "journal_network_missing" in workflow
     assert "workflow_dispatch:\n    inputs:" not in workflow
