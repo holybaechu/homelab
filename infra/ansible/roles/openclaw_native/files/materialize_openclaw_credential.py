@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import secrets
@@ -27,10 +28,15 @@ DISCORD_TOKEN_DESTINATIONS = frozenset(
         "/run/openclaw-credential-probe/discord_bot_token",
     }
 )
+CTF_DOCKER_KEY_DESTINATIONS = frozenset(
+    {"/run/openclaw-gateway/ctf_docker_client_key"}
+)
 GATEWAY_TOKEN_PATTERN = re.compile(rb"[0-9A-Fa-f]{64}\n\Z")
 MAX_GATEWAY_TOKEN_READ_BYTES = 66
 MAX_DISCORD_TOKEN_BYTES = 4096
 MAX_DISCORD_TOKEN_READ_BYTES = MAX_DISCORD_TOKEN_BYTES + 1
+MAX_CTF_DOCKER_KEY_BYTES = 16384
+MAX_CTF_DOCKER_KEY_READ_BYTES = MAX_CTF_DOCKER_KEY_BYTES + 1
 
 
 def parse_arguments(argv: list[str]) -> tuple[int, int, str, str] | None:
@@ -64,6 +70,25 @@ def is_valid_discord_token(payload: bytes) -> bool:
     )
 
 
+def is_valid_openssh_private_key(payload: bytes) -> bool:
+    """Accept one bounded canonical OpenSSH private-key envelope."""
+    if not payload.endswith(b"\n") or len(payload) > MAX_CTF_DOCKER_KEY_BYTES:
+        return False
+    lines = payload.splitlines()
+    if (
+        len(lines) < 3
+        or lines[0] != b"-----BEGIN OPENSSH PRIVATE KEY-----"
+        or lines[-1] != b"-----END OPENSSH PRIVATE KEY-----"
+        or any(not 1 <= len(line) <= 70 for line in lines[1:-1])
+    ):
+        return False
+    try:
+        decoded = base64.b64decode(b"".join(lines[1:-1]), validate=True)
+    except (ValueError, base64.binascii.Error):
+        return False
+    return decoded.startswith(b"openssh-key-v1\x00")
+
+
 def credential_spec(destination: str) -> tuple[int, Callable[[bytes], bool]] | None:
     """Return the fixed read bound and validator for an allowed destination."""
     if destination in GATEWAY_TOKEN_DESTINATIONS:
@@ -72,6 +97,8 @@ def credential_spec(destination: str) -> tuple[int, Callable[[bytes], bool]] | N
         )
     if destination in DISCORD_TOKEN_DESTINATIONS:
         return MAX_DISCORD_TOKEN_READ_BYTES, is_valid_discord_token
+    if destination in CTF_DOCKER_KEY_DESTINATIONS:
+        return MAX_CTF_DOCKER_KEY_READ_BYTES, is_valid_openssh_private_key
     return None
 
 

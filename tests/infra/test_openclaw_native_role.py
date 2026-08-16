@@ -408,6 +408,7 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}",
         "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
         "Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin",
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/ctf_docker_client_key /run/openclaw-gateway/ctf_docker_client_key",
         "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token",
         "RuntimeDirectory=openclaw-gateway",
         "RuntimeDirectoryMode=0700",

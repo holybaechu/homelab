@@ -41,6 +41,7 @@
       - openclaw_ctf_docker_known_hosts_path == '/etc/openclaw/trust/ctf_docker_known_hosts'
       - openclaw_ctf_docker_host == 'ssh://' + openclaw_ctf_docker_user + '@' + ctf_executor_ip
       - openclaw_ctf_docker_ssh_shim_dir == '/usr/local/libexec/openclaw-ctf-docker-bin'
+      - openclaw_ctf_docker_ssh_config_path == '/etc/ssh/ssh_config.d/90-openclaw-ctf-docker.conf'
       - openclaw_ctf_docker_network == 'openclaw-ctf'
       - openclaw_discord_enabled | bool
       - openclaw_codex_profile_id == 'openai:main'
@@ -379,6 +380,15 @@
     owner: root
     group: "{{ openclaw_group }}"
     mode: "0750"
+  notify: Restart OpenClaw Gateway
+
+- name: Install the CTF executor OpenSSH fallback policy
+  ansible.builtin.template:
+    src: openclaw-ctf-docker-ssh-config.j2
+    dest: "{{ openclaw_ctf_docker_ssh_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
   notify: Restart OpenClaw Gateway
 
 - name: Require an explicit shared Discord bot token

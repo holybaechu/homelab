@@ -201,6 +201,12 @@
         test ! -e /etc/systemd/system/openclaw-discord-relay.service
         test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_ssh_shim_dir }}')" = "root:{{ openclaw_group }} 750"
         test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_ssh_shim_dir }}/ssh')" = "root:{{ openclaw_group }} 750"
+        test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_ssh_config_path }}')" = "root:root 644"
+        test "$(stat -c '%U:%G %a' /run/openclaw-gateway/ctf_docker_client_key)" = "{{ openclaw_user }}:{{ openclaw_group }} 400"
+        /usr/sbin/runuser -u {{ openclaw_user }} -- /usr/bin/ssh -G -l {{ openclaw_ctf_docker_user }} {{ ctf_executor_ip }} |
+          grep -Fqx 'userknownhostsfile {{ openclaw_ctf_docker_known_hosts_path }}'
+        /usr/sbin/runuser -u {{ openclaw_user }} -- /usr/bin/ssh -G -l {{ openclaw_ctf_docker_user }} {{ ctf_executor_ip }} |
+          grep -Fqx 'identityfile /run/openclaw-gateway/ctf_docker_client_key'
         systemd-run \
           --wait \
           --pipe \

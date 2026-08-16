@@ -27,6 +27,7 @@ openclaw_ctf_docker_cli_path: /usr/bin/docker
 # the root-owned transport shim in a private directory that the one Gateway
 # service prepends to PATH.
 openclaw_ctf_docker_ssh_shim_dir: /usr/local/libexec/openclaw-ctf-docker-bin
+openclaw_ctf_docker_ssh_config_path: /etc/ssh/ssh_config.d/90-openclaw-ctf-docker.conf
 
 openclaw_install_root: /opt/openclaw
 openclaw_release_root: "{{ openclaw_install_root }}/releases/{{ openclaw_version }}"

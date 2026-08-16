@@ -124,6 +124,7 @@ def test_forced_docker_transport_key_is_root_managed_but_ssh_readable():
 def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets():
     service = read("infra/ansible/roles/openclaw_native/templates/openclaw-gateway.service.j2")
     wrapper = read("infra/ansible/roles/openclaw_native/templates/openclaw-ctf-docker-ssh.j2")
+    ssh_config = read("infra/ansible/roles/openclaw_native/templates/openclaw-ctf-docker-ssh-config.j2")
     transport = read("infra/ansible/roles/openclaw_ctf_transport/tasks/main.yml")
     transport_tasks = yaml.safe_load(transport)
 
@@ -131,6 +132,7 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
         "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
         "Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin",
         "LoadCredential=ctf_docker_client_key:",
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/ctf_docker_client_key /run/openclaw-gateway/ctf_docker_client_key",
         "InaccessiblePaths=-/run/docker.sock",
         "InaccessiblePaths=-/var/run/docker.sock",
         "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
@@ -154,6 +156,15 @@ def test_one_gateway_is_the_only_remote_docker_client_and_blocks_local_sockets()
     assert "DOCKER_SSH_COMMAND" not in service
     assert "LoadCredential=ctf_docker_known_hosts:" not in service
     assert "DOCKER_SSH_COMMAND" not in transport
+    for required in (
+        "Host {{ ctf_executor_ip }}",
+        "User {{ openclaw_ctf_docker_user }}",
+        "StrictHostKeyChecking yes",
+        "UserKnownHostsFile {{ openclaw_ctf_docker_known_hosts_path }}",
+        "IdentityFile /run/openclaw-gateway/ctf_docker_client_key",
+        "ClearAllForwardings yes",
+    ):
+        assert required in ssh_config
     assert "docker system dial-stdio" in transport
     assert "no-port-forwarding" in transport
     assert "openclaw_ctf_user" not in transport
