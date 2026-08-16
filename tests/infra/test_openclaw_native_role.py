@@ -596,8 +596,10 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert "git_safe --no-pager ls-files --error-unmatch config/openclaw.json" in tasks
     assert "Reject stale container paths in the native OpenClaw config" in tasks
     assert "secrets\n          - audit\n          - --check\n          - --json" in tasks
-    assert "plaintextCount != 0" in tasks
-    assert "unresolvedRefCount != 0" in tasks
+    assert "openclaw_secrets_audit_result.summary.plaintextCount == 0" in tasks
+    assert "openclaw_secrets_audit_result.summary.unresolvedRefCount == 0" in tasks
+    assert "codes={{ openclaw_secrets_audit_result.findings" in tasks
+    assert "paths={{ openclaw_secrets_audit_result.findings" in tasks
     assert 'owner: root\n    group: root\n    mode: "0600"' in tasks
     assert "OPENCLAW_SUPERVISOR_MODE: external" in tasks
     assert "openclaw-discord-relay-core" not in tasks
@@ -989,6 +991,8 @@ def test_native_openclaw_activation_validates_before_starting():
         "Inspect the core Codex harness runtime before startup",
         "Require the proxy-only native OpenClaw config values",
         "Audit native OpenClaw secrets before startup",
+        "Parse the native OpenClaw secret audit result",
+        "Require a clean native OpenClaw secret audit",
         "Flush validated OpenClaw handlers before activation",
         "Activate only the native OpenClaw system service",
         "Wait for the native OpenClaw Gateway readiness endpoint",
@@ -1035,6 +1039,19 @@ def test_native_openclaw_activation_validates_before_starting():
     )
     assert audit["become"] is True
     assert audit["become_user"] == "{{ openclaw_user }}"
+    assert audit["failed_when"] is False
+    assert audit["no_log"] is True
+
+    audit_assert = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Require a clean native OpenClaw secret audit"
+    )
+    assert audit_assert.get("no_log") is not True
+    fail_msg = audit_assert["ansible.builtin.assert"]["fail_msg"]
+    assert "codes=" in fail_msg
+    assert "paths=" in fail_msg
+    assert "message" not in fail_msg
 
     credential_dir = next(
         task

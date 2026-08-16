@@ -1519,12 +1519,28 @@
       environment: *openclaw_native_cli_environment
       register: openclaw_secrets_audit_preflight
       changed_when: false
-      failed_when: >-
-        openclaw_secrets_audit_preflight.rc != 0 or
-        (openclaw_secrets_audit_preflight.stdout | from_json).status != 'clean' or
-        (openclaw_secrets_audit_preflight.stdout | from_json).summary.plaintextCount != 0 or
-        (openclaw_secrets_audit_preflight.stdout | from_json).summary.unresolvedRefCount != 0
+      failed_when: false
       no_log: true
+
+    - name: Parse the native OpenClaw secret audit result
+      ansible.builtin.set_fact:
+        openclaw_secrets_audit_result: "{{ openclaw_secrets_audit_preflight.stdout | from_json }}"
+      no_log: true
+
+    - name: Require a clean native OpenClaw secret audit
+      ansible.builtin.assert:
+        that:
+          - openclaw_secrets_audit_preflight.rc == 0
+          - openclaw_secrets_audit_result.status == 'clean'
+          - openclaw_secrets_audit_result.summary.plaintextCount == 0
+          - openclaw_secrets_audit_result.summary.unresolvedRefCount == 0
+        fail_msg: >-
+          OpenClaw secret audit failed:
+          status={{ openclaw_secrets_audit_result.status | default('missing') }},
+          plaintext={{ openclaw_secrets_audit_result.summary.plaintextCount | default('unknown') }},
+          unresolved={{ openclaw_secrets_audit_result.summary.unresolvedRefCount | default('unknown') }},
+          codes={{ openclaw_secrets_audit_result.findings | default([]) | map(attribute='code') | list | unique | sort | join(',') }},
+          paths={{ openclaw_secrets_audit_result.findings | default([]) | map(attribute='jsonPath') | list | unique | sort | join(',') }}
   always:
     - name: Remove the temporary native OpenClaw credential directory
       ansible.builtin.file:
