@@ -241,6 +241,27 @@
   loop_control:
     label: "{{ item.path }}"
 
+- name: Retire the empty legacy CTF workspace mountpoint
+  ansible.builtin.shell: |
+    set -eu
+    legacy={{ openclaw_ctf_preflight_legacy_workspace_root | quote }}
+
+    if [ ! -e "$legacy" ]; then
+      echo changed=no
+      exit 0
+    fi
+    test -d "$legacy"
+    test ! -L "$legacy"
+    ! mountpoint -q "$legacy"
+    test -z "$(find "$legacy" -mindepth 1 -print -quit)"
+    rmdir "$legacy"
+    echo changed=yes
+  args:
+    executable: /bin/sh
+  register: openclaw_ctf_legacy_mountpoint_retirement
+  changed_when: "'changed=yes' in openclaw_ctf_legacy_mountpoint_retirement.stdout"
+  when: openclaw_native_activate | bool
+
 - name: Inspect retired split Gateway and relay unit files
   ansible.builtin.stat:
     path: "/etc/systemd/system/{{ item }}"

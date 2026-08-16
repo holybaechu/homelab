@@ -1011,6 +1011,20 @@ def test_native_openclaw_activation_validates_before_starting():
     assert positions == sorted(positions)
     assert "Flush staged OpenClaw handlers before activation" not in tasks
 
+    retired_ctf_mountpoint = next(
+        task
+        for task in walk_tasks(parsed_tasks)
+        if task["name"] == "Retire the empty legacy CTF workspace mountpoint"
+    )
+    retirement = retired_ctf_mountpoint["ansible.builtin.shell"]
+    assert "test -d \"$legacy\"" in retirement
+    assert "test ! -L \"$legacy\"" in retirement
+    assert "! mountpoint -q \"$legacy\"" in retirement
+    assert "find \"$legacy\" -mindepth 1 -print -quit" in retirement
+    assert "rmdir \"$legacy\"" in retirement
+    assert "rm -r" not in retirement
+    assert retired_ctf_mountpoint["when"] == "openclaw_native_activate | bool"
+
     handlers = read(ROLE / "handlers/main.yml")
     assert "systemctl\n      - is-active\n      - --quiet" in handlers
     assert "openclaw_gateway_active_for_restart.rc == 0" in handlers
