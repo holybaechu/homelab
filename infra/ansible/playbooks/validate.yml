@@ -97,7 +97,9 @@
         systemctl is-active --quiet docker.service
         systemctl is-enabled --quiet docker.service
         test -S /var/run/docker.sock
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 700"
+        # The named skill-sync traversal ACL is reflected in the POSIX mode's
+        # group execute bit; the sync identity is still proven read-only below.
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 710"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}')" = "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 700"
       args:
         executable: /bin/sh
@@ -184,7 +186,7 @@
         test -x '{{ openclaw_ctf_docker_cli_path }}'
         ! systemctl cat docker.service >/dev/null 2>&1
         ! systemctl cat containerd.service >/dev/null 2>&1
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 710"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_client_key_path }}')" = "0:0 600"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_known_hosts_path }}')" = "0:0 600"
@@ -265,7 +267,7 @@
     - name: Check native OpenClaw runtime and firewall staging
       ansible.builtin.shell: |
         set -eu
-        test "$(stat -c '%u:%g %a' '{{ openclaw_runtime_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_runtime_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 710"
         test "$(stat -c '%u:%g %a' '{{ openclaw_auth_profile_secret_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
         test "$(stat -c '%u:%g %a' '{{ openclaw_secret_root }}')" = "0:0 700"
         test "$(stat -c '%u:%g %a' '{{ openclaw_gateway_token_path }}')" = "0:0 600"
@@ -290,7 +292,7 @@
         test -d '{{ openclaw_ctf_workspace_root }}/exports'
         test -d '{{ openclaw_ctf_workspace_root }}/media/inbound'
         test -d '{{ openclaw_ctf_workspace_root }}/skills/ctf-artifacts'
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
+        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 710"
         setup="$(realpath '{{ openclaw_setup_root }}')"
         workspace="$(realpath '{{ openclaw_ctf_workspace_root }}')"
         case "$workspace" in "$setup"|"$setup"/*) exit 1 ;; esac

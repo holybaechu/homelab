@@ -33,6 +33,12 @@ def test_executor_validation_reports_only_nonsecret_contract_metadata_on_failure
     ) in validation
     assert "stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}'" in validation
     assert "stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}'" in validation
+    assert (
+        '"{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 710"' in validation
+    )
+    assert (
+        '"{{ openclaw_uid }}:{{ openclaw_gid }} 710"' in validation
+    )
 
 
 def test_executor_keeps_its_hardened_docker_and_network_contract():
