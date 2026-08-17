@@ -71,11 +71,6 @@ allowlists, select agents. The configuration validation requires:
   memory search, and Exa neural/keyword search through the pinned official
   provider plugin. CTF subagent count, depth, and timeout fields are omitted so
   the pinned OpenClaw defaults apply.
-- On the first visible reply in a newly auto-created CTF thread, the CTF agent
-  uses OpenClaw's native Discord `message send` `threadName` field to rename
-  the current thread to `<category> - <problem name>`, inferred from the
-  inbound challenge. It uses the current routed thread target and does not
-  guess a Discord ID or emit a duplicate normal reply.
 
 Camoufox running with `headless="virtual"` on Xvfb is the primary anti-detect
 automation path; Chromium and Chromedriver remain the compatibility fallback.
@@ -92,16 +87,9 @@ campaign channels as wanted, add each numeric channel ID to the same shared
 account map, and bind it to the intended agent. A channel name is not an
 authorization value and can change without redeploying.
 
-## CTF Codex model instructions
-
-The CTF agent alone uses the tracked
-`config/codex/gpt-5.6-sol-unrestricted-v45.md` file from the private setup
-repository. Deployment verifies its pinned SHA-256, installs it as mode `0600`
-under `/var/lib/openclaw/agents/ctf/agent/codex-home`, and sets the top-level
-`model_instructions_file` value in that agent's `config.toml`. The main agent's
-Codex home is not changed. Updating either the pinned file or its configured
-path restarts the Gateway; begin a new CTF session after deployment so Codex
-loads the instructions.
+The Codex plugin uses its default app-server instructions. Deployment removes
+the retired CTF `model_instructions_file` override and does not manage a
+separate CTF Codex home.
 
 ## Production secrets and deployment
 
