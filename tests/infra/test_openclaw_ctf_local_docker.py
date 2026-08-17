@@ -24,6 +24,14 @@ def test_local_ctf_docker_builds_the_pinned_kali_image_for_the_gateway_host():
     assert "Grant only the Gateway service account local Docker access" in names
     assert "Build the pinned local CTF Kali image" in names
     assert "Validate the pinned local Kali image and browser tools" in names
+    build = next(
+        task for task in tasks if task["name"] == "Build the pinned local CTF Kali image"
+    )
+    argv = build["ansible.builtin.command"]["argv"]
+    assert argv[argv.index("build") + 1 : argv.index("--label")] == [
+        "--network",
+        "host",
+    ]
 
 
 def test_local_ctf_docker_keeps_the_network_and_daemon_hardening():

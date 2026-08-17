@@ -203,6 +203,8 @@
     argv:
       - docker
       - build
+      - --network
+      - host
       - --label
       - "homelab.openclaw.ctf.image-revision={{ openclaw_ctf_image_revision }}"
       - --tag
