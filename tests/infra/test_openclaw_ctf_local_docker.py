@@ -23,6 +23,7 @@ def test_local_ctf_docker_builds_the_pinned_kali_image_for_the_gateway_host():
     assert variables["openclaw_ctf_camoufox_channel"] == "official/stable"
     assert "camoufox[geoip]==0.5.4" in dockerfile
     assert "Grant only the Gateway service account local Docker access" in names
+    assert "Read the local CTF workspace access ACL" in names
     assert "Build the pinned local CTF Kali image" in names
     assert "Validate the pinned local Kali image and browser tools" in names
     assert "Create persistent local CTF package and browser caches" in names
@@ -58,6 +59,19 @@ def test_local_ctf_docker_builds_the_pinned_kali_image_for_the_gateway_host():
     validate_argv = validate["ansible.builtin.command"]["argv"]
     assert validate_argv[validate_argv.index("--network") + 1] == "none"
     assert 'assert p.title() == "Camoufox ready"' in validate_argv[-1]
+
+    prereqs = next(
+        task for task in tasks if task["name"] == "Install local CTF Docker prerequisites"
+    )
+    assert "acl" in prereqs["ansible.builtin.apt"]["name"]
+    ownership = next(
+        task for task in tasks if task["name"] == "Verify the local CTF workspace ownership"
+    )
+    assertions = " ".join(ownership["ansible.builtin.assert"]["that"])
+    assert "mode == '0700' or" in assertions
+    assert "mode == '0710'" in assertions
+    assert "openclaw_ctf_local_workspace_acl.stdout_lines" in assertions
+    assert "openclaw_skill_sync_user" in assertions
 
 
 def test_local_ctf_docker_keeps_the_network_and_daemon_hardening():

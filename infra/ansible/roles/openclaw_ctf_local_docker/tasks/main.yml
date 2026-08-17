@@ -19,6 +19,7 @@
 - name: Install local CTF Docker prerequisites
   ansible.builtin.apt:
     name:
+      - acl
       - ca-certificates
       - curl
       - gnupg
@@ -74,6 +75,15 @@
     follow: false
   register: openclaw_ctf_local_workspace_stat
 
+- name: Read the local CTF workspace access ACL
+  ansible.builtin.command:
+    argv:
+      - getfacl
+      - -cp
+      - "{{ openclaw_ctf_workspace_root }}"
+  register: openclaw_ctf_local_workspace_acl
+  changed_when: false
+
 - name: Verify the local CTF workspace ownership
   ansible.builtin.assert:
     that:
@@ -81,7 +91,16 @@
       - not (openclaw_ctf_local_workspace_stat.stat.islnk | default(true))
       - (openclaw_ctf_local_workspace_stat.stat.uid | int) == (openclaw_ctf_uid | int)
       - (openclaw_ctf_local_workspace_stat.stat.gid | int) == (openclaw_ctf_gid | int)
-      - openclaw_ctf_local_workspace_stat.stat.mode == '0700'
+      - >-
+        openclaw_ctf_local_workspace_stat.stat.mode == '0700' or
+        (openclaw_ctf_local_workspace_stat.stat.mode == '0710' and
+         openclaw_ctf_local_workspace_acl.stdout_lines == [
+           'user::rwx',
+           'user:' + openclaw_skill_sync_user + ':--x',
+           'group::---',
+           'mask::--x',
+           'other::---'
+         ])
     fail_msg: The local CTF workspace must remain service-owned and non-symlinked.
 
 - name: Create the local CTF image build directory
