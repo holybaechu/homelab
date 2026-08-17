@@ -11,8 +11,8 @@
       - openclaw_ctf_docker_network_cidr == '172.30.0.0/24'
       - openclaw_ctf_docker_bridge == 'occtfbr0'
       - openclaw_ctf_workspace_root == '/var/lib/openclaw/workspaces/ctf'
-      - openclaw_ctf_camoufox_channel == 'official/prerelease'
-      - openclaw_ctf_camoufox_cache_marker == openclaw_ctf_workspace_root + '/.cache/camoufox/.homelab-ready-' + openclaw_ctf_image_revision
+      - openclaw_ctf_camoufox_channel == 'official/stable'
+      - openclaw_ctf_camoufox_cache_marker == openclaw_ctf_workspace_root + '/.cache/camoufox/.homelab-ready-' + openclaw_ctf_image_revision + '-stable'
       - openclaw_user == 'openclaw'
     fail_msg: The local CTF Docker variables are invalid.
 
@@ -279,7 +279,7 @@
         mkdir -p "$HOME";
         camoufox set '{{ openclaw_ctf_camoufox_channel }}';
         camoufox fetch;
-        touch '/workspace/.cache/camoufox/.homelab-ready-{{ openclaw_ctf_image_revision }}'
+        touch '/workspace/.cache/camoufox/.homelab-ready-{{ openclaw_ctf_image_revision }}-stable'
   when: not (openclaw_ctf_camoufox_cache_marker_stat.stat.exists | default(false))
   changed_when: true
 

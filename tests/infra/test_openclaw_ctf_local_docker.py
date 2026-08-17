@@ -20,7 +20,7 @@ def test_local_ctf_docker_builds_the_pinned_kali_image_for_the_gateway_host():
 
     assert variables["openclaw_ctf_image"] == "homelab-openclaw-ctf-kali:1"
     assert variables["openclaw_ctf_image_revision"] == "6"
-    assert variables["openclaw_ctf_camoufox_channel"] == "official/prerelease"
+    assert variables["openclaw_ctf_camoufox_channel"] == "official/stable"
     assert "camoufox[geoip]==0.5.4" in dockerfile
     assert "Grant only the Gateway service account local Docker access" in names
     assert "Build the pinned local CTF Kali image" in names
@@ -49,7 +49,7 @@ def test_local_ctf_docker_builds_the_pinned_kali_image_for_the_gateway_host():
     script = fetch_argv[-1]
     assert "camoufox set '{{ openclaw_ctf_camoufox_channel }}'" in script
     assert "camoufox fetch" in script
-    assert ".homelab-ready-{{ openclaw_ctf_image_revision }}" in script
+    assert ".homelab-ready-{{ openclaw_ctf_image_revision }}-stable" in script
     validate = next(
         task
         for task in tasks
