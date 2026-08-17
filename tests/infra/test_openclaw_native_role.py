@@ -703,6 +703,42 @@ def test_native_openclaw_installs_loads_and_seals_the_exa_search_plugin():
     assert runtime["no_log"] is True
 
 
+def test_native_beta_upgrade_migrates_shared_state_before_plugin_lifecycle():
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    flattened = list(walk_tasks(tasks))
+    names = [task.get("name") for task in flattened]
+
+    inspect_name = "Inspect the shared state schema for the OpenClaw beta upgrade"
+    backup_name = "Snapshot and prepare the shared state database for the beta migration"
+    migrate_name = "Apply the supported OpenClaw beta shared state migration"
+    verify_name = "Verify the migrated OpenClaw shared state schema"
+    install_name = "Install the pinned core Codex harness"
+    assert names.index(inspect_name) < names.index(backup_name)
+    assert names.index(backup_name) < names.index(migrate_name)
+    assert names.index(migrate_name) < names.index(verify_name)
+    assert names.index(verify_name) < names.index(install_name)
+
+    backup = next(task for task in flattened if task.get("name") == backup_name)
+    backup_source = backup["ansible.builtin.shell"]
+    assert "source.backup(backup)" in backup_source
+    assert "PRAGMA integrity_check" in backup_source
+    assert "ALTER TABLE device_bootstrap_tokens ADD COLUMN setup_id TEXT" in backup_source
+    assert backup["become_user"] == "{{ openclaw_user }}"
+    assert backup["no_log"] is True
+
+    migrate = next(task for task in flattened if task.get("name") == migrate_name)
+    argv = migrate["ansible.builtin.command"]["argv"]
+    assert argv[-4:] == ["doctor", "--fix", "--non-interactive", "--yes"]
+    assert migrate["become_user"] == "{{ openclaw_user }}"
+    assert migrate["environment"]["OPENCLAW_STATE_DIR"] == "{{ openclaw_state_root }}"
+    assert migrate["no_log"] is True
+
+    verify = next(task for task in flattened if task.get("name") == verify_name)
+    verify_source = verify["ansible.builtin.shell"]
+    assert 'PRAGMA user_version").fetchone()[0] == 8' in verify_source
+    assert '"setup_id" in bootstrap_columns' in verify_source
+
+
 def test_native_ctf_uses_default_codex_app_server_instructions():
     variables = yaml.safe_load(read(VARS))
     tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
