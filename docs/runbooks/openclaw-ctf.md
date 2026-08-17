@@ -71,6 +71,11 @@ allowlists, select agents. The configuration validation requires:
   memory search, and Exa neural/keyword search through the pinned official
   provider plugin. CTF subagent count, depth, and timeout fields are omitted so
   the pinned OpenClaw defaults apply.
+- On the first visible reply in a newly auto-created CTF thread, the CTF agent
+  uses OpenClaw's native Discord `message send` `threadName` field to rename
+  the current thread to `<category> - <problem name>`, inferred from the
+  inbound challenge. It uses the current routed thread target and does not
+  guess a Discord ID or emit a duplicate normal reply.
 
 Camoufox running with `headless="virtual"` on Xvfb is the primary anti-detect
 automation path; Chromium and Chromedriver remain the compatibility fallback.
