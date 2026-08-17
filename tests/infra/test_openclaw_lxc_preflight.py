@@ -108,6 +108,24 @@ def test_exact_existing_unprivileged_lxc_is_idempotently_accepted(
     assert result["arp_responders"] == ["02:00:00:BA:EC:05"]
     assert result["storage"]["required_additional_bytes"] == 0
 
+
+def test_existing_lxc_accepts_proxmox_volume_key_rootfs_serialization(
+    config_root, allocation
+):
+    config = exact_openclaw_config().replace(
+        "rootfs: local-lvm:subvol-118-disk-0,size=96G",
+        "rootfs: volume=local-lvm:subvol-118-disk-0,size=96G",
+    )
+    write_config(config_root, "lxc", 118, config)
+
+    result = PREFLIGHT.preflight(
+        allocation,
+        config_root,
+        probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
+        storage_probe=storage_ok,
+    )
+    assert result["status"] == "existing-managed-target"
+
 def test_existing_openclaw_accepts_only_the_exact_retiring_mp1_transition(
     config_root, allocation
 ):
