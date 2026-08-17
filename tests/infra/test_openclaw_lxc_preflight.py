@@ -426,6 +426,8 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     assert "openclaw_lxc_allocation.ip_address" in playbook
     assert "openclaw_lxc_allocation.datastore_id" in playbook
     assert "openclaw_lxc_allocation.required_storage_gb" in playbook
+    assert "--required-feature nesting" in playbook
+    assert "--required-feature keyctl" in playbook
     assert "--expected-bind-mount" in playbook
     assert "openclaw_ctf_sandbox_skills_host_path" in playbook
     assert "openclaw_ctf_sandbox_skills_root" in playbook
