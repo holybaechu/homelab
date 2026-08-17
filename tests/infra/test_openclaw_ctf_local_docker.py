@@ -38,6 +38,9 @@ def test_local_ctf_docker_keeps_the_network_and_daemon_hardening():
     tasks = read(ROLE / "tasks/main.yml")
     daemon = yaml.safe_load(read(ROLE / "templates/daemon.json.j2"))
     firewall = read(ROLE / "templates/openclaw-ctf-docker-firewall.sh.j2")
+    native_firewall = read(
+        REPO_ROOT / "infra/ansible/roles/openclaw_native/templates/nftables.conf.j2"
+    )
 
     assert daemon["icc"] is False
     assert daemon["userland-proxy"] is False
@@ -51,6 +54,16 @@ def test_local_ctf_docker_keeps_the_network_and_daemon_hardening():
         "192.168.0.0/16",
     ):
         assert cidr in firewall
+        assert cidr in native_firewall
+    assert 'iifname "{{ openclaw_ctf_docker_bridge }}" accept' in native_firewall
+
+
+def test_validation_proves_public_ctf_egress_and_private_lan_denial():
+    validation = read(REPO_ROOT / "infra/ansible/playbooks/validate.yml")
+
+    assert "--network '{{ openclaw_ctf_docker_network }}'" in validation
+    assert "curl -fsS --max-time 10 https://example.com" in validation
+    assert "curl -sS --max-time 3 -o /dev/null http://{{ openclaw_ip }}" in validation
 
 
 def test_site_stages_local_docker_before_the_gateway_role():

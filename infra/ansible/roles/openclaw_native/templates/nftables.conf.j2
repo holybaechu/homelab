@@ -19,6 +19,22 @@ table inet filter {
 
   chain forward {
     type filter hook forward priority filter; policy drop;
+
+    ct state invalid drop
+    ct state established,related accept
+
+    # Docker's own DOCKER-USER chain enforces the same destination denylist.
+    # This native chain must also explicitly accept permitted CTF egress;
+    # otherwise its default-drop policy overrides Docker's forwarding verdict.
+    iifname "{{ openclaw_ctf_docker_bridge }}" ip daddr {
+      10.0.0.0/8,
+      100.64.0.0/10,
+      127.0.0.0/8,
+      169.254.0.0/16,
+      172.16.0.0/12,
+      192.168.0.0/16
+    } drop
+    iifname "{{ openclaw_ctf_docker_bridge }}" accept
   }
 
   chain output {

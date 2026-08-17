@@ -200,6 +200,10 @@
         /usr/sbin/runuser -u {{ openclaw_user }} -- docker run --rm \
           --network none '{{ openclaw_ctf_image }}' /bin/sh -ceu \
           'command -v uv >/dev/null; command -v camoufox >/dev/null; command -v chromium >/dev/null; command -v Xvfb >/dev/null'
+        /usr/sbin/runuser -u {{ openclaw_user }} -- docker run --rm \
+          --network '{{ openclaw_ctf_docker_network }}' '{{ openclaw_ctf_image }}' \
+          /bin/sh -ceu \
+          'curl -fsS --max-time 10 https://example.com >/dev/null; if curl -sS --max-time 3 -o /dev/null http://{{ openclaw_ip }}:{{ openclaw_gateway_port }} 2>/dev/null; then exit 1; fi'
       args:
         executable: /bin/sh
       changed_when: false
