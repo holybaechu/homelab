@@ -26,7 +26,7 @@ RUN apt-get update \
         hashcat \
         jq \
         john \
-        libasound2 \
+        libasound2t64 \
         libgtk-3-0 \
         libimage-exiftool-perl \
         libx11-xcb1 \
