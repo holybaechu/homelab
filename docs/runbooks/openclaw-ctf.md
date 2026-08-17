@@ -55,6 +55,11 @@ allowlists, select agents. The configuration validation requires:
   its CTF tool/sandbox policy so it can return bounded ZIP exports directly to
   the requesting Discord channel. Existing agents such as `main` may likewise
   keep their separately configured direct Discord attachment and ZIP handling.
+- The Codex plugin enables its sandbox exec-server. This maps Codex-native
+  shell and file operations into the active CTF Docker environment instead of
+  executing them as the `openclaw` service user on the Gateway host. Without
+  this switch, merely exposing the deferred `sandbox_exec` tool is insufficient:
+  Codex can still choose its native `bash` surface.
 - The Kali image includes pinned `uv`. The CTF prompt allows agents to install
   packages with `apt`, `uv`, or other methods available inside the sandbox.
   Installations remain session-local, while APT archives, the uv cache, and

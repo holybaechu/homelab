@@ -843,6 +843,7 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     assert "'id': 'value'" in assertions
     assert "discord_bot_token_file" in assertions
     assert "plugins.entries.discord.enabled" in assertions
+    assert "plugins.entries.codex.config.appServer.experimental.sandboxExecServer" in assertions
     assert ".commands.ownerAllowFrom" in assertions
     assert "openclaw_discord_owner_ids" in assertions
     assert "openclaw_ctf_agents | length == 1" in assertions
@@ -944,6 +945,7 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         if item["path"].startswith("plugins.entries.")
         } == {
             "plugins.entries.codex.enabled": True,
+            "plugins.entries.codex.config.appServer.experimental.sandboxExecServer": True,
             "plugins.entries.discord.enabled": True,
             "plugins.entries.exa.enabled": True,
         }

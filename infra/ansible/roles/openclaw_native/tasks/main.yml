@@ -1050,6 +1050,9 @@
       - >-
         (openclaw_native_config.content | b64decode | from_json).plugins.entries.codex.enabled | bool
       - >-
+        (openclaw_native_config.content | b64decode |
+        from_json).plugins.entries.codex.config.appServer.experimental.sandboxExecServer | bool
+      - >-
         (openclaw_native_config.content | b64decode | from_json).plugins.entries.discord.enabled | bool
       - >-
         (openclaw_native_config.content | b64decode | from_json).plugins.entries.exa ==
@@ -1068,7 +1071,8 @@
       per-session Docker sandbox. Its and main's
       approved direct Discord artifact-delivery tool must not cross contexts.
       The Codex harness, direct Discord channel plugin, and Exa search provider
-      must be enabled,
+      must be enabled, and Codex native shell/file tools must be routed through
+      the active OpenClaw sandbox exec-server,
       and owner-only commands must use the explicit operator ID list without
       changing channel-only message authorization.
   vars:
@@ -1515,6 +1519,7 @@
         - {path: skills.workshop.approvalPolicy, value: auto}
         - {path: skills.workshop.allowSymlinkTargetWrites, value: false}
         - {path: plugins.entries.codex.enabled, value: true}
+        - {path: plugins.entries.codex.config.appServer.experimental.sandboxExecServer, value: true}
         - {path: plugins.entries.discord.enabled, value: true}
         - {path: plugins.entries.exa.enabled, value: true}
         - {path: tools.web.search.provider, value: exa}
