@@ -1301,20 +1301,27 @@
       ansible.builtin.shell: |
         set -eu
         find {{ openclaw_state_root | quote }}/npm/projects \
-          -path '*/node_modules/@openclaw/codex/package.json' -type f -print
+          -path '*/node_modules/@openclaw/codex/package.json' -type f -print |
+        while IFS= read -r manifest; do
+          version="$({{ openclaw_node_current_root | quote }}/bin/node \
+            -e 'console.log(require(process.argv[1]).version)' "$manifest")"
+          if [ "$version" = '2026.7.1-1' ]; then
+            printf '%s\n' "$manifest"
+          fi
+        done
       args:
         executable: /bin/sh
       register: openclaw_codex_package_manifests
       changed_when: false
       failed_when: >-
         openclaw_codex_package_manifests.rc != 0 or
-        openclaw_codex_package_manifests.stdout_lines | length != 1
+        openclaw_codex_package_manifests.stdout_lines | length < 1
 
     - name: Apply the pinned Codex sandbox PathUri cwd compatibility fix
       ansible.builtin.command:
         argv:
           - /usr/local/libexec/patch-openclaw-codex-sandbox-cwd
-          - "{{ openclaw_codex_package_manifests.stdout_lines[0] | dirname }}"
+          - "{{ item | dirname }}"
       become: true
       become_user: "{{ openclaw_user }}"
       register: openclaw_codex_cwd_patch
@@ -1322,6 +1329,7 @@
       failed_when: >-
         openclaw_codex_cwd_patch.rc != 0 or
         openclaw_codex_cwd_patch.stdout | trim not in ['changed', 'unchanged']
+      loop: "{{ openclaw_codex_package_manifests.stdout_lines }}"
       notify: Restart OpenClaw Gateway
 
     - name: Install the pinned core Discord channel plugin

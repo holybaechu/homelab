@@ -54,7 +54,13 @@ def test_native_role_applies_the_pinned_codex_path_uri_cwd_fix_before_runtime_in
     assert patch_task["become_user"] == "{{ openclaw_user }}"
     argv = patch_task["ansible.builtin.command"]["argv"]
     assert argv[0] == "/usr/local/libexec/patch-openclaw-codex-sandbox-cwd"
-    assert "openclaw_codex_package_manifests.stdout_lines[0] | dirname" in argv[1]
+    assert argv[1] == "{{ item | dirname }}"
+    assert patch_task["loop"] == "{{ openclaw_codex_package_manifests.stdout_lines }}"
+
+    locate_task = tasks[locate_index]
+    locate_source = locate_task["ansible.builtin.shell"]
+    assert "if [ \"$version\" = '2026.7.1-1' ]" in locate_source
+    assert "stdout_lines | length < 1" in locate_task["failed_when"]
 
     patcher = read(CODEX_CWD_PATCHER)
     assert "fileURLToPath(cwdUrl, { windows: false })" in patcher
