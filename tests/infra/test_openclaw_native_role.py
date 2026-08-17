@@ -372,6 +372,7 @@ def test_native_openclaw_materializes_the_systemd_credential_without_privilege()
 
 def test_native_credential_probe_is_bounded_no_log_and_removes_all_residue():
     tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    task_names = [task["name"] for task in tasks]
     probe = next(
         task
         for task in tasks
@@ -381,6 +382,9 @@ def test_native_credential_probe_is_bounded_no_log_and_removes_all_residue():
 
     assert probe["when"] == "not (openclaw_docker_rollback_activate | bool)"
     assert probe["no_log"] is True
+    assert task_names.index("Install the Exa API key outside Git") < task_names.index(
+        "Validate the native systemd credential materialization contract"
+    )
     assert [task["name"] for task in probe["block"]] == [
         "Install the transient OpenClaw credential contract probe",
         "Reload systemd for the OpenClaw credential contract probe",

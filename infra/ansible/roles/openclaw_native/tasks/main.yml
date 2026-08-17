@@ -327,6 +327,28 @@
   diff: false
   notify: Restart OpenClaw Gateway
 
+- name: Require the Exa web-search API key
+  ansible.builtin.assert:
+    that:
+      - openclaw_exa_api_key is defined
+      - openclaw_exa_api_key is string
+      - openclaw_exa_api_key | trim | length > 0
+      - openclaw_exa_api_key | trim | length <= 4096
+      - openclaw_exa_api_key | trim is not search('\\s')
+    fail_msg: Configure OPENCLAW_EXA_API_KEY in the production secret store.
+  no_log: true
+
+- name: Install the Exa API key outside Git
+  ansible.builtin.copy:
+    content: "{{ openclaw_exa_api_key | trim }}\n"
+    dest: "{{ openclaw_exa_api_key_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+  notify: Restart OpenClaw Gateway
+
 - name: Install the skill-promotion GitHub credential outside Git
   ansible.builtin.copy:
     content: "{{ openclaw_skill_sync_github_token }}\n"
@@ -858,28 +880,6 @@
     - templates/writeup.md
     - skills/ctf-artifacts
   when: openclaw_native_activate | bool
-  notify: Restart OpenClaw Gateway
-
-- name: Require the Exa web-search API key
-  ansible.builtin.assert:
-    that:
-      - openclaw_exa_api_key is defined
-      - openclaw_exa_api_key is string
-      - openclaw_exa_api_key | trim | length > 0
-      - openclaw_exa_api_key | trim | length <= 4096
-      - openclaw_exa_api_key | trim is not search('\\s')
-    fail_msg: Configure OPENCLAW_EXA_API_KEY in the production secret store.
-  no_log: true
-
-- name: Install the Exa API key outside Git
-  ansible.builtin.copy:
-    content: "{{ openclaw_exa_api_key | trim }}\n"
-    dest: "{{ openclaw_exa_api_key_path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-  diff: false
   notify: Restart OpenClaw Gateway
 
 - name: Seed tracked CTF instructions and artifact helpers into the durable workspace
