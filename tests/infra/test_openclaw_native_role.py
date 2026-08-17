@@ -495,7 +495,7 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert variables["openclaw_codex_profile_id"] == "openai:main"
     assert variables["openclaw_codex_model"] == "openai/gpt-5.6-terra"
     assert variables["openclaw_codex_thinking_default"] == "xhigh"
-    assert variables["openclaw_ctf_codex_model"] == "openai/gpt-5.5"
+    assert variables["openclaw_ctf_codex_model"] == "openai/gpt-5.6-terra"
     assert variables["openclaw_ctf_codex_thinking_default"] == "xhigh"
     assert variables["openclaw_ctf_codex_fast_mode_default"] is True
     assert variables["openclaw_codex_plugin_spec"] == (

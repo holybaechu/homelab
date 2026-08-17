@@ -46,7 +46,7 @@ of band and may require explicit device approval. Do not enable insecure auth,
 device-auth bypasses, wildcard origins, or trusted-proxy authentication.
 
 Ordinary agents inherit `openai/gpt-5.6-terra` with xhigh thinking. The `ctf`
-agent overrides that default with `openai/gpt-5.5`, xhigh thinking, and fast mode;
+agent explicitly uses `openai/gpt-5.6-terra`, xhigh thinking, and fast mode;
 its guidance recommends an available GPT-5.6-family model for OSINT subagents
 when parallel OSINT work is useful. All agents run through the native Codex
 runtime and share the one `openai:main` profile inside the one Gateway service

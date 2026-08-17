@@ -59,7 +59,7 @@ openclaw_compile_cache_root: "{{ openclaw_cache_root }}/node-compile-cache"
 openclaw_codex_profile_id: openai:main
 openclaw_codex_model: openai/gpt-5.6-terra
 openclaw_codex_thinking_default: xhigh
-openclaw_ctf_codex_model: openai/gpt-5.5
+openclaw_ctf_codex_model: openai/gpt-5.6-terra
 openclaw_ctf_codex_thinking_default: xhigh
 openclaw_ctf_codex_fast_mode_default: true
 openclaw_codex_plugin_spec: npm:@openclaw/codex@2026.7.1-1
