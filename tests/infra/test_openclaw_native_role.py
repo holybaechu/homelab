@@ -14,6 +14,7 @@ VARS = REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_openclaw.yml"
 VALIDATE = REPO_ROOT / "infra/ansible/playbooks/validate.yml"
 MATERIALIZER = ROLE / "files/materialize_openclaw_credential.py"
 PROBE_UNIT = ROLE / "templates/openclaw-credential-probe.service.j2"
+CODEX_CWD_PATCHER = ROLE / "files/patch-openclaw-codex-sandbox-cwd.py"
 
 
 def read(path):
@@ -25,6 +26,40 @@ def walk_tasks(tasks):
         yield task
         for section in ("block", "rescue", "always"):
             yield from walk_tasks(task.get(section, []))
+
+
+def test_native_role_applies_the_pinned_codex_path_uri_cwd_fix_before_runtime_inspection():
+    tasks = list(walk_tasks(yaml.safe_load(read(ROLE / "tasks/main.yml"))))
+    names = [task.get("name") for task in tasks]
+
+    install_patcher = next(
+        task
+        for task in tasks
+        if task.get("name") == "Install the pinned Codex sandbox cwd compatibility patcher"
+    )
+    assert install_patcher["ansible.builtin.copy"] == {
+        "src": "patch-openclaw-codex-sandbox-cwd.py",
+        "dest": "/usr/local/libexec/patch-openclaw-codex-sandbox-cwd",
+        "owner": "root",
+        "group": "root",
+        "mode": "0755",
+    }
+
+    locate_index = names.index("Locate the pinned core Codex harness package")
+    patch_index = names.index("Apply the pinned Codex sandbox PathUri cwd compatibility fix")
+    inspect_index = names.index("Inspect the core Codex harness runtime before startup")
+    assert locate_index < patch_index < inspect_index
+
+    patch_task = tasks[patch_index]
+    assert patch_task["become_user"] == "{{ openclaw_user }}"
+    argv = patch_task["ansible.builtin.command"]["argv"]
+    assert argv[0] == "/usr/local/libexec/patch-openclaw-codex-sandbox-cwd"
+    assert "openclaw_codex_package_manifests.stdout_lines[0] | dirname" in argv[1]
+
+    patcher = read(CODEX_CWD_PATCHER)
+    assert "fileURLToPath(cwdUrl, { windows: false })" in patcher
+    assert "EXPECTED_ORIGINAL_SHA256" in patcher
+    assert "EXPECTED_PATCHED_SHA256" in patcher
 
 
 def test_native_owner_commands_use_an_explicit_numeric_discord_operator_list():

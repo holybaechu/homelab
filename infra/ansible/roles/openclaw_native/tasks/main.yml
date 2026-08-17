@@ -787,6 +787,15 @@
   when: openclaw_native_activate | bool
   notify: Restart OpenClaw Gateway
 
+- name: Install the pinned Codex sandbox cwd compatibility patcher
+  ansible.builtin.copy:
+    src: patch-openclaw-codex-sandbox-cwd.py
+    dest: /usr/local/libexec/patch-openclaw-codex-sandbox-cwd
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart OpenClaw Gateway
+
 - name: Seed tracked CTF instructions and artifact helpers into the durable workspace
   ansible.builtin.copy:
     src: "{{ openclaw_setup_root }}/{{ item.source }}"
@@ -1321,6 +1330,33 @@
         OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
         OPENCLAW_EXA_API_KEY_FILE: "{{ openclaw_validation_credential_dir.path }}/exa_api_key"
         NPM_CONFIG_CACHE: "{{ openclaw_npm_cache_root }}"
+      notify: Restart OpenClaw Gateway
+
+    - name: Locate the pinned core Codex harness package
+      ansible.builtin.shell: |
+        set -eu
+        find {{ openclaw_state_root | quote }}/npm/projects \
+          -path '*/node_modules/@openclaw/codex/package.json' -type f -print
+      args:
+        executable: /bin/sh
+      register: openclaw_codex_package_manifests
+      changed_when: false
+      failed_when: >-
+        openclaw_codex_package_manifests.rc != 0 or
+        openclaw_codex_package_manifests.stdout_lines | length != 1
+
+    - name: Apply the pinned Codex sandbox PathUri cwd compatibility fix
+      ansible.builtin.command:
+        argv:
+          - /usr/local/libexec/patch-openclaw-codex-sandbox-cwd
+          - "{{ openclaw_codex_package_manifests.stdout_lines[0] | dirname }}"
+      become: true
+      become_user: "{{ openclaw_user }}"
+      register: openclaw_codex_cwd_patch
+      changed_when: openclaw_codex_cwd_patch.stdout | trim == 'changed'
+      failed_when: >-
+        openclaw_codex_cwd_patch.rc != 0 or
+        openclaw_codex_cwd_patch.stdout | trim not in ['changed', 'unchanged']
       notify: Restart OpenClaw Gateway
 
     - name: Install the pinned core Discord channel plugin
