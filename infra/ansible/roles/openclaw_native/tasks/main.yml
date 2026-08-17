@@ -4,8 +4,8 @@
     that:
       - ansible_system == 'Linux'
       - ansible_architecture == 'x86_64'
-      - openclaw_version is match('^[0-9]{4}\.[0-9]+\.[0-9]+(?:-(?:[0-9]+|beta\.[0-9]+))?$')
-      - openclaw_cli_version_output == 'OpenClaw ' + openclaw_version + ' (8f382a2)'
+      - openclaw_version is match('^[0-9]{4}\.[0-9]+\.[0-9]+(?:-[0-9]+)?$')
+      - openclaw_cli_version_output == 'OpenClaw ' + openclaw_version + ' (0790d9f)'
       - openclaw_package_url == 'https://registry.npmjs.org/openclaw/-/openclaw-' + openclaw_version + '.tgz'
       - openclaw_package_sha512 is match('^[0-9a-f]{128}$')
       - openclaw_node_url == 'https://nodejs.org/download/release/v' + openclaw_node_version + '/' + openclaw_node_archive
@@ -46,9 +46,9 @@
       - openclaw_ctf_codex_model == 'openai/gpt-5.5'
       - openclaw_ctf_codex_thinking_default == 'xhigh'
       - openclaw_ctf_codex_fast_mode_default | bool
-      - openclaw_codex_plugin_spec == 'npm:@openclaw/codex@2026.8.1-beta.2'
-      - openclaw_discord_plugin_spec == 'npm:@openclaw/discord@2026.8.1-beta.2'
-      - openclaw_exa_plugin_spec == 'npm:@openclaw/exa-plugin@2026.8.1-beta.2'
+      - openclaw_codex_plugin_spec == 'npm:@openclaw/codex@2026.7.1-1'
+      - openclaw_discord_plugin_spec == 'npm:@openclaw/discord@2026.7.1'
+      - openclaw_exa_plugin_spec == 'npm:@openclaw/exa-plugin@2026.7.1'
       - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
       - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
       - openclaw_native_activate is boolean
@@ -785,10 +785,14 @@
   when: openclaw_native_activate | bool
   notify: Restart OpenClaw Gateway
 
-- name: Remove the superseded Codex cwd compatibility patcher
-  ansible.builtin.file:
-    path: /usr/local/libexec/patch-openclaw-codex-sandbox-cwd
-    state: absent
+- name: Install the pinned Codex sandbox cwd compatibility patcher
+  ansible.builtin.copy:
+    src: patch-openclaw-codex-sandbox-cwd.py
+    dest: /usr/local/libexec/patch-openclaw-codex-sandbox-cwd
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart OpenClaw Gateway
 
 - name: Seed tracked CTF instructions into the durable workspace
   ansible.builtin.copy:
@@ -1284,6 +1288,33 @@
         NPM_CONFIG_CACHE: "{{ openclaw_npm_cache_root }}"
       notify: Restart OpenClaw Gateway
 
+    - name: Locate the pinned core Codex harness package
+      ansible.builtin.shell: |
+        set -eu
+        find {{ openclaw_state_root | quote }}/npm/projects \
+          -path '*/node_modules/@openclaw/codex/package.json' -type f -print
+      args:
+        executable: /bin/sh
+      register: openclaw_codex_package_manifests
+      changed_when: false
+      failed_when: >-
+        openclaw_codex_package_manifests.rc != 0 or
+        openclaw_codex_package_manifests.stdout_lines | length != 1
+
+    - name: Apply the pinned Codex sandbox PathUri cwd compatibility fix
+      ansible.builtin.command:
+        argv:
+          - /usr/local/libexec/patch-openclaw-codex-sandbox-cwd
+          - "{{ openclaw_codex_package_manifests.stdout_lines[0] | dirname }}"
+      become: true
+      become_user: "{{ openclaw_user }}"
+      register: openclaw_codex_cwd_patch
+      changed_when: openclaw_codex_cwd_patch.stdout | trim == 'changed'
+      failed_when: >-
+        openclaw_codex_cwd_patch.rc != 0 or
+        openclaw_codex_cwd_patch.stdout | trim not in ['changed', 'unchanged']
+      notify: Restart OpenClaw Gateway
+
     - name: Install the pinned core Discord channel plugin
       ansible.builtin.command:
         argv:
@@ -1298,29 +1329,6 @@
       become_user: "{{ openclaw_user }}"
       environment: *openclaw_native_plugin_install_environment
       notify: Restart OpenClaw Gateway
-
-    - name: Verify the pinned Discord message-identity ingress contract
-      ansible.builtin.shell: |
-        set -eu
-        manifests="$(find {{ openclaw_state_root | quote }}/npm/projects \
-          -path '*/node_modules/@openclaw/discord/package.json' -type f -print)"
-        test "$(printf '%s\n' "$manifests" | grep -c .)" -eq 1
-        manifest="$manifests"
-        plugin_root="$(dirname "$manifest")"
-        version="$({{ openclaw_node_current_root | quote }}/bin/node \
-          -e 'console.log(require(process.argv[1]).version)' "$manifest")"
-        test "$version" = '2026.8.1-beta.2'
-        test "$(grep -RFl --include='*.js' -- \
-          'runQueue.enqueue(job.payload.message.id' "$plugin_root/dist" | wc -l)" -eq 1
-        ! grep -RFl --include='*.js' -- 'runQueue.enqueue(job.queueKey' \
-          "$plugin_root/dist" >/dev/null
-      args:
-        executable: /bin/sh
-      become: true
-      become_user: "{{ openclaw_user }}"
-      register: openclaw_discord_ingress_contract
-      changed_when: false
-      failed_when: openclaw_discord_ingress_contract.rc != 0
 
     - name: Install the pinned Exa web-search plugin
       ansible.builtin.command:
@@ -1752,7 +1760,7 @@
       changed_when: false
       no_log: true
 
-    # The pinned OpenClaw release resolves the local gateway.auth.token SecretRef for an
+    # Pinned 2026.7.1-2 resolves the local gateway.auth.token SecretRef for an
     # explicit probe target. A fresh isolated state and read-only auth storage
     # ensure a stored or newly persisted device identity cannot mask the
     # shared-token authorization edge; incidental migration artifacts may be
