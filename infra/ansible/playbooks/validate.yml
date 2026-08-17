@@ -175,7 +175,8 @@
         systemctl is-enabled --quiet docker.service
         id -nG '{{ openclaw_user }}' | tr ' ' '\n' | grep -Fx docker
         docker image inspect '{{ openclaw_ctf_image }}' >/dev/null
-        test "$(docker image inspect --format '{{ '{{' }} index .Config.Labels \"homelab.openclaw.ctf.image-revision\" {{ '}}' }}' '{{ openclaw_ctf_image }}')" = '{{ openclaw_ctf_image_revision }}'
+        docker image inspect '{{ openclaw_ctf_image }}' |
+          python3 -c 'import json, sys; image=json.load(sys.stdin)[0]; assert image["Config"]["Labels"]["homelab.openclaw.ctf.image-revision"] == "{{ openclaw_ctf_image_revision }}"'
         docker network inspect '{{ openclaw_ctf_docker_network }}' |
           python3 -c 'import json, sys; n=json.load(sys.stdin)[0]; assert n["Driver"] == "bridge"; assert n["IPAM"]["Config"][0]["Subnet"] == "{{ openclaw_ctf_docker_network_cidr }}"; assert n["Options"]["com.docker.network.bridge.name"] == "{{ openclaw_ctf_docker_bridge }}"; assert n["Options"]["com.docker.network.bridge.enable_icc"] == "false"'
         docker run --rm --network none '{{ openclaw_ctf_image }}' /bin/sh -ceu 'command -v uv >/dev/null; command -v camoufox >/dev/null; command -v chromium >/dev/null; command -v Xvfb >/dev/null'
