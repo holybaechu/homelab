@@ -255,22 +255,6 @@ def test_cd_workflow_limits_retained_gateway_recovery_to_explicit_manual_dispatc
         assert input_name not in push_trigger
 
 
-def test_ctf_executor_retirement_destroy_gate_is_manual_and_default_off():
-    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
-        encoding="utf-8"
-    )
-    dispatch = workflow.split("  workflow_dispatch:", 1)[1].split("  push:", 1)[0]
-    approval = dispatch.split("      approve_ctf_executor_retirement:", 1)[1]
-    assert "default: false" in approval
-    assert "type: boolean" in approval
-
-    plan_step = workflow.split("      - name: OpenTofu plan", 1)[1].split(
-        "      - name: OpenTofu apply", 1
-    )[0]
-    assert "github.event_name == 'workflow_dispatch'" in plan_step
-    assert "inputs.approve_ctf_executor_retirement == true" in plan_step
-    assert "ALLOW_TOFU_DESTROY:" in plan_step
-
 def test_cd_workflow_fast_tracks_known_workloads_through_arcane():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"

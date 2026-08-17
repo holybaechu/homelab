@@ -54,7 +54,7 @@ def test_mixed_empty_and_infrastructure_changes_use_full_path():
     classify_paths = selector["classify_paths"]
 
     assert classify_paths([]) == "none"
-    assert classify_paths(["apps/compose/media/compose.yml", "renovate.json"]) == "full"
+    assert classify_paths(["apps/compose/media/compose.yml", "renovate.json"]) == "arcane"
     assert classify_paths(["infra/ansible/playbooks/site.yml"]) == "full"
     assert classify_paths(["apps/compose/arcane/compose.yml"]) == "full"
     assert classify_paths(["apps/README.md"]) == "full"
@@ -79,6 +79,12 @@ def test_openclaw_and_no_deploy_paths_use_their_smallest_scopes():
     assert classify_paths(["tests/infra/test_openclaw_native_role.py"]) == "none"
     assert classify_paths(
         ["infra/ansible/roles/openclaw_native/tasks/main.yml"]
+    ) == "openclaw"
+    assert classify_paths(
+        [
+            "infra/ansible/roles/openclaw_native/tasks/main.yml",
+            "tests/infra/test_openclaw_native_role.py",
+        ]
     ) == "openclaw"
     assert classify_paths(
         [

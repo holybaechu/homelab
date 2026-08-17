@@ -16,7 +16,5 @@
           --required-feature nesting
           --required-feature keyctl
           --expected-bind-mount {{ (openclaw_ctf_shared_host_path + ',mp=' + openclaw_ctf_workspace_root) | quote }}
-          --transitional-bind-mount {{ (openclaw_ctf_shared_host_path + ',mp=' + openclaw_ctf_workspace_root) | quote }}
-          --transitional-bind-mount {{ (homelab_data_mount + '/openclaw-ctf-sandbox-skills,mp=' + openclaw_ctf_sandbox_skills_root) | quote }}
         executable: /usr/bin/python3
       changed_when: false

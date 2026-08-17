@@ -18,10 +18,6 @@ SPEC.loader.exec_module(PREFLIGHT)
 DESIRED_CTF_BIND_MOUNTS = (
     "/var/lib/homelab/openclaw-ctf,mp=/var/lib/openclaw/workspaces/ctf",
 )
-LEGACY_CTF_BIND_MOUNTS = (
-    "/var/lib/homelab/openclaw-ctf,mp=/var/lib/openclaw/workspaces/ctf",
-    "/var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces",
-)
 
 
 @pytest.fixture
@@ -35,7 +31,6 @@ def allocation():
         required_storage_bytes=96 * 1024**3,
         required_features=frozenset({"nesting", "keyctl"}),
         expected_bind_mounts=DESIRED_CTF_BIND_MOUNTS,
-        transitional_bind_mounts=LEGACY_CTF_BIND_MOUNTS,
     )
 
 
@@ -138,32 +133,6 @@ def test_existing_lxc_accepts_proxmox_volume_key_rootfs_serialization(
         storage_probe=storage_ok,
     )
     assert result["status"] == "existing-managed-target"
-
-def test_existing_openclaw_accepts_only_the_exact_retiring_mp1_transition(
-    config_root, allocation
-):
-    transitional = exact_openclaw_config() + (
-        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,"
-        "mp=/var/lib/openclaw/sandbox/skills-workspaces\n"
-    )
-    write_config(config_root, "lxc", 118, transitional)
-
-    result = PREFLIGHT.preflight(
-        allocation,
-        config_root,
-        probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
-        storage_probe=storage_ok,
-    )
-    assert result["status"] == "existing-managed-target"
-
-    write_config(config_root, "lxc", 118, transitional + "mp2: /x,mp=/y\n")
-    with pytest.raises(PREFLIGHT.PreflightError, match="unexpected bind mount set"):
-        PREFLIGHT.preflight(
-            allocation,
-            config_root,
-            probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
-            storage_probe=storage_ok,
-        )
 
 
 @pytest.mark.parametrize(
@@ -376,8 +345,6 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     assert "--required-feature nesting" in playbook
     assert "--required-feature keyctl" in playbook
     assert "--expected-bind-mount" in playbook
-    assert "openclaw-ctf-sandbox-skills" in playbook
-    assert "openclaw_ctf_sandbox_skills_root" in playbook
     assert "--allow-missing-expected-bind-mounts" not in playbook
     assert "changed_when: false" in playbook
     assert "vmid: 118" in variables

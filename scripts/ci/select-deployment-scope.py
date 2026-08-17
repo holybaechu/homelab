@@ -51,21 +51,23 @@ def classify_paths(paths: list[str]) -> str:
     changed = [path for path in paths if path]
     if not changed:
         return "none"
-    if all(
-        path in NO_DEPLOY_PATHS or path.startswith(NO_DEPLOY_PREFIXES)
+    deploy_paths = [
+        path
         for path in changed
-    ):
+        if path not in NO_DEPLOY_PATHS and not path.startswith(NO_DEPLOY_PREFIXES)
+    ]
+    if not deploy_paths:
         return "none"
-    if any(path in FULL_DEPLOYMENT_PATHS for path in changed):
+    if any(path in FULL_DEPLOYMENT_PATHS for path in deploy_paths):
         return "full"
     if all(
         path in OPENCLAW_PATHS or path.startswith(OPENCLAW_PREFIXES)
-        for path in changed
+        for path in deploy_paths
     ):
         return "openclaw"
-    if changed and all(
+    if all(
         any(path.startswith(prefix) for prefix in ARCANE_WORKLOAD_PREFIXES.values())
-        for path in changed
+        for path in deploy_paths
     ):
         return "arcane"
     return "full"

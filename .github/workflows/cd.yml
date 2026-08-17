@@ -24,11 +24,6 @@ on:
         required: false
         default: false
         type: boolean
-      approve_ctf_executor_retirement:
-        description: Approve destroying the validated and retired VMID 119 executor
-        required: false
-        default: false
-        type: boolean
   push:
     branches:
       - main
@@ -225,7 +220,6 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.TOFU_STATE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.TOFU_STATE_SECRET_ACCESS_KEY }}
           TOFU_FORCE_UNLOCK_ID: ${{ inputs.tofu_force_unlock_id || '' }}
-          ALLOW_TOFU_DESTROY: ${{ github.event_name == 'workflow_dispatch' && inputs.approve_ctf_executor_retirement == true && 'true' || 'false' }}
         run: ./scripts/ci/tofu-plan.sh
 
       - name: OpenTofu apply
