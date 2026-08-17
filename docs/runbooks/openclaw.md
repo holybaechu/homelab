@@ -45,11 +45,13 @@ Control UI access uses HTTPS. A new browser must receive the Gateway token out
 of band and may require explicit device approval. Do not enable insecure auth,
 device-auth bypasses, wildcard origins, or trusted-proxy authentication.
 
-All agents, including `ctf`, inherit `openai/gpt-5.6-terra` with xhigh thinking
-through `agents.defaults` and run through the native Codex runtime. They share
-the one `openai:main` profile inside the one Gateway service account. No OAuth
-file, desktop `~/.codex` directory, or OpenAI API key is stored in either Git
-repository.
+Ordinary agents inherit `openai/gpt-5.6-terra` with xhigh thinking. The `ctf`
+agent overrides that default with `openai/gpt-5.5`, xhigh thinking, and fast mode;
+its guidance recommends an available GPT-5.6-family model for OSINT subagents
+when parallel OSINT work is useful. All agents run through the native Codex
+runtime and share the one `openai:main` profile inside the one Gateway service
+account. No OAuth file, desktop `~/.codex` directory, or OpenAI API key is stored
+in either Git repository.
 
 ## Unified workspaces and autonomous skill promotion
 

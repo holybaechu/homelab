@@ -489,6 +489,9 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert variables["openclaw_codex_profile_id"] == "openai:main"
     assert variables["openclaw_codex_model"] == "openai/gpt-5.6-terra"
     assert variables["openclaw_codex_thinking_default"] == "xhigh"
+    assert variables["openclaw_ctf_codex_model"] == "openai/gpt-5.5"
+    assert variables["openclaw_ctf_codex_thinking_default"] == "xhigh"
+    assert variables["openclaw_ctf_codex_fast_mode_default"] is True
     assert variables["openclaw_codex_plugin_spec"] == (
         "npm:@openclaw/codex@2026.7.1-1"
     )
@@ -543,6 +546,10 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_all_agen
         "plugins.entries.discord.enabled",
         "openclaw_ctf_agents | length == 1",
         "openclaw_main_agents | length == 1",
+        "openclaw_ctf_agents[0].model == {'primary': openclaw_ctf_codex_model}",
+        "openclaw_ctf_agents[0].thinkingDefault ==",
+        "openclaw_ctf_agents[0].fastModeDefault ==",
+        "difference([openclaw_codex_model, openclaw_ctf_codex_model])",
         "sandbox.backend == 'docker'",
     ):
         assert required in assertions
