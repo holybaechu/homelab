@@ -1,6 +1,8 @@
 #!/usr/sbin/nft -f
 
-flush ruleset
+# Replace only the OpenClaw-owned inet table. A global ruleset flush would
+# erase Docker's ip/ip6 filter and NAT tables during an Ansible reload.
+destroy table inet filter
 
 table inet filter {
   chain input {

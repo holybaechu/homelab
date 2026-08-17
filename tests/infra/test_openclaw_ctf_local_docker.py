@@ -56,6 +56,8 @@ def test_local_ctf_docker_keeps_the_network_and_daemon_hardening():
         assert cidr in firewall
         assert cidr in native_firewall
     assert 'iifname "{{ openclaw_ctf_docker_bridge }}" accept' in native_firewall
+    assert "destroy table inet filter" in native_firewall
+    assert "flush ruleset" not in native_firewall
 
 
 def test_validation_proves_public_ctf_egress_and_private_lan_denial():
