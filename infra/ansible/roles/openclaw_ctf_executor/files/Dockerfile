@@ -12,15 +12,24 @@ RUN apt-get update \
         binwalk \
         ca-certificates \
         checksec \
+        chromium \
+        chromium-driver \
         curl \
         dnsutils \
+        ffuf \
         file \
         gdb \
         gdb-multiarch \
         gdb-peda \
         git \
+        gobuster \
+        hashcat \
         jq \
+        john \
+        libasound2 \
+        libgtk-3-0 \
         libimage-exiftool-perl \
+        libx11-xcb1 \
         ltrace \
         netcat-openbsd \
         nmap \
@@ -30,13 +39,18 @@ RUN apt-get update \
         python3-pwntools \
         python3-venv \
         socat \
+        sqlmap \
         strace \
         tshark \
         unzip \
         wget \
         whois \
+        yara \
+        xvfb \
         zip \
     && rm -rf /var/lib/apt/lists/*
+
+RUN uv pip install --system --no-cache 'camoufox[geoip]==0.5.4'
 
 RUN groupadd --gid 1001 ctf \
     && useradd --uid 1001 --gid 1001 --create-home --home-dir /home/ctf \

@@ -43,6 +43,14 @@ allowlists, select agents. The configuration validation requires:
   and installed as the pinned compatible `@openclaw/discord@2026.7.1` release.
 - DMs disabled, group policy `allowlist`, bot messages and config writes off.
 - A wildcard Discord guild channel map with enabled numeric channel IDs.
+- Every CTF channel requires an explicit bot mention. Each mentioned parent
+  message automatically creates a 24-hour Discord thread, and the thread is a
+  separate OpenClaw session without inherited parent-channel transcript.
+- Discord thread actions and thread bindings are enabled so native/subagent
+  session spawns stay attached to their thread.
+- The bot role needs View Channel, Send Messages, Create Public Threads, Send
+  Messages in Threads, Read Message History, and Attach Files in each CTF
+  channel. Message Content intent remains required.
 - Exactly one direct Discord binding for each allowed channel; each binding
   names an existing agent and at least one names `ctf`.
 - A numeric `commands.ownerAllowFrom` operator list for guarded diagnostics;
@@ -56,8 +64,24 @@ allowlists, select agents. The configuration validation requires:
   the requesting Discord channel. Existing agents such as `main` may likewise
   keep their separately configured direct Discord attachment and ZIP handling.
 - The Kali image includes pinned `uv`. The CTF prompt allows agents to install
-  packages with `apt`, `uv`, or other methods available inside the sandbox;
-  those installations remain session-local.
+  packages with `apt`, `uv`, or other methods available inside the sandbox.
+  Installations remain session-local, while APT archives, the uv cache, and
+  Camoufox downloads persist under the CTF workspace `.cache` tree.
+- The Kali image also preinstalls Camoufox 0.5.4, Xvfb,
+  Chromium/Chromedriver, `ffuf`, `gobuster`,
+  `hashcat`, `john`, `sqlmap`, and `yara`. The CTF agent may use image and PDF
+  analysis through the currently selected GPT-5.6 Terra model, FTS-only local
+  memory search, and Exa neural/keyword search through the pinned official
+  provider plugin. CTF subagent count, depth, and timeout fields are omitted so
+  the pinned OpenClaw defaults apply.
+
+The OpenClaw Docker sandbox-browser tool is deliberately still denied. The
+pinned runtime publishes its CDP port on `127.0.0.1` of the Docker daemon host;
+this deployment's daemon is remote, so that loopback is the executor rather
+than the Gateway. Camoufox running with `headless="virtual"` on Xvfb is the
+primary local anti-detect automation path; Chromium and Chromedriver remain the
+compatibility fallback. Neither path guarantees that a site cannot detect
+automation.
 
 Native Discord file uploads and ZIP replies are approved for both the CTF and
 main channels. They remain subject to their channel bindings and each agent's
@@ -87,8 +111,9 @@ GitHub Actions needs only these OpenClaw secrets:
 
 - `OPENCLAW_GATEWAY_TOKEN`: exactly 64 hexadecimal characters.
 - `OPENCLAW_DISCORD_BOT_TOKEN`: the token for the one shared Discord bot.
+- `OPENCLAW_EXA_API_KEY`: the Exa API key for managed CTF web search.
 
-The deployment writes both to root-owned files under `/etc/openclaw/secrets`
+The deployment writes all three to root-owned files under `/etc/openclaw/secrets`
 and passes them to the Gateway using systemd credentials. There is no
 `OPENCLAW_CTF_GATEWAY_TOKEN`, CTF OpenAI API key, Discord relay HMAC, or
 separate CTF bot token.
@@ -104,7 +129,7 @@ secrets.
 
 Before an authorized production deployment:
 
-1. Add the two GitHub repository secrets above.
+1. Add the three GitHub repository secrets above.
 2. Update the private `config/openclaw.json` channel map/bindings with the
    desired numeric Discord channels and the `ctf` agent contract above.
 3. Dispatch the approved production deployment workflow. Its ordering creates

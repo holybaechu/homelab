@@ -16,6 +16,7 @@ def seed_required_environment(monkeypatch, module):
     monkeypatch.setenv("ARCANE_JWT_SECRET", "j" * 32)
     monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "cd" * 32)
     monkeypatch.setenv("OPENCLAW_DISCORD_BOT_TOKEN", "discord-token")
+    monkeypatch.setenv("OPENCLAW_EXA_API_KEY", "exa-test-token")
     monkeypatch.setenv(
         "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN", "github-token-" + "x" * 24
     )
@@ -33,6 +34,7 @@ def test_one_gateway_and_shared_discord_secrets_are_required(monkeypatch):
 
     assert mapping["openclaw_gateway_token"] == "cd" * 32
     assert mapping["openclaw_discord_bot_token"] == "discord-token"
+    assert mapping["openclaw_exa_api_key"] == "exa-test-token"
     assert mapping["openclaw_skill_sync_github_token"] == "github-token-" + "x" * 24
     assert "openclaw_ctf_gateway_token" not in mapping
     assert "OPENCLAW_CTF_GATEWAY_TOKEN" not in module["REQUIRED_ENV"].values()
@@ -71,6 +73,7 @@ def test_openclaw_scope_requires_only_openclaw_secrets(monkeypatch):
     module = runpy.run_path(str(SCRIPT))
     monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "cd" * 32)
     monkeypatch.setenv("OPENCLAW_DISCORD_BOT_TOKEN", "discord-token")
+    monkeypatch.setenv("OPENCLAW_EXA_API_KEY", "exa-test-token")
     monkeypatch.setenv("OPENCLAW_SKILL_SYNC_GITHUB_TOKEN", "github-token-" + "x" * 24)
 
     mapping = module["build_mapping"]("openclaw")
@@ -78,6 +81,7 @@ def test_openclaw_scope_requires_only_openclaw_secrets(monkeypatch):
     assert set(mapping) == {
         "openclaw_gateway_token",
         "openclaw_discord_bot_token",
+        "openclaw_exa_api_key",
         "openclaw_skill_sync_github_token",
     }
 

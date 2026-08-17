@@ -32,6 +32,7 @@
       - openclaw_auth_profile_secret_root == openclaw_home + '/.config/openclaw'
       - openclaw_npm_cache_root == openclaw_cache_root + '/npm'
       - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
+      - openclaw_exa_api_key_path == openclaw_secret_root + '/exa_api_key'
       - openclaw_ctf_workspace_root == openclaw_workspaces_root + '/ctf'
       - openclaw_ctf_sandbox_skills_root == openclaw_state_root + '/sandbox/skills-workspaces'
       - openclaw_ctf_uid | int == openclaw_uid | int
@@ -53,6 +54,7 @@
       - openclaw_ctf_model_instructions_path == openclaw_ctf_codex_home + '/gpt-5.6-sol-unrestricted-v45.md'
       - openclaw_ctf_model_instructions_sha256 == 'c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7'
       - openclaw_discord_plugin_spec == 'npm:@openclaw/discord@2026.7.1'
+      - openclaw_exa_plugin_spec == 'npm:@openclaw/exa-plugin@2026.7.1'
       - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
       - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
       - openclaw_native_activate is boolean
@@ -843,6 +845,9 @@
     - exports
     - media/inbound
     - scripts
+    - .cache/apt/archives
+    - .cache/uv
+    - .cache/camoufox
   when: openclaw_native_activate | bool
 
 - name: Remove retired CTF write-up and artifact-skill assets
@@ -853,6 +858,28 @@
     - templates/writeup.md
     - skills/ctf-artifacts
   when: openclaw_native_activate | bool
+  notify: Restart OpenClaw Gateway
+
+- name: Require the Exa web-search API key
+  ansible.builtin.assert:
+    that:
+      - openclaw_exa_api_key is defined
+      - openclaw_exa_api_key is string
+      - openclaw_exa_api_key | trim | length > 0
+      - openclaw_exa_api_key | trim | length <= 4096
+      - openclaw_exa_api_key | trim is not search('\\s')
+    fail_msg: Configure OPENCLAW_EXA_API_KEY in the production secret store.
+  no_log: true
+
+- name: Install the Exa API key outside Git
+  ansible.builtin.copy:
+    content: "{{ openclaw_exa_api_key | trim }}\n"
+    dest: "{{ openclaw_exa_api_key_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
   notify: Restart OpenClaw Gateway
 
 - name: Seed tracked CTF instructions and artifact helpers into the durable workspace
@@ -981,7 +1008,8 @@
         {'providers':
           {
             'gateway_token_file': {'source': 'file', 'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'},
-            'discord_bot_token_file': {'source': 'file', 'path': '${OPENCLAW_DISCORD_BOT_TOKEN_FILE}', 'mode': 'singleValue'}
+            'discord_bot_token_file': {'source': 'file', 'path': '${OPENCLAW_DISCORD_BOT_TOKEN_FILE}', 'mode': 'singleValue'},
+            'exa_api_key_file': {'source': 'file', 'path': '${OPENCLAW_EXA_API_KEY_FILE}', 'mode': 'singleValue'}
           }
         }
       - >-
@@ -1005,6 +1033,15 @@
         (openclaw_native_config.content | b64decode | from_json).agents.defaults.thinkingDefault ==
         openclaw_codex_thinking_default
       - >-
+        'imageModel' not in
+        (openclaw_native_config.content | b64decode | from_json).agents.defaults
+      - >-
+        'pdfModel' not in
+        (openclaw_native_config.content | b64decode | from_json).agents.defaults
+      - >-
+        (openclaw_native_config.content | b64decode | from_json).tools.web.search ==
+        {'enabled': true, 'provider': 'exa'}
+      - >-
         ((openclaw_native_config.content | b64decode | from_json).agents.list |
         selectattr('model', 'defined') | map(attribute='model') |
         map(attribute='primary') | list | difference([openclaw_codex_model]) | length) == 0
@@ -1026,6 +1063,16 @@
         list | length) == (openclaw_discord_owner_ids | length)
       - >-
         openclaw_ctf_agents[0].workspace == openclaw_ctf_workspace_root
+      - >-
+        openclaw_ctf_agents[0].subagents ==
+        {
+          'delegationMode': 'prefer',
+          'allowAgents': ['ctf'],
+          'requireAgentId': true
+        }
+      - >-
+        openclaw_ctf_agents[0].memorySearch ==
+        {'provider': 'none', 'fallback': 'none'}
       - >-
         (openclaw_native_config.content | b64decode | from_json).skills.workshop ==
         {
@@ -1050,6 +1097,13 @@
       - >-
         openclaw_ctf_agents[0].sandbox.docker.env.HOME == '/root'
       - >-
+        openclaw_ctf_agents[0].sandbox.docker.env.XDG_CACHE_HOME == '/workspace/.cache'
+      - >-
+        openclaw_ctf_agents[0].sandbox.docker.env.UV_CACHE_DIR == '/workspace/.cache/uv'
+      - >-
+        openclaw_ctf_agents[0].sandbox.docker.binds ==
+        [openclaw_ctf_workspace_root + '/.cache/apt/archives:/var/cache/apt/archives:rw']
+      - >-
         'skills' not in openclaw_ctf_agents[0]
       - >-
         'pidsLimit' not in openclaw_ctf_agents[0].sandbox.docker
@@ -1064,9 +1118,18 @@
       - >-
         not (openclaw_ctf_agents[0].tools.elevated.enabled | bool)
       - >-
-        'message' in (openclaw_ctf_agents[0].tools.alsoAllow | default([]))
+        openclaw_ctf_agents[0].tools.alsoAllow ==
+        ['message', 'image', 'pdf', 'skill_workshop']
       - >-
         'message' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
+      - >-
+        'image' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
+      - >-
+        'pdf' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
+      - >-
+        'skill_workshop' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
+      - >-
+        'group:memory' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
       - >-
         'message' not in (openclaw_ctf_agents[0].tools.sandbox.tools.deny | default([]))
       - >-
@@ -1083,12 +1146,24 @@
         (openclaw_native_config.content | b64decode | from_json).plugins.entries.codex.enabled | bool
       - >-
         (openclaw_native_config.content | b64decode | from_json).plugins.entries.discord.enabled | bool
+      - >-
+        (openclaw_native_config.content | b64decode | from_json).plugins.entries.exa ==
+        {
+          'enabled': true,
+          'config': {
+            'webSearch': {
+              'apiKey': {'source': 'file', 'provider': 'exa_api_key_file', 'id': 'value'},
+              'baseUrl': 'https://api.exa.ai'
+            }
+          }
+        }
     fail_msg: >-
       The one Gateway must retain its token SecretRef, its shared Codex profile,
       and exactly one CTF agent with a root-capable, writable, unlimited,
       per-session Docker sandbox. Its and main's
       approved direct Discord artifact-delivery tool must not cross contexts.
-      Both the Codex harness and direct Discord channel plugin must be enabled,
+      The Codex harness, direct Discord channel plugin, and Exa search provider
+      must be enabled,
       and owner-only commands must use the explicit operator ID list without
       changing channel-only message authorization.
   vars:
@@ -1111,6 +1186,19 @@
       - openclaw_discord_account.groupPolicy == 'allowlist'
       - not (openclaw_discord_account.configWrites | bool)
       - not (openclaw_discord_account.allowBots | bool)
+      - >-
+        openclaw_discord.actions == {'threads': true}
+      - >-
+        openclaw_discord.thread == {'inheritParent': false}
+      - >-
+        openclaw_discord.threadBindings ==
+        {
+          'enabled': true,
+          'idleHours': 24,
+          'maxAgeHours': 0,
+          'spawnSessions': true,
+          'defaultSpawnContext': 'fork'
+        }
       - >-
         openclaw_discord_account.token ==
         {'source': 'file', 'provider': 'discord_bot_token_file', 'id': 'value'}
@@ -1167,6 +1255,26 @@
       - >-
         (openclaw_discord_bindings |
         selectattr('agentId', 'equalto', 'ctf') | list | length) > 0
+      - >-
+        (openclaw_ctf_channel_configs |
+        selectattr('requireMention', 'equalto', true) | list | length) ==
+        (openclaw_ctf_channel_configs | length)
+      - >-
+        (openclaw_ctf_channel_configs |
+        selectattr('autoThread', 'equalto', true) | list | length) ==
+        (openclaw_ctf_channel_configs | length)
+      - >-
+        (openclaw_ctf_channel_configs |
+        selectattr('autoArchiveDuration', 'equalto', 1440) | list | length) ==
+        (openclaw_ctf_channel_configs | length)
+      - >-
+        (openclaw_ctf_channel_configs |
+        selectattr('autoThreadName', 'equalto', 'message') | list | length) ==
+        (openclaw_ctf_channel_configs | length)
+      - >-
+        (openclaw_main_channel_configs |
+        selectattr('requireMention', 'equalto', false) | list | length) ==
+        (openclaw_main_channel_configs | length)
     fail_msg: >-
       The shared Discord bot must use numeric channel IDs as its only
       authorization and routing keys. Every allowed channel must have exactly
@@ -1185,6 +1293,20 @@
       {{ openclaw_discord_guilds.get('*', {}) }}
     openclaw_discord_allowed_channels: >-
       {{ openclaw_discord_wildcard.get('channels', {}) }}
+    openclaw_ctf_channel_ids: >-
+      {{ openclaw_discord_bindings |
+         selectattr('agentId', 'equalto', 'ctf') |
+         map(attribute='match.peer.id') | list }}
+    openclaw_main_channel_ids: >-
+      {{ openclaw_discord_bindings |
+         selectattr('agentId', 'equalto', 'main') |
+         map(attribute='match.peer.id') | list }}
+    openclaw_ctf_channel_configs: >-
+      {{ openclaw_ctf_channel_ids |
+         map('extract', openclaw_discord_allowed_channels) | list }}
+    openclaw_main_channel_configs: >-
+      {{ openclaw_main_channel_ids |
+         map('extract', openclaw_discord_allowed_channels) | list }}
     openclaw_discord_bindings: >-
       {{ openclaw_native_config_parsed.get('bindings', []) |
       selectattr('match.channel', 'equalto', 'discord') | list }}
@@ -1225,6 +1347,17 @@
       ansible.builtin.copy:
         src: "{{ openclaw_discord_bot_token_path }}"
         dest: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
+        remote_src: true
+        owner: "{{ openclaw_user }}"
+        group: "{{ openclaw_group }}"
+        mode: "0400"
+      no_log: true
+      diff: false
+
+    - name: Materialize a read-only Exa validation credential
+      ansible.builtin.copy:
+        src: "{{ openclaw_exa_api_key_path }}"
+        dest: "{{ openclaw_validation_credential_dir.path }}/exa_api_key"
         remote_src: true
         owner: "{{ openclaw_user }}"
         group: "{{ openclaw_group }}"
@@ -1277,6 +1410,7 @@
         OPENCLAW_SUPERVISOR_MODE: external
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
         OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
+        OPENCLAW_EXA_API_KEY_FILE: "{{ openclaw_validation_credential_dir.path }}/exa_api_key"
         NPM_CONFIG_CACHE: "{{ openclaw_npm_cache_root }}"
       notify: Restart OpenClaw Gateway
 
@@ -1288,6 +1422,21 @@
           - plugins
           - install
           - "{{ openclaw_discord_plugin_spec }}"
+          - --pin
+          - --force
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: *openclaw_native_plugin_install_environment
+      notify: Restart OpenClaw Gateway
+
+    - name: Install the pinned Exa web-search plugin
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_current_root }}/bin/node"
+          - "{{ openclaw_entrypoint }}"
+          - plugins
+          - install
+          - "{{ openclaw_exa_plugin_spec }}"
           - --pin
           - --force
       become: true
@@ -1318,6 +1467,7 @@
         OPENCLAW_SUPERVISOR_MODE: external
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
         OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
+        OPENCLAW_EXA_API_KEY_FILE: "{{ openclaw_validation_credential_dir.path }}/exa_api_key"
       register: openclaw_config_file_preflight
       changed_when: false
       failed_when: >-
@@ -1386,6 +1536,27 @@
         (openclaw_discord_runtime_inspection.stdout | from_json).plugin.status != 'loaded'
       no_log: true
 
+    - name: Inspect the Exa web-search plugin runtime before startup
+      ansible.builtin.command:
+        argv:
+          - "{{ openclaw_node_current_root }}/bin/node"
+          - "{{ openclaw_entrypoint }}"
+          - plugins
+          - inspect
+          - exa
+          - --runtime
+          - --json
+      become: true
+      become_user: "{{ openclaw_user }}"
+      environment: *openclaw_native_cli_environment
+      register: openclaw_exa_runtime_inspection
+      changed_when: false
+      failed_when: >-
+        openclaw_exa_runtime_inspection.rc != 0 or
+        (openclaw_exa_runtime_inspection.stdout | from_json).plugin.id != 'exa' or
+        (openclaw_exa_runtime_inspection.stdout | from_json).plugin.status != 'loaded'
+      no_log: true
+
     - name: Require the proxy-only native OpenClaw config values
       ansible.builtin.command:
         argv:
@@ -1440,6 +1611,9 @@
         - {path: skills.workshop.allowSymlinkTargetWrites, value: false}
         - {path: plugins.entries.codex.enabled, value: true}
         - {path: plugins.entries.discord.enabled, value: true}
+        - {path: plugins.entries.exa.enabled, value: true}
+        - {path: tools.web.search.provider, value: exa}
+        - {path: secrets.providers.exa_api_key_file.path, value: "${OPENCLAW_EXA_API_KEY_FILE}", cli_value: __OPENCLAW_REDACTED__}
       loop_control:
         label: "{{ item.path }}"
 
@@ -1640,6 +1814,17 @@
       no_log: true
       diff: false
 
+    - name: Materialize a read-only Exa Gateway handshake credential
+      ansible.builtin.copy:
+        src: "{{ openclaw_exa_api_key_path }}"
+        dest: "{{ openclaw_gateway_handshake_credential_dir.path }}/exa_api_key"
+        remote_src: true
+        owner: "{{ openclaw_user }}"
+        group: "{{ openclaw_group }}"
+        mode: "0400"
+      no_log: true
+      diff: false
+
     - name: Create an isolated native Gateway handshake state directory
       ansible.builtin.tempfile:
         state: directory
@@ -1709,6 +1894,7 @@
         OPENCLAW_AUTH_STORE_READONLY: "1"
         OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token"
         OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/discord_bot_token"
+        OPENCLAW_EXA_API_KEY_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/exa_api_key"
       register: openclaw_native_gateway_handshake
       changed_when: false
       failed_when: false

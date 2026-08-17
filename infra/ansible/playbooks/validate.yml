@@ -149,8 +149,9 @@
           - /bin/sh
           - -ceu
           - >-
-            for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark nmap uv;
+            for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark nmap uv chromium chromedriver Xvfb ffuf gobuster hashcat john sqlmap yara;
             do command -v "$tool" >/dev/null; done;
+            python3 -c 'import importlib.metadata as m; assert m.version("camoufox") == "0.5.4"';
             test "$(id -u)" -eq 0;
             test ! -e /var/run/docker.sock;
             test -w /workspace;
@@ -343,6 +344,24 @@
       changed_when: false
       no_log: true
       when: openclaw_discord_enabled | bool
+
+    - name: Check Exa credential and persistent CTF package caches
+      ansible.builtin.shell: |
+        set -eu
+        test "$(stat -c '%u:%g %a' '{{ openclaw_exa_api_key_path }}')" = '0:0 600'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=OPENCLAW_EXA_API_KEY_FILE=/run/openclaw-gateway/exa_api_key'
+        systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=exa_api_key:'
+        systemctl cat openclaw-gateway.service | grep -Fqx 'ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/exa_api_key /run/openclaw-gateway/exa_api_key'
+        for cache in \
+          '{{ openclaw_ctf_workspace_root }}/.cache/apt/archives' \
+          '{{ openclaw_ctf_workspace_root }}/.cache/uv' \
+          '{{ openclaw_ctf_workspace_root }}/.cache/camoufox'; do
+          test "$(stat -c '%u:%g %a' "$cache")" = '{{ openclaw_uid }}:{{ openclaw_gid }} 700'
+        done
+      args:
+        executable: /bin/sh
+      changed_when: false
+      no_log: true
 
     - name: Require mutually exclusive tracked OpenClaw ownership and route
       ansible.builtin.assert:

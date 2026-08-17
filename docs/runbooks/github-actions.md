@@ -67,6 +67,8 @@ router reservation aligned with that tracked contract.
   the bearer token for the one Gateway
 - `OPENCLAW_DISCORD_BOT_TOKEN`, required; the one shared bot token loaded by
   the one Gateway for direct channel routing.
+- `OPENCLAW_EXA_API_KEY`, required; the file-backed credential for the pinned
+  Exa web-search provider plugin.
 
 The active topology has one direct qBittorrent instance and no Gluetun or
 Proton VPN service, so CD does not require a Proton or WireGuard secret.

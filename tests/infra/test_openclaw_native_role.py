@@ -247,10 +247,12 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}",
         "LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}",
         "LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}",
+        "LoadCredential=exa_api_key:{{ openclaw_exa_api_key_path }}",
         "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
         "Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin",
         "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/ctf_docker_client_key /run/openclaw-gateway/ctf_docker_client_key",
         "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token",
+        "Environment=OPENCLAW_EXA_API_KEY_FILE=/run/openclaw-gateway/exa_api_key",
         "RuntimeDirectory=openclaw-gateway",
         "RuntimeDirectoryMode=0700",
         "RuntimeDirectoryPreserve=no",
@@ -260,6 +262,8 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "%d/openclaw_gateway_token /run/openclaw-gateway/gateway_token",
         "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
         "%d/discord_bot_token /run/openclaw-gateway/discord_bot_token",
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
+        "%d/exa_api_key /run/openclaw-gateway/exa_api_key",
         "ReadWritePaths={{ openclaw_runtime_root }}",
         "ReadWritePaths={{ openclaw_auth_profile_secret_root }}",
         "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
@@ -320,9 +324,11 @@ def test_native_openclaw_materializes_the_systemd_credential_without_privilege()
             "LoadCredential=discord_bot_token:"
             "{{ openclaw_discord_bot_token_path }}"
         ) in rendered
+        assert "LoadCredential=exa_api_key:{{ openclaw_exa_api_key_path }}" in rendered
         assert "/usr/local/libexec/materialize-openclaw-credential " in rendered
         assert "%d/openclaw_gateway_token " in rendered
         assert "%d/discord_bot_token " in rendered
+        assert "%d/exa_api_key " in rendered
         assert "RuntimeDirectoryMode=0700" in rendered
         assert "RuntimeDirectoryPreserve=no" in rendered
         assert "LimitCORE=0" in rendered
@@ -344,6 +350,7 @@ def test_native_openclaw_materializes_the_systemd_credential_without_privilege()
         "/run/openclaw-gateway/discord_bot_token"
     ) in unit
     assert "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=%d/discord_bot_token" not in unit
+    assert "Environment=OPENCLAW_EXA_API_KEY_FILE=/run/openclaw-gateway/exa_api_key" in unit
     assert "RuntimeDirectory=openclaw-credential-probe" in probe
     assert (
         "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
@@ -352,6 +359,10 @@ def test_native_openclaw_materializes_the_systemd_credential_without_privilege()
     assert (
         "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
         "%d/discord_bot_token /run/openclaw-credential-probe/discord_bot_token"
+    ) in probe
+    assert (
+        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "
+        "%d/exa_api_key /run/openclaw-credential-probe/exa_api_key"
     ) in probe
     assert probe.count("ExecStart=") == 1
     assert "Environment=" not in probe
@@ -449,6 +460,12 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert variables["openclaw_discord_plugin_spec"] == (
         "npm:@openclaw/discord@2026.7.1"
     )
+    assert variables["openclaw_exa_plugin_spec"] == (
+        "npm:@openclaw/exa-plugin@2026.7.1"
+    )
+    assert variables["openclaw_exa_api_key_path"] == (
+        "{{ openclaw_secret_root }}/exa_api_key"
+    )
     assert "stat.mode == '0640'" in tasks
     assert "not (openclaw_setup_paths.results[2].stat.islnk" in tasks
     assert "git_safe --no-pager ls-files --error-unmatch config/openclaw.json" in tasks
@@ -494,7 +511,7 @@ def test_native_openclaw_uses_the_pinned_codex_subscription_harness_for_all_agen
         "sandbox.backend == 'docker'",
     ):
         assert required in assertions
-    assert "apiKey" not in assertions
+    assert "models.providers.openai.apiKey" not in assertions
 
     npm_cache_directories = next(
         task
@@ -621,6 +638,31 @@ def test_native_openclaw_installs_and_loads_the_pinned_discord_channel_plugin():
     assert ".plugin.id != 'discord'" in runtime["failed_when"]
     assert ".plugin.status != 'loaded'" in runtime["failed_when"]
     assert runtime["become_user"] == "{{ openclaw_user }}"
+    assert runtime["no_log"] is True
+
+
+def test_native_openclaw_installs_loads_and_seals_the_exa_search_plugin():
+    variables = yaml.safe_load(read(VARS))
+    tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
+    all_tasks = list(walk_tasks(tasks))
+
+    assert variables["openclaw_exa_plugin_spec"] == "npm:@openclaw/exa-plugin@2026.7.1"
+    install = next(
+        task for task in all_tasks
+        if task["name"] == "Install the pinned Exa web-search plugin"
+    )
+    assert install["ansible.builtin.command"]["argv"][-5:] == [
+        "plugins", "install", "{{ openclaw_exa_plugin_spec }}", "--pin", "--force"
+    ]
+    assert install["become_user"] == "{{ openclaw_user }}"
+    runtime = next(
+        task for task in all_tasks
+        if task["name"] == "Inspect the Exa web-search plugin runtime before startup"
+    )
+    assert runtime["ansible.builtin.command"]["argv"][-5:] == [
+        "plugins", "inspect", "exa", "--runtime", "--json"
+    ]
+    assert ".plugin.id != 'exa'" in runtime["failed_when"]
     assert runtime["no_log"] is True
 
 
@@ -812,9 +854,24 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     assert "sandbox.docker.capDrop == ['AUDIT_WRITE', 'MKNOD']" in assertions
     assert "sandbox.docker.env.HOME == '/root'" in assertions
     assert "'skills' not in openclaw_ctf_agents[0]" in assertions
+    assert "'imageModel' not in" in assertions
+    assert "'pdfModel' not in" in assertions
+    assert "tools.web.search ==" in assertions
+    assert "'provider': 'exa'" in assertions
+    assert "plugins.entries.exa ==" in assertions
+    assert "https://api.exa.ai" in assertions
+    assert "openclaw_ctf_agents[0].subagents ==" in assertions
+    for limit in ("maxConcurrent", "maxSpawnDepth", "maxChildrenPerAgent", "runTimeoutSeconds"):
+        assert limit not in assertions
+    assert "sandbox.docker.env.XDG_CACHE_HOME == '/workspace/.cache'" in assertions
+    assert "sandbox.docker.env.UV_CACHE_DIR == '/workspace/.cache/uv'" in assertions
+    assert "openclaw_ctf_agents[0].memorySearch ==" in assertions
+    assert "['message', 'image', 'pdf', 'skill_workshop']" in assertions
+    for tool in ("'image'", "'pdf'", "'skill_workshop'", "'group:memory'"):
+        assert tool in assertions
     for limit in ("pidsLimit", "memory", "memorySwap", "cpus", "ulimits"):
         assert limit in assertions
-    assert assertions.count("'message' in") == 3
+    assert assertions.count("'message' in") == 2
     assert "'message' not in (openclaw_ctf_agents[0].tools.sandbox.tools.deny" in assertions
     assert "openclaw_ctf_agents[0].tools.message.crossContext" in assertions
     assert "openclaw_main_agents[0].tools.message.crossContext" in assertions
@@ -827,6 +884,14 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
     assert "openclaw_discord_account.token" in boundary_assertions
     assert "openclaw_discord_allowed_channels" in boundary_assertions
     assert "selectattr('agentId', 'equalto', 'ctf')" in boundary_assertions
+    assert "openclaw_discord.actions == {'threads': true}" in boundary_assertions
+    assert "openclaw_discord.thread == {'inheritParent': false}" in boundary_assertions
+    assert "openclaw_discord.threadBindings ==" in boundary_assertions
+    assert "selectattr('requireMention', 'equalto', true)" in boundary_assertions
+    assert "selectattr('autoThread', 'equalto', true)" in boundary_assertions
+    assert "selectattr('autoArchiveDuration', 'equalto', 1440)" in boundary_assertions
+    assert "selectattr('autoThreadName', 'equalto', 'message')" in boundary_assertions
+    assert "openclaw_ctf_channel_configs" in discord_boundary["vars"]
     assert "openclaw_discord_account" in discord_boundary["vars"]
 
     assert cli["failed_when"] == (
@@ -846,8 +911,9 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         "secrets.providers.gateway_token_file.mode",
         "secrets.providers.discord_bot_token_file.source",
         "secrets.providers.discord_bot_token_file.path",
-        "secrets.providers.discord_bot_token_file.mode",
-    }
+            "secrets.providers.discord_bot_token_file.mode",
+            "secrets.providers.exa_api_key_file.path",
+        }
     assert {item["cli_value"] for item in redacted.values()} == {
         "__OPENCLAW_REDACTED__"
     }
@@ -855,8 +921,9 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         "file",
         "${OPENCLAW_GATEWAY_TOKEN_FILE}",
         "singleValue",
-        "${OPENCLAW_DISCORD_BOT_TOKEN_FILE}",
-    }
+            "${OPENCLAW_DISCORD_BOT_TOKEN_FILE}",
+            "${OPENCLAW_EXA_API_KEY_FILE}",
+        }
     provider_runtime = next(
         item
         for item in cli["loop"]
@@ -875,10 +942,11 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         item["path"]: item["value"]
         for item in cli["loop"]
         if item["path"].startswith("plugins.entries.")
-    } == {
-        "plugins.entries.codex.enabled": True,
-        "plugins.entries.discord.enabled": True,
-    }
+        } == {
+            "plugins.entries.codex.enabled": True,
+            "plugins.entries.discord.enabled": True,
+            "plugins.entries.exa.enabled": True,
+        }
 
 
 def test_active_native_validation_enforces_private_repository_boundaries():
@@ -1108,8 +1176,9 @@ def test_native_openclaw_activation_validates_before_starting():
         "OPENCLAW_SUPERVISOR_MODE": "external",
         "OPENCLAW_AUTH_STORE_READONLY": "1",
         "OPENCLAW_GATEWAY_TOKEN_FILE": "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token",
-        "OPENCLAW_DISCORD_BOT_TOKEN_FILE": "{{ openclaw_gateway_handshake_credential_dir.path }}/discord_bot_token",
-    }
+            "OPENCLAW_DISCORD_BOT_TOKEN_FILE": "{{ openclaw_gateway_handshake_credential_dir.path }}/discord_bot_token",
+            "OPENCLAW_EXA_API_KEY_FILE": "{{ openclaw_gateway_handshake_credential_dir.path }}/exa_api_key",
+        }
     handshake_source = tasks.split(
         "    - name: Collect the active native Gateway scope-limited token handshake\n", 1
     )[1].split("      register: openclaw_native_gateway_handshake\n", 1)[0]

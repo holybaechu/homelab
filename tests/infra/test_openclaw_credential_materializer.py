@@ -36,6 +36,8 @@ def test_materializer_has_a_fixed_silent_fail_closed_contract():
     assert '"/run/openclaw-credential-probe/gateway_token"' in source
     assert '"/run/openclaw-gateway/discord_bot_token"' in source
     assert '"/run/openclaw-credential-probe/discord_bot_token"' in source
+    assert '"/run/openclaw-gateway/exa_api_key"' in source
+    assert '"/run/openclaw-credential-probe/exa_api_key"' in source
     assert '"/run/openclaw-gateway/ctf_docker_client_key"' in source
     assert "MAX_GATEWAY_TOKEN_READ_BYTES = 66" in source
     assert "MAX_DISCORD_TOKEN_BYTES = 4096" in source
@@ -89,6 +91,8 @@ def test_materializer_allows_only_the_fixed_credential_destinations():
         "/run/openclaw-credential-probe/gateway_token",
         "/run/openclaw-gateway/discord_bot_token",
         "/run/openclaw-credential-probe/discord_bot_token",
+        "/run/openclaw-gateway/exa_api_key",
+        "/run/openclaw-credential-probe/exa_api_key",
         "/run/openclaw-gateway/ctf_docker_client_key",
     ):
         assert helper.credential_spec(destination) is not None
@@ -113,6 +117,20 @@ def test_materializer_accepts_bounded_printable_discord_tokens(payload):
     helper = load_helper()
 
     assert helper.is_valid_discord_token(payload) is True
+
+
+@pytest.mark.parametrize("payload", [b"exa-test-key", b"exa-test-key\n", b"x" * 4096])
+def test_materializer_accepts_bounded_printable_exa_keys(payload):
+    helper = load_helper()
+
+    assert helper.is_valid_exa_api_key(payload) is True
+
+
+@pytest.mark.parametrize("payload", [b"", b"\n", b"has space", b"nul\x00byte", b"x" * 4097])
+def test_materializer_rejects_malformed_exa_keys(payload):
+    helper = load_helper()
+
+    assert helper.is_valid_exa_api_key(payload) is False
 
 
 @pytest.mark.parametrize(

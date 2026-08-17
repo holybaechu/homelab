@@ -36,13 +36,16 @@ Environment=OPENCLAW_SUPERVISOR_MODE=external
 Environment=OPENCLAW_GATEWAY_TOKEN_FILE=/run/openclaw-gateway/gateway_token
 Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}
 Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token
+Environment=OPENCLAW_EXA_API_KEY_FILE=/run/openclaw-gateway/exa_api_key
 
 LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}
 LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}
 LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}
+LoadCredential=exa_api_key:{{ openclaw_exa_api_key_path }}
 
 ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/openclaw_gateway_token /run/openclaw-gateway/gateway_token
 ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/discord_bot_token /run/openclaw-gateway/discord_bot_token
+ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/exa_api_key /run/openclaw-gateway/exa_api_key
 ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/ctf_docker_client_key /run/openclaw-gateway/ctf_docker_client_key
 ExecStart={{ openclaw_node_current_root }}/bin/node {{ openclaw_entrypoint }} gateway --port {{ openclaw_gateway_port }}
 Restart=always

@@ -73,7 +73,24 @@ def test_executor_keeps_its_hardened_docker_and_network_contract():
     assert "FROM kalilinux/kali-rolling" in dockerfile
     assert "ghcr.io/astral-sh/uv:0.11.32" in dockerfile
     assert "/uv /uvx /usr/local/bin/" in dockerfile
+    for package in (
+        "chromium",
+            "chromium-driver",
+            "xvfb",
+        "ffuf",
+        "gobuster",
+        "hashcat",
+        "john",
+        "sqlmap",
+        "yara",
+    ):
+        assert f"        {package} \\" in dockerfile
     assert "USER 1001:1001" in dockerfile
+    executor_vars = yaml.safe_load(
+        read("infra/ansible/inventory/prod/group_vars/svc_ctf_executor.yml")
+    )
+    assert "camoufox[geoip]==0.5.4" in dockerfile
+    assert executor_vars["openclaw_ctf_executor_image_revision"] == "4"
     assert "docker system dial-stdio" in read(
         "infra/ansible/roles/openclaw_ctf_executor/templates/60-openclaw-ctf-docker.conf.j2"
     )
@@ -82,7 +99,12 @@ def test_executor_keeps_its_hardened_docker_and_network_contract():
 
     validation = read("infra/ansible/playbooks/validate.yml")
     assert "Run the convenience-oriented CTF Kali sandbox smoke test" in validation
-    assert "for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark nmap uv" in validation
+    assert (
+        "for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark "
+        "nmap uv chromium chromedriver Xvfb ffuf gobuster hashcat john sqlmap yara"
+        in validation
+    )
+    assert 'm.version("camoufox") == "0.5.4"' in validation
     assert 'test "$(id -u)" -eq 0' in validation
     assert 'test "$$(id -u)" -eq 0' not in validation
     assert "- AUDIT_WRITE" in validation

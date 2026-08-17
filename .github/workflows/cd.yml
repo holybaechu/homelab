@@ -207,6 +207,7 @@ jobs:
           ARCANE_JWT_SECRET: ${{ secrets.ARCANE_JWT_SECRET }}
           OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
           OPENCLAW_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_DISCORD_BOT_TOKEN }}
+          OPENCLAW_EXA_API_KEY: ${{ secrets.OPENCLAW_EXA_API_KEY }}
           OPENCLAW_SKILL_SYNC_GITHUB_TOKEN: ${{ secrets.OPENCLAW_SKILL_SYNC_GITHUB_TOKEN }}
           OPENCLAW_SETUP_COMMIT: ${{ steps.scope.outputs.openclaw_setup_commit }}
           DEPLOYMENT_SCOPE: ${{ steps.scope.outputs.deployment_scope }}

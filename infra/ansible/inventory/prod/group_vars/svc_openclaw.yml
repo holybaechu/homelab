@@ -66,8 +66,11 @@ openclaw_ctf_model_instructions_sha256: c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e32
 # @openclaw/discord@2026.7.1 declares pluginApi >=2026.7.1 and peer
 # openclaw >=2026.7.1, so it is compatible with the pinned 2026.7.1-2 core.
 openclaw_discord_plugin_spec: npm:@openclaw/discord@2026.7.1
+# Official Exa provider plugin compatible with pinned OpenClaw 2026.7.1-2.
+openclaw_exa_plugin_spec: npm:@openclaw/exa-plugin@2026.7.1
 openclaw_secret_root: /etc/openclaw/secrets
 openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
+openclaw_exa_api_key_path: "{{ openclaw_secret_root }}/exa_api_key"
 # The existing Gateway logs in once as the shared Discord bot. Channel-only
 # bindings inside config/openclaw.json select the target agent. This stays on
 # because that config intentionally contains the file-backed bot SecretRef.

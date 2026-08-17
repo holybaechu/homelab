@@ -28,6 +28,12 @@ DISCORD_TOKEN_DESTINATIONS = frozenset(
         "/run/openclaw-credential-probe/discord_bot_token",
     }
 )
+EXA_API_KEY_DESTINATIONS = frozenset(
+    {
+        "/run/openclaw-gateway/exa_api_key",
+        "/run/openclaw-credential-probe/exa_api_key",
+    }
+)
 CTF_DOCKER_KEY_DESTINATIONS = frozenset(
     {"/run/openclaw-gateway/ctf_docker_client_key"}
 )
@@ -35,6 +41,8 @@ GATEWAY_TOKEN_PATTERN = re.compile(rb"[0-9A-Fa-f]{64}\n\Z")
 MAX_GATEWAY_TOKEN_READ_BYTES = 66
 MAX_DISCORD_TOKEN_BYTES = 4096
 MAX_DISCORD_TOKEN_READ_BYTES = MAX_DISCORD_TOKEN_BYTES + 1
+MAX_EXA_API_KEY_BYTES = 4096
+MAX_EXA_API_KEY_READ_BYTES = MAX_EXA_API_KEY_BYTES + 1
 MAX_CTF_DOCKER_KEY_BYTES = 16384
 MAX_CTF_DOCKER_KEY_READ_BYTES = MAX_CTF_DOCKER_KEY_BYTES + 1
 
@@ -70,6 +78,16 @@ def is_valid_discord_token(payload: bytes) -> bool:
     )
 
 
+def is_valid_exa_api_key(payload: bytes) -> bool:
+    """Permit one bounded printable Exa API key with an optional newline."""
+    if payload.endswith(b"\n"):
+        payload = payload[:-1]
+    return (
+        0 < len(payload) <= MAX_EXA_API_KEY_BYTES
+        and all(0x21 <= byte <= 0x7E for byte in payload)
+    )
+
+
 def is_valid_openssh_private_key(payload: bytes) -> bool:
     """Accept one bounded canonical OpenSSH private-key envelope."""
     if not payload.endswith(b"\n") or len(payload) > MAX_CTF_DOCKER_KEY_BYTES:
@@ -97,6 +115,8 @@ def credential_spec(destination: str) -> tuple[int, Callable[[bytes], bool]] | N
         )
     if destination in DISCORD_TOKEN_DESTINATIONS:
         return MAX_DISCORD_TOKEN_READ_BYTES, is_valid_discord_token
+    if destination in EXA_API_KEY_DESTINATIONS:
+        return MAX_EXA_API_KEY_READ_BYTES, is_valid_exa_api_key
     if destination in CTF_DOCKER_KEY_DESTINATIONS:
         return MAX_CTF_DOCKER_KEY_READ_BYTES, is_valid_openssh_private_key
     return None
