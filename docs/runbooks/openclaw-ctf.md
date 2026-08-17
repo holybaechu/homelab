@@ -1,28 +1,21 @@
-# OpenClaw CTF agent and remote Docker sandbox
+# OpenClaw CTF agent and local Docker sandbox
 
 This deployment has one native `openclaw-gateway.service` on VMID 118. It
 hosts the existing agents and the `ctf` agent together; it does not run a
 second CTF Gateway, an HTTP relay, relay HMAC credentials, or a second Discord
 bot process.
 
-The CTF Docker executor remains separate on VMID 119 (`ctf-executor`). Its
-Docker SSH account accepts one source-locked ed25519 key and always executes
-`docker system dial-stdio`; it cannot open a shell, forward a port, or choose a
-different command. The Gateway has no local Docker Engine or usable local
-socket. Its systemd unit makes both `/run/docker.sock` and
-`/var/run/docker.sock` inaccessible and reaches the executor only through the
-pinned SSH host key and forced command.
+The Gateway LXC runs its own Docker Engine and the pinned Kali sandbox image.
+The Gateway service joins the local `docker` group and OpenClaw creates one
+session-scoped CTF container per session. The retired VMID 119 executor and its
+SSH transport are not part of the steady-state design.
 
 ## Important one-Gateway limit
 
-Docker's `ssh://` connection helper for the Gateway's `DOCKER_HOST` invokes a
-literal `ssh` executable. The Gateway service prepends a root-owned private
-SSH shim to `PATH`; that shim accepts only Docker's pinned CTF transport
-invocation and reads the key and host pin from its systemd
-`CREDENTIALS_DIRECTORY`. OpenClaw does not support giving that process-level
-Docker transport or its systemd-loaded credentials to only one agent inside a
-shared Gateway process. Therefore the remote Docker capability is process-scoped, not a hard
-per-agent credential boundary.
+OpenClaw does not support giving the local Docker socket to only one agent
+inside a shared Gateway process. The Gateway process therefore has a
+process-scoped Docker capability, while the checked agent configuration routes
+only `ctf` into the Kali sandbox.
 
 The checked configuration gives only `ctf` a session-scoped Docker sandbox and
 its CTF-only tool policy; other agents keep their existing configuration. That
@@ -75,13 +68,9 @@ allowlists, select agents. The configuration validation requires:
   provider plugin. CTF subagent count, depth, and timeout fields are omitted so
   the pinned OpenClaw defaults apply.
 
-The OpenClaw Docker sandbox-browser tool is deliberately still denied. The
-pinned runtime publishes its CDP port on `127.0.0.1` of the Docker daemon host;
-this deployment's daemon is remote, so that loopback is the executor rather
-than the Gateway. Camoufox running with `headless="virtual"` on Xvfb is the
-primary local anti-detect automation path; Chromium and Chromedriver remain the
-compatibility fallback. Neither path guarantees that a site cannot detect
-automation.
+Camoufox running with `headless="virtual"` on Xvfb is the primary anti-detect
+automation path; Chromium and Chromedriver remain the compatibility fallback.
+Neither path guarantees that a site cannot detect automation.
 
 Native Discord file uploads and ZIP replies are approved for both the CTF and
 main channels. They remain subject to their channel bindings and each agent's
@@ -118,24 +107,14 @@ and passes them to the Gateway using systemd credentials. There is no
 `OPENCLAW_CTF_GATEWAY_TOKEN`, CTF OpenAI API key, Discord relay HMAC, or
 separate CTF bot token.
 
-The CTF executor SSH key is generated root-only on the Gateway host at
-`/etc/openclaw/secrets/ctf_docker_client_key`; the transport role installs only
-its public half in the executor's forced-command account and pins the
-executor's public host key at `/etc/openclaw/trust/ctf_docker_known_hosts`. The
-root-owned trust file is group-readable by the Gateway, while the private
-client key remains a systemd credential. Do not
-copy either private credential into the private OpenClaw checkout or GitHub
-secrets.
-
 Before an authorized production deployment:
 
 1. Add the three GitHub repository secrets above.
 2. Update the private `config/openclaw.json` channel map/bindings with the
    desired numeric Discord channels and the `ctf` agent contract above.
-3. Dispatch the approved production deployment workflow. Its ordering creates
-   the executor, provisions the one Gateway, then installs the forced SSH
-   transport before continuing with the other services.
+3. Dispatch the approved production deployment workflow. It installs local
+   Docker, builds the pinned Kali image, and activates the one Gateway.
 
-After deployment, the validation playbook checks the no-local-socket rule, the
-single active Gateway, disabled retired split service units, the forced remote
-Docker transport, CTF workspace mounts, and direct Discord credential wiring.
+After deployment, the validation playbook checks the local Docker socket and
+pinned image, single active Gateway, disabled retired split service units, CTF
+workspace mounts, and direct Discord credential wiring.

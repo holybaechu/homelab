@@ -182,87 +182,49 @@
         docker run --rm --network none '{{ openclaw_ctf_image }}' /bin/sh -ceu 'command -v uv >/dev/null; command -v camoufox >/dev/null; command -v chromium >/dev/null; command -v Xvfb >/dev/null'
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 710"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_client_key_path }}')" = "0:0 600"
-        test "$(stat -c '%U:%G %a' '/etc/openclaw/trust')" = "root:{{ openclaw_group }} 750"
-        test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_known_hosts_path }}')" = "root:{{ openclaw_group }} 640"
       args:
         executable: /bin/sh
       changed_when: false
 
-    - name: Validate the Gateway service credential-scoped remote CTF Docker transport
+    - name: Validate the Gateway local CTF Docker contract
       ansible.builtin.shell: |
         set -eu
-        systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}'
-        systemctl cat openclaw-gateway.service | grep -Fqx 'Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin'
-        systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_client_key:'
-        ! systemctl cat openclaw-gateway.service | grep -Fq 'LoadCredential=ctf_docker_known_hosts:'
-        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=-/run/docker.sock'
-        systemctl cat openclaw-gateway.service | grep -Fqx 'InaccessiblePaths=-/var/run/docker.sock'
-        ! systemctl cat openclaw-gateway.service | grep -Eq '(^|[^A-Z_])OPENAI_API_KEY='
+        systemctl cat openclaw-gateway.service | grep -Fqx 'SupplementaryGroups=docker'
         systemctl cat openclaw-gateway.service | grep -Fqx 'ReadWritePaths={{ openclaw_ctf_workspace_root }}'
-        ! systemctl is-active --quiet openclaw-ctf-gateway.service
-        ! systemctl is-active --quiet openclaw-discord-relay.service
-        test ! -e /etc/systemd/system/openclaw-ctf-gateway.service
-        test ! -e /etc/systemd/system/openclaw-discord-relay.service
-        test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_ssh_shim_dir }}')" = "root:{{ openclaw_group }} 750"
-        test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_ssh_shim_dir }}/ssh')" = "root:{{ openclaw_group }} 750"
-        test "$(stat -c '%U:%G %a' '{{ openclaw_ctf_docker_ssh_config_path }}')" = "root:root 644"
-        test "$(stat -c '%U:%G %a' /run/openclaw-gateway/ctf_docker_client_key)" = "{{ openclaw_user }}:{{ openclaw_group }} 400"
-        /usr/sbin/runuser -u {{ openclaw_user }} -- /usr/bin/ssh -G -l {{ openclaw_ctf_docker_user }} {{ ctf_executor_ip }} |
-          grep -Fqx 'userknownhostsfile {{ openclaw_ctf_docker_known_hosts_path }}'
-        /usr/sbin/runuser -u {{ openclaw_user }} -- /usr/bin/ssh -G -l {{ openclaw_ctf_docker_user }} {{ ctf_executor_ip }} |
-          grep -Fqx 'identityfile /run/openclaw-gateway/ctf_docker_client_key'
-        systemd-run \
-          --wait \
-          --pipe \
-          --collect \
-          --quiet \
-          --uid='{{ openclaw_user }}' \
-          --property='LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}' \
-          --setenv='DOCKER_HOST={{ openclaw_ctf_docker_host }}' \
-          --setenv='PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:/usr/local/bin:/usr/bin:/bin' \
-          '{{ openclaw_ctf_docker_cli_path }}' version >/dev/null
+        ! systemctl cat openclaw-gateway.service | grep -Fq 'DOCKER_HOST='
+        ! systemctl cat openclaw-gateway.service | grep -Fq 'ctf_docker_client_key'
+        ! systemctl cat openclaw-gateway.service | grep -Fq 'openclaw-ctf-docker-bin'
+        test -S /var/run/docker.sock
+        /usr/sbin/runuser -u {{ openclaw_user }} -- docker version >/dev/null
+        /usr/sbin/runuser -u {{ openclaw_user }} -- docker image inspect '{{ openclaw_ctf_image }}' >/dev/null
+        /usr/sbin/runuser -u {{ openclaw_user }} -- docker run --rm \
+          --network none '{{ openclaw_ctf_image }}' /bin/sh -ceu \
+          'command -v uv >/dev/null; command -v camoufox >/dev/null; command -v chromium >/dev/null; command -v Xvfb >/dev/null'
       args:
         executable: /bin/sh
       changed_when: false
-      no_log: true
 
-    - name: Prove remote Docker receives generated sandbox skills at the pinned path
+    - name: Prove local Docker receives generated sandbox skills at the pinned path
       ansible.builtin.shell: |
         set -eu
-        systemd-run \
-          --wait \
-          --pipe \
-          --collect \
-          --quiet \
-          --uid='{{ openclaw_user }}' \
-          --property='LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}' \
-          --setenv='DOCKER_HOST={{ openclaw_ctf_docker_host }}' \
-          --setenv='PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:/usr/local/bin:/usr/bin:/bin' \
-          /bin/sh -ceu '
-            fixture="$$(mktemp -d {{ openclaw_ctf_sandbox_skills_root }}/validate.XXXXXX)"
-            cleanup() { rm -rf "$${fixture}"; }
-            trap cleanup EXIT
-            skill_dir="$${fixture}/.openclaw/sandbox-skills/skills/validation-skill"
-            mkdir -p "$${skill_dir}"
-            printf "%s\\n" sandbox-skill-transport > "$${skill_dir}/SKILL.md"
-            docker run --rm \
-              --network none \
-              --read-only \
-              --tmpfs /tmp \
-              --tmpfs /var/tmp \
-              --tmpfs /run \
-              --cap-drop ALL \
-              --user {{ openclaw_uid }}:{{ openclaw_gid }} \
-              --volume "$${fixture}/.openclaw/sandbox-skills/skills:/workspace/.openclaw/sandbox-skills/skills:ro" \
-              {{ hostvars['ctf_executor'].openclaw_ctf_executor_image }} \
-              /bin/sh -ceu "test -r /workspace/.openclaw/sandbox-skills/skills/validation-skill/SKILL.md; grep -Fx sandbox-skill-transport /workspace/.openclaw/sandbox-skills/skills/validation-skill/SKILL.md"
-          '
+        fixture="$(mktemp -d {{ openclaw_ctf_sandbox_skills_root }}/validate.XXXXXX)"
+        cleanup() { rm -rf "${fixture}"; }
+        trap cleanup EXIT
+        skill_dir="${fixture}/.openclaw/sandbox-skills/skills/validation-skill"
+        mkdir -p "${skill_dir}"
+        printf '%s\n' sandbox-skill-local > "${skill_dir}/SKILL.md"
+        /usr/sbin/runuser -u {{ openclaw_user }} -- docker run --rm \
+          --network none \
+          --read-only \
+          --tmpfs /tmp --tmpfs /var/tmp --tmpfs /run \
+          --cap-drop ALL \
+          --user {{ openclaw_uid }}:{{ openclaw_gid }} \
+          --volume "${fixture}/.openclaw/sandbox-skills/skills:/workspace/.openclaw/sandbox-skills/skills:ro" \
+          '{{ openclaw_ctf_image }}' \
+          /bin/sh -ceu 'grep -Fx sandbox-skill-local /workspace/.openclaw/sandbox-skills/skills/validation-skill/SKILL.md'
       args:
         executable: /bin/sh
       changed_when: false
-      no_log: true
-
     - name: Check native OpenClaw runtime and firewall staging
       ansible.builtin.shell: |
         set -eu

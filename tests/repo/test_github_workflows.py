@@ -375,9 +375,6 @@ def test_parallel_ansible_runner_derives_service_targets_from_topology():
     gateway_call = '''target="${openclaw_entry%%:*}"
   limit="${openclaw_entry#*:}"
   if run_foreground_target "${target}" "${limit}" --tags openclaw_local_docker,openclaw_native "$@"; then'''
-    transport_call = '''target="${ctf_executor_entry%%:*}"
-  limit="${ctf_executor_entry#*:}"
-  if run_foreground_target "${target}" "${limit}" --tags ctf_transport "$@"; then'''
     docker_call = '''target="${required_entry%%:*}"
     limit="${required_entry#*:}"
     if run_foreground_target "${target}" "${limit}" "$@"; then'''
@@ -385,14 +382,12 @@ def test_parallel_ansible_runner_derives_service_targets_from_topology():
     assert tailnet_call in runner
     assert executor_call in runner
     assert gateway_call in runner
-    assert transport_call in runner
     assert docker_call in runner
     assert "ctf_gateway" not in runner
     assert "discord_relay" not in runner
     assert runner.index(tailnet_call) < runner.index(executor_call)
     assert runner.index(executor_call) < runner.index(gateway_call)
-    assert runner.index(gateway_call) < runner.index(transport_call)
-    assert runner.index(transport_call) < runner.index(docker_call)
+    assert runner.index(gateway_call) < runner.index(docker_call)
 
 
 def test_parallel_validate_runner_includes_pve_drift_validation_target():
@@ -454,9 +449,6 @@ def test_parallel_ansible_runner_orders_tailnet_openclaw_docker_then_pve_cleanup
         "one Gateway complete"
     )
     assert result.stdout.index("one Gateway complete") < result.stdout.index(
-        "CTF transport complete"
-    )
-    assert result.stdout.index("CTF transport complete") < result.stdout.index(
         "docker complete"
     )
     assert result.stdout.index("docker complete") < result.stdout.index("pve complete")

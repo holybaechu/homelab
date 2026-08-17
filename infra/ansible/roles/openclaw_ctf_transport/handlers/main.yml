@@ -1,5 +1,0 @@
----
-- name: Reload isolated CTF executor SSH after transport update
-  ansible.builtin.systemd_service:
-    name: ssh.service
-    state: reloaded

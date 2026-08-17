@@ -23,11 +23,8 @@ openclaw_ctf_sandbox_skills_root: /var/lib/openclaw/sandbox/skills-workspaces
 # until the root-options role rewrites mp0 to the unified hierarchy above.
 openclaw_ctf_uid: "{{ service_uid }}"
 openclaw_ctf_gid: "{{ service_gid }}"
-openclaw_ctf_docker_user: openclaw-ctf-docker
-openclaw_ctf_docker_host: "ssh://{{ openclaw_ctf_docker_user }}@{{ ctf_executor_ip }}"
-openclaw_ctf_docker_client_key_path: /etc/openclaw/secrets/ctf_docker_client_key
-openclaw_ctf_docker_known_hosts_path: /etc/openclaw/trust/ctf_docker_known_hosts
 openclaw_ctf_docker_network: openclaw-ctf
+openclaw_ctf_docker_user: openclaw-ctf-docker
 openclaw_ctf_docker_network_cidr: 172.30.0.0/24
 openclaw_ctf_docker_bridge: occtfbr0
 

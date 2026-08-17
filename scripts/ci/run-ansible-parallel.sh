@@ -119,7 +119,6 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "openclaw" ]; then
   fi
   run_foreground_target ctf_executor svc_ctf_executor --tags ctf_executor "$@"
   run_foreground_target openclaw svc_openclaw --tags openclaw_local_docker,openclaw_native "$@"
-  run_foreground_target ctf_executor svc_ctf_executor --tags ctf_transport "$@"
   exit 0
 fi
 
@@ -142,12 +141,8 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
     esac
   done
 
-  # The CTF executor must exist before the single Gateway is activated, and
-  # its forced SSH transport can only be connected after that Gateway creates
-  # its dedicated identity. This preserves the bounded remote Docker path
-  # without a second Gateway or Discord relay.
-  # On the initial staged deployment it remains deliberately stopped, while
-  # after cutover this ordering prevents routing to an unready rebuilt LXC.
+  # Keep the retained executor configured until the local sandbox migration is
+  # validated, but the Gateway now uses its own local Docker Engine.
   for required_entry in \
     "${tailnet_entry}" \
     "${ctf_executor_entry}" \
@@ -179,14 +174,6 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
   target="${openclaw_entry%%:*}"
   limit="${openclaw_entry#*:}"
   if run_foreground_target "${target}" "${limit}" --tags openclaw_local_docker,openclaw_native "$@"; then
-    :
-  else
-    exit $?
-  fi
-
-  target="${ctf_executor_entry%%:*}"
-  limit="${ctf_executor_entry#*:}"
-  if run_foreground_target "${target}" "${limit}" --tags ctf_transport "$@"; then
     :
   else
     exit $?

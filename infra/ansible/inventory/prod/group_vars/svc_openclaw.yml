@@ -25,15 +25,9 @@ openclaw_ctf_image: homelab-openclaw-ctf-kali:1
 openclaw_ctf_image_build_root: /opt/openclaw-ctf-image
 openclaw_ctf_image_revision: "6"
 
-# One Gateway hosts every agent. The remote Docker client is a process-level
-# credential of that Gateway; see docs/runbooks/openclaw-ctf.md for the
-# resulting isolation limit and the agent-policy controls that remain.
+# One Gateway hosts every agent and uses the local Docker Engine for CTF
+# session sandboxes.
 openclaw_ctf_docker_cli_path: /usr/bin/docker
-# Docker's ssh:// connection helper invokes a literal `ssh` executable.  Keep
-# the root-owned transport shim in a private directory that the one Gateway
-# service prepends to PATH.
-openclaw_ctf_docker_ssh_shim_dir: /usr/local/libexec/openclaw-ctf-docker-bin
-openclaw_ctf_docker_ssh_config_path: /etc/ssh/ssh_config.d/90-openclaw-ctf-docker.conf
 
 openclaw_install_root: /opt/openclaw
 openclaw_release_root: "{{ openclaw_install_root }}/releases/{{ openclaw_version }}"

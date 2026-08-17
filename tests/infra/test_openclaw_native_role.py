@@ -222,8 +222,9 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
     for value in (
         "Requires=nftables.service",
         "After=network-online.target nftables.service",
-        "User={{ openclaw_user }}",
-        "Group={{ openclaw_group }}",
+            "User={{ openclaw_user }}",
+            "Group={{ openclaw_group }}",
+            "SupplementaryGroups=docker",
         "OPENCLAW_CONFIG_PATH={{ openclaw_config_path }}",
         "OPENCLAW_STATE_DIR={{ openclaw_state_root }}",
         "OPENCLAW_NO_AUTO_UPDATE=1",
@@ -245,12 +246,9 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "SystemCallArchitectures=native",
         "ReadOnlyPaths={{ openclaw_config_path }}",
         "LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}",
-        "LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}",
         "LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}",
         "LoadCredential=exa_api_key:{{ openclaw_exa_api_key_path }}",
-        "Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}",
-        "Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin",
-        "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/ctf_docker_client_key /run/openclaw-gateway/ctf_docker_client_key",
+            "Environment=PATH={{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin",
         "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token",
         "Environment=OPENCLAW_EXA_API_KEY_FILE=/run/openclaw-gateway/exa_api_key",
         "RuntimeDirectory=openclaw-gateway",
@@ -267,8 +265,6 @@ def test_native_openclaw_uses_an_external_hardened_system_service():
         "ReadWritePaths={{ openclaw_runtime_root }}",
         "ReadWritePaths={{ openclaw_auth_profile_secret_root }}",
         "ReadWritePaths={{ openclaw_ctf_workspace_root }}",
-        "InaccessiblePaths=-/run/docker.sock",
-        "InaccessiblePaths=-/var/run/docker.sock",
     ):
         assert value in unit
     for forbidden in (
@@ -1418,26 +1414,19 @@ def test_site_and_validation_include_the_dedicated_openclaw_lxc():
     assert site.index(
         "Configure the isolated CTF Docker executor"
     ) < site.index("Stage or activate the dedicated native OpenClaw Gateway")
-    assert site.index(
-        "Stage or activate the dedicated native OpenClaw Gateway"
-    ) < site.index("Connect the native OpenClaw Gateway to the isolated CTF executor")
-    assert site.index(
-        "Connect the native OpenClaw Gateway to the isolated CTF executor"
-    ) < site.index("Configure Docker Compose application LXC")
+    assert "Connect the native OpenClaw Gateway to the isolated CTF executor" not in site
 
     assert "Validate the dedicated native OpenClaw host" in validation
     assert "systemctl is-enabled --quiet openclaw-gateway.service" in validation
     assert "systemctl is-active --quiet openclaw-gateway.service" in validation
-    assert "! systemctl is-active --quiet openclaw-ctf-gateway.service" in validation
-    assert "! systemctl is-active --quiet openclaw-discord-relay.service" in validation
     assert "test -S /var/run/docker.sock" in validation
     assert "test -x '{{ openclaw_ctf_docker_cli_path }}'" in validation
     assert "systemctl is-active --quiet docker.service" in validation
-    assert "Validate the Gateway service credential-scoped remote CTF Docker transport" in validation
+    assert "Validate the Gateway local CTF Docker contract" in validation
     assert "openclaw_ctf_docker_cli_path" in validation
     assert "openclaw_ctf_user" not in validation
     assert "systemctl cat openclaw-gateway.service | grep -Fqx 'ReadWritePaths={{ openclaw_ctf_workspace_root }}'" in validation
-    assert "InaccessiblePaths=-/var/run/docker.sock" in validation
+    assert "InaccessiblePaths=-/var/run/docker.sock" not in validation
     assert "Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token" in validation
     assert (
         "ExecStartPre=/usr/local/libexec/materialize-openclaw-credential "

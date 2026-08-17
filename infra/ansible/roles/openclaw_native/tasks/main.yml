@@ -38,11 +38,6 @@
       - openclaw_ctf_uid | int == openclaw_uid | int
       - openclaw_ctf_gid | int == openclaw_gid | int
       - openclaw_ctf_docker_cli_path == '/usr/bin/docker'
-      - openclaw_ctf_docker_client_key_path == openclaw_secret_root + '/ctf_docker_client_key'
-      - openclaw_ctf_docker_known_hosts_path == '/etc/openclaw/trust/ctf_docker_known_hosts'
-      - openclaw_ctf_docker_host == 'ssh://' + openclaw_ctf_docker_user + '@' + ctf_executor_ip
-      - openclaw_ctf_docker_ssh_shim_dir == '/usr/local/libexec/openclaw-ctf-docker-bin'
-      - openclaw_ctf_docker_ssh_config_path == '/etc/ssh/ssh_config.d/90-openclaw-ctf-docker.conf'
       - openclaw_ctf_docker_network == 'openclaw-ctf'
       - openclaw_discord_enabled | bool
       - openclaw_codex_profile_id == 'openai:main'
@@ -128,7 +123,6 @@
       - curl
       - gnupg
       - nftables
-      - openssh-client
       - xz-utils
     state: present
     update_cache: true
@@ -199,11 +193,9 @@
     - {path: "{{ openclaw_home }}/.config", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
     - {path: "{{ openclaw_auth_profile_secret_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: /usr/local/libexec, owner: root, group: root, mode: "0755"}
-    - {path: "{{ openclaw_ctf_docker_ssh_shim_dir }}", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
     - {path: /run/openclaw-native-empty-hooks, owner: root, group: root, mode: "0700"}
     - {path: /etc/openclaw, owner: root, group: root, mode: "0755"}
     - {path: "{{ openclaw_secret_root }}", owner: root, group: root, mode: "0700"}
-    - {path: /etc/openclaw/trust, owner: root, group: "{{ openclaw_group }}", mode: "0750"}
   loop_control:
     label: "{{ item.path }}"
 
@@ -216,93 +208,6 @@
     mode: "0600"
   no_log: true
   diff: false
-  notify: Restart OpenClaw Gateway
-
-- name: Create Docker CLI apt keyring directory for the CTF executor transport
-  ansible.builtin.file:
-    path: /etc/apt/keyrings
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
-- name: Install Docker CLI apt signing key for the CTF executor transport
-  ansible.builtin.get_url:
-    url: https://download.docker.com/linux/debian/gpg
-    dest: /etc/apt/keyrings/docker.asc
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Configure Docker CLI apt repository for the CTF executor transport
-  ansible.builtin.apt_repository:
-    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
-    filename: docker
-    state: present
-    update_cache: true
-
-- name: Install only the Docker CLI on the native Gateway
-  ansible.builtin.apt:
-    name: docker-ce-cli
-    state: present
-    update_cache: true
-
-- name: Generate the CTF executor Docker transport identity
-  ansible.builtin.command:
-    argv:
-      - /usr/bin/ssh-keygen
-      - -q
-      - -t
-      - ed25519
-      - -N
-      - ""
-      - -f
-      - "{{ openclaw_ctf_docker_client_key_path }}"
-      - -C
-      - openclaw-ctf-docker-transport
-  args:
-    creates: "{{ openclaw_ctf_docker_client_key_path }}"
-  no_log: true
-  notify: Restart OpenClaw Gateway
-
-- name: Protect the CTF executor Docker transport identity
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    owner: root
-    group: root
-    mode: "{{ item.mode }}"
-  loop:
-    - {path: "{{ openclaw_ctf_docker_client_key_path }}", mode: "0600"}
-    - {path: "{{ openclaw_ctf_docker_client_key_path }}.pub", mode: "0644"}
-  no_log: true
-
-- name: Initialize the pinned CTF executor Docker host key file
-  ansible.builtin.copy:
-    content: ""
-    dest: "{{ openclaw_ctf_docker_known_hosts_path }}"
-    owner: root
-    group: "{{ openclaw_group }}"
-    mode: "0640"
-    force: false
-  no_log: true
-  notify: Restart OpenClaw Gateway
-
-- name: Install the private CTF executor Docker SSH PATH shim
-  ansible.builtin.template:
-    src: openclaw-ctf-docker-ssh.j2
-    dest: "{{ openclaw_ctf_docker_ssh_shim_dir }}/ssh"
-    owner: root
-    group: "{{ openclaw_group }}"
-    mode: "0750"
-  notify: Restart OpenClaw Gateway
-
-- name: Install the CTF executor OpenSSH fallback policy
-  ansible.builtin.template:
-    src: openclaw-ctf-docker-ssh-config.j2
-    dest: "{{ openclaw_ctf_docker_ssh_config_path }}"
-    owner: root
-    group: root
-    mode: "0644"
   notify: Restart OpenClaw Gateway
 
 - name: Require an explicit shared Discord bot token

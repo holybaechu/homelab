@@ -38,7 +38,6 @@ def test_materializer_has_a_fixed_silent_fail_closed_contract():
     assert '"/run/openclaw-credential-probe/discord_bot_token"' in source
     assert '"/run/openclaw-gateway/exa_api_key"' in source
     assert '"/run/openclaw-credential-probe/exa_api_key"' in source
-    assert '"/run/openclaw-gateway/ctf_docker_client_key"' in source
     assert "MAX_GATEWAY_TOKEN_READ_BYTES = 66" in source
     assert "MAX_DISCORD_TOKEN_BYTES = 4096" in source
     assert "def is_valid_discord_token(" in source
@@ -93,7 +92,6 @@ def test_materializer_allows_only_the_fixed_credential_destinations():
         "/run/openclaw-credential-probe/discord_bot_token",
         "/run/openclaw-gateway/exa_api_key",
         "/run/openclaw-credential-probe/exa_api_key",
-        "/run/openclaw-gateway/ctf_docker_client_key",
     ):
         assert helper.credential_spec(destination) is not None
     for destination in (
@@ -147,26 +145,6 @@ def test_materializer_rejects_invalid_discord_tokens(payload):
     helper = load_helper()
 
     assert helper.is_valid_discord_token(payload) is False
-
-
-def test_materializer_accepts_only_canonical_openssh_private_key_envelopes():
-    helper = load_helper()
-    import base64
-
-    body = base64.b64encode(b"openssh-key-v1\x00fixture")
-    valid = (
-        b"-----BEGIN OPENSSH PRIVATE KEY-----\n"
-        + body
-        + b"\n-----END OPENSSH PRIVATE KEY-----\n"
-    )
-    assert helper.is_valid_openssh_private_key(valid) is True
-    for invalid in (
-        valid.rstrip(b"\n"),
-        valid.replace(body, base64.b64encode(b"invalid-key-v1\x00fixture"), 1),
-        b"-----BEGIN OPENSSH PRIVATE KEY-----\n!!!!\n-----END OPENSSH PRIVATE KEY-----\n",
-        b"x" * 16385,
-    ):
-        assert helper.is_valid_openssh_private_key(invalid) is False
 
 
 @pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership required")

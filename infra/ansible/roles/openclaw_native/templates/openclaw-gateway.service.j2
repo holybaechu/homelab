@@ -11,6 +11,7 @@ StartLimitBurst=5
 Type=simple
 User={{ openclaw_user }}
 Group={{ openclaw_group }}
+SupplementaryGroups=docker
 WorkingDirectory={{ openclaw_state_root }}
 UMask=0077
 LimitCORE=0
@@ -19,7 +20,7 @@ RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=no
 
 Environment=HOME={{ openclaw_home }}
-Environment=PATH={{ openclaw_ctf_docker_ssh_shim_dir }}:{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH={{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin
 Environment=TZ={{ openclaw_timezone }}
 Environment=NODE_COMPILE_CACHE={{ openclaw_compile_cache_root }}
 Environment=NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
@@ -34,19 +35,16 @@ Environment=OPENCLAW_NO_RESPAWN=1
 Environment=OPENCLAW_SERVICE_REPAIR_POLICY=external
 Environment=OPENCLAW_SUPERVISOR_MODE=external
 Environment=OPENCLAW_GATEWAY_TOKEN_FILE=/run/openclaw-gateway/gateway_token
-Environment=DOCKER_HOST={{ openclaw_ctf_docker_host }}
 Environment=OPENCLAW_DISCORD_BOT_TOKEN_FILE=/run/openclaw-gateway/discord_bot_token
 Environment=OPENCLAW_EXA_API_KEY_FILE=/run/openclaw-gateway/exa_api_key
 
 LoadCredential=openclaw_gateway_token:{{ openclaw_gateway_token_path }}
-LoadCredential=ctf_docker_client_key:{{ openclaw_ctf_docker_client_key_path }}
 LoadCredential=discord_bot_token:{{ openclaw_discord_bot_token_path }}
 LoadCredential=exa_api_key:{{ openclaw_exa_api_key_path }}
 
 ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/openclaw_gateway_token /run/openclaw-gateway/gateway_token
 ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/discord_bot_token /run/openclaw-gateway/discord_bot_token
 ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/exa_api_key /run/openclaw-gateway/exa_api_key
-ExecStartPre=/usr/local/libexec/materialize-openclaw-credential %d/ctf_docker_client_key /run/openclaw-gateway/ctf_docker_client_key
 ExecStart={{ openclaw_node_current_root }}/bin/node {{ openclaw_entrypoint }} gateway --port {{ openclaw_gateway_port }}
 Restart=always
 RestartSec=5
@@ -81,8 +79,6 @@ ReadWritePaths={{ openclaw_runtime_root }}
 ReadWritePaths={{ openclaw_cache_root }}
 ReadWritePaths={{ openclaw_auth_profile_secret_root }}
 ReadWritePaths={{ openclaw_ctf_workspace_root }}
-InaccessiblePaths=-/run/docker.sock
-InaccessiblePaths=-/var/run/docker.sock
 
 StandardOutput=journal
 StandardError=journal

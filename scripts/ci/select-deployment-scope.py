@@ -26,7 +26,6 @@ NO_DEPLOY_PATHS = {
 OPENCLAW_PREFIXES = (
     "infra/ansible/roles/openclaw_native/",
     "infra/ansible/roles/openclaw_ctf_executor/",
-    "infra/ansible/roles/openclaw_ctf_transport/",
     "apps/openclaw-ctf-kali/",
 )
 OPENCLAW_PATHS = {

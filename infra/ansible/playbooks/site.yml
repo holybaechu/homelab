@@ -82,14 +82,6 @@
     - role: openclaw_native
       tags: [openclaw, openclaw_native]
 
-- name: Connect the native OpenClaw Gateway to the isolated CTF executor
-  hosts: svc_ctf_executor
-  gather_facts: false
-  any_errors_fatal: true
-  roles:
-    - role: openclaw_ctf_transport
-      tags: [openclaw, ctf, ctf_transport]
-
 - name: Configure Docker Compose application LXC
   hosts: svc_docker_apps
   gather_facts: true
