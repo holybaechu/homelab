@@ -34,7 +34,7 @@ case "$*" in
     : > "${EXECUTOR_MARKER}"
     printf '%s\n' 'CTF executor complete'
     ;;
-  *'site.yml'*'--limit svc_openclaw'*'--tags openclaw_native'*)
+  *'site.yml'*'--limit svc_openclaw'*'--tags openclaw_local_docker,openclaw_native'*)
     test -f "${EXECUTOR_MARKER}"
     : > "${GATEWAY_MARKER}"
     printf '%s\n' 'one Gateway complete'

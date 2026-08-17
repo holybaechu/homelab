@@ -114,11 +114,11 @@ run_foreground_target() {
 
 if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "openclaw" ]; then
   if [ "${openclaw_components}" = "gateway" ]; then
-    run_foreground_target openclaw svc_openclaw --tags openclaw_native "$@"
+    run_foreground_target openclaw svc_openclaw --tags openclaw_local_docker,openclaw_native "$@"
     exit 0
   fi
   run_foreground_target ctf_executor svc_ctf_executor --tags ctf_executor "$@"
-  run_foreground_target openclaw svc_openclaw --tags openclaw_native "$@"
+  run_foreground_target openclaw svc_openclaw --tags openclaw_local_docker,openclaw_native "$@"
   run_foreground_target ctf_executor svc_ctf_executor --tags ctf_transport "$@"
   exit 0
 fi
@@ -178,7 +178,7 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
 
   target="${openclaw_entry%%:*}"
   limit="${openclaw_entry#*:}"
-  if run_foreground_target "${target}" "${limit}" --tags openclaw_native "$@"; then
+  if run_foreground_target "${target}" "${limit}" --tags openclaw_local_docker,openclaw_native "$@"; then
     :
   else
     exit $?

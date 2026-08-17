@@ -162,17 +162,23 @@
   hosts: svc_openclaw
   gather_facts: false
   tasks:
-    - name: Check one-Gateway OpenClaw LXC and CTF workspace isolation
+    - name: Check staged local Docker and retained remote executor isolation
       ansible.builtin.shell: |
         set -eu
         test "$(hostname)" = openclaw
         test "$(id -u openclaw)" = "{{ openclaw_uid }}"
         test "$(id -g openclaw)" = "{{ openclaw_gid }}"
         test "$(getent passwd openclaw | cut -d: -f7)" = /usr/sbin/nologin
-        test ! -S /var/run/docker.sock
+        test -S /var/run/docker.sock
         test -x '{{ openclaw_ctf_docker_cli_path }}'
-        ! systemctl cat docker.service >/dev/null 2>&1
-        ! systemctl cat containerd.service >/dev/null 2>&1
+        systemctl is-active --quiet docker.service
+        systemctl is-enabled --quiet docker.service
+        id -nG '{{ openclaw_user }}' | tr ' ' '\n' | grep -Fx docker
+        docker image inspect '{{ openclaw_ctf_image }}' >/dev/null
+        test "$(docker image inspect --format '{{ '{{' }} index .Config.Labels \"homelab.openclaw.ctf.image-revision\" {{ '}}' }}' '{{ openclaw_ctf_image }}')" = '{{ openclaw_ctf_image_revision }}'
+        docker network inspect '{{ openclaw_ctf_docker_network }}' |
+          python3 -c 'import json, sys; n=json.load(sys.stdin)[0]; assert n["Driver"] == "bridge"; assert n["IPAM"]["Config"][0]["Subnet"] == "{{ openclaw_ctf_docker_network_cidr }}"; assert n["Options"]["com.docker.network.bridge.name"] == "{{ openclaw_ctf_docker_bridge }}"; assert n["Options"]["com.docker.network.bridge.enable_icc"] == "false"'
+        docker run --rm --network none '{{ openclaw_ctf_image }}' /bin/sh -ceu 'command -v uv >/dev/null; command -v camoufox >/dev/null; command -v chromium >/dev/null; command -v Xvfb >/dev/null'
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 710"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}')" = "{{ openclaw_uid }}:{{ openclaw_gid }} 700"
         test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_docker_client_key_path }}')" = "0:0 600"

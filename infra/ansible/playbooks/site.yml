@@ -77,6 +77,8 @@
   gather_facts: true
   any_errors_fatal: true
   roles:
+    - role: openclaw_ctf_local_docker
+      tags: [openclaw, ctf, openclaw_local_docker]
     - role: openclaw_native
       tags: [openclaw, openclaw_native]
 

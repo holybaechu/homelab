@@ -1430,9 +1430,9 @@ def test_site_and_validation_include_the_dedicated_openclaw_lxc():
     assert "systemctl is-active --quiet openclaw-gateway.service" in validation
     assert "! systemctl is-active --quiet openclaw-ctf-gateway.service" in validation
     assert "! systemctl is-active --quiet openclaw-discord-relay.service" in validation
-    assert "test ! -S /var/run/docker.sock" in validation
+    assert "test -S /var/run/docker.sock" in validation
     assert "test -x '{{ openclaw_ctf_docker_cli_path }}'" in validation
-    assert "! systemctl cat docker.service" in validation
+    assert "systemctl is-active --quiet docker.service" in validation
     assert "Validate the Gateway service credential-scoped remote CTF Docker transport" in validation
     assert "openclaw_ctf_docker_cli_path" in validation
     assert "openclaw_ctf_user" not in validation

@@ -103,6 +103,12 @@ pve_lxc_root_options:
     bind_mount_source_group: "{{ (homelab_container_uid_offset | int) + (openclaw_ctf_gid | int) }}"
     bind_mount_source_mode: "0700"
     settings:
+      - description: enable nesting for the local OpenClaw CTF Docker Engine
+        pattern: '^features:.*[ ,]nesting=1(,|$)'
+        pct_args: '-features nesting=1,keyctl=1'
+      - description: enable keyctl for the local OpenClaw CTF Docker Engine
+        pattern: '^features:.*[ ,]keyctl=1(,|$)'
+        pct_args: '-features nesting=1,keyctl=1'
       - description: mount the dedicated CTF workspace once
         pattern: "^mp0: {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}(,.*)?$"
         pct_args: "-mp0 {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}"
@@ -110,9 +116,6 @@ pve_lxc_root_options:
         pattern: "^mp1: {{ openclaw_ctf_sandbox_skills_host_path }},mp={{ openclaw_ctf_sandbox_skills_root }}(,.*)?$"
         pct_args: "-mp1 {{ openclaw_ctf_sandbox_skills_host_path }},mp={{ openclaw_ctf_sandbox_skills_root }}"
     absent_settings:
-      - description: nesting or keyctl features
-        pattern: '^features:.*[ ,](nesting|keyctl)=1(,|$)'
-        pct_args: '-delete features'
       - description: TUN device passthrough
         pattern: '^dev[0-9]+: (path=)?/dev/net/tun(,.*)?$'
         delete_matching_keys: true

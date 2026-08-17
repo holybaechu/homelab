@@ -374,7 +374,7 @@ def test_parallel_ansible_runner_derives_service_targets_from_topology():
   if run_foreground_target "${target}" "${limit}" --tags ctf_executor "$@"; then'''
     gateway_call = '''target="${openclaw_entry%%:*}"
   limit="${openclaw_entry#*:}"
-  if run_foreground_target "${target}" "${limit}" --tags openclaw_native "$@"; then'''
+  if run_foreground_target "${target}" "${limit}" --tags openclaw_local_docker,openclaw_native "$@"; then'''
     transport_call = '''target="${ctf_executor_entry%%:*}"
   limit="${ctf_executor_entry#*:}"
   if run_foreground_target "${target}" "${limit}" --tags ctf_transport "$@"; then'''

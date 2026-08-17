@@ -19,6 +19,12 @@ openclaw_uid: 1000
 openclaw_gid: 1000
 openclaw_home: /home/openclaw
 
+# The local Docker engine is staged and validated before the Gateway is moved
+# off the retained remote executor.
+openclaw_ctf_image: homelab-openclaw-ctf-kali:1
+openclaw_ctf_image_build_root: /opt/openclaw-ctf-image
+openclaw_ctf_image_revision: "6"
+
 # One Gateway hosts every agent. The remote Docker client is a process-level
 # credential of that Gateway; see docs/runbooks/openclaw-ctf.md for the
 # resulting isolation limit and the agent-policy controls that remain.

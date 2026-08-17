@@ -36,7 +36,7 @@ def test_tailnet_docker_apps_openclaw_and_ctf_executor_are_managed_lxcs():
 
 
 
-def test_openclaw_lxc_has_no_nested_features_tun_and_only_ctf_scoped_mounts():
+def test_openclaw_lxc_has_local_docker_features_no_tun_and_only_ctf_scoped_mounts():
     topology = read("infra/opentofu/envs/prod/containers.auto.tfvars")
     module = read("infra/opentofu/modules/pve-lxc/main.tf")
     all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
@@ -56,8 +56,10 @@ def test_openclaw_lxc_has_no_nested_features_tun_and_only_ctf_scoped_mounts():
     assert "-mp0 {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}" in openclaw
     assert "mount generated CTF sandbox skills once" in openclaw
     assert "-mp1 {{ openclaw_ctf_sandbox_skills_host_path }},mp={{ openclaw_ctf_sandbox_skills_root }}" in openclaw
-    assert "enable nesting for the isolated CTF Docker executor" not in openclaw
-    assert "nesting or keyctl features" in openclaw
+    assert "enable nesting for the local OpenClaw CTF Docker Engine" in openclaw
+    assert "enable keyctl for the local OpenClaw CTF Docker Engine" in openclaw
+    assert "-features nesting=1,keyctl=1" in openclaw
+    assert "nesting or keyctl features" not in openclaw
     assert "TUN device passthrough" in openclaw
     assert "(path=)?/dev/net/tun" in openclaw
     assert "unexpected CTF-executor bind mounts" in openclaw
