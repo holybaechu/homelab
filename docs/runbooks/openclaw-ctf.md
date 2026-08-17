@@ -32,7 +32,10 @@ numeric channel bindings. Channel IDs, rather than user, role, or guild
 allowlists, select agents. The configuration validation requires:
 
 - The external Discord channel plugin enabled as `plugins.entries.discord`
-  and installed as the pinned compatible `@openclaw/discord@2026.7.1` release.
+  and installed as the matching `@openclaw/discord@2026.8.1-beta.2` prerelease.
+  This release admits independent parent-channel messages by Discord message ID,
+  so auto-created thread sessions can run concurrently while same-thread turns
+  remain serialized by OpenClaw's session lane.
 - DMs disabled, group policy `allowlist`, bot messages and config writes off.
 - A wildcard Discord guild channel map with enabled numeric channel IDs.
 - Every CTF channel requires an explicit bot mention. Each mentioned parent

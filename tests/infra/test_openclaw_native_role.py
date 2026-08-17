@@ -14,7 +14,6 @@ VARS = REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_openclaw.yml"
 VALIDATE = REPO_ROOT / "infra/ansible/playbooks/validate.yml"
 MATERIALIZER = ROLE / "files/materialize_openclaw_credential.py"
 PROBE_UNIT = ROLE / "templates/openclaw-credential-probe.service.j2"
-CODEX_CWD_PATCHER = ROLE / "files/patch-openclaw-codex-sandbox-cwd.py"
 
 
 def read(path):
@@ -28,38 +27,21 @@ def walk_tasks(tasks):
             yield from walk_tasks(task.get(section, []))
 
 
-def test_native_role_applies_the_pinned_codex_path_uri_cwd_fix_before_runtime_inspection():
+def test_native_role_uses_the_prerelease_native_codex_path_uri_implementation():
     tasks = list(walk_tasks(yaml.safe_load(read(ROLE / "tasks/main.yml"))))
     names = [task.get("name") for task in tasks]
-
-    install_patcher = next(
+    assert "Install the pinned Codex sandbox cwd compatibility patcher" not in names
+    assert "Apply the pinned Codex sandbox PathUri cwd compatibility fix" not in names
+    assert not (ROLE / "files/patch-openclaw-codex-sandbox-cwd.py").exists()
+    cleanup = next(
         task
         for task in tasks
-        if task.get("name") == "Install the pinned Codex sandbox cwd compatibility patcher"
+        if task.get("name") == "Remove the superseded Codex cwd compatibility patcher"
     )
-    assert install_patcher["ansible.builtin.copy"] == {
-        "src": "patch-openclaw-codex-sandbox-cwd.py",
-        "dest": "/usr/local/libexec/patch-openclaw-codex-sandbox-cwd",
-        "owner": "root",
-        "group": "root",
-        "mode": "0755",
+    assert cleanup["ansible.builtin.file"] == {
+        "path": "/usr/local/libexec/patch-openclaw-codex-sandbox-cwd",
+        "state": "absent",
     }
-
-    locate_index = names.index("Locate the pinned core Codex harness package")
-    patch_index = names.index("Apply the pinned Codex sandbox PathUri cwd compatibility fix")
-    inspect_index = names.index("Inspect the core Codex harness runtime before startup")
-    assert locate_index < patch_index < inspect_index
-
-    patch_task = tasks[patch_index]
-    assert patch_task["become_user"] == "{{ openclaw_user }}"
-    argv = patch_task["ansible.builtin.command"]["argv"]
-    assert argv[0] == "/usr/local/libexec/patch-openclaw-codex-sandbox-cwd"
-    assert "openclaw_codex_package_manifests.stdout_lines[0] | dirname" in argv[1]
-
-    patcher = read(CODEX_CWD_PATCHER)
-    assert "fileURLToPath(cwdUrl, { windows: false })" in patcher
-    assert "EXPECTED_ORIGINAL_SHA256" in patcher
-    assert "EXPECTED_PATCHED_SHA256" in patcher
 
 
 def test_native_owner_commands_use_an_explicit_numeric_discord_operator_list():
@@ -115,17 +97,17 @@ def test_native_openclaw_release_and_node_are_exactly_integrity_pinned():
     variables = yaml.safe_load(read(VARS))
     tasks = read(ROLE / "tasks/main.yml")
 
-    assert variables["openclaw_version"] == "2026.7.1-2"
+    assert variables["openclaw_version"] == "2026.8.1-beta.2"
     assert variables["openclaw_cli_version_output"] == (
-        "OpenClaw 2026.7.1-2 (0790d9f)"
+        "OpenClaw 2026.8.1-beta.2 (8f382a2)"
     )
     assert "openclaw_cli_version" not in variables
     assert variables["openclaw_package_url"] == (
-        "https://registry.npmjs.org/openclaw/-/openclaw-2026.7.1-2.tgz"
+        "https://registry.npmjs.org/openclaw/-/openclaw-2026.8.1-beta.2.tgz"
     )
     assert variables["openclaw_package_sha512"] == (
-        "c9c177c8f71b8cde9b50f79a531e8c87abf37b58505a80f7093ff059c983edaf"
-        "316871c745468095aabe945c4c1dfd6cb0480e0d50308e5cd8aa9dadc24619ee"
+        "93873097214eb97379c0de8d387fe0ab1ba91aebcc90eaf9395d8487b3099a61"
+        "8587ceb0bd6493ac60642f85e435383f92ccd6cc66e8b48f302a5678ebc123b1"
     )
     assert variables["openclaw_node_version"] == "24.19.0"
     assert variables["openclaw_node_sha256"] == (
@@ -166,7 +148,7 @@ def test_native_openclaw_cli_version_output_is_exact_in_every_validation_path():
 
     assert (
         "openclaw_cli_version_output == 'OpenClaw ' + openclaw_version + "
-        "' (0790d9f)'"
+        "' (8f382a2)'"
         in role_contract["ansible.builtin.assert"]["that"]
     )
     assert installed_check["failed_when"] == (
@@ -493,13 +475,13 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert variables["openclaw_ctf_codex_thinking_default"] == "xhigh"
     assert variables["openclaw_ctf_codex_fast_mode_default"] is True
     assert variables["openclaw_codex_plugin_spec"] == (
-        "npm:@openclaw/codex@2026.7.1-1"
+        "npm:@openclaw/codex@2026.8.1-beta.2"
     )
     assert variables["openclaw_discord_plugin_spec"] == (
-        "npm:@openclaw/discord@2026.7.1"
+        "npm:@openclaw/discord@2026.8.1-beta.2"
     )
     assert variables["openclaw_exa_plugin_spec"] == (
-        "npm:@openclaw/exa-plugin@2026.7.1"
+        "npm:@openclaw/exa-plugin@2026.8.1-beta.2"
     )
     assert variables["openclaw_exa_api_key_path"] == (
         "{{ openclaw_secret_root }}/exa_api_key"
@@ -665,6 +647,19 @@ def test_native_openclaw_installs_and_loads_the_pinned_discord_channel_plugin():
         "{{ openclaw_npm_cache_root }}"
     )
 
+    ingress_contract = next(
+        task
+        for task in all_tasks
+        if task["name"] == "Verify the pinned Discord message-identity ingress contract"
+    )
+    ingress_shell = ingress_contract["ansible.builtin.shell"]
+    assert "@openclaw/discord/package.json" in ingress_shell
+    assert "test \"$version\" = '2026.8.1-beta.2'" in ingress_shell
+    assert "runQueue.enqueue(job.payload.message.id" in ingress_shell
+    assert "! grep -RFl --include='*.js' -- 'runQueue.enqueue(job.queueKey'" in ingress_shell
+    assert ingress_contract["become_user"] == "{{ openclaw_user }}"
+    assert ingress_contract["changed_when"] is False
+
     runtime = next(
         task
         for task in all_tasks
@@ -688,7 +683,7 @@ def test_native_openclaw_installs_loads_and_seals_the_exa_search_plugin():
     tasks = yaml.safe_load(read(ROLE / "tasks/main.yml"))
     all_tasks = list(walk_tasks(tasks))
 
-    assert variables["openclaw_exa_plugin_spec"] == "npm:@openclaw/exa-plugin@2026.7.1"
+    assert variables["openclaw_exa_plugin_spec"] == "npm:@openclaw/exa-plugin@2026.8.1-beta.2"
     install = next(
         task for task in all_tasks
         if task["name"] == "Install the pinned Exa web-search plugin"

@@ -3,10 +3,10 @@ openclaw_native_transition_marker_path: /var/lib/.openclaw-native-migration-vali
 openclaw_native_transition_marker_value: homelab-openclaw-native-migration-v1
 common_debian_create_service_account: false
 
-openclaw_version: 2026.7.1-2
-openclaw_cli_version_output: "OpenClaw 2026.7.1-2 (0790d9f)"
-openclaw_package_url: https://registry.npmjs.org/openclaw/-/openclaw-2026.7.1-2.tgz
-openclaw_package_sha512: c9c177c8f71b8cde9b50f79a531e8c87abf37b58505a80f7093ff059c983edaf316871c745468095aabe945c4c1dfd6cb0480e0d50308e5cd8aa9dadc24619ee
+openclaw_version: 2026.8.1-beta.2
+openclaw_cli_version_output: "OpenClaw 2026.8.1-beta.2 (8f382a2)"
+openclaw_package_url: https://registry.npmjs.org/openclaw/-/openclaw-2026.8.1-beta.2.tgz
+openclaw_package_sha512: 93873097214eb97379c0de8d387fe0ab1ba91aebcc90eaf9395d8487b3099a618587ceb0bd6493ac60642f85e435383f92ccd6cc66e8b48f302a5678ebc123b1
 
 openclaw_node_version: 24.19.0
 openclaw_node_archive: node-v24.19.0-linux-x64.tar.xz
@@ -62,12 +62,13 @@ openclaw_codex_thinking_default: xhigh
 openclaw_ctf_codex_model: openai/gpt-5.5
 openclaw_ctf_codex_thinking_default: xhigh
 openclaw_ctf_codex_fast_mode_default: true
-openclaw_codex_plugin_spec: npm:@openclaw/codex@2026.7.1-1
-# @openclaw/discord@2026.7.1 declares pluginApi >=2026.7.1 and peer
-# openclaw >=2026.7.1, so it is compatible with the pinned 2026.7.1-2 core.
-openclaw_discord_plugin_spec: npm:@openclaw/discord@2026.7.1
-# Official Exa provider plugin compatible with pinned OpenClaw 2026.7.1-2.
-openclaw_exa_plugin_spec: npm:@openclaw/exa-plugin@2026.7.1
+openclaw_codex_plugin_spec: npm:@openclaw/codex@2026.8.1-beta.2
+# The matching Discord prerelease queues ingress by Discord message identity,
+# allowing independent auto-thread parent messages to reach their distinct
+# OpenClaw session lanes concurrently.
+openclaw_discord_plugin_spec: npm:@openclaw/discord@2026.8.1-beta.2
+# Keep every official provider plugin on the same prerelease plugin API.
+openclaw_exa_plugin_spec: npm:@openclaw/exa-plugin@2026.8.1-beta.2
 openclaw_secret_root: /etc/openclaw/secrets
 openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
 openclaw_exa_api_key_path: "{{ openclaw_secret_root }}/exa_api_key"
