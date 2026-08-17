@@ -52,7 +52,7 @@ services:
       - traefik.http.services.copyparty.loadbalancer.server.port=3923
 
   metube:
-    image: ghcr.io/alexta69/metube:2026.08.16
+    image: ghcr.io/alexta69/metube:2026.08.17
     restart: unless-stopped
     env_file: .env
     environment:
