@@ -61,6 +61,7 @@ jobs:
           for playbook in \
             bootstrap.yml \
             preflight-openclaw-lxc.yml \
+            trust-openclaw-lxc.yml \
             fence-openclaw-docker-before-native.yml \
             rebaseline-openclaw-retained-rollback.yml \
             site.yml \

@@ -107,6 +107,24 @@ def test_cd_workflow_runs_bootstrap_before_site_deploy():
     assert bootstrap < site
 
 
+def test_openclaw_scope_refreshes_only_the_current_lxc_host_key_before_deploy():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+
+    trust = workflow.index("- name: Trust current OpenClaw LXC access")
+    next_step = workflow.index(
+        "- name: Trust Docker application LXC access for identity proof", trust
+    )
+    deploy = workflow.index("- name: Deploy services")
+    trust_step = workflow[trust:next_step]
+
+    assert trust < deploy
+    assert "steps.scope.outputs.deployment_scope == 'openclaw'" in trust_step
+    assert "infra/ansible/playbooks/trust-openclaw-lxc.yml" in trust_step
+    assert "infra/ansible/playbooks/bootstrap.yml" not in trust_step
+
+
 
 
 

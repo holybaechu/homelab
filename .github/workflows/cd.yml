@@ -130,6 +130,12 @@ jobs:
           --extra-vars
           "openclaw_root_datastore_id=${PVE_ROOT_DATASTORE_ID}"
 
+      - name: Trust current OpenClaw LXC access
+        if: steps.scope.outputs.deployment_scope == 'openclaw'
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/hosts.yml
+          infra/ansible/playbooks/trust-openclaw-lxc.yml
+
       - name: Trust Docker application LXC access for identity proof
         if: >-
           github.event_name == 'workflow_dispatch' &&

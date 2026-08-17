@@ -56,6 +56,24 @@ def test_bootstrap_waits_for_lxc_ssh_before_using_inventory_connections():
     assert "delegate_to: localhost" in playbook
 
 
+def test_openclaw_only_trust_playbook_reads_one_key_through_pve_without_mutation():
+    playbook = (
+        REPO_ROOT
+        / "infra"
+        / "ansible"
+        / "playbooks"
+        / "trust-openclaw-lxc.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "hosts: pve_hosts" in playbook
+    assert "selectattr('name', 'equalto', 'openclaw')" in playbook
+    assert "pct" in playbook
+    assert "ssh_host_ed25519_key.pub" in playbook
+    assert "ansible.builtin.known_hosts" in playbook
+    assert "hostvars['openclaw'].ansible_host" in playbook
+    assert "role:" not in playbook
+
+
 def test_debian_lxc_bootstrap_checks_each_required_package():
     tasks = (
         REPO_ROOT
