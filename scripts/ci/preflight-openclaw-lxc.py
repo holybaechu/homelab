@@ -218,8 +218,8 @@ def validate_existing_target(config: GuestConfig, allocation: Allocation) -> Non
     )
     if not root_volume.startswith(f"{allocation.datastore_id}:"):
         raise PreflightError(
-            f"VMID {allocation.vmid} is not backed by datastore "
-            f"{allocation.datastore_id!r}"
+            f"VMID {allocation.vmid} has root volume {root_volume!r}, not "
+            f"datastore {allocation.datastore_id!r}"
         )
 
     feature_values = parse_net_values(fields.get("features", ""))
