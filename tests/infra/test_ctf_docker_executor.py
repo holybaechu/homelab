@@ -89,8 +89,8 @@ def test_executor_keeps_its_hardened_docker_and_network_contract():
     executor_vars = yaml.safe_load(
         read("infra/ansible/inventory/prod/group_vars/svc_ctf_executor.yml")
     )
-    assert "camoufox[geoip]==0.5.4" in dockerfile
-    assert executor_vars["openclaw_ctf_executor_image_revision"] == "5"
+    assert "uv pip install --system --break-system-packages --no-cache 'camoufox[geoip]==0.5.4'" in dockerfile
+    assert executor_vars["openclaw_ctf_executor_image_revision"] == "6"
     assert "libasound2t64" in dockerfile
     assert "libasound2 \\" not in dockerfile
     assert "docker system dial-stdio" in read(

@@ -50,7 +50,7 @@ RUN apt-get update \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN uv pip install --system --no-cache 'camoufox[geoip]==0.5.4'
+RUN uv pip install --system --break-system-packages --no-cache 'camoufox[geoip]==0.5.4'
 
 RUN groupadd --gid 1001 ctf \
     && useradd --uid 1001 --gid 1001 --create-home --home-dir /home/ctf \
