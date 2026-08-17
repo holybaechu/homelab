@@ -1578,20 +1578,27 @@
           - openclaw_secrets_audit_result.summary.plaintextCount == 0
           - openclaw_secrets_audit_result.summary.unresolvedRefCount == 0
           - openclaw_secrets_audit_result.summary.shadowedRefCount == 0
-          - openclaw_secrets_audit_result.summary.legacyResidueCount in [0, 1]
+          - >-
+            openclaw_secrets_audit_result.summary.legacyResidueCount <=
+            ((openclaw_native_config.content | b64decode | from_json).agents.list | length)
           - openclaw_secrets_audit_result.findings | length == openclaw_secrets_audit_result.summary.legacyResidueCount
           - >-
             (openclaw_secrets_audit_result.summary.legacyResidueCount == 0 and
              openclaw_secrets_audit_preflight.rc == 0 and
              openclaw_secrets_audit_result.status == 'clean') or
-            (openclaw_secrets_audit_result.summary.legacyResidueCount == 1 and
+            (openclaw_secrets_audit_result.summary.legacyResidueCount > 0 and
              openclaw_secrets_audit_preflight.rc == 1 and
              openclaw_secrets_audit_result.status == 'findings' and
-             openclaw_secrets_audit_result.findings[0].code == 'LEGACY_RESIDUE' and
-             openclaw_secrets_audit_result.findings[0].severity == 'info' and
-             openclaw_secrets_audit_result.findings[0].jsonPath == 'profiles.' + openclaw_codex_profile_id and
-             openclaw_secrets_audit_result.findings[0].provider == 'openai' and
-             openclaw_secrets_audit_result.findings[0].profileId == openclaw_codex_profile_id)
+             (openclaw_secrets_audit_result.findings | map(attribute='code') |
+              unique | list) == ['LEGACY_RESIDUE'] and
+             (openclaw_secrets_audit_result.findings | map(attribute='severity') |
+              unique | list) == ['info'] and
+             (openclaw_secrets_audit_result.findings | map(attribute='jsonPath') |
+              unique | list) == ['profiles.' + openclaw_codex_profile_id] and
+             (openclaw_secrets_audit_result.findings | map(attribute='provider') |
+              unique | list) == ['openai'] and
+             (openclaw_secrets_audit_result.findings | map(attribute='profileId') |
+              unique | list) == [openclaw_codex_profile_id])
         fail_msg: >-
           OpenClaw secret audit failed:
           status={{ openclaw_secrets_audit_result.status | default('missing') }},

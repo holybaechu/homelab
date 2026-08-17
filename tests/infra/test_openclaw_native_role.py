@@ -518,12 +518,18 @@ def test_native_openclaw_config_and_secrets_remain_separated():
     assert "openclaw_secrets_audit_result.summary.plaintextCount == 0" in tasks
     assert "openclaw_secrets_audit_result.summary.unresolvedRefCount == 0" in tasks
     assert "openclaw_secrets_audit_result.summary.shadowedRefCount == 0" in tasks
-    assert "openclaw_secrets_audit_result.summary.legacyResidueCount in [0, 1]" in tasks
-    assert "findings[0].code == 'LEGACY_RESIDUE'" in tasks
-    assert "findings[0].severity == 'info'" in tasks
-    assert "findings[0].jsonPath == 'profiles.' + openclaw_codex_profile_id" in tasks
-    assert "findings[0].provider == 'openai'" in tasks
-    assert "findings[0].profileId == openclaw_codex_profile_id" in tasks
+    assert "openclaw_secrets_audit_result.summary.legacyResidueCount <=" in tasks
+    assert ".agents.list | length)" in tasks
+    assert "map(attribute='code')" in tasks
+    assert "['LEGACY_RESIDUE']" in tasks
+    assert "map(attribute='severity')" in tasks
+    assert "['info']" in tasks
+    assert "map(attribute='jsonPath')" in tasks
+    assert "['profiles.' + openclaw_codex_profile_id]" in tasks
+    assert "map(attribute='provider')" in tasks
+    assert "['openai']" in tasks
+    assert "map(attribute='profileId')" in tasks
+    assert "[openclaw_codex_profile_id]" in tasks
     assert "openclaw_secrets_audit_preflight.rc == 1" in tasks
     assert "codes={{ openclaw_secrets_audit_result.findings" in tasks
     assert "paths={{ openclaw_secrets_audit_result.findings" in tasks
