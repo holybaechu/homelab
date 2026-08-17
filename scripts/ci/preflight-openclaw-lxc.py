@@ -211,10 +211,8 @@ def validate_existing_target(config: GuestConfig, allocation: Allocation) -> Non
             f"VMID {allocation.vmid} is missing its managed {role_label} tags"
         )
     rootfs = fields.get("rootfs", "")
-    root_volume = (
-        parse_net_values(rootfs).get("volume", "")
-        if rootfs.startswith("volume=")
-        else rootfs.split(",", 1)[0]
+    root_volume = parse_net_values(rootfs).get(
+        "volume", rootfs.split(",", 1)[0]
     )
     if not root_volume.startswith(f"{allocation.datastore_id}:"):
         raise PreflightError(

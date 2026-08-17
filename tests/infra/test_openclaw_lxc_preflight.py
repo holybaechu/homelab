@@ -126,6 +126,19 @@ def test_existing_lxc_accepts_proxmox_volume_key_rootfs_serialization(
     )
     assert result["status"] == "existing-managed-target"
 
+    config = exact_openclaw_config().replace(
+        "rootfs: local-lvm:subvol-118-disk-0,size=96G",
+        "rootfs: acl=0,size=96G,volume=local-lvm:subvol-118-disk-0",
+    )
+    write_config(config_root, "lxc", 118, config)
+    result = PREFLIGHT.preflight(
+        allocation,
+        config_root,
+        probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
+        storage_probe=storage_ok,
+    )
+    assert result["status"] == "existing-managed-target"
+
 def test_existing_openclaw_accepts_only_the_exact_retiring_mp1_transition(
     config_root, allocation
 ):
