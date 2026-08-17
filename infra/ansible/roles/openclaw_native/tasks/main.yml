@@ -1259,7 +1259,7 @@
         import sqlite3
         from pathlib import Path
 
-        database_path = Path({{ (openclaw_state_root + '/state/openclaw.sqlite') | quote }})
+        database_path = Path({{ (openclaw_state_root + '/state/openclaw.sqlite') | to_json }})
         if not database_path.exists():
             raise SystemExit(0)
         database = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
@@ -1312,8 +1312,8 @@
         import sqlite3
         from pathlib import Path
 
-        source_path = Path({{ (openclaw_state_root + '/state/openclaw.sqlite') | quote }})
-        backup_path = Path({{ (openclaw_state_root + '/state/backups/openclaw.sqlite.pre-2026.8.1-beta.2') | quote }})
+        source_path = Path({{ (openclaw_state_root + '/state/openclaw.sqlite') | to_json }})
+        backup_path = Path({{ (openclaw_state_root + '/state/backups/openclaw.sqlite.pre-2026.8.1-beta.2') | to_json }})
         source = sqlite3.connect(source_path)
         try:
             if not backup_path.exists():

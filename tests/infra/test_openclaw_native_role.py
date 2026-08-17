@@ -720,7 +720,13 @@ def test_native_beta_upgrade_migrates_shared_state_before_plugin_lifecycle():
 
     backup = next(task for task in flattened if task.get("name") == backup_name)
     backup_source = backup["ansible.builtin.shell"]
+    inspect = next(task for task in flattened if task.get("name") == inspect_name)
+    inspect_source = inspect["ansible.builtin.shell"]
+    assert "| to_json }}" in inspect_source
+    assert "| quote }})" not in inspect_source
     assert "source.backup(backup)" in backup_source
+    assert backup_source.count("| to_json }}") == 2
+    assert "| quote }})" not in backup_source
     assert "PRAGMA integrity_check" in backup_source
     assert "ALTER TABLE device_bootstrap_tokens ADD COLUMN setup_id TEXT" in backup_source
     assert backup["become_user"] == "{{ openclaw_user }}"
