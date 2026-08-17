@@ -66,8 +66,8 @@ allowlists, select agents. The configuration validation requires:
   Camoufox downloads persist under the CTF workspace `.cache` tree.
 - The Kali image also preinstalls Camoufox 0.5.4, Xvfb,
   Chromium/Chromedriver, `ffuf`, `gobuster`,
-  `hashcat`, `john`, `sqlmap`, and `yara`. The CTF agent may use image and PDF
-  analysis through the currently selected GPT-5.6 Terra model, FTS-only local
+  `hashcat`, `john`, `sqlmap`, and `yara`. The CTF agent may use the selected
+  runtime's native image and PDF analysis, FTS-only local
   memory search, and Exa neural/keyword search through the pinned official
   provider plugin. CTF subagent count, depth, and timeout fields are omitted so
   the pinned OpenClaw defaults apply.

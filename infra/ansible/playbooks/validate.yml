@@ -163,12 +163,12 @@
       changed_when: false
       no_log: true
 
-    - name: Check the deployed CTF artifact workspace boundary
+    - name: Check the deployed CTF workspace boundary
       ansible.builtin.shell: |
         set -eu
         test -f '{{ openclaw_ctf_workspace_root }}/AGENTS.md'
-        test -x '{{ openclaw_ctf_workspace_root }}/scripts/init-ctf-challenge.py'
-        test -x '{{ openclaw_ctf_workspace_root }}/scripts/export-ctf-package.py'
+        test ! -e '{{ openclaw_ctf_workspace_root }}/scripts/init-ctf-challenge.py'
+        test ! -e '{{ openclaw_ctf_workspace_root }}/scripts/export-ctf-package.py'
         test -d '{{ openclaw_ctf_workspace_root }}/challenges'
         test -d '{{ openclaw_ctf_workspace_root }}/exports'
         test -d '{{ openclaw_ctf_workspace_root }}/media/inbound'

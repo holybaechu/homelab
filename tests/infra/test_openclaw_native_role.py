@@ -727,6 +727,45 @@ def test_native_ctf_uses_a_pinned_model_instructions_file_in_its_codex_home():
     assert "config/codex/gpt-5.6-sol-unrestricted-v45.md" in (
         clean_checkout["ansible.builtin.shell"]
     )
+    assert "workspaces/ctf/AGENTS.md" in clean_checkout["ansible.builtin.shell"]
+    assert "init-ctf-challenge.py" not in clean_checkout["ansible.builtin.shell"]
+    assert "export-ctf-package.py" not in clean_checkout["ansible.builtin.shell"]
+
+    retired = next(
+        task for task in all_tasks
+        if task["name"] == "Remove retired CTF workflow assets"
+    )
+    assert retired["loop"] == [
+        "templates/writeup.md",
+        "skills/ctf-artifacts",
+        "scripts/init-ctf-challenge.py",
+        "scripts/export-ctf-package.py",
+    ]
+
+    seed = next(
+        task for task in all_tasks
+        if task["name"] == "Seed tracked CTF instructions into the durable workspace"
+    )
+    assert seed["loop"] == [
+        {
+            "source": "workspaces/ctf/AGENTS.md",
+            "destination": "AGENTS.md",
+            "mode": "0640",
+        }
+    ]
+
+    validation_plays = yaml.safe_load(read(VALIDATE))
+    validation_tasks = [
+        task
+        for play in validation_plays
+        for task in play.get("tasks", [])
+        if task.get("name") == "Check the deployed CTF workspace boundary"
+    ]
+    assert len(validation_tasks) == 1
+    workspace_check = validation_tasks[0]["ansible.builtin.shell"]
+    assert "test -f '{{ openclaw_ctf_workspace_root }}/AGENTS.md'" in workspace_check
+    assert "test ! -e '{{ openclaw_ctf_workspace_root }}/scripts/init-ctf-challenge.py'" in workspace_check
+    assert "test ! -e '{{ openclaw_ctf_workspace_root }}/scripts/export-ctf-package.py'" in workspace_check
 
     create_home = next(
         task
