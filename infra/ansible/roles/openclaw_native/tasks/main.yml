@@ -794,6 +794,15 @@
     mode: "0755"
   notify: Restart OpenClaw Gateway
 
+- name: Install the pinned Discord auto-thread queue backport
+  ansible.builtin.copy:
+    src: patch-openclaw-discord-autothread-queue.py
+    dest: /usr/local/libexec/patch-openclaw-discord-autothread-queue
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart OpenClaw Gateway
+
 - name: Seed tracked CTF instructions into the durable workspace
   ansible.builtin.copy:
     src: "{{ openclaw_setup_root }}/{{ item.source }}"
@@ -1328,6 +1337,20 @@
       become: true
       become_user: "{{ openclaw_user }}"
       environment: *openclaw_native_plugin_install_environment
+      notify: Restart OpenClaw Gateway
+
+    - name: Apply the pinned Discord auto-thread queue backport
+      ansible.builtin.command:
+        argv:
+          - /usr/local/libexec/patch-openclaw-discord-autothread-queue
+          - "{{ openclaw_state_root }}/npm/projects"
+      become: true
+      become_user: "{{ openclaw_user }}"
+      register: openclaw_discord_autothread_patch
+      changed_when: openclaw_discord_autothread_patch.stdout | trim == 'changed'
+      failed_when: >-
+        openclaw_discord_autothread_patch.rc != 0 or
+        openclaw_discord_autothread_patch.stdout | trim not in ['changed', 'unchanged']
       notify: Restart OpenClaw Gateway
 
     - name: Install the pinned Exa web-search plugin

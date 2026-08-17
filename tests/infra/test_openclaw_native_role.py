@@ -665,10 +665,32 @@ def test_native_openclaw_installs_and_loads_the_pinned_discord_channel_plugin():
         "{{ openclaw_npm_cache_root }}"
     )
 
+    names = [task.get("name") for task in all_tasks]
+    patch_install_name = "Install the pinned Discord auto-thread queue backport"
+    patch_apply_name = "Apply the pinned Discord auto-thread queue backport"
+    runtime_name = "Inspect the core Discord channel plugin runtime before startup"
+    assert names.index("Install the pinned core Discord channel plugin") < names.index(
+        patch_apply_name
+    ) < names.index(runtime_name)
+    patch_install = next(
+        task for task in all_tasks if task.get("name") == patch_install_name
+    )
+    assert patch_install["ansible.builtin.copy"]["src"] == (
+        "patch-openclaw-discord-autothread-queue.py"
+    )
+    patch_apply = next(
+        task for task in all_tasks if task.get("name") == patch_apply_name
+    )
+    assert patch_apply["ansible.builtin.command"]["argv"] == [
+        "/usr/local/libexec/patch-openclaw-discord-autothread-queue",
+        "{{ openclaw_state_root }}/npm/projects",
+    ]
+    assert patch_apply["become_user"] == "{{ openclaw_user }}"
+
     runtime = next(
         task
         for task in all_tasks
-        if task["name"] == "Inspect the core Discord channel plugin runtime before startup"
+        if task["name"] == runtime_name
     )
     assert runtime["ansible.builtin.command"]["argv"][-5:] == [
         "plugins",

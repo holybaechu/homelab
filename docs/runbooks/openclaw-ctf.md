@@ -33,6 +33,11 @@ allowlists, select agents. The configuration validation requires:
 
 - The external Discord channel plugin enabled as `plugins.entries.discord`
   and installed as the pinned compatible `@openclaw/discord@2026.7.1` release.
+- A hash-pinned local backport changes only the parent-message ingress queue key
+  from the provisional channel session to the triggering Discord message ID.
+  Independent auto-thread requests can therefore start concurrently while
+  duplicate delivery of one message and follow-ups inside one thread remain
+  serialized.
 - DMs disabled, group policy `allowlist`, bot messages and config writes off.
 - A wildcard Discord guild channel map with enabled numeric channel IDs.
 - Every CTF channel requires an explicit bot mention. Each mentioned parent
