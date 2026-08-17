@@ -877,12 +877,11 @@
         'remote' not in
         (openclaw_native_config.content | b64decode | from_json).gateway
       - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('id', 'equalto', 'main') | map(attribute='default') | list) == [true]
+        (openclaw_native_config.content | b64decode | from_json).agents.ownership ==
+        'explicit'
       - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('id', 'equalto', 'main') | map(attribute='workspace') | list) ==
-        [openclaw_workspace_root]
+        (openclaw_native_config.content | b64decode |
+        from_json).agents.entries.main.workspace == openclaw_workspace_root
       - >-
         (openclaw_native_config.content | b64decode | from_json).agents.defaults.model.primary ==
         openclaw_codex_model
@@ -899,9 +898,9 @@
         (openclaw_native_config.content | b64decode | from_json).tools.web.search ==
         {'enabled': true, 'provider': 'exa'}
       - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('model', 'defined') | map(attribute='model') |
-        map(attribute='primary') | list |
+        ((openclaw_native_config.content | b64decode | from_json).agents.entries |
+        dict2items | selectattr('value.model', 'defined') |
+        map(attribute='value.model.primary') | list |
         difference([openclaw_codex_model, openclaw_ctf_codex_model]) | length) == 0
       - >-
         openclaw_ctf_agents | length == 1
@@ -937,12 +936,11 @@
           'requireAgentId': true
         }
       - >-
-        openclaw_ctf_agents[0].memorySearch ==
-        {'provider': 'none', 'fallback': 'none'}
+        openclaw_ctf_agents[0].memory == {'search': {'enabled': false}}
       - >-
         (openclaw_native_config.content | b64decode | from_json).skills.workshop ==
         {
-          'autonomous': {'enabled': true},
+          'autonomous': {'mode': 'auto'},
           'approvalPolicy': 'auto',
           'allowSymlinkTargetWrites': false,
           'maxPending': 50,
@@ -1038,11 +1036,11 @@
       changing channel-only message authorization.
   vars:
     openclaw_ctf_agents: >-
-      {{ (openclaw_native_config.content | b64decode | from_json).agents.list |
-         selectattr('id', 'equalto', 'ctf') | list }}
+      {{ [(openclaw_native_config.content | b64decode |
+          from_json).agents.entries.ctf] }}
     openclaw_main_agents: >-
-      {{ (openclaw_native_config.content | b64decode | from_json).agents.list |
-         selectattr('id', 'equalto', 'main') | list }}
+      {{ [(openclaw_native_config.content | b64decode |
+          from_json).agents.entries.main] }}
   no_log: true
   when: openclaw_native_activate | bool
 
@@ -1120,8 +1118,8 @@
         list | sort) == (openclaw_discord_allowed_channels | list | sort)
       - >-
         (openclaw_discord_bindings | map(attribute='agentId') | list |
-        difference(openclaw_native_config_parsed.agents.list |
-        map(attribute='id') | list) | length) == 0
+        difference(openclaw_native_config_parsed.agents.entries | list) |
+        length) == 0
       - >-
         (openclaw_discord_bindings |
         selectattr('agentId', 'equalto', 'ctf') | list | length) > 0
@@ -1499,7 +1497,7 @@
         - {path: models.providers.openai.agentRuntime.id, value: codex}
         - {path: agents.defaults.model.primary, value: "{{ openclaw_codex_model }}"}
         - {path: agents.defaults.thinkingDefault, value: "{{ openclaw_codex_thinking_default }}"}
-        - {path: skills.workshop.autonomous.enabled, value: true}
+        - {path: skills.workshop.autonomous.mode, value: auto}
         - {path: skills.workshop.approvalPolicy, value: auto}
         - {path: skills.workshop.allowSymlinkTargetWrites, value: false}
         - {path: plugins.entries.codex.enabled, value: true}

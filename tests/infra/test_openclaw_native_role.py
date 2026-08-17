@@ -898,7 +898,9 @@ def test_native_config_preflight_proves_secretrefs_before_accepting_cli_redactio
         assert limit not in assertions
     assert "sandbox.docker.env.XDG_CACHE_HOME == '/workspace/.cache'" in assertions
     assert "sandbox.docker.env.UV_CACHE_DIR == '/workspace/.cache/uv'" in assertions
-    assert "openclaw_ctf_agents[0].memorySearch ==" in assertions
+    assert "openclaw_ctf_agents[0].memory == {'search': {'enabled': false}}" in assertions
+    assert ".agents.ownership == 'explicit'" in assertions
+    assert ".agents.entries.main.workspace" in assertions
     assert "['message', 'image', 'pdf', 'skill_workshop']" in assertions
     for tool in ("'image'", "'pdf'", "'skill_workshop'", "'group:memory'"):
         assert tool in assertions
