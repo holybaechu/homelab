@@ -4,16 +4,14 @@
 
 `ansible` configures Tailscale directly on the tailnet appliance, Docker Engine
 and the workload Compose projects on the application LXC, the active native
-OpenClaw Gateway on its dedicated LXC, an isolated CTF Docker executor, and
-the separate Arcane management control plane. It also applies root-only Proxmox
+OpenClaw Gateway plus its local CTF Docker Engine on one dedicated LXC, and the
+separate Arcane management control plane. It also applies root-only Proxmox
 settings. VMID 111 retains `/dev/net/tun` for Tailscale. VMID 110 has only the
 Docker nesting/keyctl settings and shared-data bind mount. Dedicated OpenClaw
-VMID 118 is unprivileged and has no nesting, TUN passthrough, Docker daemon,
-or Docker socket. VMID 118 and the unprivileged VMID 119 Docker executor share
-only the CTF workspace plus the generated sandbox-skill subtree required by
-remote Docker bind mounts; neither receives general Gateway state or unrelated
-application data. The Gateway reaches the executor through a restricted SSH
-Docker transport, not a socket mount.
+VMID 118 is unprivileged, has nesting/keyctl for its local Docker daemon, and
+has no TUN passthrough. CTF sandboxes are session-scoped containers on that
+local daemon; they receive only the CTF workspace, persistent package/browser
+caches, and generated sandbox skills selected by OpenClaw.
 The retired Hermes data at `/srv/homelab/hermes` is preserved but unmanaged.
 The retired VPN qBittorrent data at
 `/srv/homelab/docker-apps/qbittorrent-vpn` is likewise preserved but unmanaged
@@ -23,14 +21,13 @@ Arcane may perform fast day-to-day workload operations, but it does not own its
 own installation or the LXC. OpenTofu and Ansible remain the authoritative
 bootstrap and break-glass recovery path.
 
-VMID 118 owns the active native OpenClaw Gateway, firewall, and private
-`openclaw-setup` checkout. VMID 119 owns only transient Kali sandbox
-containers and the CTF workspace mount. Runtime state, CTF evidence, and all
+VMID 118 owns the active native OpenClaw Gateway, local Kali sandbox image,
+firewall, and private `openclaw-setup` checkout. Runtime state, CTF evidence, and all
 credentials remain outside Git. The exact former Docker Gateway is retained
 stopped on VMID 110 behind a permanent source hold for explicit tracked rollback
 only.
 
-The desired topology is exactly four LXCs. Legacy per-service containers are
+The desired topology is exactly three LXCs. Legacy per-service containers are
 forgotten from state without destruction during cutover and remain stopped; only
 services not explicitly retired may be used as manual rollback targets.
 

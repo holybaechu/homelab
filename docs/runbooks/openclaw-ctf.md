@@ -7,8 +7,7 @@ bot process.
 
 The Gateway LXC runs its own Docker Engine and the pinned Kali sandbox image.
 The Gateway service joins the local `docker` group and OpenClaw creates one
-session-scoped CTF container per session. The retired VMID 119 executor and its
-SSH transport are not part of the steady-state design.
+session-scoped CTF container per session on that same host.
 
 ## Important one-Gateway limit
 

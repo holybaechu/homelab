@@ -75,94 +75,11 @@
       changed_when: false
       when: tailscale_auth_key is defined
 
-- name: Validate the isolated OpenClaw CTF Docker executor
-  hosts: svc_ctf_executor
-  gather_facts: false
-  tasks:
-    - name: Check the dedicated CTF executor host and Docker Engine
-      ansible.builtin.shell: |
-        set -eu
-        test "$(hostname)" = ctf-executor
-        test "$(id -u {{ openclaw_ctf_docker_user }})" = "{{ openclaw_ctf_executor_user_uid }}"
-        test "$(id -g {{ openclaw_ctf_docker_user }})" = "{{ openclaw_ctf_executor_user_gid }}"
-        systemctl is-active --quiet docker.service
-        systemctl is-enabled --quiet docker.service
-        test -S /var/run/docker.sock
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_workspace_root }}')" = "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 710"
-        test "$(stat -c '%u:%g %a' '{{ openclaw_ctf_sandbox_skills_root }}')" = "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }} 700"
-      args:
-        executable: /bin/sh
-      changed_when: false
-
-    - name: Check the restricted CTF Docker transport SSH account
-      ansible.builtin.shell: |
-        set -eu
-        effective="$(sshd -T -C user={{ openclaw_ctf_docker_user }},host=ctf-executor,addr={{ openclaw_ip }})"
-        printf '%s\n' "${effective}" | grep -Fx 'forcecommand /usr/bin/docker system dial-stdio'
-        printf '%s\n' "${effective}" | grep -Fx 'allowtcpforwarding no'
-        printf '%s\n' "${effective}" | grep -Fx 'permittty no'
-        printf '%s\n' "${effective}" | grep -Fx 'passwordauthentication no'
-        test "$(stat -c '%U:%G %a' /var/lib/{{ openclaw_ctf_docker_user }})" = "root:{{ openclaw_ctf_docker_user }} 750"
-        test "$(stat -c '%U:%G %a' /var/lib/{{ openclaw_ctf_docker_user }}/.ssh)" = "root:{{ openclaw_ctf_docker_user }} 750"
-        test "$(stat -c '%U:%G %a' /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys)" = "root:{{ openclaw_ctf_docker_user }} 640"
-        /usr/sbin/runuser -u {{ openclaw_ctf_docker_user }} -- /usr/bin/test -r /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys
-        ! /usr/sbin/runuser -u {{ openclaw_ctf_docker_user }} -- /usr/bin/test -w /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys
-        test "$(wc -l < /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys)" -eq 1
-        grep -F 'from="{{ openclaw_ip }}",command="/usr/bin/docker system dial-stdio",no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding ssh-ed25519 ' /var/lib/{{ openclaw_ctf_docker_user }}/.ssh/authorized_keys
-      args:
-        executable: /bin/sh
-      changed_when: false
-      no_log: true
-
-    - name: Check the isolated CTF Docker network and egress firewall
-      ansible.builtin.shell: |
-        set -eu
-        docker network inspect '{{ openclaw_ctf_docker_network }}' |
-          python3 -c 'import json, sys; network = json.load(sys.stdin)[0]; assert network["Driver"] == "bridge"; assert network["IPAM"]["Config"][0]["Subnet"] == "{{ openclaw_ctf_docker_network_cidr }}"; assert network["Options"]["com.docker.network.bridge.name"] == "{{ openclaw_ctf_docker_bridge }}"; assert network["Options"]["com.docker.network.bridge.enable_icc"] == "false"'
-        iptables -S OPENCLAW_CTF | grep -F -- '-s {{ openclaw_ctf_docker_network_cidr }} -d 10.0.0.0/8 -j DROP'
-        iptables -S OPENCLAW_CTF | grep -F -- '-s {{ openclaw_ctf_docker_network_cidr }} -d 100.64.0.0/10 -j DROP'
-        iptables -S OPENCLAW_CTF | grep -F -- '-s {{ openclaw_ctf_docker_network_cidr }} -d 169.254.0.0/16 -j DROP'
-        iptables -S OPENCLAW_CTF | grep -F -- '-s {{ openclaw_ctf_docker_network_cidr }} -d 172.16.0.0/12 -j DROP'
-        iptables -S OPENCLAW_CTF | grep -F -- '-s {{ openclaw_ctf_docker_network_cidr }} -d 192.168.0.0/16 -j DROP'
-        iptables -S OPENCLAW_CTF_INPUT | grep -F -- '-j DROP'
-      args:
-        executable: /bin/sh
-      changed_when: false
-
-    - name: Run the convenience-oriented CTF Kali sandbox smoke test
-      ansible.builtin.command:
-        argv:
-          - docker
-          - run
-          - --rm
-          - --network
-          - "{{ openclaw_ctf_docker_network }}"
-          - --cap-drop
-          - AUDIT_WRITE
-          - --cap-drop
-          - MKNOD
-          - --user
-          - "0:0"
-          - --volume
-          - "{{ openclaw_ctf_workspace_root }}:/workspace:rw"
-          - "{{ openclaw_ctf_executor_image }}"
-          - /bin/sh
-          - -ceu
-          - >-
-            for tool in python3 git curl gdb pwn checksec file exiftool binwalk tshark nmap uv chromium chromedriver Xvfb ffuf gobuster hashcat john sqlmap yara;
-            do command -v "$tool" >/dev/null; done;
-            python3 -c 'import importlib.metadata as m; assert m.version("camoufox") == "0.5.4"';
-            test "$(id -u)" -eq 0;
-            test ! -e /var/run/docker.sock;
-            test -w /workspace;
-            test -w /root
-      changed_when: false
-
 - name: Validate the dedicated native OpenClaw host
   hosts: svc_openclaw
   gather_facts: false
   tasks:
-    - name: Check staged local Docker and retained remote executor isolation
+    - name: Check local Docker and CTF workspace isolation
       ansible.builtin.shell: |
         set -eu
         test "$(hostname)" = openclaw

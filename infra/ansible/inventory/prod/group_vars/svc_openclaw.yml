@@ -24,6 +24,9 @@ openclaw_home: /home/openclaw
 openclaw_ctf_image: homelab-openclaw-ctf-kali:1
 openclaw_ctf_image_build_root: /opt/openclaw-ctf-image
 openclaw_ctf_image_revision: "6"
+openclaw_ctf_camoufox_channel: official/prerelease
+openclaw_ctf_camoufox_cache_marker: >-
+  {{ openclaw_ctf_workspace_root }}/.cache/camoufox/.homelab-ready-{{ openclaw_ctf_image_revision }}
 
 # One Gateway hosts every agent and uses the local Docker Engine for CTF
 # session sandboxes.

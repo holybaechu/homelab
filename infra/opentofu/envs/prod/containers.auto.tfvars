@@ -43,27 +43,10 @@ containers = {
     ip_address       = "192.168.0.5/24"
     mac_address      = "02:00:00:BA:EC:05"
     gateway          = "192.168.0.1"
-    root_disk_gb     = 32
-    cores            = 4
-    memory_mb        = 4096
-    swap_mb          = 1024
-    startup_order    = 4
-  }
-
-  ctf_executor = {
-    vmid             = 119
-    hostname         = "ctf-executor"
-    description      = "Dedicated Docker executor for isolated OpenClaw CTF sandboxes managed by OpenTofu and Ansible"
-    tags             = ["homelab", "managed-by-opentofu", "role-ctf-executor"]
-    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
-    os_type          = "debian"
-    ip_address       = "192.168.0.6/24"
-    mac_address      = "02:00:00:BA:EC:06"
-    gateway          = "192.168.0.1"
-    root_disk_gb     = 64
-    cores            = 4
-    memory_mb        = 8192
-    swap_mb          = 2048
+    root_disk_gb     = 96
+    cores            = 8
+    memory_mb        = 12288
+    swap_mb          = 3072
     startup_order    = 3
   }
 }

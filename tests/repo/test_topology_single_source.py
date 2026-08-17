@@ -6,7 +6,6 @@ def test_ansible_ip_variables_cover_only_managed_lxcs():
     assert "tailnet_ip: \"{{ hostvars['tailnet'].ansible_host }}\"" in text
     assert "docker_apps_ip: \"{{ hostvars['docker_apps'].ansible_host }}\"" in text
     assert "openclaw_ip: \"{{ hostvars['openclaw'].ansible_host }}\"" in text
-    assert "ctf_executor_ip: \"{{ hostvars['ctf_executor'].ansible_host }}\"" in text
 
 
 def test_topology_helper_is_shared_by_inventory_runner_and_plan_guard():

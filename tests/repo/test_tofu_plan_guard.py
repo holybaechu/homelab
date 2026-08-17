@@ -27,8 +27,8 @@ def exact_openclaw_create_change():
             "started": True,
             "start_on_boot": True,
             "tags": ["homelab", "managed-by-opentofu", "role-openclaw"],
-            "cpu": [{"cores": 4, "units": 1024}],
-            "memory": [{"dedicated": 4096, "swap": 1024}],
+            "cpu": [{"cores": 8, "units": 1024}],
+            "memory": [{"dedicated": 12288, "swap": 3072}],
             "initialization": [
                 {
                     "hostname": "openclaw",
@@ -51,7 +51,7 @@ def exact_openclaw_create_change():
                     "mac_address": "02:00:00:BA:EC:05",
                 }
             ],
-            "disk": [{"datastore_id": "local-lvm", "size": 32}],
+            "disk": [{"datastore_id": "local-lvm", "size": 96}],
             "startup": [{"order": 3, "up_delay": 15, "down_delay": 15}],
             "operating_system": [
                 {
@@ -149,7 +149,6 @@ def test_tofu_plan_guard_rejects_empty_state_even_when_all_targets_are_approved(
         ("docker_apps", 110),
         ("tailnet", 111),
         ("openclaw", 118),
-        ("ctf_executor", 119),
     ]
     plan_resources = []
     for name, vmid in resources:

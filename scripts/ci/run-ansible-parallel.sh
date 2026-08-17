@@ -54,7 +54,7 @@ case "${deployment_scope}" in
   openclaw)
     case "${openclaw_components}" in
       gateway) TARGETS="openclaw:svc_openclaw" ;;
-      all) TARGETS="ctf_executor:svc_ctf_executor openclaw:svc_openclaw" ;;
+      all) TARGETS="openclaw:svc_openclaw" ;;
       *) echo "OPENCLAW_COMPONENTS must be gateway or all" >&2; exit 2 ;;
     esac
     ;;
@@ -113,18 +113,12 @@ run_foreground_target() {
 }
 
 if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "openclaw" ]; then
-  if [ "${openclaw_components}" = "gateway" ]; then
-    run_foreground_target openclaw svc_openclaw --tags openclaw_local_docker,openclaw_native "$@"
-    exit 0
-  fi
-  run_foreground_target ctf_executor svc_ctf_executor --tags ctf_executor "$@"
   run_foreground_target openclaw svc_openclaw --tags openclaw_local_docker,openclaw_native "$@"
   exit 0
 fi
 
 if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
   tailnet_entry=""
-  ctf_executor_entry=""
   openclaw_entry=""
   docker_apps_entry=""
   pve_entry=""
@@ -133,7 +127,6 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
     target="${entry%%:*}"
     case "${target}" in
       tailnet) tailnet_entry="${entry}" ;;
-      ctf_executor) ctf_executor_entry="${entry}" ;;
       openclaw) openclaw_entry="${entry}" ;;
       docker_apps) docker_apps_entry="${entry}" ;;
       pve) pve_entry="${entry}" ;;
@@ -141,16 +134,13 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
     esac
   done
 
-  # Keep the retained executor configured until the local sandbox migration is
-  # validated, but the Gateway now uses its own local Docker Engine.
   for required_entry in \
     "${tailnet_entry}" \
-    "${ctf_executor_entry}" \
     "${openclaw_entry}" \
     "${docker_apps_entry}" \
     "${pve_entry}"; do
     if [ -z "${required_entry}" ]; then
-      echo "The site deployment requires tailnet, ctf_executor, openclaw, docker_apps, and pve targets" >&2
+      echo "The site deployment requires tailnet, openclaw, docker_apps, and pve targets" >&2
       exit 2
     fi
   done
@@ -158,14 +148,6 @@ if [ "${mode}" = "site" ] && [ "${deployment_scope}" = "full" ]; then
   target="${tailnet_entry%%:*}"
   limit="${tailnet_entry#*:}"
   if run_foreground_target "${target}" "${limit}" "$@"; then
-    :
-  else
-    exit $?
-  fi
-
-  target="${ctf_executor_entry%%:*}"
-  limit="${ctf_executor_entry#*:}"
-  if run_foreground_target "${target}" "${limit}" --tags ctf_executor "$@"; then
     :
   else
     exit $?

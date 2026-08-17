@@ -271,9 +271,9 @@ def _openclaw_stage_contract_errors(resource: dict[str, Any]) -> list[str]:
         errors.append(str(exc))
 
     for block_name, fields in (
-        ("cpu", (("cores", 4),)),
-        ("memory", (("dedicated", 4096), ("swap", 1024))),
-        ("disk", (("size", 32),)),
+        ("cpu", (("cores", 8),)),
+        ("memory", (("dedicated", 12288), ("swap", 3072))),
+        ("disk", (("size", 96),)),
         ("startup", (("order", 3),)),
         (
             "operating_system",

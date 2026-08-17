@@ -25,12 +25,11 @@ NO_DEPLOY_PATHS = {
 
 OPENCLAW_PREFIXES = (
     "infra/ansible/roles/openclaw_native/",
-    "infra/ansible/roles/openclaw_ctf_executor/",
+    "infra/ansible/roles/openclaw_ctf_local_docker/",
     "apps/openclaw-ctf-kali/",
 )
 OPENCLAW_PATHS = {
     "infra/ansible/inventory/prod/group_vars/svc_openclaw.yml",
-    "infra/ansible/inventory/prod/group_vars/svc_ctf_executor.yml",
 }
 
 ARCANE_WORKLOAD_PREFIXES = {

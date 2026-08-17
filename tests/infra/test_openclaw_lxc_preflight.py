@@ -17,10 +17,9 @@ SPEC.loader.exec_module(PREFLIGHT)
 
 DESIRED_CTF_BIND_MOUNTS = (
     "/var/lib/homelab/openclaw-ctf,mp=/var/lib/openclaw/workspaces/ctf",
-    "/var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces",
 )
 LEGACY_CTF_BIND_MOUNTS = (
-    "/var/lib/homelab/openclaw-ctf,mp=/srv/openclaw-ctf",
+    "/var/lib/homelab/openclaw-ctf,mp=/var/lib/openclaw/workspaces/ctf",
     "/var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces",
 )
 
@@ -33,10 +32,10 @@ def allocation():
         ip_address=ipaddress.ip_interface("192.168.0.5/24"),
         mac_address="02:00:00:BA:EC:05",
         datastore_id="local-lvm",
-        required_storage_bytes=32 * 1024**3,
+        required_storage_bytes=96 * 1024**3,
+        required_features=frozenset({"nesting", "keyctl"}),
         expected_bind_mounts=DESIRED_CTF_BIND_MOUNTS,
         transitional_bind_mounts=LEGACY_CTF_BIND_MOUNTS,
-        allow_missing_expected_bind_mounts=True,
     )
 
 
@@ -58,42 +57,11 @@ def exact_openclaw_config(extra: str = "") -> str:
         "hostname: openclaw\n"
         "unprivileged: 1\n"
         "tags: homelab;managed-by-opentofu;role-openclaw\n"
-        "rootfs: local-lvm:subvol-118-disk-0,size=32G\n"
+        "rootfs: local-lvm:subvol-118-disk-0,size=96G\n"
         "net0: name=veth0,bridge=vmbr0,gw=192.168.0.1,"
         "hwaddr=02:00:00:BA:EC:05,ip=192.168.0.5/24,type=veth\n"
-        "mp0: /var/lib/homelab/openclaw-ctf,mp=/var/lib/openclaw/workspaces/ctf\n"
-        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces\n"
-        f"{extra}"
-    )
-
-
-def ctf_executor_allocation():
-    return PREFLIGHT.Allocation(
-        vmid=119,
-        hostname="ctf-executor",
-        ip_address=ipaddress.ip_interface("192.168.0.6/24"),
-        mac_address="02:00:00:BA:EC:06",
-        datastore_id="local-lvm",
-        required_storage_bytes=64 * 1024**3,
-        role_tag="role-ctf-executor",
-        required_features=frozenset({"nesting", "keyctl"}),
-        expected_bind_mounts=DESIRED_CTF_BIND_MOUNTS,
-        transitional_bind_mounts=LEGACY_CTF_BIND_MOUNTS,
-        allow_missing_expected_bind_mounts=True,
-    )
-
-
-def exact_ctf_executor_config(extra: str = "") -> str:
-    return (
-        "hostname: ctf-executor\n"
-        "unprivileged: 1\n"
-        "tags: homelab;managed-by-opentofu;role-ctf-executor\n"
-        "rootfs: local-lvm:subvol-119-disk-0,size=64G\n"
-        "net0: name=veth0,bridge=vmbr0,gw=192.168.0.1,"
-        "hwaddr=02:00:00:BA:EC:06,ip=192.168.0.6/24,type=veth\n"
         "features: nesting=1,keyctl=1\n"
         "mp0: /var/lib/homelab/openclaw-ctf,mp=/var/lib/openclaw/workspaces/ctf\n"
-        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces\n"
         f"{extra}"
     )
 
@@ -120,7 +88,7 @@ def test_free_allocation_passes_only_after_an_arp_probe(config_root, allocation)
     assert result["status"] == "allocation-available"
     assert result["vmid"] == 118
     assert result["interface"] == "vmbr0"
-    assert result["storage"]["required_additional_bytes"] == 32 * 1024**3
+    assert result["storage"]["required_additional_bytes"] == 96 * 1024**3
     assert observed == [ipaddress.ip_address("192.168.0.5")]
 
 
@@ -140,81 +108,29 @@ def test_exact_existing_unprivileged_lxc_is_idempotently_accepted(
     assert result["arp_responders"] == ["02:00:00:BA:EC:05"]
     assert result["storage"]["required_additional_bytes"] == 0
 
-
-
-
-def test_existing_ctf_executor_requires_its_exact_docker_profile(
-    config_root,
+def test_existing_openclaw_accepts_only_the_exact_retiring_mp1_transition(
+    config_root, allocation
 ):
-    allocation = ctf_executor_allocation()
-    write_config(config_root, "lxc", 119, exact_ctf_executor_config())
+    transitional = exact_openclaw_config() + (
+        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,"
+        "mp=/var/lib/openclaw/sandbox/skills-workspaces\n"
+    )
+    write_config(config_root, "lxc", 118, transitional)
 
     result = PREFLIGHT.preflight(
         allocation,
         config_root,
-        probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:06"}),
+        probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
         storage_probe=storage_ok,
     )
-
     assert result["status"] == "existing-managed-target"
 
-    write_config(
-        config_root,
-        "lxc",
-        119,
-        exact_ctf_executor_config().replace("keyctl=1", "keyctl=0"),
-    )
-    with pytest.raises(PREFLIGHT.PreflightError, match="unexpected feature set"):
-        PREFLIGHT.preflight(
-            allocation,
-            config_root,
-            probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:06"}),
-            storage_probe=storage_ok,
-        )
-
-
-def test_staged_ctf_executor_may_be_missing_only_a_declared_mount(config_root):
-    allocation = ctf_executor_allocation()
-    staged = exact_ctf_executor_config().replace(
-        "mp1: /var/lib/homelab/openclaw-ctf-sandbox-skills,mp=/var/lib/openclaw/sandbox/skills-workspaces\n",
-        "",
-    )
-    write_config(config_root, "lxc", 119, staged)
-
-    result = PREFLIGHT.preflight(
-        allocation,
-        config_root,
-        probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:06"}),
-        storage_probe=storage_ok,
-    )
-
-    assert result["status"] == "existing-managed-target"
-
-    write_config(
-        config_root,
-        "lxc",
-        119,
-        staged + "mp2: /var/lib/homelab/unrelated,mp=/srv/unrelated\n",
-    )
+    write_config(config_root, "lxc", 118, transitional + "mp2: /x,mp=/y\n")
     with pytest.raises(PREFLIGHT.PreflightError, match="unexpected bind mount set"):
         PREFLIGHT.preflight(
             allocation,
             config_root,
-            probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:06"}),
-            storage_probe=storage_ok,
-        )
-
-    write_config(
-        config_root,
-        "lxc",
-        119,
-        staged + "mp2: /var/lib/homelab/openclaw-ctf,mp=/var/lib/openclaw/workspaces/ctf\n",
-    )
-    with pytest.raises(PREFLIGHT.PreflightError, match="unexpected bind mount set"):
-        PREFLIGHT.preflight(
-            allocation,
-            config_root,
-            probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:06"}),
+            probe=lambda _: ("vmbr0", {"02:00:00:BA:EC:05"}),
             storage_probe=storage_ok,
         )
 
@@ -228,7 +144,7 @@ def test_staged_ctf_executor_may_be_missing_only_a_declared_mount(config_root):
         ("lxc", exact_openclaw_config().replace("192.168.0.5/24", "192.168.0.6/24"), "network identity"),
         ("lxc", exact_openclaw_config().replace("managed-by-opentofu", "manual"), "managed OpenClaw tags"),
         ("lxc", exact_openclaw_config().replace("local-lvm:", "other-store:"), "datastore"),
-        ("lxc", exact_openclaw_config("features: nesting=1,keyctl=1\n"), "forbidden features"),
+        ("lxc", exact_openclaw_config().replace("keyctl=1", "keyctl=0"), "unexpected feature set"),
         ("lxc", exact_openclaw_config("dev0: /dev/net/tun,mode=0666\n"), "TUN"),
         ("lxc", exact_openclaw_config("dev1: path=/dev/net/tun\n"), "TUN"),
         ("lxc", exact_openclaw_config("mp0: /var/lib/homelab,mp=/srv/homelab\n"), "bind mount"),
@@ -429,14 +345,14 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     assert "--required-feature nesting" in playbook
     assert "--required-feature keyctl" in playbook
     assert "--expected-bind-mount" in playbook
-    assert "openclaw_ctf_sandbox_skills_host_path" in playbook
+    assert "openclaw-ctf-sandbox-skills" in playbook
     assert "openclaw_ctf_sandbox_skills_root" in playbook
-    assert "--allow-missing-expected-bind-mounts" in playbook
+    assert "--allow-missing-expected-bind-mounts" not in playbook
     assert "changed_when: false" in playbook
     assert "vmid: 118" in variables
     assert 'ip_address: "{{ openclaw_ip }}/24"' in variables
     assert "mac_address: 02:00:00:BA:EC:05" in variables
     assert 'datastore_id: "{{ openclaw_root_datastore_id }}"' in variables
-    assert "required_storage_gb: 32" in variables
+    assert "required_storage_gb: 96" in variables
     for mutating_command in ("pct set", "pct create", "qm set", "qm create"):
         assert mutating_command not in SCRIPT.read_text(encoding="utf-8")

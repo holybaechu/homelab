@@ -1,5 +1,0 @@
-openclaw_ctf_executor_image: homelab-openclaw-ctf-kali:1
-openclaw_ctf_executor_image_build_root: /opt/openclaw-ctf-image
-openclaw_ctf_executor_image_revision: "6"
-openclaw_ctf_executor_user_uid: 1001
-openclaw_ctf_executor_user_gid: 1001

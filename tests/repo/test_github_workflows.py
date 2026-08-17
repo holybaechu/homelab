@@ -255,6 +255,22 @@ def test_cd_workflow_limits_retained_gateway_recovery_to_explicit_manual_dispatc
         assert input_name not in push_trigger
 
 
+def test_ctf_executor_retirement_destroy_gate_is_manual_and_default_off():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
+        encoding="utf-8"
+    )
+    dispatch = workflow.split("  workflow_dispatch:", 1)[1].split("  push:", 1)[0]
+    approval = dispatch.split("      approve_ctf_executor_retirement:", 1)[1]
+    assert "default: false" in approval
+    assert "type: boolean" in approval
+
+    plan_step = workflow.split("      - name: OpenTofu plan", 1)[1].split(
+        "      - name: OpenTofu apply", 1
+    )[0]
+    assert "github.event_name == 'workflow_dispatch'" in plan_step
+    assert "inputs.approve_ctf_executor_retirement == true" in plan_step
+    assert "ALLOW_TOFU_DESTROY:" in plan_step
+
 def test_cd_workflow_fast_tracks_known_workloads_through_arcane():
     workflow = (REPO_ROOT / ".github" / "workflows" / "cd.yml").read_text(
         encoding="utf-8"
@@ -365,13 +381,9 @@ def test_parallel_ansible_runner_derives_service_targets_from_topology():
     assert "Arcane scope deploys workloads through Arcane" in runner
     assert 'f"{name}:svc_{name}"' in target_renderer
     assert runner.index('tailnet_entry=""') < runner.index('openclaw_entry=""')
-    assert runner.index('ctf_executor_entry=""') < runner.index('openclaw_entry=""')
     tailnet_call = '''target="${tailnet_entry%%:*}"
   limit="${tailnet_entry#*:}"
   if run_foreground_target "${target}" "${limit}" "$@"; then'''
-    executor_call = '''target="${ctf_executor_entry%%:*}"
-  limit="${ctf_executor_entry#*:}"
-  if run_foreground_target "${target}" "${limit}" --tags ctf_executor "$@"; then'''
     gateway_call = '''target="${openclaw_entry%%:*}"
   limit="${openclaw_entry#*:}"
   if run_foreground_target "${target}" "${limit}" --tags openclaw_local_docker,openclaw_native "$@"; then'''
@@ -380,13 +392,11 @@ def test_parallel_ansible_runner_derives_service_targets_from_topology():
     if run_foreground_target "${target}" "${limit}" "$@"; then'''
 
     assert tailnet_call in runner
-    assert executor_call in runner
     assert gateway_call in runner
     assert docker_call in runner
     assert "ctf_gateway" not in runner
     assert "discord_relay" not in runner
-    assert runner.index(tailnet_call) < runner.index(executor_call)
-    assert runner.index(executor_call) < runner.index(gateway_call)
+    assert runner.index(tailnet_call) < runner.index(gateway_call)
     assert runner.index(gateway_call) < runner.index(docker_call)
 
 
@@ -443,9 +453,6 @@ def test_parallel_ansible_runner_orders_tailnet_openclaw_docker_then_pve_cleanup
 
     assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
     assert result.stdout.index("tailnet complete") < result.stdout.index(
-        "CTF executor complete"
-    )
-    assert result.stdout.index("CTF executor complete") < result.stdout.index(
         "one Gateway complete"
     )
     assert result.stdout.index("one Gateway complete") < result.stdout.index(

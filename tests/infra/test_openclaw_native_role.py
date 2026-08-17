@@ -1409,11 +1409,8 @@ def test_site_and_validation_include_the_dedicated_openclaw_lxc():
     assert "role: openclaw_ctf_gateway" not in site
     assert "role: openclaw_discord_relay" not in site
     assert site.index("Wait for tailnet route recovery") < site.index(
-        "Configure the isolated CTF Docker executor"
+        "Stage or activate the dedicated native OpenClaw Gateway"
     )
-    assert site.index(
-        "Configure the isolated CTF Docker executor"
-    ) < site.index("Stage or activate the dedicated native OpenClaw Gateway")
     assert "Connect the native OpenClaw Gateway to the isolated CTF executor" not in site
 
     assert "Validate the dedicated native OpenClaw host" in validation

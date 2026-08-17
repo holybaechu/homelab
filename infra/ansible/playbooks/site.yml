@@ -64,14 +64,6 @@
         or tailscale_running_executable.stdout != "/usr/sbin/tailscaled"
       when: tailscale_restart_scheduled | default(false)
 
-- name: Configure the isolated CTF Docker executor
-  hosts: svc_ctf_executor
-  gather_facts: true
-  any_errors_fatal: true
-  roles:
-    - role: openclaw_ctf_executor
-      tags: [openclaw, ctf, ctf_executor]
-
 - name: Stage or activate the dedicated native OpenClaw Gateway
   hosts: svc_openclaw
   gather_facts: true

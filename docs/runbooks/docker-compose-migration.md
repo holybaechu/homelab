@@ -2,18 +2,14 @@
 
 ## Target architecture
 
-The managed production topology contains exactly four LXCs:
+The managed production topology contains exactly three LXCs:
 
 - `tailnet` (`192.168.0.4`, VMID 111): Tailscale subnet router and exit node.
 - `docker_apps` (`192.168.0.3`, VMID 110): every application, managed with
   Docker Compose.
 - `openclaw` (`192.168.0.5`, VMID 118): an unprivileged, dedicated native
-  OpenClaw Gateway with no local Docker engine or socket. Its only host bind
-  mount is the CTF-only workspace.
-- `ctf-executor` (`192.168.0.6`, VMID 119): an unprivileged, dedicated Docker
-  host for disposable OpenClaw CTF Kali sandboxes. It shares only the CTF
-  workspace with VMID 118 and accepts Docker API traffic only through a
-  forced-command SSH identity from that Gateway.
+  OpenClaw Gateway with a local Docker Engine for disposable, session-scoped
+  CTF Kali sandboxes. Its only host bind mount is the CTF-only workspace.
 
 The Docker host runs these workload projects in dependency order:
 
@@ -63,7 +59,7 @@ triggers `.github/workflows/cd.yml`. Changes confined to the known workload
 Compose directories deploy only the affected projects through Arcane and then
 run live validation. Mixed, Arcane control-plane, infrastructure, and deployment
 script changes use the full path: CD connects through Tailscale, plans and
-applies OpenTofu, bootstraps all four LXCs, renders secret Compose environments
+applies OpenTofu, bootstraps all three LXCs, renders secret Compose environments
 and application configs with Ansible, reconciles the projects, and performs
 live validation.
 

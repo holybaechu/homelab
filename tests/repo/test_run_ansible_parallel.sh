@@ -5,7 +5,6 @@ repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 test_root="$(mktemp -d)"
 fake_bin="${test_root}/bin"
 tailnet_marker="${test_root}/tailnet-complete"
-executor_marker="${test_root}/ctf-executor-complete"
 gateway_marker="${test_root}/openclaw-complete"
 docker_marker="${test_root}/docker-complete"
 pve_marker="${test_root}/pve-complete"
@@ -18,7 +17,7 @@ trap cleanup EXIT
 
 cat > "${fake_bin}/python3" <<'EOF'
 #!/bin/sh
-printf '%s\n' 'tailnet:svc_tailnet docker_apps:svc_docker_apps ctf_executor:svc_ctf_executor openclaw:svc_openclaw pve:pve_hosts'
+printf '%s\n' 'tailnet:svc_tailnet docker_apps:svc_docker_apps openclaw:svc_openclaw pve:pve_hosts'
 EOF
 
 cat > "${fake_bin}/ansible-playbook" <<'EOF'
@@ -28,13 +27,8 @@ case "$*" in
     : > "${TAILNET_MARKER}"
     printf '%s\n' 'tailnet complete'
     ;;
-  *'site.yml'*'--limit svc_ctf_executor'*'--tags ctf_executor'*)
-    test -f "${TAILNET_MARKER}"
-    : > "${EXECUTOR_MARKER}"
-    printf '%s\n' 'CTF executor complete'
-    ;;
   *'site.yml'*'--limit svc_openclaw'*'--tags openclaw_local_docker,openclaw_native'*)
-    test -f "${EXECUTOR_MARKER}"
+    test -f "${TAILNET_MARKER}"
     : > "${GATEWAY_MARKER}"
     printf '%s\n' 'one Gateway complete'
     ;;
@@ -61,7 +55,6 @@ chmod +x "${fake_bin}/python3" "${fake_bin}/ansible-playbook"
 
 PATH="${fake_bin}:${PATH}" \
 TAILNET_MARKER="${tailnet_marker}" \
-EXECUTOR_MARKER="${executor_marker}" \
 GATEWAY_MARKER="${gateway_marker}" \
 DOCKER_MARKER="${docker_marker}" \
 PVE_MARKER="${pve_marker}" \
@@ -77,14 +70,12 @@ set -e
 test "${fast_site_status}" -ne 0
 printf '%s\n' "${fast_site_output}" | grep -F 'Arcane scope deploys workloads through Arcane; Ansible site is disabled'
 
-rm -f "${executor_marker}" "${gateway_marker}"
+rm -f "${gateway_marker}"
 PATH="${fake_bin}:${PATH}" \
 TAILNET_MARKER="${tailnet_marker}" \
-EXECUTOR_MARKER="${executor_marker}" \
 GATEWAY_MARKER="${gateway_marker}" \
 ANSIBLE_DEPLOYMENT_SCOPE=openclaw \
   sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" site
-test -f "${executor_marker}"
 test -f "${gateway_marker}"
 
 none_output="$(PATH="${fake_bin}:${PATH}" ANSIBLE_DEPLOYMENT_SCOPE=none sh "${repo_root}/scripts/ci/run-ansible-parallel.sh" validate)"

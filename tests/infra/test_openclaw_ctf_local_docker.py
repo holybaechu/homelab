@@ -20,10 +20,14 @@ def test_local_ctf_docker_builds_the_pinned_kali_image_for_the_gateway_host():
 
     assert variables["openclaw_ctf_image"] == "homelab-openclaw-ctf-kali:1"
     assert variables["openclaw_ctf_image_revision"] == "6"
+    assert variables["openclaw_ctf_camoufox_channel"] == "official/prerelease"
     assert "camoufox[geoip]==0.5.4" in dockerfile
     assert "Grant only the Gateway service account local Docker access" in names
     assert "Build the pinned local CTF Kali image" in names
     assert "Validate the pinned local Kali image and browser tools" in names
+    assert "Create persistent local CTF package and browser caches" in names
+    assert "Fetch the persistent Camoufox browser bundle" in names
+    assert "Validate the persistent Camoufox browser bundle" in names
     build = next(
         task for task in tasks if task["name"] == "Build the pinned local CTF Kali image"
     )
@@ -32,6 +36,28 @@ def test_local_ctf_docker_builds_the_pinned_kali_image_for_the_gateway_host():
         "--network",
         "host",
     ]
+
+    fetch = next(
+        task
+        for task in tasks
+        if task["name"] == "Fetch the persistent Camoufox browser bundle"
+    )
+    fetch_argv = fetch["ansible.builtin.command"]["argv"]
+    assert "{{ openclaw_ctf_docker_network }}" in fetch_argv
+    assert "{{ openclaw_ctf_uid }}:{{ openclaw_ctf_gid }}" in fetch_argv
+    assert "{{ openclaw_ctf_workspace_root }}:/workspace:rw" in fetch_argv
+    script = fetch_argv[-1]
+    assert "camoufox set '{{ openclaw_ctf_camoufox_channel }}'" in script
+    assert "camoufox fetch" in script
+    assert ".homelab-ready-{{ openclaw_ctf_image_revision }}" in script
+    validate = next(
+        task
+        for task in tasks
+        if task["name"] == "Validate the persistent Camoufox browser bundle"
+    )
+    validate_argv = validate["ansible.builtin.command"]["argv"]
+    assert validate_argv[validate_argv.index("--network") + 1] == "none"
+    assert 'assert p.title() == "Camoufox ready"' in validate_argv[-1]
 
 
 def test_local_ctf_docker_keeps_the_network_and_daemon_hardening():
