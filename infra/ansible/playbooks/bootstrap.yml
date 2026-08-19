@@ -36,16 +36,16 @@
         argv:
           - pct
           - exec
-          - "{{ item.vmid }}"
+          - "{{ hostvars[item].vmid }}"
           - --
           - /bin/sh
           - -lc
           - cat /etc/ssh/ssh_host_ed25519_key.pub
       changed_when: false
       register: pve_lxc_host_key_results
-      loop: "{{ pve_lxc_access_bootstrap }}"
+      loop: "{{ groups['debian'] }}"
       loop_control:
-        label: "{{ item.name }} ({{ item.vmid }})"
+        label: "{{ item }} ({{ hostvars[item].vmid }})"
 
     - name: Ensure local SSH directory exists
       ansible.builtin.file:
@@ -58,31 +58,25 @@
     - name: Add LXC SSH host keys to known_hosts
       ansible.builtin.known_hosts:
         path: "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
-        name: "{{ hostvars[item.item.name].ansible_host }}"
-        key: "{{ hostvars[item.item.name].ansible_host }} {{ item.stdout }}"
+        name: "{{ hostvars[item.item].ansible_host }}"
+        key: "{{ hostvars[item.item].ansible_host }} {{ item.stdout }}"
       delegate_to: localhost
       loop: "{{ pve_lxc_host_key_results.results }}"
       loop_control:
-        label: "{{ item.item.name }}"
+        label: "{{ item.item }}"
 
     - name: Wait for LXC SSH ports to accept connections
       ansible.builtin.wait_for:
-        host: "{{ hostvars[item.name].ansible_host }}"
+        host: "{{ hostvars[item].ansible_host }}"
         port: 22
         state: started
         connect_timeout: 5
         delay: 2
         timeout: 600
       delegate_to: localhost
-      loop: "{{ pve_lxc_access_bootstrap }}"
+      loop: "{{ groups['debian'] }}"
       loop_control:
-        label: "{{ item.name }}"
-
-- name: Bootstrap Debian LXCs
-  hosts: debian
-  gather_facts: false
-  roles:
-    - common_debian
+        label: "{{ item }}"
 
 - name: Install Proxmox CA on the Docker application LXC
   hosts: svc_docker_apps

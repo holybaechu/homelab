@@ -6,37 +6,17 @@ homelab_timezone: Asia/Seoul
 
 tailnet_ip: "{{ hostvars['tailnet'].ansible_host }}"
 docker_apps_ip: "{{ hostvars['docker_apps'].ansible_host }}"
-openclaw_ip: "{{ hostvars['openclaw'].ansible_host }}"
-
-# The native Gateway keeps durable CTF challenge material on the homelab data
-# volume. Its local Docker daemon consumes that workspace and generated skills
-# directly inside the same LXC.
+# The immutable Gateway and CTF image keep durable challenge material on the
+# homelab data volume and consume it through the dedicated LXC's Docker daemon.
 openclaw_ctf_shared_host_path: "{{ homelab_data_mount }}/openclaw-ctf"
 openclaw_ctf_workspace_root: /var/lib/openclaw/workspaces/ctf
-openclaw_ctf_sandbox_skills_root: /var/lib/openclaw/sandbox/skills-workspaces
-openclaw_ctf_uid: "{{ service_uid }}"
-openclaw_ctf_gid: "{{ service_gid }}"
+# Gateway and CTF containers deliberately share this numeric identity so the
+# 0700 PVE bind mount stays writable without a world/group-writable directory.
+openclaw_ctf_uid: 1000
+openclaw_ctf_gid: 1000
 openclaw_ctf_docker_network: openclaw-ctf
 openclaw_ctf_docker_network_cidr: 172.30.0.0/24
 openclaw_ctf_docker_bridge: occtfbr0
-
-# Break-glass rollback is a tracked, mutually exclusive desired state.  It is
-# deliberately false throughout native staging and normal native operation.
-openclaw_docker_rollback_activate: false
-openclaw_traefik_backend_url: >-
-  {{
-    'http://openclaw-rollback:18789'
-    if openclaw_docker_rollback_activate | bool
-    else 'http://' + openclaw_ip + ':18789'
-  }}
-
-openclaw_lxc_allocation:
-  vmid: 118
-  hostname: openclaw
-  ip_address: "{{ openclaw_ip }}/24"
-  mac_address: 02:00:00:BA:EC:05
-  datastore_id: "{{ openclaw_root_datastore_id }}"
-  required_storage_gb: 96
 
 service_user: homelab
 service_group: homelab
@@ -48,65 +28,3 @@ homelab_data_lv_size: 896G
 homelab_data_mount: /var/lib/homelab
 homelab_data_device: "/dev/pve/{{ homelab_data_lv_name }}"
 homelab_container_uid_offset: 100000
-pve_lxc_root_options:
-  - vmid: 111
-    name: tailnet
-    settings:
-      - description: pass through tun device for Tailscale
-        pattern: '^dev0: /dev/net/tun(,.*)?$'
-        pct_args: '-dev0 /dev/net/tun,mode=0666'
-      - description: enable nesting for Debian systemd
-        pattern: '^features:.*[ ,]nesting=1(,|$)'
-        pct_args: '-features nesting=1,keyctl=1'
-      - description: enable keyctl for Tailscale
-        pattern: '^features:.*[ ,]keyctl=1(,|$)'
-        pct_args: '-features nesting=1,keyctl=1'
-  - vmid: 110
-    name: docker_apps
-    bind_mount_sources:
-      - /var/lib/homelab
-    settings:
-      - description: enable nesting for Docker Engine in LXC
-        pattern: '^features:.*[ ,]nesting=1(,|$)'
-        pct_args: '-features nesting=1,keyctl=1'
-      - description: enable keyctl for Docker in LXC
-        pattern: '^features:.*[ ,]keyctl=1(,|$)'
-        pct_args: '-features nesting=1,keyctl=1'
-      - description: mount the homelab data root once
-        pattern: '^mp0: /var/lib/homelab,mp=/srv/homelab(,.*)?$'
-        pct_args: '-mp0 /var/lib/homelab,mp=/srv/homelab'
-  - vmid: 118
-    name: openclaw
-    bind_mount_sources:
-      - "{{ openclaw_ctf_shared_host_path }}"
-    bind_mount_source_owner: "{{ (homelab_container_uid_offset | int) + (openclaw_ctf_uid | int) }}"
-    bind_mount_source_group: "{{ (homelab_container_uid_offset | int) + (openclaw_ctf_gid | int) }}"
-    bind_mount_source_mode: "0700"
-    settings:
-      - description: enable nesting for the local OpenClaw CTF Docker Engine
-        pattern: '^features:.*[ ,]nesting=1(,|$)'
-        pct_args: '-features nesting=1,keyctl=1'
-      - description: enable keyctl for the local OpenClaw CTF Docker Engine
-        pattern: '^features:.*[ ,]keyctl=1(,|$)'
-        pct_args: '-features nesting=1,keyctl=1'
-      - description: mount the dedicated CTF workspace once
-        pattern: "^mp0: {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}(,.*)?$"
-        pct_args: "-mp0 {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}"
-    absent_settings:
-      - description: TUN device passthrough
-        pattern: '^dev[0-9]+: (path=)?/dev/net/tun(,.*)?$'
-        delete_matching_keys: true
-      - description: obsolete or unexpected CTF bind mounts
-        pattern: '^mp[1-9][0-9]*:'
-        delete_matching_keys: true
-
-pve_lxc_access_bootstrap:
-  - vmid: 111
-    name: tailnet
-    os_family: debian
-  - vmid: 110
-    name: docker_apps
-    os_family: debian
-  - vmid: 118
-    name: openclaw
-    os_family: debian

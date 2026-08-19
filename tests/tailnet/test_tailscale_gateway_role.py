@@ -4,6 +4,15 @@ from jinja2 import Environment
 from tests.helpers import REPO_ROOT
 
 
+def render_maintenance_value(value, enabled):
+    environment = Environment()
+    environment.filters["bool"] = bool
+    rendered = environment.from_string(str(value)).render(
+        homelab_maintenance_upgrade=enabled
+    )
+    return yaml.safe_load(rendered)
+
+
 def test_tailnet_lxc_disables_tailscale_dns_acceptance():
     inventory = (
         REPO_ROOT
@@ -69,7 +78,8 @@ def test_tailnet_manages_and_validates_persistent_udp_gro_forwarding():
         "ansible.builtin.apt"
     ]
     assert tooling["name"] == "ethtool"
-    assert tooling["state"] == "latest"
+    assert render_maintenance_value(tooling["state"], False) == "present"
+    assert render_maintenance_value(tooling["state"], True) == "latest"
 
     script_task = by_name["Install the Tailscale UDP GRO configuration script"][
         "ansible.builtin.copy"
@@ -121,7 +131,7 @@ def test_tailnet_manages_and_validates_persistent_udp_gro_forwarding():
     assert "rx-gro-list: off" in validation
 
 
-def test_tailscale_apt_package_upgrades_and_restarts_after_underlay_change():
+def test_tailscale_package_upgrades_only_during_explicit_maintenance():
     tasks = yaml.safe_load(
         (
             REPO_ROOT
@@ -139,8 +149,12 @@ def test_tailscale_apt_package_upgrades_and_restarts_after_underlay_change():
         if task["name"] == "Install Tailscale without disrupting the active route"
     )["ansible.builtin.apt"]
 
-    assert package["state"] == "latest"
-    assert package["update_cache"] is True
+    assert render_maintenance_value(package["state"], False) == "present"
+    assert render_maintenance_value(package["update_cache"], False) is False
+    assert render_maintenance_value(package["state"], True) == "latest"
+    assert render_maintenance_value(package["update_cache"], True) is True
+    assert render_maintenance_value(package["cache_valid_time"], False) is None
+    assert render_maintenance_value(package["cache_valid_time"], True) == 3600
 
 
 def test_tailscale_upgrade_defers_self_restart_and_recovers_stale_binary():
@@ -158,7 +172,18 @@ def test_tailscale_upgrade_defers_self_restart_and_recovers_stale_binary():
     by_name = {task["name"]: task for task in tasks}
 
     package = by_name["Install Tailscale without disrupting the active route"]
-    assert package["ansible.builtin.apt"]["state"] == "latest"
+    assert (
+        render_maintenance_value(
+            package["ansible.builtin.apt"]["state"], False
+        )
+        == "present"
+    )
+    assert (
+        render_maintenance_value(
+            package["ansible.builtin.apt"]["state"], True
+        )
+        == "latest"
+    )
     assert package["ansible.builtin.apt"]["policy_rc_d"] == 101
 
     stale_check = by_name["Detect a tailscaled process using a replaced binary"]

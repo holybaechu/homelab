@@ -8,8 +8,15 @@
       - bind9-dnsutils
       - gnupg
       - systemd-resolved
-    update_cache: true
-    state: latest
+    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
+    cache_valid_time: >-
+      {{ 3600
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else omit }}
+    state: >-
+      {{ 'latest'
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else 'present' }}
 
 - name: Disable systemd-resolved DNS stub for AdGuard port 53
   ansible.builtin.file:
@@ -57,7 +64,13 @@
     repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ docker_engine_debian_codename | default(ansible_distribution_release) }} stable"
     filename: docker
     state: present
+    update_cache: false
+  register: docker_apt_repository
+
+- name: Refresh apt metadata after adding the Docker repository
+  ansible.builtin.apt:
     update_cache: true
+  when: docker_apt_repository.changed
 
 - name: Install Docker Engine and Compose plugin
   ansible.builtin.apt:
@@ -67,8 +80,15 @@
       - containerd.io
       - docker-buildx-plugin
       - docker-compose-plugin
-    update_cache: true
-    state: latest
+    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
+    cache_valid_time: >-
+      {{ 3600
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else omit }}
+    state: >-
+      {{ 'latest'
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else 'present' }}
   notify: Restart Docker
 
 - name: Configure Docker daemon defaults

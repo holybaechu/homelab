@@ -1,61 +1,14 @@
 docker_apps_compose_root: /opt/homelab-compose
+common_debian_create_service_account: true
+docker_apps_runtime_config_root: /etc/homelab/runtime
+docker_apps_secret_root: /etc/homelab/secrets
+docker_apps_current_root: /opt/homelab/current
+docker_apps_deploy_state_root: /opt/homelab/deploy-state
 docker_apps_data_root: /srv/homelab
 docker_apps_timezone: "{{ homelab_timezone }}"
 docker_apps_uid: "{{ service_uid }}"
 docker_apps_gid: "{{ service_gid }}"
 
-openclaw_compose_root: "{{ docker_apps_compose_root }}/openclaw"
-openclaw_setup_root: "{{ docker_apps_compose_root }}/openclaw-setup"
-openclaw_config_path: "{{ openclaw_setup_root }}/config/openclaw.json"
-openclaw_runtime_root: "{{ docker_apps_data_root }}/docker-apps/openclaw"
-openclaw_state_root: "{{ openclaw_runtime_root }}/state"
-openclaw_auth_profile_secret_root: "{{ openclaw_runtime_root }}/auth-profile-secrets"
-openclaw_control_root: /opt/homelab-control/openclaw
-openclaw_secret_root: "{{ openclaw_control_root }}/secrets"
-openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
-openclaw_gateway_port: 18789
-openclaw_hostname: openclaw.home.hchu.me
-openclaw_native_cutover_marker_path: /opt/homelab-control/openclaw/native-cutover-validated
-openclaw_native_transition_marker_value: homelab-openclaw-native-migration-v1
-openclaw_retained_gateway_identity_path: "{{ openclaw_control_root }}/retained-gateway-identity.json"
-openclaw_retained_gateway_verifier_path: /usr/local/libexec/openclaw-retained-gateway
-openclaw_retained_image_ref: ghcr.io/openclaw/openclaw:2026.7.1-2@sha256:8789721d2e9b24b780a1504b56deb4c6bd5c7dbf96a1dd117e7c45c2ed72c8ac
-openclaw_retained_cli_version_output: "OpenClaw 2026.7.1-2 (0790d9f)"
-openclaw_traefik_runtime_contract_marker_path: /opt/homelab-control/openclaw/traefik-runtime-contract.sha256
-openclaw_uid: "{{ service_uid }}"
-openclaw_gid: "{{ service_gid }}"
-openclaw_timezone: "{{ homelab_timezone }}"
-
-arcane_control_root: /opt/homelab-control/arcane
-arcane_data_root: /srv/homelab/docker-apps/arcane/data
-arcane_secret_root: "{{ arcane_control_root }}/secrets"
-arcane_projects_root: "{{ docker_apps_compose_root }}"
-arcane_uid: "{{ service_uid }}"
-arcane_gid: "{{ service_gid }}"
-arcane_hostname: arcane.home.hchu.me
-arcane_app_url: "https://{{ arcane_hostname }}"
-arcane_local_url: http://127.0.0.1:3552
-arcane_health_url: "{{ arcane_local_url }}/api/health"
-arcane_control_services:
-  - arcane
-  - docker-socket-proxy
-arcane_repository_name: homelab
-arcane_repository_url: https://github.com/holybaechu/homelab.git
-arcane_repository_branch: arcane-deploy
-arcane_ci_role_name: homelab-production-deployer
-arcane_ci_credential_name: github-actions-prod
-arcane_ci_oidc_issuer: https://token.actions.githubusercontent.com
-arcane_ci_oidc_audience: "{{ arcane_app_url }}"
-arcane_ci_oidc_subject: repo:holybaechu/homelab:environment:prod
-arcane_gitops_projects:
-  - name: platform
-    compose_path: apps/compose/platform/compose.yml
-  - name: media
-    compose_path: apps/compose/media/compose.yml
-  - name: code
-    compose_path: apps/compose/code/compose.yml
-  - name: openclaw
-    compose_path: apps/compose/openclaw/compose.yml
 traefik_acme_email: holybaechu@proton.me
 traefik_domain: hchu.me
 traefik_private_domain: home.hchu.me
@@ -93,15 +46,11 @@ t3code_data_root: /srv/homelab/docker-apps/t3code/home
 t3code_workspace_root: /srv/homelab/docker-apps/t3code/workspaces
 
 docker_compose_projects:
-  - name: platform
-    src: apps/compose/platform
-    dest: "{{ docker_apps_compose_root }}/platform"
-    runtime_files:
-      - compose.yml
-      - traefik.yml
-    hot_reload_files:
-      - dynamic/routes.yml
-    env_template: platform.env.j2
+  - name: homelab
+    src: apps/compose/homelab
+    dest: "{{ docker_apps_current_root }}/homelab"
+    env_template: homelab.env.j2
+    smoke_template: homelab-smoke.sh.j2
     config_templates:
       - src: AdGuardHome.yaml.j2
         dest: adguard/AdGuardHome.yaml
@@ -109,20 +58,12 @@ docker_compose_projects:
         owner: root
         group: root
         force: false
-  - name: media
-    src: apps/compose/media
-    dest: "{{ docker_apps_compose_root }}/media"
-    runtime_files:
-      - compose.yml
-    env_template: media.env.j2
-    config_templates:
       - src: copyparty.conf.j2
         dest: copyparty.conf
         mode: "0600"
-  - name: code
-    src: apps/compose/code
-    dest: "{{ docker_apps_compose_root }}/code"
-    runtime_files:
-      - compose.yml
-      - Dockerfile
-    env_template: t3code.env.j2
+
+docker_compose_secret_inputs:
+  - src: traefik.env.j2
+    dest: "{{ docker_apps_secret_root }}/traefik.env"
+  - src: cloudflare-ddns.env.j2
+    dest: "{{ docker_apps_secret_root }}/cloudflare-ddns.env"

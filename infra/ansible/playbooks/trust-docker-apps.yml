@@ -3,26 +3,13 @@
   hosts: pve_hosts
   gather_facts: false
   vars:
-    docker_apps_lxc_candidates: >-
-      {{ pve_lxc_access_bootstrap
-         | selectattr('name', 'equalto', 'docker_apps')
-         | list }}
+    docker_apps_vmid: "{{ hostvars['docker_apps'].vmid }}"
     docker_apps_host: "{{ hostvars['docker_apps'].ansible_host }}"
   tasks:
-    - name: Validate the Docker application LXC inventory mapping
-      ansible.builtin.assert:
-        that:
-          - docker_apps_lxc_candidates | length == 1
-
-    - name: Select the Docker application LXC inventory mapping
-      ansible.builtin.set_fact:
-        docker_apps_lxc: "{{ docker_apps_lxc_candidates | first }}"
-      changed_when: false
-
     - name: Validate the Docker application LXC VMID
       ansible.builtin.assert:
         that:
-          - docker_apps_lxc.vmid | int > 0
+          - docker_apps_vmid | int > 0
 
     - name: Validate the Docker application LXC address
       ansible.builtin.command:
@@ -42,7 +29,7 @@
         argv:
           - pct
           - exec
-          - "{{ docker_apps_lxc.vmid }}"
+          - "{{ docker_apps_vmid }}"
           - --
           - cat
           - /etc/ssh/ssh_host_ed25519_key.pub

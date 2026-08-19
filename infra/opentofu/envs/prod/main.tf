@@ -1,5 +1,17 @@
+locals {
+  production_topology = jsondecode(
+    file("${path.module}/../../../ansible/inventory/prod/topology.json")
+  )
+  containers = {
+    for name, host in local.production_topology.all.children.debian.hosts :
+    name => merge(host, {
+      ip_address = "${host.ansible_host}/${host.prefix_length}"
+    })
+  }
+}
+
 module "target_lxc" {
-  for_each = var.containers
+  for_each = local.containers
 
   source = "../../modules/pve-lxc"
 
@@ -11,7 +23,7 @@ module "target_lxc" {
   vmid             = each.value.vmid
   hostname         = each.value.hostname
   description      = each.value.description
-  tags             = each.value.tags
+  tags             = each.value.lxc_tags
   template_file_id = each.value.template_file_id
   os_type          = each.value.os_type
   ip_address       = each.value.ip_address
@@ -22,23 +34,4 @@ module "target_lxc" {
   memory_mb        = each.value.memory_mb
   swap_mb          = each.value.swap_mb
   startup_order    = each.value.startup_order
-}
-
-# Keep the source pair online while the lowest-ID replacements are created and
-# validated. They are retired explicitly only after the new tailnet is usable.
-removed {
-  from = module.active_lxc
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-# Forget every earlier legacy instance without destroying its container.
-removed {
-  from = module.lxc
-
-  lifecycle {
-    destroy = false
-  }
 }

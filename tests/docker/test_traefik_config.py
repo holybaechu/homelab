@@ -2,7 +2,7 @@ from tests.helpers import REPO_ROOT
 
 
 def read(name: str) -> str:
-    return (REPO_ROOT / "apps" / "compose" / "platform" / name).read_text(encoding="utf-8")
+    return (REPO_ROOT / "apps" / "compose" / "homelab" / name).read_text(encoding="utf-8")
 
 
 def test_traefik_replaces_caddy_and_defaults_to_no_container_exposure():

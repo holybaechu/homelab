@@ -34,6 +34,8 @@ SERVICE = (
     / "templates"
     / "openclaw-skill-sync.service.j2"
 )
+COMPOSE = REPO_ROOT / "infra/openclaw/runtime/compose.yml"
+WORKFLOW = REPO_ROOT / ".github/workflows/ci.yml"
 
 
 def load_sync():
@@ -129,10 +131,7 @@ def test_role_keeps_promotion_outside_gateway_and_auto_merges_checked_prs():
     assert "ReadOnlyPaths={{ openclaw_workspace_root }}/skills" in service
     assert "ReadOnlyPaths={{ openclaw_ctf_workspace_root }}/skills" in service
     assert "ReadWritePaths={{ openclaw_skill_sync_state_root }}" in service
-    assert "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN" not in (
-        REPO_ROOT
-        / "infra/ansible/roles/openclaw_native/templates/openclaw-gateway.service.j2"
-    ).read_text(encoding="utf-8")
+    assert "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN" not in COMPOSE.read_text(encoding="utf-8")
     assert 'f"{api}/actions/runs?{query}"' in script
     assert '"event": "pull_request"' in script
     assert '"head_sha": sha' in script
@@ -142,37 +141,18 @@ def test_role_keeps_promotion_outside_gateway_and_auto_merges_checked_prs():
     assert "last-dispatched-commit" in script
     assert '["git", "push", "origin", f"HEAD:refs/heads/{branch}"]' in script
     assert '["git", "push", "origin", "main"]' not in script
-    assert role.index("Probe the native OpenClaw Gateway readiness endpoint") < role.index(
-        "Enable autonomous OpenClaw skill promotion after Gateway readiness"
-    )
+    assert "Enable isolated skill promotion timer" in role
+    assert "docker.service" in service.split("[Service]", 1)[0]
 
 
-def test_role_syncs_canonical_setup_without_persisting_a_remote_or_token():
+def test_release_lane_bundles_exact_private_config_without_host_git_sync():
     tasks = yaml.safe_load(ROLE.read_text(encoding="utf-8"))
-    task = next(
-        item
-        for item in tasks
-        if item.get("name")
-        == "Synchronize the protected private OpenClaw checkout from canonical main"
-    )
-    shell = task["ansible.builtin.shell"]
-    environment = task["environment"]
-
-    assert "git -C \"$setup\" fetch --no-tags" in shell
-    assert "https://github.com/{{ openclaw_skill_sync_repository }}.git" in shell
-    assert "git -C \"$setup\" reset --hard \"$fetched\"" in shell
-    assert "openclaw_setup_expected_commit" in shell
-    assert "test \"$fetched\" = \"$expected\"" in shell
-    assert "git -C \"$setup\" clean -fdx" in shell
-    assert 'test -z "$(git -C "$setup" remote)"' in shell
-    assert "systemctl stop openclaw-gateway.service" in shell
-    assert "openclaw_skill_sync_github_token" not in shell
-    assert environment["GIT_ASKPASS"] == "{{ openclaw_skill_sync_askpass_path }}"
-    assert environment["OPENCLAW_SKILL_SYNC_GITHUB_TOKEN_FILE"] == (
-        "{{ openclaw_skill_sync_github_token_path }}"
-    )
-    assert task["no_log"] is True
-    names = [item.get("name") for item in tasks]
-    assert names.index(task["name"]) < names.index(
-        "Inspect the transferred private OpenClaw repository"
-    )
+    names = [item.get("name", "") for item in tasks]
+    assert not any("Synchronize the protected private OpenClaw checkout" in name for name in names)
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "Checkout exact promoted private config" in workflow
+    assert "repository: holybaechu/openclaw-setup" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "--git-commit \"$OPENCLAW_CONFIG_COMMIT\"" in workflow
+    assert "OPENCLAW_CONFIG_READ_TOKEN" in workflow
+    assert "OPENCLAW_CONFIG_READ_TOKEN" not in COMPOSE.read_text(encoding="utf-8")

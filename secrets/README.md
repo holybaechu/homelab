@@ -1,55 +1,63 @@
-# Secrets
+# Deployment Secrets
 
-Store real service secrets in SOPS-encrypted files or GitHub Actions secrets.
+`infra/deployment/secrets.json` is the machine-readable contract for service
+values passed from the GitHub `prod` environment to Ansible. Each entry names
+its GitHub environment key, Ansible variable, owning component, required or
+optional kind, and validation type. It is the only GitHub-to-Ansible mapping;
+the workflow only exposes selected environment keys to the helper.
 
-Expected encrypted values:
+## Component contract
 
-- `cloudflare_traefik_token`
-- `cloudflare_ddns_token`
-- `tailscale_auth_key`
-- `qbittorrent_webui_password`
-- `copyparty_users`, as a list of account objects with `name` and `password`
-- `adguard_admin_password`, as plaintext; the AdGuard role hashes it before writing the service config
-- `arcane_encryption_key`, exactly 64 hexadecimal characters representing 32 bytes
-- `arcane_jwt_secret`, at least 32 characters
-- `openclaw_gateway_token`, exactly 64 hexadecimal characters representing 32 bytes
+### `apps`
 
-GitHub Actions supplies the Arcane values as `ARCANE_ENCRYPTION_KEY` and
-`ARCANE_JWT_SECRET`. Ansible renders root-owned mode-`0640` runtime files readable
-only by Arcane's runtime GID under `/opt/homelab-control/arcane/secrets`, and
-Arcane mounts them read-only. Keep
-the GitHub values stable and preserve them with backups of
-`/srv/homelab/docker-apps/arcane/data`. Never restore an existing database with
-a new encryption key: encrypted registry credentials and other stored values
-require the original key. Rotating or losing the JWT secret invalidates active
-sessions.
+| GitHub environment name | Ansible variable | Kind | Validation |
+| --- | --- | --- | --- |
+| `CLOUDFLARE_TRAEFIK_TOKEN` | `cloudflare_traefik_token` | required | non-empty string |
+| `CLOUDFLARE_DDNS_TOKEN` | `cloudflare_ddns_token` | required | non-empty string |
+| `ADGUARD_ADMIN_PASSWORD` | `adguard_admin_password` | required | non-empty string |
+| `QBITTORRENT_WEBUI_PASSWORD` | `qbittorrent_webui_password` | required | non-empty string |
+| `COPYPARTY_USERS_JSON` | `copyparty_users` | required | non-empty JSON user list |
+| `ADGUARD_ADMIN_USERNAME` | `adguard_admin_username` | optional | non-empty when supplied |
 
-GitHub Actions supplies `openclaw_gateway_token` as
-`OPENCLAW_GATEWAY_TOKEN`. Ansible writes it outside Git at
-`/opt/homelab-control/openclaw/secrets/gateway_token` as UID/GID 1000 mode
-`0600`, and the Gateway mounts it read-only. Keep this value stable; rotating
-it invalidates existing Gateway clients. OpenClaw's file-secret provider
-rejects a group-readable mode such as `0640`.
-
-Non-secret deployment values:
-
-- `adguard_admin_username`, optional; defaults to `admin`
-
-The CD helper validates both Arcane secrets and the OpenClaw Gateway token
-before writing Ansible extra vars.
-It accepts only a 64-character hexadecimal encryption key and a JWT secret of
-at least 32 characters.
-
-The active topology has no Gluetun or Proton VPN service and requires no
-Proton or WireGuard credential.
-
-Do not commit decrypted secret files.
-
-Generate the OpenClaw token with `openssl rand -hex 32` and store only the
-result in the GitHub `prod` environment secret `OPENCLAW_GATEWAY_TOKEN`.
-
-For GitHub Actions, store the Copyparty accounts as `COPYPARTY_USERS_JSON`, for example:
+AdGuard hashes its plaintext admin password while rendering its service
+configuration. `COPYPARTY_USERS_JSON` must be a JSON list of objects containing
+non-empty `name` and plaintext `password` fields, for example:
 
 ```json
 [{"name":"example","password":"replace-me"}]
 ```
+
+### `tailnet`
+
+| GitHub environment name | Ansible variable | Kind | Validation |
+| --- | --- | --- | --- |
+| `TAILSCALE_AUTH_KEY` | `tailscale_auth_key` | required | non-empty string |
+
+### `openclaw`
+
+| GitHub environment name | Ansible variable | Kind | Validation |
+| --- | --- | --- | --- |
+| `OPENCLAW_GATEWAY_TOKEN` | `openclaw_gateway_token` | required | exactly 64 hexadecimal characters |
+| `OPENCLAW_DISCORD_BOT_TOKEN` | `openclaw_discord_bot_token` | required | non-empty string |
+| `OPENCLAW_EXA_API_KEY` | `openclaw_exa_api_key` | required | 1–4096 non-whitespace characters |
+| `OPENCLAW_SKILL_SYNC_GITHUB_TOKEN` | `openclaw_skill_sync_github_token` | required | 20–4096 non-whitespace characters |
+
+Generate `OPENCLAW_GATEWAY_TOKEN` with `openssl rand -hex 32`. Keep every real
+value only in the GitHub `prod` environment or its intended runtime secret
+store; do not commit generated extra-vars files.
+
+## Scoped writer
+
+The writer requires an explicit comma-separated component set:
+
+```sh
+python3 scripts/ci/write_ansible_extra_vars.py \
+  /path/to/ansible-extra-vars.json \
+  apps,tailnet,openclaw
+```
+
+It reads only entries owned by the selected components, unions mixed component
+sets, omits unset optional values, rejects empty or unknown component names,
+and validates values before publishing the JSON by same-directory atomic
+replacement. The resulting file is mode `0600`. There is no aggregate legacy
+scope alias.

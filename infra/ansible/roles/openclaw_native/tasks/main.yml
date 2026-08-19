@@ -1,170 +1,119 @@
 ---
-- name: Require the pinned native OpenClaw deployment contract
+- name: Require the immutable OpenClaw host contract
   ansible.builtin.assert:
     that:
       - ansible_system == 'Linux'
       - ansible_architecture == 'x86_64'
-      - openclaw_version is match('^[0-9]{4}\.[0-9]+\.[0-9]+(?:-[0-9]+)?$')
-      - openclaw_cli_version_output == 'OpenClaw ' + openclaw_version + ' (0790d9f)'
-      - openclaw_package_url == 'https://registry.npmjs.org/openclaw/-/openclaw-' + openclaw_version + '.tgz'
-      - openclaw_package_sha512 is match('^[0-9a-f]{128}$')
-      - openclaw_node_url == 'https://nodejs.org/download/release/v' + openclaw_node_version + '/' + openclaw_node_archive
-      - openclaw_node_sha256 is match('^[0-9a-f]{64}$')
-      - openclaw_gateway_port | int == 18789
-      - openclaw_proxy_ip is match('^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$')
-      - openclaw_bind_host is match('^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$')
-      - openclaw_bind_host == openclaw_ip
-      - openclaw_proxy_ip == docker_apps_ip
-      - openclaw_bind_host != openclaw_proxy_ip
-      - openclaw_control_ui_origin == 'https://' + openclaw_hostname
-      - openclaw_setup_root.startswith('/')
-      - openclaw_runtime_root.startswith('/')
-      - openclaw_node_release_root == openclaw_node_install_root + '/node-v' + openclaw_node_version + '-linux-x64'
-      - openclaw_release_root == openclaw_install_root + '/releases/' + openclaw_version
-      - openclaw_setup_root != openclaw_runtime_root
-      - not openclaw_runtime_root.startswith(openclaw_setup_root + '/')
-      - not openclaw_setup_root.startswith(openclaw_runtime_root + '/')
-      - openclaw_config_path == openclaw_setup_root + '/config/openclaw.json'
-      - openclaw_state_root == openclaw_runtime_root
-      - openclaw_workspaces_root == openclaw_state_root + '/workspaces'
-      - openclaw_legacy_workspace_root == openclaw_state_root + '/workspace'
-      - openclaw_workspace_root == openclaw_workspaces_root + '/main'
-      - openclaw_auth_profile_secret_root == openclaw_home + '/.config/openclaw'
-      - openclaw_npm_cache_root == openclaw_cache_root + '/npm'
-      - openclaw_gateway_token_path == openclaw_secret_root + '/gateway_token'
-      - openclaw_exa_api_key_path == openclaw_secret_root + '/exa_api_key'
-      - openclaw_ctf_workspace_root == openclaw_workspaces_root + '/ctf'
-      - openclaw_ctf_sandbox_skills_root == openclaw_state_root + '/sandbox/skills-workspaces'
+      - inventory_hostname == 'openclaw'
+      - ansible_host == hostvars['openclaw'].ansible_host
+      - openclaw_install_root == '/opt/openclaw'
+      - openclaw_state_root == '/var/lib/openclaw'
+      - openclaw_secret_root == '/etc/openclaw/secrets'
+      - openclaw_uid | int == 1000
+      - openclaw_gid | int == 1000
       - openclaw_ctf_uid | int == openclaw_uid | int
       - openclaw_ctf_gid | int == openclaw_gid | int
-      - openclaw_ctf_docker_cli_path == '/usr/bin/docker'
-      - openclaw_ctf_docker_network == 'openclaw-ctf'
-      - openclaw_discord_enabled | bool
-      - openclaw_codex_profile_id == 'openai:main'
-      - openclaw_codex_model == 'openai/gpt-5.6-terra'
-      - openclaw_codex_thinking_default == 'xhigh'
-      - openclaw_ctf_codex_model == 'openai/gpt-5.6-terra'
-      - openclaw_ctf_codex_thinking_default == 'xhigh'
-      - openclaw_ctf_codex_fast_mode_default | bool
-      - openclaw_codex_plugin_spec == 'npm:@openclaw/codex@2026.7.1-1'
-      - openclaw_discord_plugin_spec == 'npm:@openclaw/discord@2026.7.1'
-      - openclaw_exa_plugin_spec == 'npm:@openclaw/exa-plugin@2026.7.1'
-      - openclaw_native_transition_marker_path == '/var/lib/.openclaw-native-migration-validated'
-      - openclaw_native_transition_marker_value == 'homelab-openclaw-native-migration-v1'
-      - openclaw_native_activate is boolean
-      - openclaw_docker_rollback_activate is boolean
-      - openclaw_native_role_stage_only | default(false) is boolean
-      - >-
-        (openclaw_native_activate | bool) !=
-        (openclaw_docker_rollback_activate | bool) or
-        (
-          openclaw_native_role_stage_only | default(false) | bool and
-          ansible_play_name == 'Stage the dedicated native OpenClaw Gateway without activation' and
-          not (openclaw_native_activate | bool) and
-          not (openclaw_docker_rollback_activate | bool)
-        )
-      - >-
-        not (openclaw_native_role_stage_only | default(false) | bool) or
-        (
-          ansible_play_name == 'Stage the dedicated native OpenClaw Gateway without activation' and
-          not (openclaw_native_activate | bool) and
-          not (openclaw_docker_rollback_activate | bool)
-        )
-      - >-
-        openclaw_traefik_backend_url ==
-        (
-          'http://openclaw-rollback:18789'
-          if openclaw_docker_rollback_activate | bool
-          else 'http://' + openclaw_ip + ':18789'
-        )
-    fail_msg: The native OpenClaw version, network, or path contract is invalid.
+      - openclaw_ctf_docker_network_cidr == '172.30.0.0/24'
+      - openclaw_ctf_docker_bridge == 'occtfbr0'
+    fail_msg: The dedicated OpenClaw LXC runtime contract is invalid.
 
-- name: Require the stable OpenClaw Gateway token
+- name: Require root-managed OpenClaw secrets
   ansible.builtin.assert:
     that:
       - openclaw_gateway_token is defined
-      - openclaw_gateway_token is string
       - openclaw_gateway_token | trim is match('^[0-9a-fA-F]{64}$')
-    fail_msg: >-
-      Configure OPENCLAW_GATEWAY_TOKEN as exactly 64 hexadecimal characters
-      in the production secret store.
-  no_log: true
-
-- name: Require the autonomous skill-promotion GitHub credential
-  ansible.builtin.assert:
-    that:
-      - openclaw_skill_sync_enabled | bool
+      - openclaw_discord_bot_token is defined
+      - openclaw_discord_bot_token | trim | length > 0
+      - openclaw_exa_api_key is defined
+      - openclaw_exa_api_key | trim | length > 0
       - openclaw_skill_sync_github_token is defined
-      - openclaw_skill_sync_github_token is string
       - openclaw_skill_sync_github_token | length >= 20
-      - openclaw_skill_sync_github_token | length <= 4096
       - openclaw_skill_sync_github_token is not search('\\s')
-      - openclaw_skill_sync_repository == 'holybaechu/openclaw-setup'
-      - openclaw_skill_sync_deploy_repository == 'holybaechu/homelab'
-      - openclaw_skill_sync_uid | int == 1002
-      - openclaw_skill_sync_gid | int == 1002
-      - openclaw_skill_sync_state_root == '/var/lib/openclaw-skill-sync'
-      - openclaw_skill_sync_script_path == '/usr/local/libexec/openclaw-skill-sync'
-      - openclaw_skill_sync_askpass_path == '/usr/local/libexec/openclaw-skill-sync-askpass'
-      - openclaw_skill_sync_github_token_path == openclaw_secret_root + '/skill_sync_github_token'
-      - openclaw_skill_sync_check_timeout | int == 900
-    fail_msg: >-
-      Configure OPENCLAW_SKILL_SYNC_GITHUB_TOKEN as a narrowly scoped token
-      with contents, pull-request, and Actions access to openclaw-setup.
   no_log: true
 
-- name: Install native OpenClaw operating-system prerequisites
+- name: Install OpenClaw host prerequisites without routine upgrades
   ansible.builtin.apt:
-    name:
-      - acl
-      - git
-      - ca-certificates
-      - curl
-      - gnupg
-      - nftables
-      - xz-utils
-    state: present
-    update_cache: true
+    name: [acl, ca-certificates, curl, gnupg, iptables, nftables, python3]
+    state: "{{ 'latest' if (homelab_maintenance_upgrade | default(false) | bool) else 'present' }}"
+    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
+    cache_valid_time: "{{ 3600 if (homelab_maintenance_upgrade | default(false) | bool) else omit }}"
 
-- name: Create the dedicated OpenClaw group
+- name: Create Docker apt keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install Docker apt signing key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+    update_cache: false
+  register: openclaw_docker_repository
+
+- name: Refresh apt metadata only after adding Docker repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: openclaw_docker_repository.changed
+
+- name: Install only the container runtime used in production
+  ansible.builtin.apt:
+    name: [containerd.io, docker-ce, docker-ce-cli, docker-compose-plugin]
+    state: "{{ 'latest' if (homelab_maintenance_upgrade | default(false) | bool) else 'present' }}"
+    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
+    cache_valid_time: "{{ 3600 if (homelab_maintenance_upgrade | default(false) | bool) else omit }}"
+  notify: Restart OpenClaw Docker
+
+- name: Create OpenClaw service group
   ansible.builtin.group:
     name: "{{ openclaw_group }}"
     gid: "{{ openclaw_gid }}"
     system: true
-    state: present
 
-- name: Create the dedicated OpenClaw user
+- name: Create OpenClaw service account with local Docker access
   ansible.builtin.user:
     name: "{{ openclaw_user }}"
     uid: "{{ openclaw_uid }}"
     group: "{{ openclaw_group }}"
+    groups: docker
+    append: true
     home: "{{ openclaw_home }}"
-    shell: /usr/sbin/nologin
     create_home: true
+    shell: /usr/sbin/nologin
     system: true
-    password_lock: true
-    state: present
 
-- name: Create the isolated skill-promotion group
+- name: Create isolated skill promotion identity
   ansible.builtin.group:
     name: "{{ openclaw_skill_sync_group }}"
     gid: "{{ openclaw_skill_sync_gid }}"
     system: true
-    state: present
+  when: openclaw_skill_sync_enabled | bool
 
-- name: Create the isolated skill-promotion user
+- name: Create isolated skill promotion account
   ansible.builtin.user:
     name: "{{ openclaw_skill_sync_user }}"
     uid: "{{ openclaw_skill_sync_uid }}"
     group: "{{ openclaw_skill_sync_group }}"
     home: "{{ openclaw_skill_sync_state_root }}"
-    shell: /usr/sbin/nologin
     create_home: false
+    shell: /usr/sbin/nologin
     system: true
-    password_lock: true
-    state: present
+  when: openclaw_skill_sync_enabled | bool
 
-- name: Create native OpenClaw installation and runtime directories
+- name: Create durable OpenClaw runtime directories
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
@@ -172,88 +121,32 @@
     group: "{{ item.group }}"
     mode: "{{ item.mode }}"
   loop:
-    - {path: "{{ openclaw_node_install_root }}", owner: root, group: root, mode: "0755"}
     - {path: "{{ openclaw_install_root }}", owner: root, group: root, mode: "0755"}
-    - {path: "{{ openclaw_install_root }}/releases", owner: root, group: root, mode: "0755"}
-    - {path: "{{ openclaw_release_root }}", owner: root, group: root, mode: "0755"}
-    - {path: "{{ openclaw_home }}", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
-    - {path: "{{ openclaw_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_npm_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_cache_root }}/downloads", owner: root, group: root, mode: "0755"}
-    - {path: "{{ openclaw_compile_cache_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_runtime_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_install_root }}/incoming", owner: root, group: root, mode: "0700"}
+    - {path: "{{ openclaw_install_root }}/state", owner: root, group: root, mode: "0700"}
+    - {path: "{{ openclaw_state_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_workspaces_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_state_root }}/sandbox", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_ctf_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_ctf_sandbox_skills_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_skill_sync_state_root }}", owner: "{{ openclaw_skill_sync_user }}", group: "{{ openclaw_skill_sync_group }}", mode: "0700"}
-    - {path: "{{ openclaw_skill_sync_state_root }}/tmp", owner: "{{ openclaw_skill_sync_user }}", group: "{{ openclaw_skill_sync_group }}", mode: "0700"}
-    - {path: "{{ openclaw_home }}/.config", owner: root, group: "{{ openclaw_group }}", mode: "0750"}
+    - {path: "{{ openclaw_workspace_root }}/skills", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_ctf_workspace_root }}/skills", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_auth_profile_secret_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: /usr/local/libexec, owner: root, group: root, mode: "0755"}
-    - {path: /run/openclaw-native-empty-hooks, owner: root, group: root, mode: "0700"}
-    - {path: /etc/openclaw, owner: root, group: root, mode: "0755"}
-    - {path: "{{ openclaw_secret_root }}", owner: root, group: root, mode: "0700"}
-  loop_control:
-    label: "{{ item.path }}"
+    - {path: "{{ openclaw_secret_root }}", owner: root, group: "{{ openclaw_group }}", mode: "0710"}
+    - {path: "{{ openclaw_skill_sync_state_root }}", owner: "{{ openclaw_skill_sync_user }}", group: "{{ openclaw_skill_sync_group }}", mode: "0700"}
 
-- name: Install the OpenClaw Gateway token outside Git
+- name: Materialize root-owned Gateway secret files
   ansible.builtin.copy:
-    content: "{{ openclaw_gateway_token | trim }}\n"
-    dest: "{{ openclaw_gateway_token_path }}"
+    content: "{{ item.content | trim }}\n"
+    dest: "{{ item.path }}"
     owner: root
-    group: root
-    mode: "0600"
+    group: "{{ openclaw_group }}"
+    mode: "0440"
+  loop:
+    - {path: "{{ openclaw_gateway_token_path }}", content: "{{ openclaw_gateway_token }}"}
+    - {path: "{{ openclaw_discord_bot_token_path }}", content: "{{ openclaw_discord_bot_token }}"}
+    - {path: "{{ openclaw_exa_api_key_path }}", content: "{{ openclaw_exa_api_key }}"}
   no_log: true
   diff: false
-  notify: Restart OpenClaw Gateway
 
-- name: Require an explicit shared Discord bot token
-  ansible.builtin.assert:
-    that:
-      - openclaw_discord_bot_token is defined
-      - openclaw_discord_bot_token is string
-      - openclaw_discord_bot_token | trim | length > 0
-    fail_msg: >-
-      Configure OPENCLAW_DISCORD_BOT_TOKEN in the production secret store
-      before enabling direct Discord ingress.
-  no_log: true
-
-- name: Install the shared Discord bot token outside Git
-  ansible.builtin.copy:
-    content: "{{ openclaw_discord_bot_token | trim }}\n"
-    dest: "{{ openclaw_discord_bot_token_path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-  diff: false
-  notify: Restart OpenClaw Gateway
-
-- name: Require the Exa web-search API key
-  ansible.builtin.assert:
-    that:
-      - openclaw_exa_api_key is defined
-      - openclaw_exa_api_key is string
-      - openclaw_exa_api_key | trim | length > 0
-      - openclaw_exa_api_key | trim | length <= 4096
-      - openclaw_exa_api_key | trim is not search('\\s')
-    fail_msg: Configure OPENCLAW_EXA_API_KEY in the production secret store.
-  no_log: true
-
-- name: Install the Exa API key outside Git
-  ansible.builtin.copy:
-    content: "{{ openclaw_exa_api_key | trim }}\n"
-    dest: "{{ openclaw_exa_api_key_path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-  diff: false
-  notify: Restart OpenClaw Gateway
-
-- name: Install the skill-promotion GitHub credential outside Git
+- name: Materialize skill-promotion credential outside Gateway access
   ansible.builtin.copy:
     content: "{{ openclaw_skill_sync_github_token }}\n"
     dest: "{{ openclaw_skill_sync_github_token_path }}"
@@ -262,218 +155,45 @@
     mode: "0600"
   no_log: true
   diff: false
+  when: openclaw_skill_sync_enabled | bool
 
-- name: Download the pinned official Node.js archive
-  ansible.builtin.get_url:
-    url: "{{ openclaw_node_url }}"
-    dest: "{{ openclaw_node_cache_path }}"
-    checksum: "sha256:{{ openclaw_node_sha256 }}"
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Inspect the complete pinned Node.js runtime
-  ansible.builtin.shell: |
-    set -eu
-    test -x '{{ openclaw_node_release_root }}/bin/node'
-    test -x '{{ openclaw_node_release_root }}/bin/npm'
-    test -f '{{ openclaw_node_release_root }}/lib/node_modules/npm/bin/npm-cli.js'
-    test "$(cat '{{ openclaw_node_release_root }}/.homelab-install-complete')" = \
-      'node-v{{ openclaw_node_version }}-linux-x64'
-    test "$('{{ openclaw_node_release_root }}/bin/node' --version)" = 'v{{ openclaw_node_version }}'
-    '{{ openclaw_node_release_root }}/bin/node' \
-      '{{ openclaw_node_release_root }}/lib/node_modules/npm/bin/npm-cli.js' \
-      --version >/dev/null
-  args:
-    executable: /bin/sh
-  register: openclaw_node_install_probe
-  changed_when: false
-  failed_when: false
-
-- name: Remove only an incomplete pinned Node.js prefix
+- name: Create Docker service drop-in directory
   ansible.builtin.file:
-    path: "{{ openclaw_node_release_root }}"
-    state: absent
-  when: openclaw_node_install_probe.rc != 0
-
-- name: Extract the pinned official Node.js runtime
-  ansible.builtin.unarchive:
-    src: "{{ openclaw_node_cache_path }}"
-    dest: "{{ openclaw_node_install_root }}"
-    remote_src: true
-    owner: root
-    group: root
-  when: openclaw_node_install_probe.rc != 0
-  notify: Restart OpenClaw Gateway
-
-- name: Verify the complete pinned Node.js runtime
-  ansible.builtin.shell: |
-    set -eu
-    test -x '{{ openclaw_node_release_root }}/bin/node'
-    test -x '{{ openclaw_node_release_root }}/bin/npm'
-    test -f '{{ openclaw_node_release_root }}/lib/node_modules/npm/bin/npm-cli.js'
-    test "$('{{ openclaw_node_release_root }}/bin/node' --version)" = 'v{{ openclaw_node_version }}'
-    '{{ openclaw_node_release_root }}/bin/node' \
-      '{{ openclaw_node_release_root }}/lib/node_modules/npm/bin/npm-cli.js' \
-      --version >/dev/null
-  args:
-    executable: /bin/sh
-  changed_when: false
-
-- name: Mark the fully verified Node.js prefix complete
-  ansible.builtin.copy:
-    content: "node-v{{ openclaw_node_version }}-linux-x64\n"
-    dest: "{{ openclaw_node_release_root }}/.homelab-install-complete"
-    owner: root
-    group: root
-    mode: "0444"
-
-- name: Activate the pinned native Node.js runtime
-  ansible.builtin.file:
-    src: "{{ openclaw_node_release_root }}"
-    dest: "{{ openclaw_node_current_root }}"
-    state: link
-    owner: root
-    group: root
-    force: true
-  notify: Restart OpenClaw Gateway
-
-- name: Download the integrity-pinned OpenClaw npm package
-  ansible.builtin.get_url:
-    url: "{{ openclaw_package_url }}"
-    dest: "{{ openclaw_package_cache_path }}"
-    checksum: "sha512:{{ openclaw_package_sha512 }}"
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Inspect the complete pinned OpenClaw release
-  ansible.builtin.shell: |
-    set -eu
-    test -x '{{ openclaw_release_root }}/bin/openclaw'
-    test "$(cat '{{ openclaw_release_root }}/.homelab-install-complete')" = \
-      'openclaw-{{ openclaw_version }}'
-    test "$({{ openclaw_node_release_root }}/bin/node -p \
-      "require('{{ openclaw_release_root }}/lib/node_modules/openclaw/package.json').version")" \
-      = '{{ openclaw_version }}'
-    {{ openclaw_node_release_root }}/bin/node \
-      '{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs' \
-      --version >/dev/null
-  args:
-    executable: /bin/sh
-  environment: &openclaw_install_environment
-    HOME: /root
-    PATH: "{{ openclaw_node_release_root }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-    NPM_CONFIG_AUDIT: "false"
-    NPM_CONFIG_FUND: "false"
-    NPM_CONFIG_UPDATE_NOTIFIER: "false"
-  register: openclaw_release_install_probe
-  changed_when: false
-  failed_when: false
-
-- name: Remove only an incomplete pinned OpenClaw release prefix
-  ansible.builtin.file:
-    path: "{{ openclaw_release_root }}"
-    state: absent
-  when: openclaw_release_install_probe.rc != 0
-
-- name: Recreate the exact pinned OpenClaw release prefix
-  ansible.builtin.file:
-    path: "{{ openclaw_release_root }}"
+    path: /etc/systemd/system/docker.service.d
     state: directory
     owner: root
     group: root
     mode: "0755"
-  when: openclaw_release_install_probe.rc != 0
 
-- name: Install the pinned OpenClaw release into its immutable prefix
-  ansible.builtin.command:
-    argv:
-      - "{{ openclaw_node_release_root }}/bin/npm"
-      - install
-      - --global
-      - --prefix
-      - "{{ openclaw_release_root }}"
-      - --omit=dev
-      - "{{ openclaw_package_cache_path }}"
-  environment: *openclaw_install_environment
-  when: openclaw_release_install_probe.rc != 0
-  notify: Restart OpenClaw Gateway
-
-- name: Verify the installed OpenClaw package version
-  ansible.builtin.command:
-    argv:
-      - "{{ openclaw_node_release_root }}/bin/node"
-      - -p
-      - "require('{{ openclaw_release_root }}/lib/node_modules/openclaw/package.json').version"
-  register: openclaw_package_version_check
-  changed_when: false
-  failed_when: openclaw_package_version_check.stdout | trim != openclaw_version
-
-- name: Verify the installed OpenClaw CLI version output
-  ansible.builtin.command:
-    argv:
-      - "{{ openclaw_node_release_root }}/bin/node"
-      - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
-      - --version
-  environment: *openclaw_install_environment
-  register: openclaw_installed_cli_version
-  changed_when: false
-  failed_when: >-
-    openclaw_installed_cli_version.stdout | trim != openclaw_cli_version_output
-
-- name: Mark the fully verified OpenClaw release prefix complete
-  ansible.builtin.copy:
-    content: "openclaw-{{ openclaw_version }}\n"
-    dest: "{{ openclaw_release_root }}/.homelab-install-complete"
+- name: Configure local Docker for isolated CTF sandboxes
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
     owner: root
     group: root
-    mode: "0444"
+    mode: "0644"
+  notify: Restart OpenClaw Docker
 
-- name: Activate the pinned native OpenClaw release
-  ansible.builtin.file:
-    src: "{{ openclaw_release_root }}"
-    dest: "{{ openclaw_current_root }}"
-    state: link
-    owner: root
-    group: root
-    force: true
-  notify: Restart OpenClaw Gateway
-
-- name: Publish the pinned OpenClaw CLI wrapper
-  ansible.builtin.copy:
-    content: |
-      #!/bin/sh
-      exec {{ openclaw_node_current_root }}/bin/node {{ openclaw_entrypoint }} "$@"
-    dest: /usr/local/bin/openclaw
+- name: Install CTF egress boundary
+  ansible.builtin.template:
+    src: openclaw-ctf-docker-firewall.sh.j2
+    dest: /usr/local/libexec/openclaw-ctf-docker-firewall
     owner: root
     group: root
     mode: "0755"
-  notify: Restart OpenClaw Gateway
 
-- name: Verify the published OpenClaw CLI through a standard system path
-  ansible.builtin.command:
-    argv:
-      - /usr/bin/env
-      - -i
-      - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      - /usr/local/bin/openclaw
-      - --version
-  register: openclaw_published_cli_version
-  changed_when: false
-  failed_when: >-
-    openclaw_published_cli_version.stdout | trim != openclaw_cli_version_output
-
-- name: Install the bounded OpenClaw credential materializer
-  ansible.builtin.copy:
-    src: materialize_openclaw_credential.py
-    dest: /usr/local/libexec/materialize-openclaw-credential
+- name: Reapply CTF boundary after Docker restart
+  ansible.builtin.template:
+    src: 20-openclaw-ctf-firewall.conf.j2
+    dest: /etc/systemd/system/docker.service.d/20-openclaw-ctf-firewall.conf
     owner: root
     group: root
-    mode: "0755"
-  notify: Restart OpenClaw Gateway
+    mode: "0644"
+  notify:
+    - Reload OpenClaw systemd
+    - Restart OpenClaw Docker
 
-- name: Render the dedicated OpenClaw nftables policy
+- name: Install dedicated LXC firewall boundary
   ansible.builtin.template:
     src: nftables.conf.j2
     dest: /etc/nftables.conf
@@ -481,1529 +201,106 @@
     group: root
     mode: "0644"
     validate: /usr/sbin/nft --check --file %s
-  notify: Reload OpenClaw nftables policy
+  notify: Reload OpenClaw nftables
 
-- name: Enable the dedicated OpenClaw nftables policy
+- name: Apply runtime changes before activation
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable host runtime services
   ansible.builtin.systemd_service:
-    name: nftables
+    name: "{{ item }}"
     enabled: true
     state: started
+  loop: [docker.service, nftables.service]
 
-- name: Render the externally managed OpenClaw system service
-  ansible.builtin.template:
-    src: openclaw-gateway.service.j2
-    dest: /etc/systemd/system/openclaw-gateway.service
+- name: Inspect isolated CTF network
+  ansible.builtin.command:
+    argv: [docker, network, inspect, "{{ openclaw_ctf_docker_network }}"]
+  register: openclaw_ctf_network_probe
+  changed_when: false
+  failed_when: openclaw_ctf_network_probe.rc not in [0, 1]
+
+- name: Create isolated CTF network
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - create
+      - --driver
+      - bridge
+      - --subnet
+      - "{{ openclaw_ctf_docker_network_cidr }}"
+      - --opt
+      - "com.docker.network.bridge.name={{ openclaw_ctf_docker_bridge }}"
+      - --opt
+      - com.docker.network.bridge.enable_icc=false
+      - "{{ openclaw_ctf_docker_network }}"
+  when: openclaw_ctf_network_probe.rc == 1
+
+- name: Apply isolated CTF egress policy
+  ansible.builtin.command:
+    argv: [/usr/local/libexec/openclaw-ctf-docker-firewall]
+  changed_when: false
+
+- name: Install immutable release utilities
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../scripts/ci/{{ item.source }}"
+    dest: "/usr/local/libexec/{{ item.dest }}"
     owner: root
     group: root
-    mode: "0644"
-  notify:
-    - Reload systemd for OpenClaw
-    - Restart OpenClaw Gateway
+    mode: "0755"
+  loop:
+    - {source: immutable_image_release.py, dest: immutable_image_release.py}
+    - {source: openclaw_release.py, dest: openclaw_release.py}
+    - {source: deploy_openclaw_release.py, dest: deploy_openclaw_release.py}
 
-- name: Install the autonomous skill-promotion implementation
+- name: Install isolated skill promotion utility
   ansible.builtin.copy:
     src: openclaw_skill_sync.py
     dest: "{{ openclaw_skill_sync_script_path }}"
     owner: root
     group: root
     mode: "0755"
+  when: openclaw_skill_sync_enabled | bool
 
-- name: Install the credential-scoped skill-promotion Git askpass helper
+- name: Install isolated skill promotion service files
   ansible.builtin.template:
-    src: openclaw-skill-sync-askpass.j2
-    dest: "{{ openclaw_skill_sync_askpass_path }}"
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
     owner: root
     group: root
-    mode: "0755"
-
-- name: Render the autonomous skill-promotion service
-  ansible.builtin.template:
-    src: openclaw-skill-sync.service.j2
-    dest: /etc/systemd/system/openclaw-skill-sync.service
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Render the autonomous skill-promotion timer
-  ansible.builtin.template:
-    src: openclaw-skill-sync.timer.j2
-    dest: /etc/systemd/system/openclaw-skill-sync.timer
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Validate the native systemd credential materialization contract
-  when: not (openclaw_docker_rollback_activate | bool)
-  no_log: true
-  block:
-    - name: Install the transient OpenClaw credential contract probe
-      ansible.builtin.template:
-        src: openclaw-credential-probe.service.j2
-        dest: /run/systemd/system/openclaw-credential-probe.service
-        owner: root
-        group: root
-        mode: "0600"
-
-    - name: Reload systemd for the OpenClaw credential contract probe
-      ansible.builtin.systemd_service:
-        daemon_reload: true
-
-    - name: Run the native OpenClaw credential contract probe
-      ansible.builtin.systemd_service:
-        name: openclaw-credential-probe.service
-        state: started
-
-    - name: Prove the native OpenClaw credential contract probe completed
-      ansible.builtin.shell: |
-        set -eu
-        test "$(systemctl show openclaw-credential-probe.service --property=Result --value)" = success
-        test "$(systemctl show openclaw-credential-probe.service --property=ExecMainStatus --value)" = 0
-        test "$(systemctl is-active openclaw-credential-probe.service 2>/dev/null || true)" = inactive
-        test ! -e /run/openclaw-credential-probe
-      args:
-        executable: /bin/sh
-      changed_when: false
-  always:
-    - name: Stop the native OpenClaw credential contract probe
-      ansible.builtin.systemd_service:
-        name: openclaw-credential-probe.service
-        state: stopped
-      failed_when: false
-
-    - name: Remove the transient OpenClaw credential contract probe unit
-      ansible.builtin.file:
-        path: /run/systemd/system/openclaw-credential-probe.service
-        state: absent
-
-    - name: Reload systemd after the OpenClaw credential contract probe
-      ansible.builtin.systemd_service:
-        daemon_reload: true
-
-    - name: Prove the native OpenClaw credential contract probe left no residue
-      ansible.builtin.shell: |
-        set -eu
-        test ! -e /run/systemd/system/openclaw-credential-probe.service
-        test ! -L /run/systemd/system/openclaw-credential-probe.service
-        test ! -e /run/openclaw-credential-probe
-        test ! -L /run/openclaw-credential-probe
-        test ! -e /etc/systemd/system/openclaw-credential-probe.service
-        test ! -L /etc/systemd/system/openclaw-credential-probe.service
-        test ! -e /etc/systemd/system/multi-user.target.wants/openclaw-credential-probe.service
-        test ! -L /etc/systemd/system/multi-user.target.wants/openclaw-credential-probe.service
-        links="$(find /etc/systemd/system /run/systemd/system -xdev -type l \
-          \( -name 'openclaw-credential-probe.service' \
-          -o -lname '*openclaw-credential-probe.service' \) -print -quit)"
-        test -z "${links}"
-        test "$(systemctl show openclaw-credential-probe.service --property=LoadState --value)" = not-found
-        test -z "$(systemctl show openclaw-credential-probe.service --property=FragmentPath --value)"
-        test "$(systemctl show openclaw-credential-probe.service --property=ActiveState --value)" = inactive
-        test "$(systemctl show openclaw-credential-probe.service --property=SubState --value)" = dead
-        test "$(systemctl is-enabled openclaw-credential-probe.service 2>/dev/null || true)" = not-found
-      args:
-        executable: /bin/sh
-      changed_when: false
-
-- name: Synchronize the protected private OpenClaw checkout from canonical main
-  ansible.builtin.shell: |
-    set -eu
-    setup={{ openclaw_setup_root | quote }}
-    test -d "$setup/.git"
-    test ! -L "$setup"
-    test ! -L "$setup/.git"
-    test "$(git -C "$setup" branch --show-current)" = main
-    test -z "$(git -C "$setup" status --porcelain=v1 --untracked-files=all)"
-    test -z "$(git -C "$setup" remote)"
-
-    expected={{ openclaw_setup_expected_commit | default('') | quote }}
-    if [ -z "$expected" ]; then
-      ref=refs/heads/main
-    else
-      printf '%s\n' "$expected" | grep -Eq '^[0-9a-f]{40}$'
-      ref="$expected"
-    fi
-    git -C "$setup" fetch --no-tags \
-      "https://github.com/{{ openclaw_skill_sync_repository }}.git" \
-      "$ref"
-    fetched="$(git -C "$setup" rev-parse FETCH_HEAD)"
-    if [ -n "$expected" ]; then
-      test "$fetched" = "$expected"
-      git -C "$setup" fetch --no-tags \
-        "https://github.com/{{ openclaw_skill_sync_repository }}.git" \
-        refs/heads/main
-      promoted_main="$(git -C "$setup" rev-parse FETCH_HEAD)"
-      git -C "$setup" merge-base --is-ancestor "$fetched" "$promoted_main"
-    fi
-    current="$(git -C "$setup" rev-parse HEAD)"
-    if [ "$fetched" = "$current" ]; then
-      echo changed=no
-      exit 0
-    fi
-
-    systemctl stop openclaw-gateway.service 2>/dev/null || true
-    git -C "$setup" reset --hard "$fetched"
-    git -C "$setup" clean -fdx
-    test "$(git -C "$setup" branch --show-current)" = main
-    test -z "$(git -C "$setup" status --porcelain=v1 --untracked-files=all)"
-    test -z "$(git -C "$setup" remote)"
-    chown root:{{ openclaw_group | quote }} "$setup"
-    chmod 0750 "$setup"
-    chown root:root "$setup/.git"
-    chmod 0700 "$setup/.git"
-    chown root:{{ openclaw_group | quote }} {{ openclaw_config_path | quote }}
-    chmod 0640 {{ openclaw_config_path | quote }}
-    echo changed=yes
-  args:
-    executable: /bin/sh
-  environment:
-    HOME: /root
-    GIT_TERMINAL_PROMPT: "0"
-    GIT_ASKPASS: "{{ openclaw_skill_sync_askpass_path }}"
-    GIT_CONFIG_NOSYSTEM: "1"
-    GIT_CONFIG_GLOBAL: /dev/null
-    OPENCLAW_SKILL_SYNC_GITHUB_TOKEN_FILE: "{{ openclaw_skill_sync_github_token_path }}"
-  register: openclaw_setup_sync
-  changed_when: "'changed=yes' in openclaw_setup_sync.stdout"
-  no_log: true
-  when: openclaw_native_activate | bool
-
-- name: Inspect the transferred private OpenClaw repository
-  ansible.builtin.stat:
-    path: "{{ item }}"
-  loop:
-    - "{{ openclaw_setup_root }}"
-    - "{{ openclaw_setup_root }}/.git"
-    - "{{ openclaw_config_path }}"
-  register: openclaw_setup_paths
-  when: openclaw_native_activate | bool
-
-- name: Require the protected private OpenClaw repository and regular config
-  ansible.builtin.assert:
-    that:
-      - openclaw_setup_paths.results[0].stat.isdir | default(false)
-      - openclaw_setup_paths.results[0].stat.uid == 0
-      - openclaw_setup_paths.results[0].stat.gid == openclaw_gid | int
-      - openclaw_setup_paths.results[0].stat.mode == '0750'
-      - openclaw_setup_paths.results[1].stat.isdir | default(false)
-      - openclaw_setup_paths.results[1].stat.uid == 0
-      - openclaw_setup_paths.results[1].stat.gid == 0
-      - openclaw_setup_paths.results[1].stat.mode == '0700'
-      - openclaw_setup_paths.results[2].stat.isreg | default(false)
-      - not (openclaw_setup_paths.results[2].stat.islnk | default(false))
-      - openclaw_setup_paths.results[2].stat.uid == 0
-      - openclaw_setup_paths.results[2].stat.gid == openclaw_gid | int
-      - openclaw_setup_paths.results[2].stat.mode == '0640'
-    fail_msg: >-
-      Transfer the clean, protected openclaw-setup checkout and its regular
-      native config before activating the Gateway.
-  when: openclaw_native_activate | bool
-
-- name: Require a clean tracked native OpenClaw config on main
-  ansible.builtin.shell: |
-    set -eu
-    hooks=/run/openclaw-native-empty-hooks
-    test -d "$hooks"
-    test "$(stat -c '%u:%g %a' "$hooks")" = '0:0 700'
-    test ! -e .gitattributes && test ! -L .gitattributes
-    test ! -e .git/info/attributes && test ! -L .git/info/attributes
-    test ! -x .git/config
-    git_safe() {
-      git \
-        -c core.hooksPath="$hooks" \
-        -c core.fsmonitor=false \
-        -c core.attributesFile=/dev/null \
-        -c diff.external= \
-        -c pager.status=false \
-        "$@"
-    }
-    test "$(git_safe branch --show-current)" = main
-    git_safe rev-parse --verify HEAD >/dev/null
-    test -z "$(git_safe status --porcelain=v1 --no-ahead-behind)"
-    git_safe diff --quiet --no-ext-diff --no-textconv
-    git_safe diff --cached --quiet --no-ext-diff --no-textconv
-    git_safe --no-pager ls-files --error-unmatch config/openclaw.json >/dev/null
-    for tracked_path in \
-      workspaces/ctf/AGENTS.md; do
-      git_safe --no-pager ls-files --error-unmatch "${tracked_path}" >/dev/null
-    done
-    test -z "$(git_safe --no-pager ls-files -- .env)"
-  args:
-    executable: /bin/sh
-    chdir: "{{ openclaw_setup_root }}"
-  environment:
-    GIT_CONFIG_NOSYSTEM: "1"
-    GIT_CONFIG_SYSTEM: /dev/null
-    GIT_CONFIG_GLOBAL: /dev/null
-    GIT_PAGER: cat
-    GIT_TERMINAL_PROMPT: "0"
-  changed_when: false
-  when: openclaw_native_activate | bool
-
-- name: Read the transferred native OpenClaw config
-  ansible.builtin.slurp:
-    src: "{{ openclaw_config_path }}"
-  register: openclaw_native_config
-  no_log: true
-  when: openclaw_native_activate | bool
-
-- name: Reject stale container paths in the native OpenClaw config
-  ansible.builtin.assert:
-    that:
-      - "'/home/node' not in (openclaw_native_config.content | b64decode)"
-      - "'/run/secrets/openclaw_gateway_token' not in (openclaw_native_config.content | b64decode)"
-      - "'/srv/homelab/docker-apps/openclaw' not in (openclaw_native_config.content | b64decode)"
-      - "'/opt/homelab-compose/openclaw-setup' not in (openclaw_native_config.content | b64decode)"
-    fail_msg: Replace every Docker-only path in the private config before native activation.
-  no_log: true
-  when: openclaw_native_activate | bool
-
-- name: Create the durable CTF workspace layout outside the private checkout
-  ansible.builtin.file:
-    path: "{{ openclaw_ctf_workspace_root }}/{{ item }}"
-    state: directory
-    owner: "{{ openclaw_user }}"
-    group: "{{ openclaw_group }}"
-    mode: "0700"
-  loop:
-    - challenges
-    - exports
-    - media/inbound
-    - scripts
-    - .cache/apt/archives
-    - .cache/uv
-    - .cache/camoufox
-  when: openclaw_native_activate | bool
-
-- name: Remove retired CTF workflow assets
-  ansible.builtin.file:
-    path: "{{ openclaw_ctf_workspace_root }}/{{ item }}"
-    state: absent
-  loop:
-    - templates/writeup.md
-    - skills/ctf-artifacts
-    - scripts/init-ctf-challenge.py
-    - scripts/export-ctf-package.py
-  when: openclaw_native_activate | bool
-  notify: Restart OpenClaw Gateway
-
-- name: Install the pinned Codex sandbox cwd compatibility patcher
-  ansible.builtin.copy:
-    src: patch-openclaw-codex-sandbox-cwd.py
-    dest: /usr/local/libexec/patch-openclaw-codex-sandbox-cwd
-    owner: root
-    group: root
-    mode: "0755"
-  notify: Restart OpenClaw Gateway
-
-- name: Install the pinned Discord auto-thread queue backport
-  ansible.builtin.copy:
-    src: patch-openclaw-discord-autothread-queue.py
-    dest: /usr/local/libexec/patch-openclaw-discord-autothread-queue
-    owner: root
-    group: root
-    mode: "0755"
-  notify: Restart OpenClaw Gateway
-
-- name: Seed tracked CTF instructions into the durable workspace
-  ansible.builtin.copy:
-    src: "{{ openclaw_setup_root }}/{{ item.source }}"
-    dest: "{{ openclaw_ctf_workspace_root }}/{{ item.destination }}"
-    remote_src: true
-    owner: "{{ openclaw_user }}"
-    group: "{{ openclaw_group }}"
     mode: "{{ item.mode }}"
-    force: "{{ item.force | default(true) }}"
   loop:
-    - {source: workspaces/ctf/AGENTS.md, destination: AGENTS.md, mode: "0640"}
-  when: openclaw_native_activate | bool
-  notify: Restart OpenClaw Gateway
+    - {src: openclaw-skill-sync-askpass.j2, dest: "{{ openclaw_skill_sync_askpass_path }}", mode: "0755"}
+    - {src: openclaw-skill-sync.service.j2, dest: /etc/systemd/system/openclaw-skill-sync.service, mode: "0644"}
+    - {src: openclaw-skill-sync.timer.j2, dest: /etc/systemd/system/openclaw-skill-sync.timer, mode: "0644"}
+  notify: Reload OpenClaw systemd
+  when: openclaw_skill_sync_enabled | bool
 
-- name: Remove the retired CTF Codex model instructions override
-  ansible.builtin.lineinfile:
-    path: "{{ openclaw_state_root }}/agents/ctf/agent/codex-home/config.toml"
-    regexp: '^model_instructions_file\s*='
-    state: absent
-  when: openclaw_native_activate | bool
-  notify: Restart OpenClaw Gateway
+- name: Grant skill promoter traversal without Gateway credentials
+  ansible.builtin.command:
+    argv: [setfacl, -m, "u:{{ openclaw_skill_sync_user }}:--x", "{{ item }}"]
+  loop:
+    - "{{ openclaw_state_root }}"
+    - "{{ openclaw_workspaces_root }}"
+    - "{{ openclaw_workspace_root }}"
+    - "{{ openclaw_ctf_workspace_root }}"
+  changed_when: false
+  when: openclaw_skill_sync_enabled | bool
 
-- name: Remove the retired CTF Codex model instructions file
-  ansible.builtin.file:
-    path: "{{ openclaw_state_root }}/agents/ctf/agent/codex-home/gpt-5.6-sol-unrestricted-v45.md"
-    state: absent
-  when: openclaw_native_activate | bool
-  notify: Restart OpenClaw Gateway
-
-- name: Create the managed autonomous skill roots
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: "{{ openclaw_user }}"
-    group: "{{ openclaw_group }}"
-    mode: "0700"
+- name: Grant skill promoter read-only skill roots
+  ansible.builtin.command:
+    argv: [setfacl, -R, -m, "u:{{ openclaw_skill_sync_user }}:r-X", "{{ item }}"]
   loop:
     - "{{ openclaw_workspace_root }}/skills"
     - "{{ openclaw_ctf_workspace_root }}/skills"
-  when: openclaw_native_activate | bool
-
-- name: Grant the promotion identity read-only access to live skills
-  ansible.builtin.shell: |
-    set -eu
-    sync_user={{ openclaw_skill_sync_user | quote }}
-    for parent in \
-      {{ openclaw_state_root | quote }} \
-      {{ openclaw_workspaces_root | quote }}; do
-      setfacl -m "u:${sync_user}:--x" "$parent"
-    done
-    for workspace in \
-      {{ openclaw_workspace_root | quote }} \
-      {{ openclaw_ctf_workspace_root | quote }}; do
-      setfacl -m "u:${sync_user}:--x" "$workspace"
-    done
-    for root in \
-      {{ (openclaw_workspace_root + '/skills') | quote }} \
-      {{ (openclaw_ctf_workspace_root + '/skills') | quote }}; do
-      find "$root" -type d -exec setfacl \
-        -m "u:${sync_user}:r-x" -m "d:u:${sync_user}:r-x" {} +
-      find "$root" -type f -exec setfacl -m "u:${sync_user}:r--" {} +
-    done
-  args:
-    executable: /bin/sh
   changed_when: false
-  when: openclaw_native_activate | bool
+  when: openclaw_skill_sync_enabled | bool
 
-- name: Require the protected one-Gateway OpenClaw schema
-  ansible.builtin.assert:
-    that:
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).secrets ==
-        {'providers':
-          {
-            'gateway_token_file': {'source': 'file', 'path': '${OPENCLAW_GATEWAY_TOKEN_FILE}', 'mode': 'singleValue'},
-            'discord_bot_token_file': {'source': 'file', 'path': '${OPENCLAW_DISCORD_BOT_TOKEN_FILE}', 'mode': 'singleValue'},
-            'exa_api_key_file': {'source': 'file', 'path': '${OPENCLAW_EXA_API_KEY_FILE}', 'mode': 'singleValue'}
-          }
-        }
-      - >-
-        (openclaw_native_config.content | b64decode |
-        from_json).gateway.auth.token ==
-        {'source': 'file', 'provider': 'gateway_token_file', 'id': 'value'}
-      - >-
-        'remote' not in
-        (openclaw_native_config.content | b64decode | from_json).gateway
-      - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('id', 'equalto', 'main') | map(attribute='default') | list) == [true]
-      - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('id', 'equalto', 'main') | map(attribute='workspace') | list) ==
-        [openclaw_workspace_root]
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).agents.defaults.model.primary ==
-        openclaw_codex_model
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).agents.defaults.thinkingDefault ==
-        openclaw_codex_thinking_default
-      - >-
-        'imageModel' not in
-        (openclaw_native_config.content | b64decode | from_json).agents.defaults
-      - >-
-        'pdfModel' not in
-        (openclaw_native_config.content | b64decode | from_json).agents.defaults
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).tools.web.search ==
-        {'enabled': true, 'provider': 'exa'}
-      - >-
-        ((openclaw_native_config.content | b64decode | from_json).agents.list |
-        selectattr('model', 'defined') | map(attribute='model') |
-        map(attribute='primary') | list |
-        difference([openclaw_codex_model, openclaw_ctf_codex_model]) | length) == 0
-      - >-
-        openclaw_ctf_agents | length == 1
-      - >-
-        openclaw_main_agents | length == 1
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).auth ==
-        {'order': {'openai': [openclaw_codex_profile_id]}}
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).models.providers.openai ==
-        {'agentRuntime': {'id': 'codex'}}
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).commands.ownerAllowFrom ==
-        openclaw_discord_owner_ids
-      - >-
-        (openclaw_discord_owner_ids | select('match', '^[0-9]{17,20}$') |
-        list | length) == (openclaw_discord_owner_ids | length)
-      - >-
-        openclaw_ctf_agents[0].workspace == openclaw_ctf_workspace_root
-      - >-
-        openclaw_ctf_agents[0].model == {'primary': openclaw_ctf_codex_model}
-      - >-
-        openclaw_ctf_agents[0].thinkingDefault ==
-        openclaw_ctf_codex_thinking_default
-      - >-
-        openclaw_ctf_agents[0].fastModeDefault ==
-        (openclaw_ctf_codex_fast_mode_default | bool)
-      - >-
-        openclaw_ctf_agents[0].subagents ==
-        {
-          'delegationMode': 'prefer',
-          'allowAgents': ['ctf'],
-          'requireAgentId': true
-        }
-      - >-
-        openclaw_ctf_agents[0].memorySearch ==
-        {'provider': 'none', 'fallback': 'none'}
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).skills.workshop ==
-        {
-          'autonomous': {'enabled': true},
-          'approvalPolicy': 'auto',
-          'allowSymlinkTargetWrites': false,
-          'maxPending': 50,
-          'maxSkillBytes': 40000
-        }
-      - >-
-        openclaw_ctf_agents[0].sandbox.backend == 'docker'
-      - >-
-        openclaw_ctf_agents[0].sandbox.scope == 'session'
-      - >-
-        openclaw_ctf_agents[0].sandbox.docker.network == openclaw_ctf_docker_network
-      - >-
-        openclaw_ctf_agents[0].sandbox.docker.user == '0:0'
-      - >-
-        not (openclaw_ctf_agents[0].sandbox.docker.readOnlyRoot | bool)
-      - >-
-        openclaw_ctf_agents[0].sandbox.docker.capDrop == ['AUDIT_WRITE', 'MKNOD']
-      - >-
-        openclaw_ctf_agents[0].sandbox.docker.env.HOME == '/root'
-      - >-
-        openclaw_ctf_agents[0].sandbox.docker.env.XDG_CACHE_HOME == '/workspace/.cache'
-      - >-
-        openclaw_ctf_agents[0].sandbox.docker.env.UV_CACHE_DIR == '/workspace/.cache/uv'
-      - >-
-        openclaw_ctf_agents[0].sandbox.docker.binds ==
-        [openclaw_ctf_workspace_root + '/.cache/apt/archives:/var/cache/apt/archives:rw']
-      - >-
-        'skills' not in openclaw_ctf_agents[0]
-      - >-
-        'pidsLimit' not in openclaw_ctf_agents[0].sandbox.docker
-      - >-
-        'memory' not in openclaw_ctf_agents[0].sandbox.docker
-      - >-
-        'memorySwap' not in openclaw_ctf_agents[0].sandbox.docker
-      - >-
-        'cpus' not in openclaw_ctf_agents[0].sandbox.docker
-      - >-
-        'ulimits' not in openclaw_ctf_agents[0].sandbox.docker
-      - >-
-        not (openclaw_ctf_agents[0].tools.elevated.enabled | bool)
-      - >-
-        openclaw_ctf_agents[0].tools.alsoAllow ==
-        ['message', 'image', 'pdf', 'skill_workshop']
-      - >-
-        'message' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
-      - >-
-        'image' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
-      - >-
-        'pdf' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
-      - >-
-        'skill_workshop' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
-      - >-
-        'group:memory' in (openclaw_ctf_agents[0].tools.sandbox.tools.allow | default([]))
-      - >-
-        'message' not in (openclaw_ctf_agents[0].tools.sandbox.tools.deny | default([]))
-      - >-
-        not (openclaw_ctf_agents[0].tools.message.crossContext.allowWithinProvider | bool)
-      - >-
-        not (openclaw_ctf_agents[0].tools.message.crossContext.allowAcrossProviders | bool)
-      - >-
-        'message' in (openclaw_main_agents[0].tools.alsoAllow | default([]))
-      - >-
-        not (openclaw_main_agents[0].tools.message.crossContext.allowWithinProvider | bool)
-      - >-
-        not (openclaw_main_agents[0].tools.message.crossContext.allowAcrossProviders | bool)
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).plugins.entries.codex.enabled | bool
-      - >-
-        (openclaw_native_config.content | b64decode |
-        from_json).plugins.entries.codex.config.appServer.experimental.sandboxExecServer | bool
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).plugins.entries.discord.enabled | bool
-      - >-
-        (openclaw_native_config.content | b64decode | from_json).plugins.entries.exa ==
-        {
-          'enabled': true,
-          'config': {
-            'webSearch': {
-              'apiKey': {'source': 'file', 'provider': 'exa_api_key_file', 'id': 'value'},
-              'baseUrl': 'https://api.exa.ai'
-            }
-          }
-        }
-    fail_msg: >-
-      The one Gateway must retain its token SecretRef, its shared Codex profile,
-      and exactly one CTF agent with a root-capable, writable, unlimited,
-      per-session Docker sandbox. Its and main's
-      approved direct Discord artifact-delivery tool must not cross contexts.
-      The Codex harness, direct Discord channel plugin, and Exa search provider
-      must be enabled, and Codex native shell/file tools must be routed through
-      the active OpenClaw sandbox exec-server,
-      and owner-only commands must use the explicit operator ID list without
-      changing channel-only message authorization.
-  vars:
-    openclaw_ctf_agents: >-
-      {{ (openclaw_native_config.content | b64decode | from_json).agents.list |
-         selectattr('id', 'equalto', 'ctf') | list }}
-    openclaw_main_agents: >-
-      {{ (openclaw_native_config.content | b64decode | from_json).agents.list |
-         selectattr('id', 'equalto', 'main') | list }}
-  no_log: true
-  when: openclaw_native_activate | bool
-
-- name: Require channel-only shared Discord routing in the one Gateway
-  ansible.builtin.assert:
-    that:
-      - openclaw_discord.enabled | bool
-      - (openclaw_discord.accounts | list | sort) == ['shared']
-      - openclaw_discord_account.enabled | bool
-      - openclaw_discord_account.dmPolicy == 'disabled'
-      - openclaw_discord_account.groupPolicy == 'allowlist'
-      - not (openclaw_discord_account.configWrites | bool)
-      - not (openclaw_discord_account.allowBots | bool)
-      - >-
-        openclaw_discord.actions == {'threads': true}
-      - >-
-        openclaw_discord.thread == {'inheritParent': false}
-      - >-
-        openclaw_discord.threadBindings ==
-        {
-          'enabled': true,
-          'idleHours': 24,
-          'maxAgeHours': 0,
-          'spawnSessions': true,
-          'defaultSpawnContext': 'fork'
-        }
-      - >-
-        openclaw_discord_account.token ==
-        {'source': 'file', 'provider': 'discord_bot_token_file', 'id': 'value'}
-      - (openclaw_discord_guilds | list | sort) == ['*']
-      - openclaw_discord_account.allowFrom | default([]) | length == 0
-      - openclaw_discord_account.groupAllowFrom | default([]) | length == 0
-      - openclaw_discord_account.users | default([]) | length == 0
-      - openclaw_discord_account.roles | default([]) | length == 0
-      - openclaw_discord_wildcard.users | default([]) | length == 0
-      - openclaw_discord_wildcard.roles | default([]) | length == 0
-      - openclaw_discord_allowed_channels | length > 0
-      - >-
-        (openclaw_discord_allowed_channels | list |
-        select('match', '^[0-9]{17,20}$') | list | length) ==
-        (openclaw_discord_allowed_channels | length)
-      - >-
-        (openclaw_discord_allowed_channels | dict2items |
-        selectattr('value.enabled', 'defined') |
-        selectattr('value.enabled', 'equalto', true) | list | length) ==
-        (openclaw_discord_allowed_channels | length)
-      - >-
-        (openclaw_discord_allowed_channels | dict2items |
-        selectattr('value.users', 'defined') | list | length) == 0
-      - >-
-        (openclaw_discord_allowed_channels | dict2items |
-        selectattr('value.roles', 'defined') | list | length) == 0
-      - openclaw_discord_bindings | length > 0
-      - >-
-        (openclaw_discord_bindings |
-        selectattr('match.accountId', 'equalto', 'shared') | list | length) ==
-        (openclaw_discord_bindings | length)
-      - >-
-        (openclaw_discord_bindings |
-        selectattr('match.peer.kind', 'equalto', 'channel') | list | length) ==
-        (openclaw_discord_bindings | length)
-      - >-
-        (openclaw_discord_bindings |
-        selectattr('match.guildId', 'defined') | list | length) == 0
-      - >-
-        (openclaw_discord_bindings | map(attribute='match.peer.id') |
-        select('match', '^[0-9]{17,20}$') | list | length) ==
-        (openclaw_discord_bindings | length)
-      - >-
-        (openclaw_discord_bindings | map(attribute='match.peer.id') |
-        list | unique | list | length) ==
-        (openclaw_discord_bindings | length)
-      - >-
-        (openclaw_discord_bindings | map(attribute='match.peer.id') |
-        list | sort) == (openclaw_discord_allowed_channels | list | sort)
-      - >-
-        (openclaw_discord_bindings | map(attribute='agentId') | list |
-        difference(openclaw_native_config_parsed.agents.list |
-        map(attribute='id') | list) | length) == 0
-      - >-
-        (openclaw_discord_bindings |
-        selectattr('agentId', 'equalto', 'ctf') | list | length) > 0
-      - >-
-        (openclaw_ctf_channel_configs |
-        selectattr('requireMention', 'equalto', true) | list | length) ==
-        (openclaw_ctf_channel_configs | length)
-      - >-
-        (openclaw_ctf_channel_configs |
-        selectattr('autoThread', 'equalto', true) | list | length) ==
-        (openclaw_ctf_channel_configs | length)
-      - >-
-        (openclaw_ctf_channel_configs |
-        selectattr('autoArchiveDuration', 'equalto', 1440) | list | length) ==
-        (openclaw_ctf_channel_configs | length)
-      - >-
-        (openclaw_ctf_channel_configs |
-        selectattr('autoThreadName', 'equalto', 'message') | list | length) ==
-        (openclaw_ctf_channel_configs | length)
-      - >-
-        (openclaw_main_channel_configs |
-        selectattr('requireMention', 'equalto', false) | list | length) ==
-        (openclaw_main_channel_configs | length)
-    fail_msg: >-
-      The shared Discord bot must use numeric channel IDs as its only
-      authorization and routing keys. Every allowed channel must have exactly
-      one binding to a configured agent; user, role, guild, and DM allowlists
-      are not permitted.
-  vars:
-    openclaw_native_config_parsed: >-
-      {{ openclaw_native_config.content | b64decode | from_json }}
-    openclaw_discord: >-
-      {{ openclaw_native_config_parsed.get('channels', {}).get('discord', {}) }}
-    openclaw_discord_account: >-
-      {{ openclaw_discord.get('accounts', {}).get('shared', {}) }}
-    openclaw_discord_guilds: >-
-      {{ openclaw_discord_account.get('guilds', {}) }}
-    openclaw_discord_wildcard: >-
-      {{ openclaw_discord_guilds.get('*', {}) }}
-    openclaw_discord_allowed_channels: >-
-      {{ openclaw_discord_wildcard.get('channels', {}) }}
-    openclaw_ctf_channel_ids: >-
-      {{ openclaw_discord_bindings |
-         selectattr('agentId', 'equalto', 'ctf') |
-         map(attribute='match.peer.id') | list }}
-    openclaw_main_channel_ids: >-
-      {{ openclaw_discord_bindings |
-         selectattr('agentId', 'equalto', 'main') |
-         map(attribute='match.peer.id') | list }}
-    openclaw_ctf_channel_configs: >-
-      {{ openclaw_ctf_channel_ids |
-         map('extract', openclaw_discord_allowed_channels) | list }}
-    openclaw_main_channel_configs: >-
-      {{ openclaw_main_channel_ids |
-         map('extract', openclaw_discord_allowed_channels) | list }}
-    openclaw_discord_bindings: >-
-      {{ openclaw_native_config_parsed.get('bindings', []) |
-      selectattr('match.channel', 'equalto', 'discord') | list }}
-  no_log: true
-  when: openclaw_native_activate | bool
-
-- name: Validate native config through an isolated service-user credential
-  when: openclaw_native_activate | bool
-  block:
-    - name: Create a temporary native OpenClaw credential directory
-      ansible.builtin.tempfile:
-        state: directory
-        path: /run
-        prefix: openclaw-validation-credential-
-      register: openclaw_validation_credential_dir
-      no_log: true
-
-    - name: Protect the temporary native OpenClaw credential directory
-      ansible.builtin.file:
-        path: "{{ openclaw_validation_credential_dir.path }}"
-        state: directory
-        owner: root
-        group: "{{ openclaw_group }}"
-        mode: "0750"
-
-    - name: Materialize a read-only service-user Gateway credential
-      ansible.builtin.copy:
-        src: "{{ openclaw_gateway_token_path }}"
-        dest: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
-        remote_src: true
-        owner: "{{ openclaw_user }}"
-        group: "{{ openclaw_group }}"
-        mode: "0400"
-      no_log: true
-      diff: false
-
-    - name: Materialize a read-only shared Discord validation credential
-      ansible.builtin.copy:
-        src: "{{ openclaw_discord_bot_token_path }}"
-        dest: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
-        remote_src: true
-        owner: "{{ openclaw_user }}"
-        group: "{{ openclaw_group }}"
-        mode: "0400"
-      no_log: true
-      diff: false
-
-    - name: Materialize a read-only Exa validation credential
-      ansible.builtin.copy:
-        src: "{{ openclaw_exa_api_key_path }}"
-        dest: "{{ openclaw_validation_credential_dir.path }}/exa_api_key"
-        remote_src: true
-        owner: "{{ openclaw_user }}"
-        group: "{{ openclaw_group }}"
-        mode: "0400"
-      no_log: true
-      diff: false
-
-    - name: Create a writable native OpenClaw plugin-install directory
-      ansible.builtin.file:
-        path: "{{ openclaw_validation_credential_dir.path }}/plugin-install"
-        state: directory
-        owner: "{{ openclaw_user }}"
-        group: "{{ openclaw_group }}"
-        mode: "0700"
-
-    - name: Materialize a writable core plugin-install config
-      ansible.builtin.copy:
-        src: "{{ openclaw_config_path }}"
-        dest: "{{ openclaw_validation_credential_dir.path }}/plugin-install/plugin-install-config.json"
-        remote_src: true
-        owner: "{{ openclaw_user }}"
-        group: "{{ openclaw_group }}"
-        mode: "0600"
-      no_log: true
-      diff: false
-
-    - name: Install the pinned core Codex harness
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_current_root }}/bin/node"
-          - "{{ openclaw_entrypoint }}"
-          - plugins
-          - install
-          - "{{ openclaw_codex_plugin_spec }}"
-          - --pin
-          - --force
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: &openclaw_native_plugin_install_environment
-        HOME: "{{ openclaw_home }}"
-        PATH: "{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin"
-        OPENCLAW_HOME: "{{ openclaw_home }}"
-        OPENCLAW_STATE_DIR: "{{ openclaw_state_root }}"
-        OPENCLAW_CONFIG_PATH: "{{ openclaw_validation_credential_dir.path }}/plugin-install/plugin-install-config.json"
-        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_workspace_root }}"
-        OPENCLAW_DISABLE_BONJOUR: "1"
-        OPENCLAW_NO_AUTO_UPDATE: "1"
-        OPENCLAW_NO_RESPAWN: "1"
-        OPENCLAW_SERVICE_REPAIR_POLICY: external
-        OPENCLAW_SUPERVISOR_MODE: external
-        OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
-        OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
-        OPENCLAW_EXA_API_KEY_FILE: "{{ openclaw_validation_credential_dir.path }}/exa_api_key"
-        NPM_CONFIG_CACHE: "{{ openclaw_npm_cache_root }}"
-      notify: Restart OpenClaw Gateway
-
-    - name: Locate the pinned core Codex harness package
-      ansible.builtin.shell: |
-        set -eu
-        find {{ openclaw_state_root | quote }}/npm/projects \
-          -path '*/node_modules/@openclaw/codex/package.json' -type f -print |
-        while IFS= read -r manifest; do
-          version="$({{ openclaw_node_current_root | quote }}/bin/node \
-            -e 'console.log(require(process.argv[1]).version)' "$manifest")"
-          if [ "$version" = '2026.7.1-1' ]; then
-            printf '%s\n' "$manifest"
-          fi
-        done
-      args:
-        executable: /bin/sh
-      register: openclaw_codex_package_manifests
-      changed_when: false
-      failed_when: >-
-        openclaw_codex_package_manifests.rc != 0 or
-        openclaw_codex_package_manifests.stdout_lines | length < 1
-
-    - name: Apply the pinned Codex sandbox PathUri cwd compatibility fix
-      ansible.builtin.command:
-        argv:
-          - /usr/local/libexec/patch-openclaw-codex-sandbox-cwd
-          - "{{ item | dirname }}"
-      become: true
-      become_user: "{{ openclaw_user }}"
-      register: openclaw_codex_cwd_patch
-      changed_when: openclaw_codex_cwd_patch.stdout | trim == 'changed'
-      failed_when: >-
-        openclaw_codex_cwd_patch.rc != 0 or
-        openclaw_codex_cwd_patch.stdout | trim not in ['changed', 'unchanged']
-      loop: "{{ openclaw_codex_package_manifests.stdout_lines }}"
-      notify: Restart OpenClaw Gateway
-
-    - name: Install the pinned core Discord channel plugin
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_current_root }}/bin/node"
-          - "{{ openclaw_entrypoint }}"
-          - plugins
-          - install
-          - "{{ openclaw_discord_plugin_spec }}"
-          - --pin
-          - --force
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: *openclaw_native_plugin_install_environment
-      notify: Restart OpenClaw Gateway
-
-    - name: Apply the pinned Discord auto-thread queue backport
-      ansible.builtin.command:
-        argv:
-          - /usr/local/libexec/patch-openclaw-discord-autothread-queue
-          - "{{ openclaw_state_root }}/npm/projects"
-      become: true
-      become_user: "{{ openclaw_user }}"
-      register: openclaw_discord_autothread_patch
-      changed_when: openclaw_discord_autothread_patch.stdout | trim == 'changed'
-      failed_when: >-
-        openclaw_discord_autothread_patch.rc != 0 or
-        openclaw_discord_autothread_patch.stdout | trim not in ['changed', 'unchanged']
-      notify: Restart OpenClaw Gateway
-
-    - name: Install the pinned Exa web-search plugin
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_current_root }}/bin/node"
-          - "{{ openclaw_entrypoint }}"
-          - plugins
-          - install
-          - "{{ openclaw_exa_plugin_spec }}"
-          - --pin
-          - --force
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: *openclaw_native_plugin_install_environment
-      notify: Restart OpenClaw Gateway
-
-    - name: Check the active native OpenClaw config path
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_release_root }}/bin/node"
-          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
-          - config
-          - file
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: &openclaw_native_cli_environment
-        HOME: "{{ openclaw_home }}"
-        PATH: "{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin"
-        OPENCLAW_HOME: "{{ openclaw_home }}"
-        OPENCLAW_STATE_DIR: "{{ openclaw_state_root }}"
-        OPENCLAW_CONFIG_PATH: "{{ openclaw_config_path }}"
-        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_workspace_root }}"
-        OPENCLAW_DISABLE_BONJOUR: "1"
-        OPENCLAW_NO_AUTO_UPDATE: "1"
-        OPENCLAW_NO_RESPAWN: "1"
-        OPENCLAW_SERVICE_REPAIR_POLICY: external
-        OPENCLAW_SUPERVISOR_MODE: external
-        OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/openclaw_gateway_token"
-        OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_validation_credential_dir.path }}/discord_bot_token"
-        OPENCLAW_EXA_API_KEY_FILE: "{{ openclaw_validation_credential_dir.path }}/exa_api_key"
-      register: openclaw_config_file_preflight
-      changed_when: false
-      failed_when: >-
-        openclaw_config_file_preflight.rc != 0 or
-        (openclaw_config_file_preflight.stdout | trim |
-        regex_replace('^[$]OPENCLAW_HOME/', openclaw_home + '/')) !=
-        openclaw_config_path
-
-    - name: Validate the native OpenClaw config schema
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_release_root }}/bin/node"
-          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
-          - config
-          - validate
-          - --json
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: *openclaw_native_cli_environment
-      register: openclaw_config_validation_preflight
-      changed_when: false
-      failed_when: >-
-        openclaw_config_validation_preflight.rc != 0 or
-        not (openclaw_config_validation_preflight.stdout | from_json).valid or
-        (openclaw_config_validation_preflight.stdout | from_json).warnings | length > 0
-
-    - name: Inspect the core Codex harness runtime before startup
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_current_root }}/bin/node"
-          - "{{ openclaw_entrypoint }}"
-          - plugins
-          - inspect
-          - codex
-          - --runtime
-          - --json
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: *openclaw_native_cli_environment
-      register: openclaw_codex_runtime_inspection
-      changed_when: false
-      failed_when: >-
-        openclaw_codex_runtime_inspection.rc != 0 or
-        (openclaw_codex_runtime_inspection.stdout | from_json).plugin.id != 'codex' or
-        (openclaw_codex_runtime_inspection.stdout | from_json).plugin.status != 'loaded'
-      no_log: true
-
-    - name: Inspect the core Discord channel plugin runtime before startup
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_current_root }}/bin/node"
-          - "{{ openclaw_entrypoint }}"
-          - plugins
-          - inspect
-          - discord
-          - --runtime
-          - --json
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: *openclaw_native_cli_environment
-      register: openclaw_discord_runtime_inspection
-      changed_when: false
-      failed_when: >-
-        openclaw_discord_runtime_inspection.rc != 0 or
-        (openclaw_discord_runtime_inspection.stdout | from_json).plugin.id != 'discord' or
-        (openclaw_discord_runtime_inspection.stdout | from_json).plugin.status != 'loaded'
-      no_log: true
-
-    - name: Inspect the Exa web-search plugin runtime before startup
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_current_root }}/bin/node"
-          - "{{ openclaw_entrypoint }}"
-          - plugins
-          - inspect
-          - exa
-          - --runtime
-          - --json
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: *openclaw_native_cli_environment
-      register: openclaw_exa_runtime_inspection
-      changed_when: false
-      failed_when: >-
-        openclaw_exa_runtime_inspection.rc != 0 or
-        (openclaw_exa_runtime_inspection.stdout | from_json).plugin.id != 'exa' or
-        (openclaw_exa_runtime_inspection.stdout | from_json).plugin.status != 'loaded'
-      no_log: true
-
-    - name: Require the proxy-only native OpenClaw config values
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_release_root }}/bin/node"
-          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
-          - config
-          - get
-          - "{{ item.path }}"
-          - --json
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: *openclaw_native_cli_environment
-      register: openclaw_native_config_values
-      changed_when: false
-      failed_when: >-
-        openclaw_native_config_values.rc != 0 or
-        (openclaw_native_config_values.stdout | from_json) !=
-        (item.cli_value | default(item.value))
-      loop:
-        # The pinned CLI redacts every value below secrets.providers when read.
-        # Their literal schema is asserted above from the protected config slurp.
-        - {path: secrets.providers.gateway_token_file.source, value: file, cli_value: __OPENCLAW_REDACTED__}
-        - {path: secrets.providers.gateway_token_file.path, value: "${OPENCLAW_GATEWAY_TOKEN_FILE}", cli_value: __OPENCLAW_REDACTED__}
-        - {path: secrets.providers.gateway_token_file.mode, value: singleValue, cli_value: __OPENCLAW_REDACTED__}
-        - {path: secrets.providers.discord_bot_token_file.source, value: file, cli_value: __OPENCLAW_REDACTED__}
-        - {path: secrets.providers.discord_bot_token_file.path, value: "${OPENCLAW_DISCORD_BOT_TOKEN_FILE}", cli_value: __OPENCLAW_REDACTED__}
-        - {path: secrets.providers.discord_bot_token_file.mode, value: singleValue, cli_value: __OPENCLAW_REDACTED__}
-        - {path: gateway.mode, value: local}
-        - {path: gateway.port, value: "{{ openclaw_gateway_port | int }}"}
-        - {path: gateway.bind, value: custom}
-        - {path: gateway.customBindHost, value: "{{ openclaw_bind_host }}"}
-        - {path: gateway.controlUi.enabled, value: true}
-        - {path: gateway.terminal.enabled, value: false}
-        - {path: gateway.auth.mode, value: token}
-        - {path: gateway.auth.allowTailscale, value: false}
-        - path: gateway.auth.rateLimit
-          value: {maxAttempts: 10, windowMs: 60000, lockoutMs: 300000, exemptLoopback: true}
-        - {path: gateway.controlUi.allowedOrigins, value: ["{{ openclaw_control_ui_origin }}"]}
-        - {path: gateway.trustedProxies, value: ["{{ openclaw_proxy_ip }}"]}
-        - {path: gateway.allowRealIpFallback, value: false}
-        - {path: gateway.tailscale.mode, value: "off"}
-        - {path: gateway.tailscale.resetOnExit, value: false}
-        - {path: auth.order.openai, value: ["{{ openclaw_codex_profile_id }}"]}
-        # The CLI adds provider defaults to the parent object. The protected
-        # config slurp above asserts the literal schema; query the runtime
-        # setting itself here.
-        - {path: models.providers.openai.agentRuntime.id, value: codex}
-        - {path: agents.defaults.model.primary, value: "{{ openclaw_codex_model }}"}
-        - {path: agents.defaults.thinkingDefault, value: "{{ openclaw_codex_thinking_default }}"}
-        - {path: skills.workshop.autonomous.enabled, value: true}
-        - {path: skills.workshop.approvalPolicy, value: auto}
-        - {path: skills.workshop.allowSymlinkTargetWrites, value: false}
-        - {path: plugins.entries.codex.enabled, value: true}
-        - {path: plugins.entries.codex.config.appServer.experimental.sandboxExecServer, value: true}
-        - {path: plugins.entries.discord.enabled, value: true}
-        - {path: plugins.entries.exa.enabled, value: true}
-        - {path: tools.web.search.provider, value: exa}
-        - {path: secrets.providers.exa_api_key_file.path, value: "${OPENCLAW_EXA_API_KEY_FILE}", cli_value: __OPENCLAW_REDACTED__}
-      loop_control:
-        label: "{{ item.path }}"
-
-    - name: Audit native OpenClaw secrets before startup
-      ansible.builtin.command:
-        argv:
-          - "{{ openclaw_node_release_root }}/bin/node"
-          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
-          - secrets
-          - audit
-          - --check
-          - --json
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment: *openclaw_native_cli_environment
-      register: openclaw_secrets_audit_preflight
-      changed_when: false
-      failed_when: false
-      no_log: true
-
-    - name: Parse the native OpenClaw secret audit result
-      ansible.builtin.set_fact:
-        openclaw_secrets_audit_result: "{{ openclaw_secrets_audit_preflight.stdout | from_json }}"
-      no_log: true
-
-    - name: Require a clean native OpenClaw secret audit
-      ansible.builtin.assert:
-        that:
-          - openclaw_secrets_audit_result.summary.plaintextCount == 0
-          - openclaw_secrets_audit_result.summary.unresolvedRefCount == 0
-          - openclaw_secrets_audit_result.summary.shadowedRefCount == 0
-          - >-
-            openclaw_secrets_audit_result.summary.legacyResidueCount <=
-            ((openclaw_native_config.content | b64decode | from_json).agents.list | length)
-          - openclaw_secrets_audit_result.findings | length == openclaw_secrets_audit_result.summary.legacyResidueCount
-          - >-
-            (openclaw_secrets_audit_result.summary.legacyResidueCount == 0 and
-             openclaw_secrets_audit_preflight.rc == 0 and
-             openclaw_secrets_audit_result.status == 'clean') or
-            (openclaw_secrets_audit_result.summary.legacyResidueCount > 0 and
-             openclaw_secrets_audit_preflight.rc == 1 and
-             openclaw_secrets_audit_result.status == 'findings' and
-             (openclaw_secrets_audit_result.findings | map(attribute='code') |
-              unique | list) == ['LEGACY_RESIDUE'] and
-             (openclaw_secrets_audit_result.findings | map(attribute='severity') |
-              unique | list) == ['info'] and
-             (openclaw_secrets_audit_result.findings | map(attribute='jsonPath') |
-              unique | list) == ['profiles.' + openclaw_codex_profile_id] and
-             (openclaw_secrets_audit_result.findings | map(attribute='provider') |
-              unique | list) == ['openai'] and
-             (openclaw_secrets_audit_result.findings | map(attribute='profileId') |
-              unique | list) == [openclaw_codex_profile_id])
-        fail_msg: >-
-          OpenClaw secret audit failed:
-          status={{ openclaw_secrets_audit_result.status | default('missing') }},
-          plaintext={{ openclaw_secrets_audit_result.summary.plaintextCount | default('unknown') }},
-          unresolved={{ openclaw_secrets_audit_result.summary.unresolvedRefCount | default('unknown') }},
-          shadowed={{ openclaw_secrets_audit_result.summary.shadowedRefCount | default('unknown') }},
-          legacy={{ openclaw_secrets_audit_result.summary.legacyResidueCount | default('unknown') }},
-          codes={{ openclaw_secrets_audit_result.findings | default([]) | map(attribute='code') | list | unique | sort | join(',') }},
-          paths={{ openclaw_secrets_audit_result.findings | default([]) | map(attribute='jsonPath') | list | unique | sort | join(',') }}
-  always:
-    - name: Remove the temporary native OpenClaw credential directory
-      ansible.builtin.file:
-        path: "{{ openclaw_validation_credential_dir.path }}"
-        state: absent
-      when: openclaw_validation_credential_dir.path is defined
-      no_log: true
-
-- name: Flush validated OpenClaw handlers before activation
-  ansible.builtin.meta: flush_handlers
-
-- name: Activate only the native OpenClaw system service
-  ansible.builtin.systemd_service:
-    name: openclaw-gateway.service
-    enabled: true
-    state: started
-    daemon_reload: true
-  when:
-    - openclaw_native_activate | bool
-    - not (openclaw_docker_rollback_activate | bool)
-
-- name: Stop and disable native OpenClaw for tracked Docker rollback
-  ansible.builtin.systemd_service:
-    name: openclaw-gateway.service
-    enabled: false
-    state: stopped
-    daemon_reload: true
-  when: openclaw_docker_rollback_activate | bool
-
-- name: Stop autonomous skill promotion for tracked Docker rollback
-  ansible.builtin.systemd_service:
-    name: openclaw-skill-sync.timer
-    enabled: false
-    state: stopped
-    daemon_reload: true
-  when: openclaw_docker_rollback_activate | bool
-
-- name: Prove tracked Docker rollback has no native OpenClaw listener
-  ansible.builtin.shell: |
-    set -eu
-    ! systemctl is-enabled --quiet openclaw-gateway.service
-    ! systemctl is-active --quiet openclaw-gateway.service
-    ! ss -H -ltn 'sport = :{{ openclaw_gateway_port }}' | grep -q .
-  args:
-    executable: /bin/sh
-  changed_when: false
-  when: openclaw_docker_rollback_activate | bool
-
-- name: Wait for the native OpenClaw Gateway readiness endpoint
-  when: not (openclaw_docker_rollback_activate | bool)
-  block:
-    - name: Probe the native OpenClaw Gateway readiness endpoint
-      ansible.builtin.uri:
-        url: "http://{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}/readyz"
-        method: GET
-        status_code: 200
-        return_content: false
-      register: openclaw_native_readiness
-      changed_when: false
-      retries: 18
-      delay: 5
-      until: openclaw_native_readiness.status == 200
-  rescue:
-    - name: Read allowlisted native OpenClaw systemd failure properties
-      ansible.builtin.command:
-        argv:
-          - systemctl
-          - show
-          - openclaw-gateway.service
-          - --property=ActiveState
-          - --property=SubState
-          - --property=Result
-          - --property=ExecMainCode
-          - --property=ExecMainStatus
-          - --property=NRestarts
-      register: openclaw_native_systemd_failure
-      changed_when: false
-      failed_when: false
-
-    - name: Report allowlisted native OpenClaw systemd failure properties
-      ansible.builtin.debug:
-        msg: "{{ openclaw_native_systemd_failure.stdout_lines }}"
-
-    - name: Classify native OpenClaw application failure journal safely
-      ansible.builtin.include_tasks: classify_gateway_journal.yml
-
-    - name: Fail after the native OpenClaw readiness diagnostic
-      ansible.builtin.fail:
-        msg: >-
-          The native OpenClaw Gateway did not become ready; the allowlisted
-          systemd state and fixed journal category counters above contain no
-          environment, command line, config, raw journal, or credential
-          material.
-
-- name: Enable autonomous OpenClaw skill promotion after Gateway readiness
+- name: Enable isolated skill promotion timer
   ansible.builtin.systemd_service:
     name: openclaw-skill-sync.timer
     enabled: true
     state: started
     daemon_reload: true
-  when:
-    - openclaw_skill_sync_enabled | bool
-    - openclaw_native_activate | bool
-    - not (openclaw_docker_rollback_activate | bool)
-
-- name: Validate the native Gateway token handshake without operator scope
-  when: openclaw_native_activate | bool
-  block:
-    - name: Create a temporary native Gateway handshake credential directory
-      ansible.builtin.tempfile:
-        state: directory
-        path: /run
-        prefix: openclaw-handshake-credential-
-      register: openclaw_gateway_handshake_credential_dir
-      no_log: true
-
-    - name: Protect the temporary native Gateway handshake credential directory
-      ansible.builtin.file:
-        path: "{{ openclaw_gateway_handshake_credential_dir.path }}"
-        state: directory
-        owner: root
-        group: "{{ openclaw_group }}"
-        mode: "0750"
-
-    - name: Materialize a read-only service-user Gateway handshake credential
-      ansible.builtin.copy:
-        src: "{{ openclaw_gateway_token_path }}"
-        dest: "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token"
-        remote_src: true
-        owner: "{{ openclaw_user }}"
-        group: "{{ openclaw_group }}"
-        mode: "0400"
-      no_log: true
-      diff: false
-
-    - name: Materialize a read-only shared Discord Gateway handshake credential
-      ansible.builtin.copy:
-        src: "{{ openclaw_discord_bot_token_path }}"
-        dest: "{{ openclaw_gateway_handshake_credential_dir.path }}/discord_bot_token"
-        remote_src: true
-        owner: "{{ openclaw_user }}"
-        group: "{{ openclaw_group }}"
-        mode: "0400"
-      no_log: true
-      diff: false
-
-    - name: Materialize a read-only Exa Gateway handshake credential
-      ansible.builtin.copy:
-        src: "{{ openclaw_exa_api_key_path }}"
-        dest: "{{ openclaw_gateway_handshake_credential_dir.path }}/exa_api_key"
-        remote_src: true
-        owner: "{{ openclaw_user }}"
-        group: "{{ openclaw_group }}"
-        mode: "0400"
-      no_log: true
-      diff: false
-
-    - name: Create an isolated native Gateway handshake state directory
-      ansible.builtin.tempfile:
-        state: directory
-        path: /run
-        prefix: openclaw-handshake-state-
-      register: openclaw_validation_handshake_state_dir
-      no_log: true
-
-    - name: Protect the isolated native Gateway handshake state
-      ansible.builtin.file:
-        path: "{{ openclaw_validation_handshake_state_dir.path }}"
-        state: directory
-        owner: "{{ openclaw_user }}"
-        group: "{{ openclaw_group }}"
-        mode: "0700"
-      no_log: true
-
-    - name: Prove the isolated native Gateway handshake state starts without device identity
-      ansible.builtin.shell: |
-        set -eu
-        test -d "{{ openclaw_validation_handshake_state_dir.path }}"
-        test ! -L "{{ openclaw_validation_handshake_state_dir.path }}"
-        test -w "{{ openclaw_validation_handshake_state_dir.path }}"
-        test -z "$(find "{{ openclaw_validation_handshake_state_dir.path }}" -mindepth 1 -print -quit)"
-        test ! -e "{{ openclaw_validation_handshake_state_dir.path }}/identity"
-        test ! -L "{{ openclaw_validation_handshake_state_dir.path }}/identity"
-      args:
-        executable: /bin/sh
-      become: true
-      become_user: "{{ openclaw_user }}"
-      changed_when: false
-      no_log: true
-
-    # Pinned 2026.7.1-2 resolves the local gateway.auth.token SecretRef for an
-    # explicit probe target. A fresh isolated state and read-only auth storage
-    # ensure a stored or newly persisted device identity cannot mask the
-    # shared-token authorization edge; incidental migration artifacts may be
-    # written to the temporary state and are removed with it.
-    - name: Collect the active native Gateway scope-limited token handshake
-      ansible.builtin.command:
-        argv:
-          - /usr/bin/timeout
-          - --signal=TERM
-          - --kill-after=5s
-          - 45s
-          - "{{ openclaw_node_release_root }}/bin/node"
-          - "{{ openclaw_release_root }}/lib/node_modules/openclaw/openclaw.mjs"
-          - gateway
-          - probe
-          - --url
-          - "ws://{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}"
-          - --json
-      become: true
-      become_user: "{{ openclaw_user }}"
-      environment:
-        HOME: "{{ openclaw_home }}"
-        PATH: "{{ openclaw_node_current_root }}/bin:{{ openclaw_current_root }}/bin:/usr/local/bin:/usr/bin:/bin"
-        OPENCLAW_HOME: "{{ openclaw_home }}"
-        OPENCLAW_STATE_DIR: "{{ openclaw_validation_handshake_state_dir.path }}"
-        OPENCLAW_CONFIG_PATH: "{{ openclaw_config_path }}"
-        OPENCLAW_WORKSPACE_DIR: "{{ openclaw_validation_handshake_state_dir.path }}/workspace"
-        OPENCLAW_DISABLE_BONJOUR: "1"
-        OPENCLAW_NO_AUTO_UPDATE: "1"
-        OPENCLAW_NO_RESPAWN: "1"
-        OPENCLAW_SERVICE_REPAIR_POLICY: external
-        OPENCLAW_SUPERVISOR_MODE: external
-        OPENCLAW_AUTH_STORE_READONLY: "1"
-        OPENCLAW_GATEWAY_TOKEN_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/openclaw_gateway_token"
-        OPENCLAW_DISCORD_BOT_TOKEN_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/discord_bot_token"
-        OPENCLAW_EXA_API_KEY_FILE: "{{ openclaw_gateway_handshake_credential_dir.path }}/exa_api_key"
-      register: openclaw_native_gateway_handshake
-      changed_when: false
-      failed_when: false
-      no_log: true
-
-    - name: Prove the exact native Gateway scope-limited token handshake contract
-      ansible.builtin.assert:
-        that:
-          - openclaw_native_gateway_handshake.rc == 0
-          - openclaw_native_gateway_handshake_payload.ok
-          - openclaw_native_gateway_handshake_payload.degraded
-          - >-
-            openclaw_native_gateway_handshake_payload.capability ==
-            'connected_no_operator_scope'
-          - openclaw_native_gateway_handshake_payload.primaryTargetId == 'explicit'
-          - >-
-            openclaw_native_gateway_handshake_target_ids ==
-            ['explicit', 'localLoopback']
-          - openclaw_native_gateway_handshake_explicit_targets | length == 1
-          - openclaw_native_gateway_handshake_explicit_targets[0].kind == 'explicit'
-          - openclaw_native_gateway_handshake_explicit_targets[0].active
-          - >-
-            openclaw_native_gateway_handshake_explicit_targets[0].url ==
-            'ws://' + openclaw_bind_host + ':' + (openclaw_gateway_port | string)
-          - openclaw_native_gateway_handshake_explicit_targets[0].connect.ok
-          - not openclaw_native_gateway_handshake_explicit_targets[0].connect.rpcOk
-          - openclaw_native_gateway_handshake_explicit_targets[0].connect.scopeLimited
-          - openclaw_native_gateway_handshake_explicit_targets[0].auth.role == 'operator'
-          - openclaw_native_gateway_handshake_explicit_targets[0].auth.scopes == []
-          - >-
-            openclaw_native_gateway_handshake_explicit_targets[0].auth.capability ==
-            'connected_no_operator_scope'
-          - openclaw_native_gateway_handshake_loopback_targets | length == 1
-          - >-
-            openclaw_native_gateway_handshake_loopback_targets[0].url ==
-            'ws://127.0.0.1:18789'
-          - not openclaw_native_gateway_handshake_loopback_targets[0].connect.ok
-          - openclaw_native_gateway_handshake_payload.warnings | length == 1
-          - >-
-            openclaw_native_gateway_handshake_payload.warnings[0].code ==
-            'probe_scope_limited'
-          - >-
-            openclaw_native_gateway_handshake_payload.warnings[0].targetIds ==
-            ['explicit']
-        fail_msg: >-
-          The native Gateway did not return the exact authenticated,
-          scope-limited handshake contract.
-      vars:
-        openclaw_native_gateway_handshake_payload: >-
-          {{ openclaw_native_gateway_handshake.stdout | from_json }}
-        openclaw_native_gateway_handshake_target_ids: >-
-          {{ openclaw_native_gateway_handshake_payload.targets |
-             map(attribute='id') | sort | list }}
-        openclaw_native_gateway_handshake_explicit_targets: >-
-          {{ openclaw_native_gateway_handshake_payload.targets |
-             selectattr('id', 'equalto', 'explicit') | list }}
-        openclaw_native_gateway_handshake_loopback_targets: >-
-          {{ openclaw_native_gateway_handshake_payload.targets |
-             selectattr('id', 'equalto', 'localLoopback') | list }}
-      no_log: true
-  always:
-    - name: Inspect the post-probe native Gateway handshake state root
-      ansible.builtin.stat:
-        path: "{{ openclaw_validation_handshake_state_dir.path }}"
-        follow: false
-      register: openclaw_gateway_handshake_state_post_probe
-      when: openclaw_validation_handshake_state_dir.path is defined
-      failed_when: false
-      no_log: true
-
-    - name: Inspect the post-probe native Gateway device identity path
-      ansible.builtin.stat:
-        path: "{{ openclaw_validation_handshake_state_dir.path }}/identity"
-        follow: false
-      register: openclaw_gateway_handshake_identity_post_probe
-      when: openclaw_validation_handshake_state_dir.path is defined
-      failed_when: false
-      no_log: true
-
-    - name: Remove the temporary native Gateway handshake credential directory
-      ansible.builtin.file:
-        path: "{{ openclaw_gateway_handshake_credential_dir.path }}"
-        state: absent
-      when: openclaw_gateway_handshake_credential_dir.path is defined
-      failed_when: false
-      no_log: true
-
-    - name: Remove the isolated native Gateway handshake state directory
-      ansible.builtin.file:
-        path: "{{ openclaw_validation_handshake_state_dir.path }}"
-        state: absent
-      when: openclaw_validation_handshake_state_dir.path is defined
-      failed_when: false
-      no_log: true
-
-    - name: Inspect the removed native Gateway handshake credential root
-      ansible.builtin.stat:
-        path: "{{ openclaw_gateway_handshake_credential_dir.path }}"
-        follow: false
-      register: openclaw_gateway_handshake_credential_after_cleanup
-      when: openclaw_gateway_handshake_credential_dir.path is defined
-      failed_when: false
-      no_log: true
-
-    - name: Inspect the removed native Gateway handshake state root
-      ansible.builtin.stat:
-        path: "{{ openclaw_validation_handshake_state_dir.path }}"
-        follow: false
-      register: openclaw_gateway_handshake_state_after_cleanup
-      when: openclaw_validation_handshake_state_dir.path is defined
-      failed_when: false
-      no_log: true
-
-    - name: Require clean native Gateway handshake probe residue
-      ansible.builtin.assert:
-        that:
-          - openclaw_gateway_handshake_state_post_probe.stat.exists | default(false)
-          - openclaw_gateway_handshake_state_post_probe.stat.isdir | default(false)
-          - not (openclaw_gateway_handshake_state_post_probe.stat.islnk | default(true))
-          - >-
-            (openclaw_gateway_handshake_state_post_probe.stat.uid | default(-1)) ==
-            (openclaw_uid | int)
-          - >-
-            (openclaw_gateway_handshake_state_post_probe.stat.gid | default(-1)) ==
-            (openclaw_gid | int)
-          - >-
-            (openclaw_gateway_handshake_state_post_probe.stat.mode |
-            default('invalid')) == '0700'
-          - >-
-            not (openclaw_gateway_handshake_identity_post_probe.stat.exists |
-            default(true))
-          - >-
-            not (openclaw_gateway_handshake_identity_post_probe.stat.islnk |
-            default(false))
-          - >-
-            not (openclaw_gateway_handshake_credential_after_cleanup.stat.exists |
-            default(true))
-          - >-
-            not (openclaw_gateway_handshake_credential_after_cleanup.stat.islnk |
-            default(false))
-          - >-
-            not (openclaw_gateway_handshake_state_after_cleanup.stat.exists |
-            default(true))
-          - >-
-            not (openclaw_gateway_handshake_state_after_cleanup.stat.islnk |
-            default(false))
-        fail_msg: >-
-          The isolated Gateway handshake probe left invalid device identity or
-          temporary-directory residue.
-      when:
-        - openclaw_gateway_handshake_credential_dir.path is defined
-        - openclaw_validation_handshake_state_dir.path is defined
-      no_log: true
-
-- name: Validate native OpenClaw listener and firewall ownership
-  ansible.builtin.shell: |
-    set -eu
-    listeners="$(ss -H -ltn 'sport = :{{ openclaw_gateway_port }}')"
-    test -n "$listeners"
-    printf '%s\n' "$listeners" | grep -F '{{ openclaw_bind_host }}:{{ openclaw_gateway_port }}'
-    nft list chain inet filter input | grep -F 'ip saddr {{ openclaw_proxy_ip }} tcp dport {{ openclaw_gateway_port }} accept'
-    ! nft list chain inet filter input | grep -E 'ip saddr ([^ ]+ )?tcp dport {{ openclaw_gateway_port }} accept' | grep -vF 'ip saddr {{ openclaw_proxy_ip }} tcp dport {{ openclaw_gateway_port }} accept'
-  args:
-    executable: /bin/sh
-  changed_when: false
-  when: openclaw_native_activate | bool
-
-- name: Remove the completed native OpenClaw transition marker
-  ansible.builtin.file:
-    path: "{{ openclaw_native_transition_marker_path }}"
-    state: absent
-  when: openclaw_native_activate | bool
+  when: openclaw_skill_sync_enabled | bool

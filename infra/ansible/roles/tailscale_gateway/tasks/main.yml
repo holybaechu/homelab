@@ -26,12 +26,25 @@
     mode: "0644"
     content: |
       deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main
+  register: tailscale_apt_repository
+
+- name: Refresh apt metadata after adding the Tailscale repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: tailscale_apt_repository.changed
 
 - name: Install Tailscale gateway network tooling
   ansible.builtin.apt:
     name: ethtool
-    update_cache: true
-    state: latest
+    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
+    cache_valid_time: >-
+      {{ 3600
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else omit }}
+    state: >-
+      {{ 'latest'
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else 'present' }}
 
 - name: Install the deterministic tailscaled restart service
   ansible.builtin.copy:
@@ -87,8 +100,15 @@
 - name: Install Tailscale without disrupting the active route
   ansible.builtin.apt:
     name: tailscale
-    update_cache: true
-    state: latest
+    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
+    cache_valid_time: >-
+      {{ 3600
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else omit }}
+    state: >-
+      {{ 'latest'
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else 'present' }}
     policy_rc_d: 101
   register: tailscale_package
 

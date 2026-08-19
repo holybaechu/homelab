@@ -2,8 +2,15 @@
 - name: Install Debian base packages
   ansible.builtin.apt:
     name: "{{ common_debian_packages }}"
-    update_cache: true
-    state: latest
+    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
+    cache_valid_time: >-
+      {{ 3600
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else omit }}
+    state: >-
+      {{ 'latest'
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else 'present' }}
 
 - name: Set timezone
   community.general.timezone:

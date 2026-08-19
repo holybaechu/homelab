@@ -1,3 +1,4 @@
+import json
 import yaml
 
 from tests.helpers import REPO_ROOT
@@ -7,23 +8,37 @@ def read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_tailnet_docker_apps_and_openclaw_are_the_managed_lxcs():
-    topology = read("infra/opentofu/envs/prod/containers.auto.tfvars")
-    inventory = read("infra/ansible/inventory/prod/hosts.yml")
+def topology():
+    return json.loads(read("infra/ansible/inventory/prod/topology.json"))
 
-    assert topology.count("vmid             =") == 3
-    assert "tailnet = {" in topology
-    assert "docker_apps = {" in topology
-    assert "openclaw = {" in topology
-    assert "vmid             = 110" in topology
-    assert 'ip_address       = "192.168.0.3/24"' in topology
-    assert "vmid             = 111" in topology
-    assert 'ip_address       = "192.168.0.4/24"' in topology
-    assert "vmid             = 118" in topology
-    assert 'hostname         = "openclaw"' in topology
-    assert 'ip_address       = "192.168.0.5/24"' in topology
-    assert 'mac_address      = "02:00:00:BA:EC:05"' in topology
-    assert "startup_order    = 3" in topology
+
+def managed_lxcs():
+    return topology()["all"]["children"]["debian"]["hosts"]
+
+
+def test_tailnet_docker_apps_and_openclaw_are_the_managed_lxcs():
+    hosts = managed_lxcs()
+
+    assert set(hosts) == {"tailnet", "docker_apps", "openclaw"}
+    assert (hosts["docker_apps"]["vmid"], hosts["docker_apps"]["ansible_host"]) == (
+        110,
+        "192.168.0.3",
+    )
+    assert (hosts["tailnet"]["vmid"], hosts["tailnet"]["ansible_host"]) == (
+        111,
+        "192.168.0.4",
+    )
+    expected_openclaw = {
+        "vmid": 118,
+        "hostname": "openclaw",
+        "ansible_host": "192.168.0.5",
+        "prefix_length": 24,
+        "mac_address": "02:00:00:BA:EC:05",
+        "startup_order": 3,
+    }
+    assert {
+        field: hosts["openclaw"][field] for field in expected_openclaw
+    } == expected_openclaw
 
 
 
@@ -31,43 +46,36 @@ def test_tailnet_docker_apps_and_openclaw_are_the_managed_lxcs():
 
 
 def test_openclaw_lxc_has_local_docker_features_no_tun_and_only_ctf_scoped_mounts():
-    topology = read("infra/opentofu/envs/prod/containers.auto.tfvars")
+    options = managed_lxcs()["openclaw"]["lxc_root_options"]
     module = read("infra/opentofu/modules/pve-lxc/main.tf")
-    all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
-    openclaw = all_vars.split("  - vmid: 118", 1)[1].split("\npve_lxc_access_bootstrap:", 1)[0]
+    rendered = json.dumps(options)
 
     assert "unprivileged  = true" in module
     assert "features {" not in module
-    assert "device_passthrough" not in topology
-    assert "mount_point" not in topology
-    assert 'bind_mount_sources:' in openclaw
-    assert "bind_mount_source_owner: \"{{ (homelab_container_uid_offset | int) + (openclaw_ctf_uid | int) }}\"" in openclaw
-    assert "bind_mount_source_group: \"{{ (homelab_container_uid_offset | int) + (openclaw_ctf_gid | int) }}\"" in openclaw
-    assert "service_uid" not in openclaw
-    assert '"{{ openclaw_ctf_shared_host_path }}"' in openclaw
-    assert "mount the dedicated CTF workspace once" in openclaw
-    assert "-mp0 {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}" in openclaw
-    assert "mount generated CTF sandbox skills once" not in openclaw
-    assert "enable nesting for the local OpenClaw CTF Docker Engine" in openclaw
-    assert "enable keyctl for the local OpenClaw CTF Docker Engine" in openclaw
-    assert "-features nesting=1,keyctl=1" in openclaw
-    assert "nesting or keyctl features" not in openclaw
-    assert "TUN device passthrough" in openclaw
-    assert "(path=)?/dev/net/tun" in openclaw
-    assert "obsolete or unexpected CTF bind mounts" in openclaw
-    assert "^mp[1-9][0-9]*:" in openclaw
-    assert openclaw.count("delete_matching_keys: true") == 2
+    assert options["bind_mount_sources"] == ["{{ openclaw_ctf_shared_host_path }}"]
+    assert "homelab_container_uid_offset" in options["bind_mount_source_owner"]
+    assert "homelab_container_uid_offset" in options["bind_mount_source_group"]
+    assert "service_uid" not in rendered
+    assert "mount the dedicated CTF workspace once" in rendered
+    assert "mount generated CTF sandbox skills once" not in rendered
+    assert "enable nesting for the local OpenClaw CTF Docker Engine" in rendered
+    assert "enable keyctl for the local OpenClaw CTF Docker Engine" in rendered
+    assert "-features nesting=1,keyctl=1" in rendered
+    assert "TUN device passthrough" in rendered
+    assert "(path=)?/dev/net/tun" in rendered
+    assert "obsolete or unexpected CTF bind mounts" in rendered
+    assert "^mp[1-9][0-9]*:" in rendered
+    assert sum(setting["delete_matching_keys"] for setting in options["absent_settings"]) == 2
 
 
 def test_openclaw_is_in_debian_inventory_and_pve_bootstrap():
-    inventory = read("infra/ansible/inventory/prod/hosts.yml")
-    all_vars = read("infra/ansible/inventory/prod/group_vars/all.yml")
+    inventory = topology()["all"]["children"]
+    bootstrap = read("infra/ansible/roles/pve_lxc_access_bootstrap/tasks/main.yml")
 
-    assert "        openclaw:\n          ansible_host: 192.168.0.5" in inventory
-    assert "    svc_openclaw:\n      hosts:\n        openclaw:" in inventory
-    assert "openclaw_ip: \"{{ hostvars['openclaw'].ansible_host }}\"" in all_vars
-    bootstrap = all_vars.split("pve_lxc_access_bootstrap:", 1)[1]
-    assert "  - vmid: 118\n    name: openclaw\n    os_family: debian" in bootstrap
+    assert inventory["debian"]["hosts"]["openclaw"]["ansible_host"] == "192.168.0.5"
+    assert set(inventory["svc_openclaw"]["hosts"]) == {"openclaw"}
+    assert "loop: \"{{ groups['debian'] }}\"" in bootstrap
+    assert 'vmid="{{ hostvars[item].vmid }}"' in bootstrap
 
 
 def test_debian_bootstrap_materializes_proxmox_dns_before_apt():
@@ -80,24 +88,22 @@ def test_debian_bootstrap_materializes_proxmox_dns_before_apt():
     assert "HOMELAB_SEARCH_DOMAIN" in tasks
 
 
-def test_workloads_and_separate_arcane_control_plane_are_compose_projects():
-    for project in ("platform", "media", "code", "openclaw"):
-        root = REPO_ROOT / "apps" / "compose" / project
-        assert (root / "compose.yml").exists()
-        assert (root / ".env.example").exists()
+def test_tracked_compose_manifests_follow_the_deployment_boundaries():
+    root = REPO_ROOT / "apps" / "compose" / "homelab"
+    assert (root / "compose.yml").exists()
+    assert (root / ".env.example").exists()
+    for retired in ("platform", "media", "code", "openclaw", "hermes", "game"):
+        assert not (REPO_ROOT / "apps" / "compose" / retired).exists()
 
-    assert not (REPO_ROOT / "apps/compose/hermes").exists()
-
-    arcane = REPO_ROOT / "apps" / "compose" / "arcane"
-    assert (arcane / "compose.yml").exists()
-    assert (arcane / ".env.example").exists()
-
-    variables = read(
-        "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
-    ).split("\ndocker_compose_projects:", 1)[1]
-    assert "name: arcane" not in variables
-    assert "name: hermes" not in variables
-    assert "arcane_control_root:" in read(
-        "infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml"
+    variables = yaml.safe_load(
+        read("infra/ansible/inventory/prod/group_vars/svc_docker_apps.yml")
     )
-    assert not (REPO_ROOT / "apps/compose/game").exists()
+    assert not any(name.startswith("openclaw_") for name in variables)
+    assert [project["name"] for project in variables["docker_compose_projects"]] == [
+        "homelab"
+    ]
+    declared_roots = {
+        project["src"].removeprefix("apps/compose/")
+        for project in variables["docker_compose_projects"]
+    }
+    assert declared_roots == {"homelab"}

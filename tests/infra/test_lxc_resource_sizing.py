@@ -1,23 +1,19 @@
-from pathlib import Path
+import json
 import re
 
 from tests.helpers import REPO_ROOT
 
 
-def container_body(text: str, name: str) -> str:
-    match = re.search(rf"^  {name} = \{{(?P<body>.*?)^  \}}", text, re.MULTILINE | re.DOTALL)
-    assert match
-    return match.group("body")
-
-
-def value(body: str, key: str) -> int:
-    match = re.search(rf"^\s+{key}\s+=\s+(\d+)$", body, re.MULTILINE)
-    assert match
-    return int(match.group(1))
+def managed_hosts() -> dict[str, dict]:
+    topology = json.loads(
+        (
+            REPO_ROOT / "infra/ansible/inventory/prod/topology.json"
+        ).read_text(encoding="utf-8")
+    )
+    return topology["all"]["children"]["debian"]["hosts"]
 
 
 def test_three_lxcs_match_capacity_plan():
-    text = (REPO_ROOT / "infra/opentofu/envs/prod/containers.auto.tfvars").read_text(encoding="utf-8")
     expected = {
         "tailnet": {
             "root_disk_gb": 4,
@@ -41,12 +37,16 @@ def test_three_lxcs_match_capacity_plan():
             "startup_order": 3,
         },
     }
-    for name, sizing in expected.items():
-        body = container_body(text, name)
-        for key, wanted in sizing.items():
-            assert value(body, key) == wanted
+    hosts = managed_hosts()
+    assert set(hosts) == set(expected)
+    assert {
+        name: {field: hosts[name][field] for field in sizing}
+        for name, sizing in expected.items()
+    } == expected
 
 
 def test_homelab_data_lv_size_is_preserved():
-    text = (REPO_ROOT / "infra/ansible/inventory/prod/group_vars/all.yml").read_text(encoding="utf-8")
+    text = (
+        REPO_ROOT / "infra/ansible/inventory/prod/group_vars/all.yml"
+    ).read_text(encoding="utf-8")
     assert re.search(r"^homelab_data_lv_size: 896G$", text, re.MULTILINE)

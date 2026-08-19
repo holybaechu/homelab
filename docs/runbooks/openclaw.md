@@ -1,207 +1,109 @@
-# OpenClaw Foundation
+# OpenClaw immutable runtime
 
-OpenClaw runs as a native system Gateway in dedicated unprivileged LXC VMID
-118. The audited migration from the isolated Docker foundation is complete.
-Native is primary and the exact Docker container and assets remain
-stopped under a permanent source hold. A tracked rollback never removes that
-hold or restores Arcane ownership.
+OpenClaw keeps its dedicated unprivileged LXC (`openclaw`, VMID 118,
+`192.168.0.5`). The LXC is now only a Docker/Compose runtime. It never builds
+an image, downloads Node/npm, installs a plugin, or applies a JavaScript patch
+during production deployment.
 
-## Ownership and paths
+## One promoted release
 
-The steady-state foundation separates public deployment code, one private
-content repository, and mutable runtime material:
+A production promotion identifies exactly one state:
 
-| Concern | Location |
+| Item | Required identity |
 | --- | --- |
-| Public IaC, systemd, firewall, and Traefik deployment | `homelab` repository |
-| Private OpenClaw repository | `/home/openclaw/openclaw-setup` on VMID 118 |
-| Active native config | `/home/openclaw/openclaw-setup/config/openclaw.json` |
-| Runtime state | `/var/lib/openclaw` |
-| Core Codex OAuth-profile state | `/home/openclaw/.config/openclaw` |
-| Gateway token | `/etc/openclaw/secrets/gateway_token` |
+| Gateway | registry-qualified `repository@sha256:<64 hex>` |
+| CTF tool image | registry-qualified `repository@sha256:<64 hex>` |
+| Public runtime bundle | deterministic uncompressed tar SHA-256 |
+| Private config bundle | exact 40-character Git commit and tar SHA-256 |
+| Deployment | exact homelab 40-character commit |
 
-The private repository contains config plus inert scaffolding for future
-agents, workspaces, and shared skills. Runtime credentials, sessions,
-databases, logs, caches, and model authentication belong in neither Git
-repository. The config is a regular root-owned file, not a symlink.
+`scripts/ci/openclaw_release.py` creates and validates the canonical release
+manifest. CI builds Gateway plugins/patches and the CTF toolchain from exact
+base-image digests under `infra/openclaw/`; production receives only the two
+resulting immutable refs and the two verified bundles.
 
-## Native service contract
+`scripts/ci/deploy_openclaw_release.py` is the only activator. On the LXC it:
 
-Ansible installs integrity-pinned Node.js and `openclaw` npm releases under
-versioned root-owned prefixes and runs the Gateway as the nologin `openclaw`
-UID/GID 1000 account. A system-level `openclaw-gateway.service` supplies
-reboot/logout persistence; OpenClaw's service repair and automatic update paths
-are disabled because IaC is the external supervisor.
+1. locks `/opt/openclaw/state` with a nonblocking kernel lock;
+2. rejects symlinks, traversal, incorrect modes, and bundle hash drift;
+3. pulls and inspects both exact OCI digests;
+4. runs Compose with `--no-build`;
+5. waits on `/readyz` and makes exactly one authenticated smoke request;
+6. atomically replaces one root-owned `release-state.json` containing the
+   current and previous immutable manifests.
 
-The service depends on nftables and cannot start without the firewall. The
-Gateway binds `192.168.0.5:18789`; guest nftables accepts that port only from
-Traefik at `192.168.0.3`. Traefik terminates HTTPS for
-`openclaw.home.hchu.me`. Token authentication remains mandatory, the exact
-HTTPS origin is allowlisted, proxy trust is limited to `192.168.0.3`, real-IP
-fallback and Tailscale authentication are disabled, and the web terminal is
-disabled.
-
-Control UI access uses HTTPS. A new browser must receive the Gateway token out
-of band and may require explicit device approval. Do not enable insecure auth,
-device-auth bypasses, wildcard origins, or trusted-proxy authentication.
-
-Ordinary agents inherit `openai/gpt-5.6-terra` with xhigh thinking. The `ctf`
-agent explicitly uses `openai/gpt-5.6-terra`, xhigh thinking, and fast mode;
-its guidance recommends an available GPT-5.6-family model for OSINT subagents
-when parallel OSINT work is useful. All agents run through the native Codex
-runtime and share the one `openai:main` profile inside the one Gateway service
-account. No OAuth file, desktop `~/.codex` directory, or OpenAI API key is stored
-in either Git repository.
-
-## Unified workspaces and autonomous skill promotion
-
-OpenClaw keeps mutable state under `/var/lib/openclaw` and uses one explicit
-workspace subtree per agent:
-
-- `main`: `/var/lib/openclaw/workspaces/main`
-- `ctf`: `/var/lib/openclaw/workspaces/ctf`
-
-Only the CTF workspace and
-`/var/lib/openclaw/sandbox/skills-workspaces` are bind-mounted at the same paths
-on the remote executor. The rest of `/var/lib/openclaw` remains local to the
-Gateway, so sessions, auth state, registries, and unrelated agent data are not
-mirrored.
-
-Skill Workshop runs with autonomous capture enabled and automatic approval.
-Runtime skill changes stay in the live `skills/` directories. Every five minutes,
-`openclaw-skill-sync.timer` starts a separate `openclaw-skill-sync` identity
-that can read those two skill roots but cannot write them or read Gateway auth
-state. It validates the files, clones `holybaechu/openclaw-setup`, opens a bot
-branch and pull request, waits for the private repository checks, and squash
-merges the PR automatically. No manual PR review is part of the steady-state
-flow.
-
-Before deployment, create a fine-grained GitHub token restricted to the private
-`holybaechu/openclaw-setup` repository with **Contents: read/write**, **Pull
-requests: read/write**, and **Actions: read**, then store it in the homelab
-production environment as `OPENCLAW_SKILL_SYNC_GITHUB_TOKEN`. The token is
-loaded only by the promotion oneshot service through a systemd credential; it
-is not exposed to the Gateway process.
-
-The same credential lets the Ansible role fetch canonical `main` into the
-protected, remote-free production checkout at the start of each homelab
-deployment. The role refuses a dirty checkout, fetches by URL without adding a
-persistent Git remote, stops the Gateway only when the commit changes, resets
-to the fetched commit, and reapplies the protected ownership and modes. Skill
-promotion dispatches the returned squash-merge SHA to the homelab `openclaw`
-deployment scope. The production checkout fetches that exact 40-character SHA,
-verifies `FETCH_HEAD`, and never substitutes a later `main`. GitHub's serialized
-production concurrency lets a running promotion finish and safely supersedes
-older queued promotions; a failed dispatch is retried from the durable
-`last-dispatched-commit` marker.
-
-## Core Codex subscription activation
-
-After a deployment has installed the pinned `@openclaw/codex` harness, create
-the shared profile from a trusted shell on VMID 118. Stop the one Gateway
-service first.
+If activation fails, the same process restores the previous Gateway digest,
+CTF digest, config commit, and runtime bundle on the same LXC and proves it
+healthy. A failed first activation is brought down rather than left partially
+running. `audit` validates the active digest/config without performing another
+authenticated smoke. Manual rollback is:
 
 ```sh
-sudo systemctl stop openclaw-gateway.service
-
-sudo -u openclaw env \
-  HOME=/home/openclaw \
-  OPENCLAW_HOME=/home/openclaw \
-  OPENCLAW_STATE_DIR=/var/lib/openclaw \
-  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
-  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspaces/main \
-  PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
-  /opt/nodejs/current/bin/node \
-  /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \
-  models auth login --provider openai --profile-id openai:main --device-code
-
-sudo -u openclaw env \
-  HOME=/home/openclaw \
-  OPENCLAW_HOME=/home/openclaw \
-  OPENCLAW_STATE_DIR=/var/lib/openclaw \
-  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
-  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspaces/main \
-  PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
-   /opt/nodejs/current/bin/node \
-   /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \
-   models auth list --agent main --provider openai
-
-sudo -u openclaw env \
-  HOME=/home/openclaw \
-  OPENCLAW_HOME=/home/openclaw \
-  OPENCLAW_STATE_DIR=/var/lib/openclaw \
-  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
-  OPENCLAW_WORKSPACE_DIR=/var/lib/openclaw/workspaces/main \
-  PATH=/opt/nodejs/current/bin:/opt/openclaw/current/bin:/usr/local/bin:/usr/bin:/bin \
-  /opt/nodejs/current/bin/node \
-  /opt/openclaw/current/lib/node_modules/openclaw/openclaw.mjs \
-  models list --provider openai
-
-sudo systemctl start openclaw-gateway.service
-sudo systemctl is-active --quiet openclaw-gateway.service
+sudo /usr/local/libexec/deploy_openclaw_release.py \
+  --install-root /opt/openclaw \
+  --secret-root /etc/openclaw/secrets \
+  rollback
 ```
 
-Complete the displayed device-code flow in a browser using the owner's
-ChatGPT/Codex account. The profile lives only in the core service account's
-auth/state storage and refreshes there. Never put its device code, access or
-refresh token, a ChatGPT session token, or an OpenAI API key in Git, GitHub
-secrets, chat, or the private configuration. Before restarting the service,
-confirm the model list includes `openai/gpt-5.6-terra`; do not substitute a
-different model silently if the subscription does not expose Terra.
+## Offline recovery artifact
 
-## Configuration updates
-
-Edit only the private checkout and inspect the staged files as root. Then make
-a temporary service-user credential copy outside Git and run the published,
-pinned CLI as the service account before committing:
+Before the first immutable activation, export the retired Docker Gateway's
+known digest, protected config bundle, and OCI archive. The known legacy image
+is fixed in the contract; tags are rejected.
 
 ```sh
-set -eu
-credential_dir="$(mktemp -d /run/openclaw-config-audit.XXXXXX)"
-trap 'rm -rf -- "$credential_dir"' EXIT HUP INT TERM
-chown root:openclaw "$credential_dir"
-chmod 0750 "$credential_dir"
-install -o openclaw -g openclaw -m 0400 \
-  /etc/openclaw/secrets/gateway_token \
-  "$credential_dir/openclaw_gateway_token"
-sudo -u openclaw -H env \
-  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
-  OPENCLAW_STATE_DIR=/var/lib/openclaw \
-  OPENCLAW_GATEWAY_TOKEN_FILE="$credential_dir/openclaw_gateway_token" \
-  /usr/local/bin/openclaw config validate --json
-sudo -u openclaw -H env \
-  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-  OPENCLAW_CONFIG_PATH=/home/openclaw/openclaw-setup/config/openclaw.json \
-  OPENCLAW_STATE_DIR=/var/lib/openclaw \
-  OPENCLAW_GATEWAY_TOKEN_FILE="$credential_dir/openclaw_gateway_token" \
-  /usr/local/bin/openclaw secrets audit --check --json
+python scripts/ci/openclaw_release.py export-legacy-recovery \
+  --config-commit "$EXACT_CONFIG_COMMIT" \
+  --config-archive recovery/legacy-config.tar \
+  --gateway-oci-archive recovery/legacy-gateway.oci \
+  --output recovery/legacy-recovery.json
+
+python scripts/ci/openclaw_release.py verify-legacy-recovery \
+  --manifest recovery/legacy-recovery.json \
+  --config-archive recovery/legacy-config.tar \
+  --gateway-oci-archive recovery/legacy-gateway.oci
 ```
 
-Commit through the private repo, then reconcile the public Ansible role. Do not
-configure automatic Git pull or push, and do not use Control UI/Doctor config
-writers against the protected file.
+Store all three files in the protected offline recovery location before
+retiring the old deployment. This export is not uploaded to the LXC and is not
+an input to routine activation or validation. Repository tests use a fake OCI
+archive to verify the export contract; they do not claim that a production
+export has occurred.
 
-## Verification
+For the active immutable release, export both OCI archives and run the
+`recovery` command to create a hash-complete offline manifest. Keep its release
+manifest, runtime/config tars, and OCI archives together. Recovery order is
+image load, exact RepoDigest inspection, then activation through the same
+deployer—never a host build.
 
-The production validation must prove:
+## Host and secret boundary
 
-- `openclaw-gateway.service` is enabled, active, and bound only as intended;
-- nftables permits port 18789 only from Traefik;
-- the active config path is the private regular file and schema validation has
-  no warnings;
-- `secrets audit --check` reports no plaintext, unresolved, or shadowed
-  credentials; the only tolerated finding is the informational OAuth residue
-  for the expected `openai:main` Codex subscription profile, and the token is
-  absent from Git;
-- runtime/auth state is outside the private checkout;
-- `https://openclaw.home.hchu.me` serves the Control UI through Traefik; and
-- the retained Docker Gateway is stopped while its rollback assets and
-  permanent source hold remain, or, only in tracked rollback state, that the
-  native service is disabled with no listener and the exact retained container
-  is the sole healthy Gateway.
+The Gateway runs as UID/GID 1000. Root owns `/etc/openclaw/secrets`; only the
+three Gateway secret files are bind-mounted read-only with root ownership and
+group-readable mode `0440`. Compose adds the numeric host Docker group so the
+Gateway can use `/var/run/docker.sock`; deployment validates the socket type,
+GID, and group access before mutation. The dedicated CTF bridge denies private,
+loopback, link-local, and tailnet destinations. nftables accepts port 18789 only
+from the application host's Traefik proxy.
 
-The pinned core Codex harness and its `openai:main` profile are the only model
-authentication contract in this foundation deployment. Custom agent routing,
-channel policy, subagents, skills, and self-learning behavior remain outside
-this foundation boundary.
+Mutable state remains in `/var/lib/openclaw`; model auth remains in
+`/home/openclaw/.config/openclaw`. The promoted config must use container paths
+under `/home/node` and `/etc/openclaw` and file-backed SecretRefs.
+
+## Autonomous skill promotion
+
+Skill sync remains deliberately outside the Gateway. Every five minutes,
+`openclaw-skill-sync.timer` runs the compact host service as the separate
+`openclaw-skill-sync` identity. It has read-only ACLs for the main and CTF
+`skills/` roots and write access only to its own state. systemd loads
+`OPENCLAW_SKILL_SYNC_GITHUB_TOKEN` as a credential; Compose neither mounts nor
+exposes it. The service preserves the existing validate, branch, PR, checks,
+squash-merge, and exact promotion-dispatch behavior.
+
+## Operational verification
+
+Scheduled validation runs the deployer's nonmutating `audit`, verifies the
+active manifest equals its materialized release, checks both RepoDigests,
+confirms root/config modes, Docker socket group access, CTF firewall rules,
+Compose hardening, `/readyz`, and the skill-sync timer. Production deployment
+itself owns the single authenticated smoke and rollback decision.

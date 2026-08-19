@@ -6,9 +6,11 @@ def test_validate_playbook_checks_root_only_lxc_option_drift_without_mutating():
 
     assert "Validate Proxmox LXC root-only settings" in validate
     assert "pct config" in validate
-    assert "pve_lxc_root_options" in validate
+    assert "loop: \"{{ groups['debian'] }}\"" in validate
+    assert "hostvars[item].lxc_root_options.settings" in validate
+    assert "hostvars[item].vmid" in validate
     assert "grep -Eq '{{ setting.pattern }}'" in validate
-    assert "item.absent_settings | default([])" in validate
+    assert "hostvars[item].lxc_root_options.absent_settings | default([])" in validate
     assert "Unexpected {{ setting.description }}" in validate
 
     drift_play = validate.split("- name: Validate Proxmox LXC root-only settings", maxsplit=1)[1].split("- name: Validate edge", maxsplit=1)[0]

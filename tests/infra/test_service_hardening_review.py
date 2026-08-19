@@ -1,10 +1,14 @@
+from jinja2 import Environment
+import yaml
+
 from tests.helpers import REPO_ROOT
 
 
 def test_root_only_lxc_options_use_graceful_shutdown_before_stop():
     tasks = (REPO_ROOT / "infra/ansible/roles/pve_lxc_root_options/tasks/main.yml").read_text(encoding="utf-8")
     assert tasks.index("pct shutdown") < tasks.index("pct stop")
-    assert "item.absent_settings | default([])" in tasks
+    assert "hostvars[item].lxc_root_options.absent_settings | default([])" in tasks
+    assert "loop: \"{{ groups['debian'] }}\"" in tasks
     assert "pct set \"${vmid}\" {{ setting.pct_args }}" in tasks
     assert tasks.index("trap restart_if_needed EXIT") < tasks.index("pct shutdown")
     assert 'restart=0\n    fi\n    trap - EXIT' in tasks
@@ -41,15 +45,35 @@ def test_tailscale_join_is_idempotent():
     assert "changed_when: false" in join
 
 
-def test_apt_owned_runtime_dependencies_upgrade_on_deploy():
-    common = (REPO_ROOT / "infra/ansible/roles/common_debian/tasks/main.yml").read_text(encoding="utf-8")
-    docker = (REPO_ROOT / "infra/ansible/roles/docker_engine/tasks/main.yml").read_text(encoding="utf-8")
-    tailscale = (REPO_ROOT / "infra/ansible/roles/tailscale_gateway/tasks/main.yml").read_text(encoding="utf-8")
+def test_apt_owned_runtime_dependencies_upgrade_only_in_maintenance():
+    environment = Environment()
+    environment.filters["bool"] = bool
 
-    assert "Install Debian base packages" in common
-    assert "state: latest" in common.split("- name: Set timezone", 1)[0]
-    assert "state: latest" in docker.split("- name: Configure Docker daemon defaults", 1)[0]
-    assert "state: latest" in tailscale.split("- name: Disable unusable public IPv6", 1)[0]
-    assert "update_cache: true" in common
-    assert "update_cache: true" in docker
-    assert "update_cache: true" in tailscale
+    for role in ("common_debian", "docker_engine", "tailscale_gateway"):
+        tasks = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "infra"
+                / "ansible"
+                / "roles"
+                / role
+                / "tasks"
+                / "main.yml"
+            ).read_text(encoding="utf-8")
+        )
+        package_modules = [
+            task["ansible.builtin.apt"]
+            for task in tasks
+            if "ansible.builtin.apt" in task
+            and "name" in task["ansible.builtin.apt"]
+        ]
+        assert package_modules
+        for package in package_modules:
+            routine_state = environment.from_string(
+                package["state"]
+            ).render(homelab_maintenance_upgrade=False)
+            maintenance_state = environment.from_string(
+                package["state"]
+            ).render(homelab_maintenance_upgrade=True)
+            assert routine_state.strip() == "present"
+            assert maintenance_state.strip() == "latest"

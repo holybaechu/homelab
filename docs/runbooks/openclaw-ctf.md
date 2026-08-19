@@ -1,122 +1,92 @@
-# OpenClaw CTF agent and local Docker sandbox
+# OpenClaw CTF agent and immutable sandbox
 
-This deployment has one native `openclaw-gateway.service` on VMID 118. It
-hosts the existing agents and the `ctf` agent together; it does not run a
-second CTF Gateway, an HTTP relay, relay HMAC credentials, or a second Discord
-bot process.
+OpenClaw runs one immutable Gateway Compose service on the dedicated OpenClaw
+LXC (VMID 118). The same Gateway hosts the configured agents, including `ctf`;
+there is no second Gateway, HTTP relay, second Discord bot, or production image
+build.
 
-The Gateway LXC runs its own Docker Engine and the pinned Kali sandbox image.
-The Gateway service joins the local `docker` group and OpenClaw creates one
-session-scoped CTF container per session on that same host.
+The Gateway release manifest pins two independent OCI artifacts:
 
-## Important one-Gateway limit
+- `gateway_ref`: the prevalidated Gateway image at `repository@sha256:...`.
+- `ctf_ref`: the prevalidated Kali-based CTF sandbox at
+  `repository@sha256:...`.
 
-OpenClaw does not support giving the local Docker socket to only one agent
-inside a shared Gateway process. The Gateway process therefore has a
-process-scoped Docker capability, while the checked agent configuration routes
-only `ctf` into the Kali sandbox.
+CI builds and validates both images. Production pulls those exact digests and
+activates them with `docker compose --no-build`. The CTF Dockerfile and build
+context are never uploaded to the LXC.
 
-The checked configuration gives only `ctf` a session-scoped Docker sandbox and
-its CTF-only tool policy; other agents keep their existing configuration. That
-is the normal routing and tool-policy boundary, but it is not equivalent to a
-separate Unix service. Do not claim that a host-exec-capable agent could never
-reach the capability merely because it is not configured as a Docker sandbox.
-A hard credential boundary requires a separate Gateway/process, which this
-deployment deliberately does not use.
+## Capability boundary
 
-## Discord routing
+The Gateway container runs as UID/GID 1000 with a read-only root filesystem,
+all Linux capabilities dropped, and only the numeric host Docker group added.
+It receives the host Docker socket because OpenClaw creates one CTF container
+per configured session. The checked private configuration routes only the
+`ctf` agent into that sandbox, but this is a routing boundary rather than a
+separate Unix-process credential boundary.
 
-One Discord bot logs in directly through the existing Gateway. Its private
-`config/openclaw.json` configuration must use the `shared` account and direct
-numeric channel bindings. Channel IDs, rather than user, role, or guild
-allowlists, select agents. The configuration validation requires:
+The CTF image runs as UID/GID 1000, matching the Gateway and the owner of the
+private `0700` PVE workspace bind mount. CI mounts a real host directory and
+proves that this numeric identity can create a mode-0600 file before approving
+the image. The image contains the prevalidated analysis tool
+set (including pwntools, GDB, nmap, sqlmap, ffuf, gobuster, hashcat, john, yara,
+Chromium/Chromedriver, Camoufox, Xvfb, and `uv`). It has no Docker client, host
+socket, release credential, or mutable image tag. Package changes therefore
+require a CI image build and exact-digest promotion rather than installation on
+the production LXC.
 
-- The external Discord channel plugin enabled as `plugins.entries.discord`
-  and installed as the pinned compatible `@openclaw/discord@2026.7.1` release.
-- A hash-pinned local backport changes only the parent-message ingress queue key
-  from the provisional channel session to the triggering Discord message ID.
-  Independent auto-thread requests can therefore start concurrently while
-  duplicate delivery of one message and follow-ups inside one thread remain
-  serialized.
-- DMs disabled, group policy `allowlist`, bot messages and config writes off.
-- A wildcard Discord guild channel map with enabled numeric channel IDs.
-- Every CTF channel requires an explicit bot mention. Each mentioned parent
-  message automatically creates a 24-hour Discord thread, and the thread is a
-  separate OpenClaw session without inherited parent-channel transcript.
-- Discord thread actions and thread bindings are enabled so native/subagent
-  session spawns stay attached to their thread.
-- The bot role needs View Channel, Send Messages, Create Public Threads, Send
-  Messages in Threads, Read Message History, and Attach Files in each CTF
-  channel. Message Content intent remains required.
-- Exactly one direct Discord binding for each allowed channel; each binding
-  names an existing agent and at least one names `ctf`.
-- A numeric `commands.ownerAllowFrom` operator list for guarded diagnostics;
-  it is separate from and does not weaken channel-only message authorization.
-- The `ctf` agent workspace `/var/lib/openclaw/workspaces/ctf`, Docker
-  `session` sandbox on `openclaw-ctf`, a writable root filesystem, container
-  UID/GID `0:0`, default Docker capabilities minus `AUDIT_WRITE` and `MKNOD`,
-  no configured CPU/memory/PID/ulimit caps, elevated OpenClaw tools disabled,
-  and the approved `message` tool in
-  its CTF tool/sandbox policy so it can return bounded ZIP exports directly to
-  the requesting Discord channel. Existing agents such as `main` may likewise
-  keep their separately configured direct Discord attachment and ZIP handling.
-- The Codex plugin enables its sandbox exec-server. This maps Codex-native
-  shell and file operations into the active CTF Docker environment instead of
-  executing them as the `openclaw` service user on the Gateway host. Without
-  this switch, merely exposing the deferred `sandbox_exec` tool is insufficient:
-  Codex can still choose its native `bash` surface.
-- The Kali image includes pinned `uv`. The CTF prompt allows agents to install
-  packages with `apt`, `uv`, or other methods available inside the sandbox.
-  Installations remain session-local, while APT archives, the uv cache, and
-  Camoufox downloads persist under the CTF workspace `.cache` tree.
-- The Kali image also preinstalls Camoufox 0.5.4, Xvfb,
-  Chromium/Chromedriver, `ffuf`, `gobuster`,
-  `hashcat`, `john`, `sqlmap`, and `yara`. The CTF agent may use the selected
-  runtime's native image and PDF analysis, FTS-only local
-  memory search, and Exa neural/keyword search through the pinned official
-  provider plugin. CTF subagent count, depth, and timeout fields are omitted so
-  the pinned OpenClaw defaults apply.
+## Discord and agent configuration
 
-Camoufox running with `headless="virtual"` on Xvfb is the primary anti-detect
-automation path; Chromium and Chromedriver remain the compatibility fallback.
-Neither path guarantees that a site cannot detect automation.
+The exact private config bundle must keep these observable controls:
 
-Native Discord file uploads and ZIP replies are approved for both the CTF and
-main channels. They remain subject to their channel bindings and each agent's
-configured artifact handling; this approval does not enable DMs, user/role
-allowlists, or cross-channel routing. Keep both agents' `message.crossContext`
-flags false so a tool invocation cannot select a different context or provider.
+- One shared Discord account with DMs disabled, allowlisted guild/channel
+  bindings, bot messages and config writes disabled.
+- Numeric channel IDs and direct agent bindings; channel names are not
+  authorization values.
+- Explicit bot mentions for CTF parent messages, thread actions enabled, and
+  separate per-thread OpenClaw sessions.
+- Cross-context message selection disabled and elevated OpenClaw tools disabled.
+- The `ctf` workspace and session-scoped Docker sandbox select the exact
+  `OPENCLAW_CTF_REF` supplied by the approved release manifest.
+- The Codex sandbox exec-server is enabled so shell and file operations execute
+  inside the CTF container rather than in the Gateway container.
 
-No Discord guild ID is needed for this authorization model. Create as many
-campaign channels as wanted, add each numeric channel ID to the same shared
-account map, and bind it to the intended agent. A channel name is not an
-authorization value and can change without redeploying.
+The Gateway's Discord, Exa, and gateway credentials are root-owned on the host,
+group-readable only by the runtime GID, and mounted as individual read-only
+files. The autonomous skill-promotion GitHub credential is not exposed to the
+Gateway; the separate least-privilege host timer consumes it through a systemd
+credential.
 
-The Codex plugin uses its default app-server instructions. Deployment removes
-the retired CTF `model_instructions_file` override and does not manage a
-separate CTF Codex home.
+## Build and promotion
 
-## Production secrets and deployment
+An OpenClaw image-input change selects `openclaw_gateway` and/or
+`openclaw_ctf`. The CI build job:
 
-GitHub Actions needs only these OpenClaw secrets:
+1. creates the immutable-image build contract;
+2. builds and pushes with Buildx;
+3. reads the exact digest from Buildx metadata;
+4. validates the just-built image and CTF tool/runtime contract; and
+5. approves that same-build digest for the source SHA.
 
-- `OPENCLAW_GATEWAY_TOKEN`: exactly 64 hexadecimal characters.
-- `OPENCLAW_DISCORD_BOT_TOKEN`: the token for the one shared Discord bot.
-- `OPENCLAW_EXA_API_KEY`: the Exa API key for managed CTF web search.
+The production OpenClaw job uploads only the exact release manifest plus the
+deterministic runtime and private-config bundles. It invokes the preinstalled
+deployer over the already pinned Tailscale/SSH path. The deployer verifies both
+local OCI RepoDigests, starts with `--no-build`, waits for `/readyz`, performs
+one authenticated smoke, and records the release only after success.
 
-The deployment writes all three to root-owned files under `/etc/openclaw/secrets`
-and passes them to the Gateway using systemd credentials. There is no
-`OPENCLAW_CTF_GATEWAY_TOKEN`, CTF OpenAI API key, Discord relay HMAC, or
-separate CTF bot token.
+If activation fails, the deployer brings down a first failed release or
+reactivates the previously verified digest/config pair. A manual rollback also
+revalidates the recorded archives, ownership/modes, host boundary, and both
+image digests before activation. See `docs/runbooks/openclaw.md` for the exact
+commands and the separate offline recovery export/manifest contract.
 
-Before an authorized production deployment:
+## Production checks
 
-1. Add the three GitHub repository secrets above.
-2. Update the private `config/openclaw.json` channel map/bindings with the
-   desired numeric Discord channels and the `ctf` agent contract above.
-3. Dispatch the approved production deployment workflow. It installs local
-   Docker, builds the pinned Kali image, and activates the one Gateway.
+After promotion, verify:
 
-After deployment, the validation playbook checks the local Docker socket and
-pinned image, single active Gateway, disabled retired split service units, CTF
-workspace mounts, and direct Discord credential wiring.
+1. the active release audit succeeds without a second authenticated smoke;
+2. Compose reports the Gateway healthy at `/readyz`;
+3. the active release record contains the expected Gateway digest, CTF digest,
+   config commit, and both bundle hashes;
+4. a configured CTF channel creates a sandbox from the approved CTF digest;
+5. the skill-sync timer remains active and its credential is absent from the
+   Gateway environment and mounts.

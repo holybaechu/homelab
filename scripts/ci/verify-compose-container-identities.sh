@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-default_projects="platform media code openclaw"
+default_projects="homelab"
 identity_snapshot_tmp=""
 identity_health_tmp=""
 identity_current_tmp=""
@@ -29,9 +29,9 @@ usage:
   verify-compose-container-identities.sh health [PROJECT ...]
   verify-compose-container-identities.sh verify BASELINE [PROJECT ...]
 
-Run this read-only helper on the Docker Compose host. The default projects are
-platform, media, code, and openclaw. The Arcane control project and transient
-Compose one-off containers are intentionally excluded.
+Run this read-only helper on the Docker Compose host. The default and only
+application project is homelab. Transient Compose one-off containers are
+intentionally excluded.
 EOF
 }
 

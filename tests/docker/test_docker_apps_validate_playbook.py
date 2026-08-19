@@ -22,19 +22,14 @@ def _posix_shell_command(script: str) -> list[str]:
     return [git_shell, git_path]
 
 
-def test_validation_checks_compose_dns_qbittorrent_routes_and_arcane():
+def test_validation_checks_compose_dns_qbittorrent_and_routes():
     validate = (REPO_ROOT / "infra/ansible/playbooks/validate.yml").read_text(encoding="utf-8")
 
     assert "Validate Docker Compose application host" in validate
-    assert "docker compose config --quiet" in validate
-    assert "docker compose ps --services --status running" in validate
-    assert "Validate the Arcane control project" in validate
-    assert "Check Arcane API health" in validate
-    assert "arcane.db" in validate
-    assert "docker-socket-proxy" in validate
-    assert "ADMIN_STATIC_API_KEY" in validate
-    assert "ADMIN_STATIC_API_KEY_FILE" in validate
-    assert "arcane.home.hchu.me" in validate or "arcane_hostname" in validate
+    assert "docker compose --env-file .homelab/artifacts.env config --quiet" in validate
+    assert "docker compose --env-file .homelab/artifacts.env ps --services --status running" in validate
+    assert validate.count("docker compose --env-file .homelab/artifacts.env") >= 8
+    assert "docker compose config" not in validate
     assert "dig +short @127.0.0.1" in validate
     assert "qbt.home.hchu.me" in validate
     assert "qbt-vpn.home.hchu.me" not in validate
@@ -49,11 +44,18 @@ def test_validation_checks_compose_dns_qbittorrent_routes_and_arcane():
     assert "Check AdGuard Safe Search is disabled" in validate
     assert "safe_search_enabled" in validate
     assert "Check Docker Engine reboot persistence" in validate
-    assert "Check the OpenClaw CLI version" in validate
-    assert "Check the active OpenClaw config path" in validate
-    assert "Validate the active OpenClaw config schema" in validate
-    assert "Audit the active OpenClaw secrets" in validate
-    assert "Validate the OpenClaw host listener is loopback-only" in validate
+    assert "Run the active release smoke contract" in validate
+    assert "./.homelab/smoke" in validate
+    assert "stack-migration.json" not in validate
+    assert "docker_apps_stack_migration_record" not in validate
+    assert 'chdir: "{{ docker_apps_current_root }}/homelab"' in validate
+    assert "docker_apps_compose_root }}/platform" not in validate
+    assert "docker_apps_compose_root }}/media" not in validate
+    assert "Validate the dedicated immutable OpenClaw runtime" in validate
+    assert "Audit the active content-addressed release without another auth smoke" in validate
+    assert "/usr/local/libexec/deploy_openclaw_release.py" in validate
+    assert "openclaw_readiness_url" in validate
+    assert "Check the OpenClaw CLI version" not in validate
 
 
 def test_validation_proves_vuetorrent_assets_config_and_route():
@@ -67,6 +69,16 @@ def test_validation_proves_vuetorrent_assets_config_and_route():
     )
     assert "docker compose exec -T qbittorrent test -f" not in validation
     assert "qbt.home.hchu.me" in validation
+
+
+def test_validation_has_no_live_legacy_cutover_state():
+    validate = (REPO_ROOT / "infra/ansible/playbooks/validate.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "stack-migration" not in validate
+    assert "empty-host-reconstruction" not in validate
+    assert "legacy cutover" not in validate.lower()
 
 
 def test_vuetorrent_validator_reports_every_internal_diagnostic_before_failing():

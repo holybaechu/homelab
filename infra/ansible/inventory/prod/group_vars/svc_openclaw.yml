@@ -1,17 +1,5 @@
-openclaw_native_activate: true
-openclaw_native_transition_marker_path: /var/lib/.openclaw-native-migration-validated
-openclaw_native_transition_marker_value: homelab-openclaw-native-migration-v1
+# The dedicated LXC is an OCI runtime, not an application build machine.
 common_debian_create_service_account: false
-
-openclaw_version: 2026.7.1-2
-openclaw_cli_version_output: "OpenClaw 2026.7.1-2 (0790d9f)"
-openclaw_package_url: https://registry.npmjs.org/openclaw/-/openclaw-2026.7.1-2.tgz
-openclaw_package_sha512: c9c177c8f71b8cde9b50f79a531e8c87abf37b58505a80f7093ff059c983edaf316871c745468095aabe945c4c1dfd6cb0480e0d50308e5cd8aa9dadc24619ee
-
-openclaw_node_version: 24.19.0
-openclaw_node_archive: node-v24.19.0-linux-x64.tar.xz
-openclaw_node_url: "https://nodejs.org/download/release/v{{ openclaw_node_version }}/{{ openclaw_node_archive }}"
-openclaw_node_sha256: 14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647
 
 openclaw_user: openclaw
 openclaw_group: openclaw
@@ -19,72 +7,23 @@ openclaw_uid: 1000
 openclaw_gid: 1000
 openclaw_home: /home/openclaw
 
-# The local Docker engine is staged and validated before the Gateway is moved
-# off the retained remote executor.
-openclaw_ctf_image: homelab-openclaw-ctf-kali:1
-openclaw_ctf_image_build_root: /opt/openclaw-ctf-image
-openclaw_ctf_image_revision: "6"
-openclaw_ctf_camoufox_channel: official/stable
-openclaw_ctf_camoufox_cache_marker: >-
-  {{ openclaw_ctf_workspace_root }}/.cache/camoufox/.homelab-ready-{{ openclaw_ctf_image_revision }}-stable
-
-# One Gateway hosts every agent and uses the local Docker Engine for CTF
-# session sandboxes.
-openclaw_ctf_docker_cli_path: /usr/bin/docker
-
 openclaw_install_root: /opt/openclaw
-openclaw_release_root: "{{ openclaw_install_root }}/releases/{{ openclaw_version }}"
-openclaw_current_root: "{{ openclaw_install_root }}/current"
-openclaw_entrypoint: "{{ openclaw_current_root }}/lib/node_modules/openclaw/openclaw.mjs"
-openclaw_package_cache_path: "/var/cache/openclaw/downloads/openclaw-{{ openclaw_version }}.tgz"
-
-openclaw_node_install_root: /opt/nodejs
-openclaw_node_release_root: "{{ openclaw_node_install_root }}/node-v{{ openclaw_node_version }}-linux-x64"
-openclaw_node_current_root: "{{ openclaw_node_install_root }}/current"
-openclaw_node_cache_path: "/var/cache/openclaw/downloads/{{ openclaw_node_archive }}"
-
-openclaw_setup_root: /home/openclaw/openclaw-setup
-openclaw_config_path: "{{ openclaw_setup_root }}/config/openclaw.json"
-openclaw_runtime_root: /var/lib/openclaw
 openclaw_state_root: /var/lib/openclaw
 openclaw_workspaces_root: "{{ openclaw_state_root }}/workspaces"
-openclaw_legacy_workspace_root: "{{ openclaw_state_root }}/workspace"
 openclaw_workspace_root: "{{ openclaw_workspaces_root }}/main"
 openclaw_auth_profile_secret_root: "{{ openclaw_home }}/.config/openclaw"
-openclaw_cache_root: /var/cache/openclaw
-openclaw_npm_cache_root: "{{ openclaw_cache_root }}/npm"
-openclaw_compile_cache_root: "{{ openclaw_cache_root }}/node-compile-cache"
-# Every agent, including ctf, uses this one subscription-backed profile unless
-# it deliberately inherits the same model through the config defaults.
-openclaw_codex_profile_id: openai:main
-openclaw_codex_model: openai/gpt-5.6-terra
-openclaw_codex_thinking_default: xhigh
-openclaw_ctf_codex_model: openai/gpt-5.6-terra
-openclaw_ctf_codex_thinking_default: xhigh
-openclaw_ctf_codex_fast_mode_default: true
-openclaw_codex_plugin_spec: npm:@openclaw/codex@2026.7.1-1
-# @openclaw/discord@2026.7.1 declares pluginApi >=2026.7.1 and peer
-# openclaw >=2026.7.1, so it is compatible with the pinned 2026.7.1-2 core.
-openclaw_discord_plugin_spec: npm:@openclaw/discord@2026.7.1
-# Official Exa provider plugin compatible with pinned OpenClaw 2026.7.1-2.
-openclaw_exa_plugin_spec: npm:@openclaw/exa-plugin@2026.7.1
 openclaw_secret_root: /etc/openclaw/secrets
 openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
-openclaw_exa_api_key_path: "{{ openclaw_secret_root }}/exa_api_key"
-# The existing Gateway logs in once as the shared Discord bot. Channel-only
-# bindings inside config/openclaw.json select the target agent. This stays on
-# because that config intentionally contains the file-backed bot SecretRef.
-openclaw_discord_enabled: true
 openclaw_discord_bot_token_path: "{{ openclaw_secret_root }}/discord_bot_token"
-# Owner-only operational commands stay separate from channel authorization.
-# Normal messages remain authorized exclusively by their configured channel IDs.
-openclaw_discord_owner_ids:
-  - "485289286246334476"
+openclaw_exa_api_key_path: "{{ openclaw_secret_root }}/exa_api_key"
 
-# Autonomous Skill Workshop writes only to live workspace skill roots. A
-# separate least-privilege service validates and promotes those text files to
-# the private setup repository without exposing its GitHub credential to the
-# Gateway process.
+openclaw_gateway_port: 18789
+openclaw_hostname: openclaw.home.hchu.me
+openclaw_bind_host: "{{ hostvars['openclaw'].ansible_host }}"
+openclaw_proxy_ip: "{{ hostvars['docker_apps'].ansible_host }}"
+openclaw_readiness_url: "http://127.0.0.1:{{ openclaw_gateway_port }}/readyz"
+openclaw_smoke_url: "http://127.0.0.1:{{ openclaw_gateway_port }}/api/health"
+
 openclaw_skill_sync_enabled: true
 openclaw_skill_sync_user: openclaw-skill-sync
 openclaw_skill_sync_group: openclaw-skill-sync
@@ -97,10 +36,3 @@ openclaw_skill_sync_github_token_path: "{{ openclaw_secret_root }}/skill_sync_gi
 openclaw_skill_sync_repository: holybaechu/openclaw-setup
 openclaw_skill_sync_deploy_repository: holybaechu/homelab
 openclaw_skill_sync_check_timeout: 900
-
-openclaw_gateway_port: 18789
-openclaw_hostname: openclaw.home.hchu.me
-openclaw_control_ui_origin: "https://{{ openclaw_hostname }}"
-openclaw_bind_host: "{{ openclaw_ip }}"
-openclaw_proxy_ip: "{{ docker_apps_ip }}"
-openclaw_timezone: "{{ homelab_timezone }}"

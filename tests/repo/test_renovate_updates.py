@@ -1,6 +1,9 @@
 import json
 import re
 
+import yaml
+
+from scripts.ci import select_deployment_components as selector
 from tests.helpers import REPO_ROOT
 
 
@@ -11,7 +14,6 @@ def read(path: str) -> str:
 def test_operational_dependencies_do_not_use_latest_aliases():
     paths = [
         ".github/workflows/ci.yml",
-        ".github/workflows/cd.yml",
         "scripts/ci/install-tools.sh",
         *[str(path.relative_to(REPO_ROOT)) for path in (REPO_ROOT / "apps/compose").rglob("compose.yml")],
     ]
@@ -38,7 +40,7 @@ def test_ansible_install_is_pinned_and_opentofu_lockfile_is_tracked():
 
 
 def test_action_sha_pins_keep_release_comments_for_renovate():
-    workflows = read(".github/workflows/ci.yml") + read(".github/workflows/cd.yml")
+    workflows = read(".github/workflows/ci.yml")
     action_lines = [line.strip() for line in workflows.splitlines() if "uses:" in line]
     sha_lines = [line for line in action_lines if re.search(r"@[0-9a-f]{40}\b", line)]
 
@@ -55,7 +57,7 @@ def test_nonstandard_version_surfaces_have_focused_managers():
         ".opentofu-version",
         "tailscale/tailscale",
         "vuetorrent-lsio-mod",
-        "containers.auto.tfvars",
+        "topology",
     ):
         assert marker in manager_text
     assert "download.proxmox.com/images/system" in datasource_text
@@ -73,7 +75,7 @@ def test_vuetorrent_mod_manager_tracks_official_semver():
     )
 
     assert manager["managerFilePatterns"] == [
-        "/^apps\\/compose\\/media\\/compose\\.yml$/"
+        "/^apps\\/compose\\/homelab\\/compose\\.yml$/"
     ]
     assert manager["matchStrings"] == [
         "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:"
@@ -81,6 +83,14 @@ def test_vuetorrent_mod_manager_tracks_official_semver():
     ]
     assert manager["datasourceTemplate"] == "docker"
     assert manager["versioningTemplate"] == "semver"
+
+
+def test_custom_managers_reference_only_current_workflow_and_compose_paths():
+    manager_text = json.dumps(json.loads(read("renovate.json"))["customManagers"])
+    assert "workflows\\\\/ci\\\\.yml" in manager_text
+    assert "compose\\\\/homelab\\\\/compose" in manager_text
+    assert "workflows\\\\/cd\\\\.yml" not in manager_text
+    assert "compose\\\\/media\\\\/compose" not in manager_text
 
 
 def test_metube_image_uses_explicit_calendar_versioning():
@@ -97,33 +107,33 @@ def test_metube_image_uses_explicit_calendar_versioning():
     )
 
 
-def test_direct_requirements_are_exact():
-    requirements = read("requirements-dev.txt").splitlines()
-    collection = read("infra/ansible/requirements.yml")
-
-    assert requirements == ["pytest==9.1.1", "Jinja2==3.1.6", "PyYAML==6.0.3"]
-    assert 'version: "13.3.0"' in collection
-
-
-def test_opentofu_updates_trigger_cd():
-    assert '      - ".opentofu-version"' in read(".github/workflows/cd.yml")
-
-
-def test_arcane_control_plane_updates_never_automerge():
-    config = json.loads(read("renovate.json"))
-    rule = next(
-        rule
-        for rule in config["packageRules"]
-        if rule.get("description") == "Require review for the Arcane control plane"
+def test_direct_requirements_and_collections_are_exactly_pinned():
+    requirement_lines = [
+        line.strip()
+        for line in read("requirements-dev.txt").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert requirement_lines
+    assert all(
+        re.fullmatch(r"[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[^<>=!~;\s]+", line)
+        for line in requirement_lines
     )
 
-    assert rule["matchDatasources"] == ["docker"]
-    assert rule["matchPackageNames"] == [
-        "ghcr.io/getarcaneapp/manager",
-        "tecnativa/docker-socket-proxy",
-    ]
-    assert rule["automerge"] is False
-    assert rule["platformAutomerge"] is False
+    galaxy = yaml.safe_load(read("infra/ansible/requirements.yml"))
+    collections = galaxy["collections"]
+    assert collections
+    assert all(re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", item["name"]) for item in collections)
+    assert all(
+        isinstance(item.get("version"), str)
+        and re.fullmatch(r"\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?", item["version"])
+        for item in collections
+    )
+
+
+def test_opentofu_updates_remain_in_deployment_path_scope():
+    selection = selector.classify_paths([".opentofu-version"])
+
+    assert selection.components == ("tofu", "bootstrap")
 
 
 def test_openclaw_image_updates_always_require_review():

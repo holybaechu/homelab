@@ -8,7 +8,7 @@ from tests.helpers import REPO_ROOT
 
 PATCHER_PATH = (
     REPO_ROOT
-    / "infra/ansible/roles/openclaw_native/files/patch-openclaw-discord-autothread-queue.py"
+    / "infra/openclaw/gateway/patches/patch-openclaw-discord-autothread-queue.py"
 )
 
 

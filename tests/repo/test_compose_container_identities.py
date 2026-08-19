@@ -46,10 +46,7 @@ case "$1" in
     ;;
   ps)
     case "$*" in
-      *project=platform*) printf '%s\\n' platform-1 platform-oneoff ;;
-      *project=media*) printf '%s\\n' media-1 ;;
-      *project=code*) printf '%s\\n' code-1 ;;
-      *project=openclaw*) printf '%s\\n' openclaw-1 ;;
+      *project=homelab*) printf '%s\\n' homelab-1 homelab-oneoff ;;
       *) exit 1 ;;
     esac
     ;;
@@ -58,7 +55,7 @@ case "$1" in
     container="$4"
     case "$format" in
       *com.docker.compose.oneoff*)
-        if [ "$container" = platform-oneoff ]; then
+        if [ "$container" = homelab-oneoff ]; then
           echo True
         else
           echo False
@@ -66,16 +63,14 @@ case "$1" in
         ;;
       *State.Health*)
         project="${container%%-*}"
-        [ "$project" = openclaw ] && project=openclaw
         health=healthy
-        if [ "${FAKE_UNHEALTHY:-0}" = 1 ] && [ "$project" = openclaw ]; then
+        if [ "${FAKE_UNHEALTHY:-0}" = 1 ] && [ "$project" = homelab ]; then
           health=unhealthy
         fi
         printf '%s|service|/%s|running|%s\\n' "$project" "$container" "$health"
         ;;
       *)
         project="${container%%-*}"
-        [ "$project" = openclaw ] && project=openclaw
         printf '%s\\tservice\\t/%s\\tsha256:%s\\t2026-08-12T00:00:00Z\\t2026-08-12T00:00:01Z%s\\t0\\tsha256:image-%s\\texample/%s:stable\\n' \\
           "$project" "$container" "$container" "${FAKE_STARTED_SUFFIX:-}" \\
           "$container" "$project"
@@ -123,9 +118,8 @@ def test_identity_helper_snapshots_and_verifies_long_lived_containers(tmp_path):
     snapshot = _run(shell, fake_bin, "snapshot")
     assert snapshot.returncode == 0, snapshot.stderr
     assert snapshot.stdout.startswith("project\tservice\tname\tcontainer_id")
-    assert "platform-oneoff" not in snapshot.stdout
-    for project in ("platform", "media", "code", "openclaw"):
-        assert f"{project}\tservice" in snapshot.stdout
+    assert "homelab-oneoff" not in snapshot.stdout
+    assert "homelab\tservice" in snapshot.stdout
 
     baseline = tmp_path / "baseline.tsv"
     baseline.write_text(snapshot.stdout, encoding="utf-8", newline="\n")

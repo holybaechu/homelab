@@ -1,6 +1,16 @@
 import yaml
+from jinja2 import Environment
 
 from tests.helpers import REPO_ROOT
+
+
+def render_maintenance_value(value, enabled):
+    environment = Environment()
+    environment.filters["bool"] = bool
+    rendered = environment.from_string(str(value)).render(
+        homelab_maintenance_upgrade=enabled
+    )
+    return yaml.safe_load(rendered)
 
 
 def test_docker_engine_role_installs_engine_compose_plugin_and_live_restore():
@@ -16,20 +26,40 @@ def test_docker_engine_role_installs_engine_compose_plugin_and_live_restore():
     assert '\"max-size\": \"10m\"' in daemon
 
 
-def test_docker_apt_packages_upgrade_and_restart_docker_on_deploy():
-    tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "docker_engine" / "tasks" / "main.yml").read_text(encoding="utf-8")
-    prerequisites = tasks.split("- name: Install Docker apt prerequisites", 1)[1].split(
-        "- name: Disable systemd-resolved DNS stub for AdGuard port 53", 1
-    )[0]
-    engine = tasks.split("- name: Install Docker Engine and Compose plugin", 1)[1].split(
-        "- name: Configure Docker daemon defaults", 1
-    )[0]
+def test_docker_packages_upgrade_only_during_explicit_maintenance():
+    tasks = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "infra"
+            / "ansible"
+            / "roles"
+            / "docker_engine"
+            / "tasks"
+            / "main.yml"
+        ).read_text(encoding="utf-8")
+    )
+    package_tasks = [
+        task
+        for task in tasks
+        if (apt := task.get("ansible.builtin.apt")) and "name" in apt
+    ]
 
-    assert "state: latest" in prerequisites
-    assert "update_cache: true" in prerequisites
-    assert "state: latest" in engine
-    assert "update_cache: true" in engine
-    assert "notify: Restart Docker" in engine
+    assert len(package_tasks) == 2
+    for task in package_tasks:
+        apt = task["ansible.builtin.apt"]
+        assert render_maintenance_value(apt["state"], False) == "present"
+        assert render_maintenance_value(apt["update_cache"], False) is False
+        assert render_maintenance_value(apt["state"], True) == "latest"
+        assert render_maintenance_value(apt["update_cache"], True) is True
+        assert render_maintenance_value(apt["cache_valid_time"], False) is None
+        assert render_maintenance_value(apt["cache_valid_time"], True) == 3600
+
+    engine = next(
+        task
+        for task in package_tasks
+        if "docker-ce" in task["ansible.builtin.apt"]["name"]
+    )
+    assert engine["notify"] == "Restart Docker"
 
 
 def test_docker_apt_prerequisites_use_the_debian_13_dnsutils_provider():
@@ -50,4 +80,5 @@ def test_docker_apt_prerequisites_use_the_debian_13_dnsutils_provider():
 
     assert "bind9-dnsutils" in prerequisites["name"]
     assert "dnsutils" not in prerequisites["name"]
-    assert prerequisites["state"] == "latest"
+    assert render_maintenance_value(prerequisites["state"], False) == "present"
+    assert render_maintenance_value(prerequisites["state"], True) == "latest"

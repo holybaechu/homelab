@@ -1,32 +1,22 @@
 # Applications
 
 Most application services run through Docker Compose on the `docker_apps` LXC.
-OpenClaw runs as a native system service in its dedicated unprivileged LXC.
+OpenClaw uses its own immutable Compose runtime in the dedicated unprivileged
+`openclaw` LXC; it is not part of the application-host stack.
 
-- `compose/platform`: Traefik, AdGuard Home, Cloudflare DDNS.
-- `compose/media`: one direct qBittorrent instance at
-  `https://qbt.home.hchu.me`, Copyparty, and MeTube.
-- `compose/code`: a Kali-based T3 Code environment at
-  `https://code.home.hchu.me`.
-- `compose/openclaw`: the retained loopback-only Docker OpenClaw Gateway. It
-  is an inactive, exact-identity rollback asset under a permanent source hold.
-  Its retained private configuration lives in a separate local
-  `openclaw-setup` repository.
-- `compose/arcane`: the Ansible-owned Arcane Docker management control plane.
+- `compose/homelab`: the sole active application project: Traefik, AdGuard
+  Home, Cloudflare DDNS, one direct qBittorrent instance, Copyparty, MeTube,
+  and T3 Code.
+- `images/t3code`: CI-only T3 Code image input. Production archives exclude
+  this directory and deploy an approved exact OCI digest.
 
-Ansible bootstraps the workload projects at `/opt/homelab-compose` and renders
-their private `.env` and configuration files. Safe app-only pushes for
-platform, media, and code deploy through Arcane. OpenClaw rollback-manifest
-changes take the full, marker-aware Ansible path because its Arcane sync is
-retired. Mixed, control-plane, and infrastructure changes also use the full
-path.
+Ansible only prepares root-owned direct-deployment inputs under
+`/etc/homelab/runtime/homelab` and service-scoped Cloudflare credentials under
+`/etc/homelab/secrets`. The locked direct deployer owns activation and
+previous-homelab rollback. Legacy cutover assets exist only as already staged
+host releases for an offline/manual recovery procedure; the normal source,
+deployment, and validation paths are homelab-only.
 
-The public homelab repository is the only deployment source for OpenClaw. The
-private `/opt/homelab-compose/openclaw-setup` Git repository owns only active
-config and future agent/workspace/skill definitions. Mutable OpenClaw state and
-credentials are outside both repositories. See `docs/runbooks/openclaw.md`.
-
-Arcane is deployed separately at `/opt/homelab-control/arcane`, with persistent
-state under `/srv/homelab/docker-apps/arcane`. It is never one of its own
-managed projects; Ansible remains its deployment and break-glass recovery path.
-See `docs/runbooks/arcane.md` for the ownership, backup, and update policy.
+The public homelab repository is the deployment source for OpenClaw. Mutable
+OpenClaw state and credentials stay outside the repository. See
+`docs/runbooks/openclaw.md`.

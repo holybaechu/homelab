@@ -3,72 +3,861 @@ name: ci
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
   schedule:
     # Daily at 03:17 Asia/Seoul (18:17 UTC).
     - cron: "17 18 * * *"
+  repository_dispatch:
+    types: [openclaw-promoted]
+  workflow_dispatch:
+    inputs:
+      components:
+        description: Comma-separated tofu,bootstrap,tailnet,openclaw,apps; empty validates only
+        required: true
+        default: ""
+        type: string
+      openclaw_config_commit:
+        description: Exact private-config commit required with openclaw
+        required: false
+        default: ""
+        type: string
+      openclaw_gateway_ref:
+        description: Exact Gateway repository@sha256 reference required with openclaw
+        required: false
+        default: ""
+        type: string
+      openclaw_ctf_ref:
+        description: Exact CTF repository@sha256 reference required with openclaw
+        required: false
+        default: ""
+        type: string
+      openclaw_runtime_sha256:
+        description: Exact runtime bundle SHA-256 required with openclaw
+        required: false
+        default: ""
+        type: string
+      openclaw_config_sha256:
+        description: Exact config bundle SHA-256 required with openclaw
+        required: false
+        default: ""
+        type: string
+      tofu_force_unlock_id:
+        description: Confirmed stale OpenTofu lock UUID
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  deployment_plan:
+    name: classify exact revision
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      validation_scope: ${{ steps.scope.outputs.validation_scope }}
+      components: ${{ steps.plan.outputs.components }}
+      openclaw_setup_commit: ${{ steps.plan.outputs.openclaw_setup_commit }}
+      openclaw_gateway_ref: ${{ steps.plan.outputs.openclaw_gateway_ref }}
+      openclaw_ctf_ref: ${{ steps.plan.outputs.openclaw_ctf_ref }}
+      openclaw_runtime_sha256: ${{ steps.plan.outputs.openclaw_runtime_sha256 }}
+      openclaw_config_sha256: ${{ steps.plan.outputs.openclaw_config_sha256 }}
+      openclaw_builds: ${{ steps.plan.outputs.openclaw_builds }}
+      t3_build: ${{ steps.plan.outputs.t3_build }}
+    steps:
+      - name: Checkout exact workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Resolve last completely deployed main revision
+        id: deployed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          api = os.environ["GITHUB_API_URL"].rstrip("/")
+          repository = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GITHUB_TOKEN"]
+          current = os.environ["GITHUB_SHA"].lower()
+
+          def get_json(path, query):
+              request = Request(
+                  f"{api}{path}?{urlencode(query)}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          base = "0" * 40
+          deployments = get_json(
+              f"/repos/{repository}/deployments",
+              {"environment": "prod-release", "per_page": 100},
+          )
+          for deployment in deployments:
+              sha = str(deployment.get("sha", "")).lower()
+              if not re.fullmatch(r"[0-9a-f]{40}", sha):
+                  continue
+              statuses = get_json(
+                  f"/repos/{repository}/deployments/{deployment['id']}/statuses",
+                  {"per_page": 1},
+              )
+              if not statuses or statuses[0].get("state") != "success":
+                  continue
+              ancestor = subprocess.run(
+                  ["git", "merge-base", "--is-ancestor", sha, current],
+                  check=False,
+              )
+              if ancestor.returncode == 0:
+                  base = sha
+                  break
+              if ancestor.returncode not in (0, 1):
+                  raise SystemExit("cannot validate the deployed revision ancestry")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"base_sha={base}\n")
+          print(f"deployment base: {base}")
+          PY
+      - name: Select validation scope
+        id: scope
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_SHA: ${{ github.sha }}
+          VALIDATION_BASE_SHA: ${{ steps.deployed.outputs.base_sha || github.event.pull_request.base.sha || github.event.before || github.sha }}
+          MANUAL_COMPONENTS: ${{ inputs.components || '' }}
+        run: python3 scripts/ci/select_deployment_components.py validation-scope "$GITHUB_OUTPUT"
+      - name: Select fail-closed deployment components
+        id: plan
+        if: >-
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' ||
+           github.event_name == 'workflow_dispatch' ||
+           github.event_name == 'repository_dispatch')
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_DEPLOYMENT_BASE_SHA: ${{ steps.deployed.outputs.base_sha || '' }}
+          GITHUB_SHA: ${{ github.sha }}
+          MANUAL_COMPONENTS: ${{ inputs.components || '' }}
+          MANUAL_OPENCLAW_CONFIG_COMMIT: ${{ inputs.openclaw_config_commit || '' }}
+          MANUAL_OPENCLAW_GATEWAY_REF: ${{ inputs.openclaw_gateway_ref || '' }}
+          MANUAL_OPENCLAW_CTF_REF: ${{ inputs.openclaw_ctf_ref || '' }}
+          MANUAL_OPENCLAW_RUNTIME_SHA256: ${{ inputs.openclaw_runtime_sha256 || '' }}
+          MANUAL_OPENCLAW_CONFIG_SHA256: ${{ inputs.openclaw_config_sha256 || '' }}
+          OPENCLAW_PROMOTED_CONFIG_COMMIT: ${{ github.event.client_payload.config_commit || github.event.client_payload.commit || '' }}
+          OPENCLAW_PROMOTED_GATEWAY_REF: ${{ github.event.client_payload.gateway_ref || vars.OPENCLAW_GATEWAY_REF }}
+          OPENCLAW_PROMOTED_CTF_REF: ${{ github.event.client_payload.ctf_ref || vars.OPENCLAW_CTF_REF }}
+          OPENCLAW_PROMOTED_RUNTIME_SHA256: ${{ github.event.client_payload.runtime_sha256 || vars.OPENCLAW_RUNTIME_SHA256 }}
+          OPENCLAW_PROMOTED_CONFIG_SHA256: ${{ github.event.client_payload.config_sha256 || '' }}
+          OPENCLAW_DEFAULT_CONFIG_COMMIT: ${{ vars.OPENCLAW_CONFIG_COMMIT }}
+          OPENCLAW_DEFAULT_GATEWAY_REF: ${{ vars.OPENCLAW_GATEWAY_REF }}
+          OPENCLAW_DEFAULT_CTF_REF: ${{ vars.OPENCLAW_CTF_REF }}
+          OPENCLAW_DEFAULT_RUNTIME_SHA256: ${{ vars.OPENCLAW_RUNTIME_SHA256 }}
+          OPENCLAW_DEFAULT_CONFIG_SHA256: ${{ vars.OPENCLAW_CONFIG_SHA256 }}
+        run: python3 scripts/ci/select_deployment_components.py "$GITHUB_OUTPUT"
+
+  validation:
+    name: validate exact revision
+    needs: deployment_plan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      openclaw_runtime_sha256: ${{ steps.runtime.outputs.openclaw_runtime_sha256 }}
     env:
       ANSIBLE_CONFIG: infra/ansible/ansible.cfg
       PYTHONPATH: ${{ github.workspace }}
+      VALIDATION_SCOPE: ${{ needs.deployment_plan.outputs.validation_scope }}
     steps:
-      - name: Checkout
+      - name: Checkout exact planned revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Set up Python
+        with:
+          ref: ${{ github.sha }}
+      - name: Set up validation Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.14"
           cache: pip
-          cache-dependency-path: |
-            requirements-dev.txt
-            requirements-deploy.txt
-
-      - name: Install Python dependencies
+          cache-dependency-path: requirements-dev.txt
+      - name: Install fast validation dependencies
+        if: env.VALIDATION_SCOPE != 'full'
+        run: python -m pip install pytest==9.1.1 PyYAML==6.0.3
+      - name: Install exhaustive validation dependencies
+        if: env.VALIDATION_SCOPE == 'full'
+        run: python -m pip install -r requirements-dev.txt -r requirements-deploy.txt
+      - name: Validate application model fast path
+        if: env.VALIDATION_SCOPE == 'apps-model' || env.VALIDATION_SCOPE == 'apps'
+        run: >-
+          python -m pytest -q
+          tests/docker/test_homelab_compose.py
+          tests/docker/test_compose_secrets.py
+          tests/docker/test_t3code_compose.py
+          tests/docker/test_traefik_config.py
+      - name: Validate application release tooling
+        if: env.VALIDATION_SCOPE == 'apps'
+        run: >-
+          python -m pytest -q
+          tests/repo/test_deploy_compose_release.py
+          tests/repo/test_deploy_compose_via_ssh.py
+          tests/repo/test_immutable_image_release.py
+      - name: Validate OpenClaw immutable fast path
+        if: env.VALIDATION_SCOPE == 'openclaw'
+        run: >-
+          python -m pytest -q
+          tests/repo/test_openclaw_release.py
+          tests/repo/test_deploy_openclaw_release.py
+          tests/repo/test_deploy_openclaw_via_ssh.py
+          tests/infra/test_openclaw_native_role.py
+          tests/infra/test_openclaw_skill_sync.py
+          tests/infra/test_openclaw_codex_cwd_patch.py
+          tests/infra/test_openclaw_discord_autothread_patch.py
+          tests/infra/test_openclaw_lxc_preflight.py
+      - name: Validate repository routing contracts
+        if: env.VALIDATION_SCOPE == 'repo'
+        run: >-
+          python -m pytest -q
+          tests/repo/test_deployment_components.py
+          tests/repo/test_github_workflows.py
+      - name: Run exhaustive repository tests
+        if: env.VALIDATION_SCOPE == 'full'
+        run: python -m pytest -q
+      - name: Validate the only application Compose stack
+        if: env.VALIDATION_SCOPE == 'apps-model' || env.VALIDATION_SCOPE == 'apps' || env.VALIDATION_SCOPE == 'full'
+        run: ./scripts/ci/validate-compose.sh
+      - name: Validate direct deployment clients
+        if: env.VALIDATION_SCOPE == 'apps' || env.VALIDATION_SCOPE == 'openclaw' || env.VALIDATION_SCOPE == 'full'
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-dev.txt -r requirements-deploy.txt
-
-      - name: Install Ansible collections
-        run: ansible-galaxy collection install -r infra/ansible/requirements.yml
-
-      - name: Check generated Ansible inventory
-        run: python3 scripts/ci/render_ansible_inventory.py --check
-
-      - name: Run repository tests
-        run: PYTHONPATH=$PWD pytest
-
-      - name: Install OpenTofu
+          sh -n scripts/ci/deploy-compose-via-ssh.sh
+          sh -n scripts/ci/deploy-openclaw-via-ssh.sh
+      - name: Build deterministic OpenClaw runtime bundle
+        id: runtime
+        if: contains(format(',{0},', needs.deployment_plan.outputs.components), ',openclaw,')
+        env:
+          PROMOTED_RUNTIME_SHA256: ${{ needs.deployment_plan.outputs.openclaw_runtime_sha256 }}
+        run: |
+          set -eu
+          set -- bundle --source infra/openclaw/runtime \
+            --output "$RUNNER_TEMP/openclaw-runtime.tar" \
+            --result "$RUNNER_TEMP/openclaw-runtime.json"
+          if [ -n "$PROMOTED_RUNTIME_SHA256" ]; then
+            set -- "$@" --expected-sha256 "$PROMOTED_RUNTIME_SHA256"
+          fi
+          python3 scripts/ci/openclaw_release.py "$@"
+          digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$RUNNER_TEMP/openclaw-runtime.json")"
+          echo "openclaw_runtime_sha256=$digest" >> "$GITHUB_OUTPUT"
+      - name: Install OpenTofu for exhaustive validation
+        if: env.VALIDATION_SCOPE == 'full'
         run: ./scripts/ci/install-opentofu.sh
-
       - name: Validate OpenTofu
+        if: env.VALIDATION_SCOPE == 'full'
         run: |
           cd infra/opentofu/envs/prod
           cp terraform.tfvars.example terraform.tfvars
           tofu init -backend=false
           tofu fmt -recursive -check ../..
           tofu validate
-
-      - name: Check active Ansible playbook syntax
+      - name: Install Ansible collections
+        if: env.VALIDATION_SCOPE == 'full'
+        run: ansible-galaxy collection install -r infra/ansible/requirements.yml
+      - name: Check every active Ansible playbook
+        if: env.VALIDATION_SCOPE == 'full'
         run: |
-          for playbook in \
-            bootstrap.yml \
-            preflight-openclaw-lxc.yml \
-            trust-openclaw-lxc.yml \
-            fence-openclaw-docker-before-native.yml \
-            rebaseline-openclaw-retained-rollback.yml \
-            site.yml \
-            validate.yml; do
-            ansible-playbook -i infra/ansible/inventory/prod/hosts.yml \
-              "infra/ansible/playbooks/${playbook}" --syntax-check
+          for playbook in bootstrap.yml maintenance.yml preflight-openclaw-lxc.yml \
+            site.yml trust-docker-apps.yml trust-openclaw-lxc.yml validate.yml; do
+            ansible-playbook -i infra/ansible/inventory/prod/topology.json \
+              "infra/ansible/playbooks/$playbook" --syntax-check
           done
 
-      - name: Validate Docker Compose migration manifests
-        run: ./scripts/ci/validate-compose.sh
+  openclaw_build:
+    name: build immutable OpenClaw images
+    needs: [deployment_plan, validation]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.validation.result == 'success' &&
+      needs.deployment_plan.outputs.openclaw_builds != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: openclaw-image-promotion
+      cancel-in-progress: false
+    outputs:
+      gateway_ref: ${{ steps.approve.outputs.gateway_ref }}
+      ctf_ref: ${{ steps.approve.outputs.ctf_ref }}
+    steps:
+      - name: Checkout exact validated source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Authenticate to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build selected images from the exact contract
+        env:
+          SELECTED_BUILDS: ${{ needs.deployment_plan.outputs.openclaw_builds }}
+          OPENCLAW_GATEWAY_IMAGE: ghcr.io/holybaechu/homelab-openclaw-gateway
+          OPENCLAW_CTF_IMAGE: ghcr.io/holybaechu/homelab-openclaw-ctf
+          OPENCLAW_GATEWAY_BASE_REF: ${{ vars.OPENCLAW_GATEWAY_BASE_REF }}
+          OPENCLAW_PYTHON_BASE_REF: ${{ vars.OPENCLAW_PYTHON_BASE_REF }}
+          OPENCLAW_DOCKER_CLI_REF: ${{ vars.OPENCLAW_DOCKER_CLI_REF }}
+          OPENCLAW_CTF_BASE_REF: ${{ vars.OPENCLAW_CTF_BASE_REF }}
+          OPENCLAW_UV_BASE_REF: ${{ vars.OPENCLAW_UV_BASE_REF }}
+        run: |
+          set -eu
+          mkdir -p .immutable-images
+          python3 scripts/ci/openclaw_release.py contract \
+            --source-sha "$GITHUB_SHA" \
+            --gateway-image "$OPENCLAW_GATEWAY_IMAGE" \
+            --ctf-image "$OPENCLAW_CTF_IMAGE" \
+            --gateway-base-ref "$OPENCLAW_GATEWAY_BASE_REF" \
+            --python-base-ref "$OPENCLAW_PYTHON_BASE_REF" \
+            --docker-cli-ref "$OPENCLAW_DOCKER_CLI_REF" \
+            --ctf-base-ref "$OPENCLAW_CTF_BASE_REF" \
+            --uv-base-ref "$OPENCLAW_UV_BASE_REF" \
+            --output .immutable-images/openclaw-contract.json
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          from scripts.ci.immutable_image_release import digest_from_build_metadata
+          selected = set(os.environ["SELECTED_BUILDS"].split(","))
+          contract = json.loads(Path(".immutable-images/openclaw-contract.json").read_text())
+          checks = {
+              "gateway": """set -eu
+          test \"$(id -u)\" = 1000
+          node --version
+          docker --version
+          set -- /opt/openclaw-plugins/project/node_modules/@openclaw/codex/dist/run-attempt-*.js
+          test \"$#\" = 1
+          echo 'd99c70ea7a445d49769f24582fbe312c55934326bcafb80c3132555189e94d7c  '\"$1" | sha256sum -c -
+          set -- /opt/openclaw-plugins/project/node_modules/@openclaw/discord/dist/message-handler-*.js
+          test \"$#\" = 1
+          echo 'd337d75c832c1a8aa8e82823c67080580175b3a0d60f9a122e28179bb9958439  '\"$1" | sha256sum -c -""",
+              "ctf": """set -eu
+          test \"$(id -u):$(id -g)\" = 1000:1000
+          python3 -c 'import pwn'
+          command -v gdb nmap tshark chromium uv >/dev/null""",
+          }
+          for key, artifact in (("gateway", "openclaw_gateway"), ("ctf", "openclaw_ctf")):
+              if artifact in selected:
+                  item = contract["artifacts"][key]
+                  subprocess.run(item["build_argv"], check=True)
+                  digest = digest_from_build_metadata(Path(item["digest_source"]["metadata_file"]))
+                  exact_ref = f"{item['image']}@{digest}"
+                  subprocess.run(
+                      ["docker", "run", "--rm", "--entrypoint", "/bin/sh", exact_ref, "-ec", checks[key]],
+                      check=True,
+                  )
+                  if key == "gateway":
+                      probe = Path(os.environ["RUNNER_TEMP"]) / "openclaw-gateway-access-probe"
+                      config_dir = probe / "config"
+                      config_dir.mkdir(parents=True, mode=0o750)
+                      config_file = config_dir / "openclaw.json"
+                      config_file.write_text('{"access":"verified"}\n', encoding="utf-8")
+                      subprocess.run(["sudo", "chown", "0:1000", str(probe), str(config_dir), str(config_file)], check=True)
+                      subprocess.run(["sudo", "chmod", "0750", str(probe), str(config_dir)], check=True)
+                      subprocess.run(["sudo", "chmod", "0440", str(config_file)], check=True)
+                      try:
+                          subprocess.run(
+                              [
+                                  "docker", "run", "--rm", "--entrypoint", "/bin/sh",
+                                  "--mount", f"type=bind,src={probe},dst=/probe,readonly",
+                                  exact_ref, "-ec",
+                                  "test \"$(id -u):$(id -g)\" = 1000:1000; "
+                                  "test -r /probe/config/openclaw.json; "
+                                  "grep -F '\"access\":\"verified\"' /probe/config/openclaw.json >/dev/null",
+                              ],
+                              check=True,
+                          )
+                      finally:
+                          subprocess.run(["sudo", "rm", "-f", str(config_file)], check=True)
+                          subprocess.run(["sudo", "rmdir", str(config_dir), str(probe)], check=True)
+                  if key == "ctf":
+                      probe = Path(os.environ["RUNNER_TEMP"]) / "openclaw-ctf-write-probe"
+                      probe.mkdir(mode=0o700)
+                      subprocess.run(["sudo", "chown", "1000:1000", str(probe)], check=True)
+                      try:
+                          subprocess.run(
+                              [
+                                  "docker", "run", "--rm",
+                                  "--mount", f"type=bind,src={probe},dst=/workspace",
+                                  exact_ref, "/bin/sh", "-ec",
+                                  "umask 077; printf writable > /workspace/.identity-probe; "
+                                  "test \"$(stat -c '%u:%g %a' /workspace/.identity-probe)\" = '1000:1000 600'",
+                              ],
+                              check=True,
+                          )
+                      finally:
+                          subprocess.run(["sudo", "rm", "-f", str(probe / ".identity-probe")], check=True)
+                          subprocess.run(["sudo", "rmdir", str(probe)], check=True)
+          PY
+      - name: Approve exact same-build digests
+        id: approve
+        env:
+          SELECTED_BUILDS: ${{ needs.deployment_plan.outputs.openclaw_builds }}
+          DEFAULT_GATEWAY_REF: ${{ needs.deployment_plan.outputs.openclaw_gateway_ref }}
+          DEFAULT_CTF_REF: ${{ needs.deployment_plan.outputs.openclaw_ctf_ref }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          contract = json.loads(Path(".immutable-images/openclaw-contract.json").read_text())
+          selected = set(os.environ["SELECTED_BUILDS"].split(","))
+          refs = {"gateway": os.environ["DEFAULT_GATEWAY_REF"], "ctf": os.environ["DEFAULT_CTF_REF"]}
+          for key, artifact in (("gateway", "openclaw_gateway"), ("ctf", "openclaw_ctf")):
+              if artifact not in selected:
+                  continue
+              item = contract["artifacts"][key]
+              completed = subprocess.run([
+                  "python3", "scripts/ci/immutable_image_release.py", "approve",
+                  "--state-dir", ".immutable-images/approved", "--artifact", artifact,
+                  "--source-sha", os.environ["GITHUB_SHA"], "--image", item["image"],
+                  "--platform", item["platform"],
+                  "--build-metadata", item["digest_source"]["metadata_file"],
+              ], check=True, capture_output=True, text=True)
+              refs[key] = json.loads(completed.stdout)["ref"]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"gateway_ref={refs['gateway']}\nctf_ref={refs['ctf']}\n")
+          PY
+
+  t3_build:
+    name: build immutable T3 image
+    needs: [deployment_plan, validation]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.validation.result == 'success' &&
+      needs.deployment_plan.outputs.t3_build == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: t3code-image-promotion
+      cancel-in-progress: false
+    outputs:
+      t3_image_ref: ${{ steps.approve.outputs.t3_image_ref }}
+      t3_source_sha: ${{ steps.approve.outputs.t3_source_sha }}
+    steps:
+      - name: Checkout exact validated source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Authenticate to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build and approve exact T3 digest
+        id: approve
+        env:
+          T3_IMAGE: ghcr.io/holybaechu/homelab-t3code
+        run: |
+          set -eu
+          mkdir -p .immutable-images
+          python3 scripts/ci/immutable_image_release.py contract \
+            --artifact t3code --source-sha "$GITHUB_SHA" --image "$T3_IMAGE" \
+            --context apps/images/t3code --dockerfile apps/images/t3code/Dockerfile \
+            --metadata-file .immutable-images/t3code-build.json \
+            --output .immutable-images/t3code-contract.json
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          contract = json.loads(Path(".immutable-images/t3code-contract.json").read_text())
+          subprocess.run(contract["build_argv"], check=True)
+          PY
+          python3 scripts/ci/immutable_image_release.py approve \
+            --state-dir .immutable-images/approved --artifact t3code \
+            --source-sha "$GITHUB_SHA" --image "$T3_IMAGE" \
+            --build-metadata .immutable-images/t3code-build.json \
+            > .immutable-images/t3code-approved.json
+          ref="$(python3 -c 'import json; print(json.load(open(".immutable-images/t3code-approved.json"))["ref"])')"
+          echo "t3_image_ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "t3_source_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+  prod_mutation:
+    name: apply one exact production release
+    needs: [deployment_plan, validation, openclaw_build, t3_build]
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'repository_dispatch') &&
+      needs.validation.result == 'success' &&
+      (needs.openclaw_build.result == 'success' || needs.openclaw_build.result == 'skipped') &&
+      (needs.t3_build.result == 'success' || needs.t3_build.result == 'skipped') &&
+      (github.event_name == 'push' || needs.deployment_plan.outputs.components != '')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: write
+      id-token: write
+    environment: prod
+    concurrency:
+      group: prod-mutation
+      cancel-in-progress: false
+    env:
+      TF_IN_AUTOMATION: "1"
+      ANSIBLE_CONFIG: infra/ansible/ansible.cfg
+      DEPLOY_COMPONENTS: ${{ needs.deployment_plan.outputs.components }}
+      TOFU_SELECTED: ${{ contains(format(',{0},', needs.deployment_plan.outputs.components), ',tofu,') }}
+      BOOTSTRAP_SELECTED: ${{ contains(format(',{0},', needs.deployment_plan.outputs.components), ',bootstrap,') }}
+      TAILNET_SELECTED: ${{ contains(format(',{0},', needs.deployment_plan.outputs.components), ',tailnet,') }}
+      PROVISIONING_SELECTED: ${{ contains(format(',{0},', needs.deployment_plan.outputs.components), ',tofu,') || contains(format(',{0},', needs.deployment_plan.outputs.components), ',bootstrap,') || contains(format(',{0},', needs.deployment_plan.outputs.components), ',tailnet,') }}
+      OPENCLAW_SELECTED: ${{ contains(format(',{0},', needs.deployment_plan.outputs.components), ',openclaw,') }}
+      APPS_SELECTED: ${{ contains(format(',{0},', needs.deployment_plan.outputs.components), ',apps,') }}
+      OPENCLAW_HOST: ${{ vars.OPENCLAW_IP || '192.168.0.5' }}
+      OPENCLAW_GATEWAY_REF: ${{ needs.openclaw_build.outputs.gateway_ref || needs.deployment_plan.outputs.openclaw_gateway_ref }}
+      OPENCLAW_CTF_REF: ${{ needs.openclaw_build.outputs.ctf_ref || needs.deployment_plan.outputs.openclaw_ctf_ref }}
+      OPENCLAW_RUNTIME_SHA256: ${{ needs.deployment_plan.outputs.openclaw_runtime_sha256 || needs.validation.outputs.openclaw_runtime_sha256 }}
+      OPENCLAW_CONFIG_COMMIT: ${{ needs.deployment_plan.outputs.openclaw_setup_commit }}
+      OPENCLAW_CONFIG_SHA256: ${{ needs.deployment_plan.outputs.openclaw_config_sha256 }}
+    steps:
+      - name: Checkout exact validated revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Checkout exact promoted private config
+        if: env.OPENCLAW_SELECTED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: holybaechu/openclaw-setup
+          token: ${{ secrets.OPENCLAW_CONFIG_READ_TOKEN }}
+          ref: ${{ needs.deployment_plan.outputs.openclaw_setup_commit }}
+          path: .openclaw-config
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Connect Tailscale for selected production components
+        if: env.DEPLOY_COMPONENTS != ''
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
+          version: "1.102.2"
+          args: --accept-dns=false
+          ping: >-
+            ${{ env.PROVISIONING_SELECTED == 'true' &&
+                (vars.PVE_TAILSCALE_IP || vars.PVE_LAN_IP || '192.168.0.2') ||
+                env.OPENCLAW_SELECTED == 'true' &&
+                (vars.OPENCLAW_IP || '192.168.0.5') ||
+                (vars.DOCKER_APPS_IP || '192.168.0.3') }}
+      - name: Configure pinned SSH trust before release preparation
+        if: env.DEPLOY_COMPONENTS != ''
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: ./scripts/ci/configure-ssh.sh
+      - name: Set up provisioning Python
+        if: env.PROVISIONING_SELECTED == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-deploy.txt
+      - name: Install only selected provisioning tooling
+        if: env.PROVISIONING_SELECTED == 'true'
+        env:
+          INSTALL_OPENTOFU: ${{ env.TOFU_SELECTED }}
+        run: ./scripts/ci/install-tools.sh
+      - name: Install Ansible collections when selected
+        if: env.BOOTSTRAP_SELECTED == 'true' || env.TAILNET_SELECTED == 'true'
+        run: ansible-galaxy collection install -r infra/ansible/requirements.yml
+      - name: OpenTofu plan
+        if: env.TOFU_SELECTED == 'true'
+        env: &tofu_env
+          PROXMOX_ENDPOINT: ${{ secrets.PROXMOX_ENDPOINT }}
+          PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+          PROXMOX_INSECURE_TLS: "true"
+          PVE_NODE_NAME: ${{ vars.PVE_NODE_NAME }}
+          PVE_BRIDGE: ${{ vars.PVE_BRIDGE }}
+          PVE_ROOT_DATASTORE_ID: ${{ vars.PVE_ROOT_DATASTORE_ID }}
+          DEPLOY_SSH_PUBLIC_KEYS: ${{ secrets.DEPLOY_SSH_PUBLIC_KEYS }}
+          TOFU_STATE_BUCKET: ${{ vars.TOFU_STATE_BUCKET }}
+          TOFU_STATE_KEY: ${{ vars.TOFU_STATE_KEY }}
+          TOFU_STATE_REGION: ${{ vars.TOFU_STATE_REGION }}
+          TOFU_STATE_ENDPOINT: ${{ vars.TOFU_STATE_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TOFU_STATE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TOFU_STATE_SECRET_ACCESS_KEY }}
+          TOFU_FORCE_UNLOCK_ID: ${{ inputs.tofu_force_unlock_id || '' }}
+        run: ./scripts/ci/tofu-plan.sh
+      - name: Materialize all bootstrap-owned runtime inputs
+        if: env.BOOTSTRAP_SELECTED == 'true'
+        env:
+          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars-bootstrap.json
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
+          OPENCLAW_DISCORD_BOT_TOKEN: ${{ secrets.OPENCLAW_DISCORD_BOT_TOKEN }}
+          OPENCLAW_EXA_API_KEY: ${{ secrets.OPENCLAW_EXA_API_KEY }}
+          OPENCLAW_SKILL_SYNC_GITHUB_TOKEN: ${{ secrets.OPENCLAW_SKILL_SYNC_GITHUB_TOKEN }}
+          OPENCLAW_SETUP_COMMIT: ${{ needs.deployment_plan.outputs.openclaw_setup_commit }}
+          CLOUDFLARE_TRAEFIK_TOKEN: ${{ secrets.CLOUDFLARE_TRAEFIK_TOKEN }}
+          CLOUDFLARE_DDNS_TOKEN: ${{ secrets.CLOUDFLARE_DDNS_TOKEN }}
+          ADGUARD_ADMIN_USERNAME: ${{ vars.ADGUARD_ADMIN_USERNAME }}
+          ADGUARD_ADMIN_PASSWORD: ${{ secrets.ADGUARD_ADMIN_PASSWORD }}
+          QBITTORRENT_WEBUI_PASSWORD: ${{ secrets.QBITTORRENT_WEBUI_PASSWORD }}
+          COPYPARTY_USERS_JSON: ${{ secrets.COPYPARTY_USERS_JSON }}
+        run: >-
+          python3 scripts/ci/write_ansible_extra_vars.py
+          "$ANSIBLE_EXTRA_VARS_PATH" tailnet,openclaw,apps
+      - name: Write isolated tailnet input
+        if: env.TAILNET_SELECTED == 'true' && env.BOOTSTRAP_SELECTED != 'true'
+        env:
+          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars-tailnet.json
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: >-
+          python3 scripts/ci/write_ansible_extra_vars.py
+          "$ANSIBLE_EXTRA_VARS_PATH" tailnet
+      - name: Materialize exact OpenClaw release bundles and manifest
+        if: env.OPENCLAW_SELECTED == 'true'
+        run: |
+          set -eu
+          python3 scripts/ci/openclaw_release.py bundle \
+            --source infra/openclaw/runtime \
+            --output "$RUNNER_TEMP/openclaw-runtime.tar" \
+            --expected-sha256 "$OPENCLAW_RUNTIME_SHA256"
+          set -- bundle --source .openclaw-config \
+            --output "$RUNNER_TEMP/openclaw-config.tar" \
+            --git-commit "$OPENCLAW_CONFIG_COMMIT" \
+            --result "$RUNNER_TEMP/openclaw-config.json"
+          if [ -n "$OPENCLAW_CONFIG_SHA256" ]; then
+            set -- "$@" --expected-sha256 "$OPENCLAW_CONFIG_SHA256"
+          fi
+          python3 scripts/ci/openclaw_release.py "$@"
+          config_sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$RUNNER_TEMP/openclaw-config.json")"
+          python3 scripts/ci/openclaw_release.py manifest \
+            --deployment-source-sha "$GITHUB_SHA" \
+            --gateway-ref "$OPENCLAW_GATEWAY_REF" --ctf-ref "$OPENCLAW_CTF_REF" \
+            --runtime-sha256 "$OPENCLAW_RUNTIME_SHA256" \
+            --config-commit "$OPENCLAW_CONFIG_COMMIT" \
+            --config-sha256 "$config_sha" \
+            --output "$RUNNER_TEMP/openclaw-release.json"
+      - name: Verify exact main revision immediately before release mutations
+        if: env.DEPLOY_COMPONENTS != ''
+        run: |
+          set -eu
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse refs/remotes/origin/main)" = "$GITHUB_SHA"
+      - name: OpenTofu apply
+        if: env.TOFU_SELECTED == 'true'
+        env: *tofu_env
+        run: ./scripts/ci/tofu-apply.sh
+      - name: Bootstrap Proxmox and LXC access
+        if: env.BOOTSTRAP_SELECTED == 'true'
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/topology.json
+          infra/ansible/playbooks/bootstrap.yml
+      - name: Reconcile bootstrap-owned host configuration
+        if: env.BOOTSTRAP_SELECTED == 'true'
+        env:
+          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars-bootstrap.json
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/topology.json
+          infra/ansible/playbooks/site.yml
+          --extra-vars @"$ANSIBLE_EXTRA_VARS_PATH"
+      - name: Reconcile isolated tailnet
+        if: env.TAILNET_SELECTED == 'true' && env.BOOTSTRAP_SELECTED != 'true'
+        env:
+          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars-tailnet.json
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/topology.json
+          infra/ansible/playbooks/site.yml --limit svc_tailnet
+          --extra-vars @"$ANSIBLE_EXTRA_VARS_PATH"
+      - name: Validate isolated tailnet
+        if: env.TAILNET_SELECTED == 'true' && env.BOOTSTRAP_SELECTED != 'true'
+        env:
+          ANSIBLE_EXTRA_VARS_PATH: ${{ runner.temp }}/ansible-extra-vars-tailnet.json
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/topology.json
+          infra/ansible/playbooks/validate.yml --limit svc_tailnet
+          --extra-vars @"$ANSIBLE_EXTRA_VARS_PATH"
+      - name: Refresh OpenClaw trust after bootstrap
+        if: env.BOOTSTRAP_SELECTED == 'true' && env.OPENCLAW_SELECTED == 'true'
+        env:
+          PVE_SSH_HOST: ${{ vars.PVE_LAN_IP || '192.168.0.2' }}
+        run: |
+          vmid="$(python3 -c 'import json; print(json.load(open("infra/ansible/inventory/prod/topology.json"))["all"]["children"]["debian"]["hosts"]["openclaw"]["vmid"])')"
+          sh scripts/ci/refresh-lxc-ssh-trust.sh "$OPENCLAW_HOST" "$vmid"
+      - name: Refresh application trust after bootstrap
+        if: env.BOOTSTRAP_SELECTED == 'true' && env.APPS_SELECTED == 'true'
+        env:
+          PVE_SSH_HOST: ${{ vars.PVE_LAN_IP || '192.168.0.2' }}
+          DOCKER_APPS_HOST: ${{ vars.DOCKER_APPS_IP || '192.168.0.3' }}
+        run: |
+          vmid="$(python3 -c 'import json; print(json.load(open("infra/ansible/inventory/prod/topology.json"))["all"]["children"]["debian"]["hosts"]["docker_apps"]["vmid"])')"
+          sh scripts/ci/refresh-lxc-ssh-trust.sh "$DOCKER_APPS_HOST" "$vmid"
+      - name: Deploy exact OpenClaw release directly over SSH
+        if: env.OPENCLAW_SELECTED == 'true'
+        run: |
+          set -eu
+          sh scripts/ci/deploy-openclaw-via-ssh.sh "$GITHUB_SHA" \
+            "$RUNNER_TEMP/openclaw-release.json" \
+            "$RUNNER_TEMP/openclaw-runtime.tar" \
+            "$RUNNER_TEMP/openclaw-config.tar"
+      - name: Deploy the only Compose project directly over SSH
+        if: env.APPS_SELECTED == 'true'
+        env:
+          DOCKER_APPS_HOST: ${{ vars.DOCKER_APPS_IP || '192.168.0.3' }}
+          RUNTIME_CONFIG_ROOT: /etc/homelab/runtime
+          T3_IMAGE_REF: ${{ needs.t3_build.outputs.t3_image_ref }}
+          T3_SOURCE_SHA: ${{ needs.t3_build.outputs.t3_source_sha }}
+        run: sh scripts/ci/deploy-compose-via-ssh.sh "$GITHUB_SHA"
+      - name: Remove generated provisioning variables
+        if: always() && env.PROVISIONING_SELECTED == 'true'
+        run: >-
+          rm -f infra/opentofu/envs/prod/ci.auto.tfvars.json
+          "$RUNNER_TEMP/ansible-extra-vars-bootstrap.json"
+          "$RUNNER_TEMP/ansible-extra-vars-tailnet.json"
+      - name: Disconnect Tailscale
+        if: always() && env.DEPLOY_COMPONENTS != ''
+        run: sudo tailscale logout || true
+      - name: Reverify exact main revision immediately before release watermark
+        if: github.event_name == 'push'
+        run: |
+          set -eu
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse refs/remotes/origin/main)" = "$GITHUB_SHA"
+      - name: Record exact successful prod-release watermark
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from urllib.request import Request, urlopen
+
+          api = os.environ["GITHUB_API_URL"].rstrip("/")
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["GITHUB_SHA"].lower()
+          token = os.environ["GITHUB_TOKEN"]
+
+          def post(path, payload):
+              request = Request(
+                  f"{api}{path}",
+                  data=json.dumps(payload).encode("utf-8"),
+                  method="POST",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "Content-Type": "application/json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          deployment = post(
+              f"/repos/{repository}/deployments",
+              {
+                  "ref": sha,
+                  "task": "deploy",
+                  "auto_merge": False,
+                  "required_contexts": [],
+                  "environment": "prod-release",
+                  "description": f"Complete production release {sha}",
+                  "transient_environment": False,
+                  "production_environment": True,
+              },
+          )
+          deployment_id = deployment.get("id")
+          if not isinstance(deployment_id, int):
+              raise SystemExit("GitHub did not return a deployment id")
+          status = post(
+              f"/repos/{repository}/deployments/{deployment_id}/statuses",
+              {
+                  "state": "success",
+                  "environment": "prod-release",
+                  "description": "All selected production components succeeded",
+                  "auto_inactive": False,
+                  "log_url": (
+                      f"{os.environ['GITHUB_SERVER_URL']}/{repository}/actions/runs/"
+                      f"{os.environ['GITHUB_RUN_ID']}"
+                  ),
+              },
+          )
+          if status.get("state") != "success":
+              raise SystemExit("GitHub did not record a successful deployment status")
+          print(f"prod-release deployment {deployment_id} succeeded for {sha}")
+          PY
+
+  maintenance:
+    name: scheduled maintenance and exhaustive live validation
+    needs: [deployment_plan, validation]
+    if: >-
+      always() &&
+      needs.validation.result == 'success' &&
+      github.event_name == 'schedule' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    environment: prod
+    concurrency:
+      group: prod-mutation
+      cancel-in-progress: false
+    env:
+      ANSIBLE_CONFIG: infra/ansible/ansible.cfg
+    steps:
+      - name: Checkout exact validated revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Connect Tailscale
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
+          version: "1.102.2"
+          args: --accept-dns=false
+          ping: ${{ vars.PVE_TAILSCALE_IP }}
+      - name: Configure pinned SSH trust before mutation
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: ./scripts/ci/configure-ssh.sh
+      - name: Set up maintenance Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-deploy.txt
+      - name: Install Ansible for maintenance
+        env:
+          INSTALL_OPENTOFU: "false"
+        run: ./scripts/ci/install-tools.sh
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infra/ansible/requirements.yml
+      - name: Upgrade maintained hosts
+        run: |
+          set -eu
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse refs/remotes/origin/main)" = "$GITHUB_SHA"
+          ansible-playbook -i infra/ansible/inventory/prod/topology.json \
+            infra/ansible/playbooks/maintenance.yml
+      - name: Exhaustively validate production
+        run: >-
+          ansible-playbook -i infra/ansible/inventory/prod/topology.json
+          infra/ansible/playbooks/validate.yml
+      - name: Disconnect Tailscale
+        if: always()
+        run: sudo tailscale logout || true

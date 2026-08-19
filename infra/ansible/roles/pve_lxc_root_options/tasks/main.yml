@@ -3,26 +3,30 @@
   ansible.builtin.file:
     path: "{{ item.1 }}"
     state: directory
-    owner: "{{ item.0.bind_mount_source_owner | default(omit) }}"
-    group: "{{ item.0.bind_mount_source_group | default(omit) }}"
-    mode: "{{ item.0.bind_mount_source_mode | default('0755') }}"
-  loop: "{{ pve_lxc_root_options | subelements('bind_mount_sources', skip_missing=True) }}"
+    owner: "{{ item.0.lxc_root_options.bind_mount_source_owner | default(omit) }}"
+    group: "{{ item.0.lxc_root_options.bind_mount_source_group | default(omit) }}"
+    mode: "{{ item.0.lxc_root_options.bind_mount_source_mode | default('0755') }}"
+  loop: >-
+    {{ groups['debian']
+       | map('extract', hostvars)
+       | list
+       | subelements('lxc_root_options.bind_mount_sources', skip_missing=True) }}
   loop_control:
     label: "{{ item.1 }}"
 
 - name: Apply root-only LXC settings
   ansible.builtin.shell: |
     set -eu
-    vmid="{{ item.vmid }}"
+    vmid="{{ hostvars[item].vmid }}"
     config="$(pct config "${vmid}")"
     needs_change=0
 
-    {% for setting in item.settings %}
+    {% for setting in hostvars[item].lxc_root_options.settings %}
     if ! printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
       needs_change=1
     fi
     {% endfor %}
-    {% for setting in item.absent_settings | default([]) %}
+    {% for setting in hostvars[item].lxc_root_options.absent_settings | default([]) %}
     if printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
       needs_change=1
     fi
@@ -46,12 +50,12 @@
       restart=1
     fi
 
-    {% for setting in item.settings %}
+    {% for setting in hostvars[item].lxc_root_options.settings %}
     if ! printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
       pct set "${vmid}" {{ setting.pct_args }}
     fi
     {% endfor %}
-    {% for setting in item.absent_settings | default([]) %}
+    {% for setting in hostvars[item].lxc_root_options.absent_settings | default([]) %}
     if printf '%s\n' "${config}" | grep -Eq '{{ setting.pattern }}'; then
       {% if setting.delete_matching_keys | default(false) %}
       matching_keys="$(
@@ -86,6 +90,6 @@
     executable: /bin/sh
   register: pve_lxc_root_option_results
   changed_when: "'changed=yes' in pve_lxc_root_option_results.stdout"
-  loop: "{{ pve_lxc_root_options }}"
+  loop: "{{ groups['debian'] }}"
   loop_control:
-    label: "{{ item.name }} ({{ item.vmid }})"
+    label: "{{ item }} ({{ hostvars[item].vmid }})"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write Ansible extra-vars containing deployment secrets with 0600 permissions."""
+"""Write component-scoped Ansible extra vars with private atomic replacement."""
 
 from __future__ import annotations
 
@@ -7,40 +7,103 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
-REQUIRED_ENV = {
-    "cloudflare_traefik_token": "CLOUDFLARE_TRAEFIK_TOKEN",
-    "cloudflare_ddns_token": "CLOUDFLARE_DDNS_TOKEN",
-    "adguard_admin_password": "ADGUARD_ADMIN_PASSWORD",
-    "tailscale_auth_key": "TAILSCALE_AUTH_KEY",
-    "qbittorrent_webui_password": "QBITTORRENT_WEBUI_PASSWORD",
-    "arcane_encryption_key": "ARCANE_ENCRYPTION_KEY",
-    "arcane_jwt_secret": "ARCANE_JWT_SECRET",
-    "openclaw_gateway_token": "OPENCLAW_GATEWAY_TOKEN",
-    "openclaw_discord_bot_token": "OPENCLAW_DISCORD_BOT_TOKEN",
-    "openclaw_exa_api_key": "OPENCLAW_EXA_API_KEY",
-    "openclaw_skill_sync_github_token": "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN",
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCHEMA_PATH = REPO_ROOT / "infra" / "deployment" / "secrets.json"
+SCHEMA_FIELDS = {
+    "github_env",
+    "ansible_variable",
+    "component",
+    "kind",
+    "validation",
+}
+VALIDATION_TYPES = {
+    "nonempty",
+    "copyparty_users_json",
+    "hex_64",
+    "non_whitespace_1_4096",
+    "non_whitespace_20_4096",
 }
 
 
-def require_env(name: str) -> str:
-    value = os.environ.get(name)
-    if value is None or value == "":
-        raise SystemExit(f"{name} is required")
-    return value
-
-
-def load_copyparty_users() -> list[dict[str, Any]]:
+def load_schema(path: Path = SCHEMA_PATH) -> dict[str, Any]:
     try:
-        users = json.loads(require_env("COPYPARTY_USERS_JSON"))
+        schema = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"cannot load deployment secret schema {path}: {exc}") from exc
+
+    if not isinstance(schema, dict) or schema.get("version") != 1:
+        raise SystemExit("deployment secret schema must be a version 1 object")
+    components = schema.get("components")
+    entries = schema.get("entries")
+    if (
+        not isinstance(components, list)
+        or not components
+        or any(not isinstance(component, str) or not component for component in components)
+        or len(components) != len(set(components))
+    ):
+        raise SystemExit("deployment secret schema components must be unique names")
+    if not isinstance(entries, list) or not entries:
+        raise SystemExit("deployment secret schema entries must be a non-empty list")
+
+    github_names: set[str] = set()
+    ansible_names: set[str] = set()
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict) or set(entry) != SCHEMA_FIELDS:
+            raise SystemExit(f"deployment secret schema entry #{index} has invalid fields")
+        if any(not isinstance(entry[field], str) or not entry[field] for field in SCHEMA_FIELDS):
+            raise SystemExit(f"deployment secret schema entry #{index} has an empty field")
+        if entry["component"] not in components:
+            raise SystemExit(
+                f"deployment secret schema entry #{index} has an unknown component"
+            )
+        if entry["kind"] not in {"required", "optional"}:
+            raise SystemExit(f"deployment secret schema entry #{index} has an invalid kind")
+        if entry["validation"] not in VALIDATION_TYPES:
+            raise SystemExit(
+                f"deployment secret schema entry #{index} has an unknown validation type"
+            )
+        if entry["github_env"] in github_names:
+            raise SystemExit("deployment secret schema repeats a GitHub environment name")
+        if entry["ansible_variable"] in ansible_names:
+            raise SystemExit("deployment secret schema repeats an Ansible variable")
+        github_names.add(entry["github_env"])
+        ansible_names.add(entry["ansible_variable"])
+    return schema
+
+
+SECRET_SCHEMA = load_schema()
+AVAILABLE_COMPONENTS = tuple(SECRET_SCHEMA["components"])
+
+
+def parse_components(value: str) -> frozenset[str]:
+    if not isinstance(value, str) or not value:
+        raise SystemExit("deployment components must be a non-empty comma-separated set")
+    pieces = value.split(",")
+    if any(not piece.strip() for piece in pieces):
+        raise SystemExit("deployment components must not contain empty names")
+    selected = frozenset(piece.strip() for piece in pieces)
+    unknown = sorted(selected.difference(AVAILABLE_COMPONENTS))
+    if unknown:
+        expected = ",".join(AVAILABLE_COMPONENTS)
+        raise SystemExit(
+            f"unknown deployment component(s): {','.join(unknown)}; expected a subset of {expected}"
+        )
+    return selected
+
+
+def validate_copyparty_users(environment_name: str, value: str) -> list[dict[str, Any]]:
+    try:
+        users = json.loads(value)
     except json.JSONDecodeError as exc:
-        raise SystemExit(f"COPYPARTY_USERS_JSON must be valid JSON: {exc}") from exc
+        raise SystemExit(f"{environment_name} must be valid JSON: {exc}") from exc
 
     if not isinstance(users, list) or not users:
-        raise SystemExit("COPYPARTY_USERS_JSON must be a non-empty JSON list")
-
+        raise SystemExit(f"{environment_name} must be a non-empty JSON list")
     for index, user in enumerate(users):
         if not isinstance(user, dict):
             raise SystemExit(f"copyparty user #{index + 1} must be an object")
@@ -48,92 +111,106 @@ def load_copyparty_users() -> list[dict[str, Any]]:
             raise SystemExit(f"copyparty user #{index + 1} must include a non-empty name")
         if "password_hash" in user:
             raise SystemExit(
-                "COPYPARTY_USERS_JSON must use plaintext password, not password_hash"
+                f"{environment_name} must use plaintext password, not password_hash"
             )
-        if "password" not in user or (
-            not isinstance(user.get("password"), str) or not user["password"]
-        ):
+        if not isinstance(user.get("password"), str) or not user["password"]:
             raise SystemExit(
                 f"copyparty user {user.get('name', index + 1)!r} must include password"
             )
-
     return users
 
 
-OPENCLAW_ENV = {
-    key: value for key, value in REQUIRED_ENV.items() if key.startswith("openclaw_")
-}
+def validate_value(validation: str, environment_name: str, value: str) -> Any:
+    if validation == "nonempty":
+        return value
+    if validation == "copyparty_users_json":
+        return validate_copyparty_users(environment_name, value)
 
+    stripped = value.strip()
+    if validation == "hex_64":
+        if re.fullmatch(r"[0-9a-fA-F]{64}", stripped) is None:
+            raise SystemExit(
+                f"{environment_name} must be exactly 64 hexadecimal characters"
+            )
+        return stripped
 
-def build_mapping(scope: str = "full") -> dict[str, Any]:
-    if scope not in {"full", "openclaw"}:
-        raise SystemExit("deployment scope must be full or openclaw")
-    required = REQUIRED_ENV if scope == "full" else OPENCLAW_ENV
-    mapping = {var_name: require_env(env_name) for var_name, env_name in required.items()}
-
-    # Secret-setting CLIs commonly read from stdin, where an accidental final
-    # CR/LF is transport framing rather than part of these generated values.
-    if scope == "full":
-        mapping["arcane_encryption_key"] = mapping["arcane_encryption_key"].strip()
-        mapping["arcane_jwt_secret"] = mapping["arcane_jwt_secret"].strip()
-    mapping["openclaw_gateway_token"] = mapping["openclaw_gateway_token"].strip()
-    mapping["openclaw_exa_api_key"] = mapping["openclaw_exa_api_key"].strip()
-    mapping["openclaw_skill_sync_github_token"] = mapping[
-        "openclaw_skill_sync_github_token"
-    ].strip()
-
-    if scope == "full" and re.fullmatch(r"[0-9a-fA-F]{64}", mapping["arcane_encryption_key"]) is None:
-        raise SystemExit("ARCANE_ENCRYPTION_KEY must be exactly 64 hexadecimal characters")
-    if scope == "full" and len(mapping["arcane_jwt_secret"]) < 32:
-        raise SystemExit("ARCANE_JWT_SECRET must be at least 32 characters")
-    if re.fullmatch(r"[0-9a-fA-F]{64}", mapping["openclaw_gateway_token"]) is None:
-        raise SystemExit("OPENCLAW_GATEWAY_TOKEN must be exactly 64 hexadecimal characters")
-    if not 1 <= len(mapping["openclaw_exa_api_key"]) <= 4096 or any(
-        character.isspace() for character in mapping["openclaw_exa_api_key"]
+    bounds = {
+        "non_whitespace_1_4096": (1, 4096),
+        "non_whitespace_20_4096": (20, 4096),
+    }
+    minimum, maximum = bounds[validation]
+    if not minimum <= len(stripped) <= maximum or any(
+        character.isspace() for character in stripped
     ):
         raise SystemExit(
-            "OPENCLAW_EXA_API_KEY must be 1-4096 non-whitespace characters"
+            f"{environment_name} must be {minimum}-{maximum} non-whitespace characters"
         )
-    if not 20 <= len(mapping["openclaw_skill_sync_github_token"]) <= 4096 or any(
-        character.isspace() for character in mapping["openclaw_skill_sync_github_token"]
-    ):
-        raise SystemExit(
-            "OPENCLAW_SKILL_SYNC_GITHUB_TOKEN must be 20-4096 non-whitespace characters"
+    return stripped
+
+
+def build_mapping_for_components(selected: frozenset[str]) -> dict[str, Any]:
+    mapping: dict[str, Any] = {}
+    for entry in SECRET_SCHEMA["entries"]:
+        if entry["component"] not in selected:
+            continue
+        environment_name = entry["github_env"]
+        value = os.environ.get(environment_name)
+        if value is None or value == "":
+            if entry["kind"] == "required":
+                raise SystemExit(f"{environment_name} is required")
+            continue
+        mapping[entry["ansible_variable"]] = validate_value(
+            entry["validation"], environment_name, value
         )
-
-    if scope == "full":
-        mapping["copyparty_users"] = load_copyparty_users()
-
-    adguard_admin_username = os.environ.get("ADGUARD_ADMIN_USERNAME") if scope == "full" else None
-    if adguard_admin_username:
-        mapping["adguard_admin_username"] = adguard_admin_username
-
     return mapping
+
+
+def build_mapping(components: str) -> dict[str, Any]:
+    return build_mapping_for_components(parse_components(components))
 
 
 def write_private_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    previous_umask = os.umask(0o077)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}.", dir=path.parent
+        )
+    finally:
+        os.umask(previous_umask)
+
+    temporary_path = Path(temporary_name)
+    descriptor_open = True
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
+        else:
+            temporary_path.chmod(0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor_open = False
             json.dump(payload, handle)
             handle.write("\n")
-    except Exception:
-        try:
-            path.unlink()
-        finally:
-            raise
-    path.chmod(0o600)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+        path.chmod(0o600)
+    finally:
+        if descriptor_open:
+            os.close(descriptor)
+        if temporary_path.exists():
+            temporary_path.unlink()
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) not in {2, 3}:
-        raise SystemExit("usage: write_ansible_extra_vars.py OUTPUT_JSON [full|openclaw]")
+    if len(argv) != 3:
+        raise SystemExit(
+            "usage: write_ansible_extra_vars.py OUTPUT_JSON COMPONENT[,COMPONENT...]"
+        )
 
-    scope = argv[2] if len(argv) == 3 else "full"
-    payload = build_mapping(scope)
+    selected = parse_components(argv[2])
+    payload = build_mapping_for_components(selected)
     promoted = os.environ.get("OPENCLAW_SETUP_COMMIT", "")
-    if promoted:
+    if "openclaw" in selected and promoted:
         if re.fullmatch(r"[0-9a-f]{40}", promoted) is None:
             raise SystemExit("OPENCLAW_SETUP_COMMIT must be a lowercase 40-character SHA")
         payload["openclaw_setup_expected_commit"] = promoted

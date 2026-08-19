@@ -1,0 +1,198 @@
+name: homelab
+
+services:
+  traefik:
+    image: traefik:v3.7.10
+    restart: unless-stopped
+    env_file:
+      - /etc/homelab/secrets/traefik.env
+    command:
+      - --configFile=/etc/traefik/traefik.yml
+    ports:
+      - "80:80"
+      - "443:443"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - /etc/ssl/certs/homelab-pve-root-ca.pem:/etc/ssl/certs/homelab-pve-root-ca.pem:ro
+      - traefik_data:/data
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  adguard:
+    image: adguard/adguardhome:v0.107.78
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./adguard:/opt/adguardhome/conf:rw
+      - adguard_work:/opt/adguardhome/work
+    healthcheck:
+      test: ["CMD", "/opt/adguardhome/AdGuardHome", "--check-config", "-c", "/opt/adguardhome/conf/AdGuardHome.yaml"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  cloudflare-ddns:
+    image: favonia/cloudflare-ddns:1
+    restart: unless-stopped
+    env_file:
+      - /etc/homelab/secrets/cloudflare-ddns.env
+    environment:
+      DOMAINS: "${DOMAINS}"
+      IP6_PROVIDER: "${IP6_PROVIDER:-none}"
+      PROXIED: "${PROXIED:-false}"
+      TZ: "${TZ:-Asia/Seoul}"
+    network_mode: host
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # The upstream scratch image contains only /bin/ddns and CA certificates,
+    # so the deployer applies a mandatory host-side liveness/restart gate.
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:5.2.3
+    restart: unless-stopped
+    environment:
+      DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.34.1
+      PGID: "${PGID}"
+      PUID: "${PUID}"
+      TORRENTING_PORT: "${QBT_DIRECT_PEER_PORT}"
+      TZ: "${TZ}"
+      WEBUI_PORT: "8080"
+    ports:
+      - "${QBT_DIRECT_PEER_PORT}:${QBT_DIRECT_PEER_PORT}/tcp"
+      - "${QBT_DIRECT_PEER_PORT}:${QBT_DIRECT_PEER_PORT}/udp"
+    volumes:
+      - /srv/homelab/docker-apps/qbittorrent:/config:rw
+      - /srv/homelab/downloads:/downloads:rw
+      - /srv/homelab/copyparty/public:/public:rw
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.qbt.rule=Host(`qbt.home.hchu.me`)
+      - traefik.http.routers.qbt.entrypoints=websecure
+      - traefik.http.routers.qbt.middlewares=private-only@file,secure-headers@file
+      - traefik.http.services.qbt.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/ >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  copyparty:
+    image: copyparty/ac:1.20.20
+    restart: unless-stopped
+    command: ["-c", "/config/copyparty.conf"]
+    environment:
+      PGID: "${PGID}"
+      PUID: "${PUID}"
+      TZ: "${TZ}"
+    volumes:
+      - ./copyparty.conf:/config/copyparty.conf:ro
+      - /srv/homelab/docker-apps/copyparty:/config/state:rw
+      - /srv/homelab/copyparty/public:/srv/public:rw
+      - /srv/homelab/copyparty/shared-readonly:/srv/shared-readonly:ro
+      - /srv/homelab/downloads/complete:/srv/downloads:ro
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.copyparty.rule=Host(`copyparty.hchu.me`)
+      - traefik.http.routers.copyparty.entrypoints=websecure
+      - traefik.http.routers.copyparty.middlewares=secure-headers@file
+      - traefik.http.services.copyparty.loadbalancer.server.port=3923
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q 'http://127.0.0.1:3923/?reset=/._'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  metube:
+    image: ghcr.io/alexta69/metube:2026.08.17
+    restart: unless-stopped
+    environment:
+      DELETE_FILE_ON_TRASHCAN: "true"
+      PGID: "${PGID}"
+      PUID: "${PUID}"
+      TZ: "${TZ}"
+    volumes:
+      - /srv/homelab/copyparty/downloads:/downloads:rw
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.metube.rule=Host(`metube.home.hchu.me`)
+      - traefik.http.routers.metube.entrypoints=websecure
+      - traefik.http.routers.metube.middlewares=private-only@file,secure-headers@file
+      - traefik.http.services.metube.loadbalancer.server.port=8081
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/ >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  t3code:
+    image: "${T3CODE_IMAGE_REF:?T3CODE_IMAGE_REF must be an exact OCI digest reference}"
+    restart: unless-stopped
+    init: true
+    environment:
+      HOME: /home/t3code
+      TZ: "${TZ:-Asia/Seoul}"
+    volumes:
+      - /srv/homelab/docker-apps/t3code/home:/home/t3code:rw
+      - /srv/homelab/docker-apps/t3code/workspaces:/workspace:rw
+    networks:
+      - proxy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const s=require('net').connect(3773,'127.0.0.1');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2000)"
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.code.rule=Host(`code.home.hchu.me`)
+      - traefik.http.routers.code.entrypoints=websecure
+      - traefik.http.routers.code.middlewares=private-only@file,secure-headers@file
+      - traefik.http.services.code.loadbalancer.server.port=3773
+
+networks:
+  proxy:
+    external: true
+    name: homelab_proxy
+
+volumes:
+  traefik_data:
+    external: true
+    name: platform_traefik_data
+  adguard_work:
+    external: true
+    name: platform_adguard_work

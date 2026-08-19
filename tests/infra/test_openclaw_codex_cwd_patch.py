@@ -9,7 +9,7 @@ from tests.helpers import REPO_ROOT
 
 PATCHER_PATH = (
     REPO_ROOT
-    / "infra/ansible/roles/openclaw_native/files/patch-openclaw-codex-sandbox-cwd.py"
+    / "infra/openclaw/gateway/patches/patch-openclaw-codex-sandbox-cwd.py"
 )
 
 

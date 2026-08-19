@@ -7,12 +7,12 @@
       ansible.builtin.script:
         cmd: >-
           {{ playbook_dir }}/../../../scripts/ci/preflight-openclaw-lxc.py
-          --vmid {{ openclaw_lxc_allocation.vmid }}
-          --hostname {{ openclaw_lxc_allocation.hostname | quote }}
-          --ip-address {{ openclaw_lxc_allocation.ip_address | quote }}
-          --mac-address {{ openclaw_lxc_allocation.mac_address | quote }}
-          --datastore-id {{ openclaw_lxc_allocation.datastore_id | quote }}
-          --required-storage-gb {{ openclaw_lxc_allocation.required_storage_gb }}
+          --vmid {{ hostvars['openclaw'].vmid }}
+          --hostname {{ hostvars['openclaw'].hostname | quote }}
+          --ip-address {{ (hostvars['openclaw'].ansible_host + '/' + (hostvars['openclaw'].prefix_length | string)) | quote }}
+          --mac-address {{ hostvars['openclaw'].mac_address | quote }}
+          --datastore-id {{ lookup('env', 'PVE_ROOT_DATASTORE_ID') | default('local-lvm', true) | quote }}
+          --required-storage-gb {{ hostvars['openclaw'].root_disk_gb }}
           --required-feature nesting
           --required-feature keyctl
           --expected-bind-mount {{ (openclaw_ctf_shared_host_path + ',mp=' + openclaw_ctf_workspace_root) | quote }}

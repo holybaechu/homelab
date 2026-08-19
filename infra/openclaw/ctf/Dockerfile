@@ -1,0 +1,39 @@
+ARG CTF_BASE_REF
+ARG UV_BASE_REF
+
+FROM ${UV_BASE_REF} AS uv
+FROM ${CTF_BASE_REF}
+
+COPY --from=uv /uv /uvx /usr/local/bin/
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_INPUT=1
+
+# Package resolution and Python assembly happen once in CI.  Production only
+# pulls the resulting manifest digest; it never executes this Dockerfile.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+      binutils binwalk ca-certificates checksec chromium chromium-driver curl \
+      dnsutils ffuf file gdb gdb-multiarch gdb-peda git gobuster hashcat jq \
+      john libasound2t64 libgtk-3-0 libimage-exiftool-perl libx11-xcb1 ltrace \
+      netcat-openbsd nmap openssl python3 python3-pip python3-pwntools \
+      python3-venv socat sqlmap strace tshark unzip wget whois yara xvfb zip \
+    && rm -rf /var/lib/apt/lists/* \
+    && uv pip install --system --break-system-packages --no-cache 'camoufox[geoip]==0.5.4' \
+    && (getent group 1000 >/dev/null || groupadd --gid 1000 ctf) \
+    && if getent passwd 1000 >/dev/null; then \
+         ctf_user="$(getent passwd 1000 | cut -d: -f1)"; \
+         usermod --home /home/ctf --shell /bin/bash "${ctf_user}"; \
+       else \
+         useradd --uid 1000 --gid 1000 --create-home --home-dir /home/ctf \
+           --shell /bin/bash ctf; \
+       fi \
+    && install -d -o 1000 -g 1000 -m 0700 /home/ctf \
+    && install -d -o 1000 -g 1000 -m 0700 /workspace
+
+LABEL org.opencontainers.image.title="OpenClaw immutable CTF sandbox" \
+      org.opencontainers.image.description="Prebuilt analysis image without Docker tooling or a host socket"
+ENV HOME=/home/ctf PATH=/home/ctf/.local/bin:${PATH}
+USER 1000:1000
+WORKDIR /workspace
+CMD ["/bin/bash"]

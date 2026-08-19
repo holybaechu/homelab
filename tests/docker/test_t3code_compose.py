@@ -3,11 +3,12 @@ import yaml
 from tests.helpers import REPO_ROOT
 
 
-CODE_ROOT = REPO_ROOT / "apps" / "compose" / "code"
+IMAGE_ROOT = REPO_ROOT / "apps" / "images" / "t3code"
+STACK_ROOT = REPO_ROOT / "apps" / "compose" / "homelab"
 
 
 def test_t3code_uses_pinned_kali_base_and_supported_node_runtime():
-    dockerfile = (CODE_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (IMAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     assert "FROM kalilinux/kali-rolling:latest@sha256:" in dockerfile
     assert "FROM node:24.19.0-bookworm-slim@sha256:" in dockerfile
@@ -17,12 +18,15 @@ def test_t3code_uses_pinned_kali_base_and_supported_node_runtime():
 
 
 def test_t3code_is_private_persistent_and_does_not_mount_docker_socket():
-    compose = yaml.safe_load((CODE_ROOT / "compose.yml").read_text(encoding="utf-8"))
+    compose = yaml.safe_load((STACK_ROOT / "compose.yml").read_text(encoding="utf-8"))
     service = compose["services"]["t3code"]
     labels = set(service["labels"])
     volumes = set(service["volumes"])
 
-    assert service["build"] == {"context": ".", "dockerfile": "Dockerfile"}
+    assert "build" not in service
+    assert service["image"] == (
+        "${T3CODE_IMAGE_REF:?T3CODE_IMAGE_REF must be an exact OCI digest reference}"
+    )
     assert service["cap_drop"] == ["ALL"]
     assert service["security_opt"] == ["no-new-privileges:true"]
     assert service["networks"] == ["proxy"]
@@ -39,7 +43,7 @@ def test_t3code_is_private_persistent_and_does_not_mount_docker_socket():
     assert "traefik.http.services.code.loadbalancer.server.port=3773" in labels
 
 
-def test_t3code_is_registered_for_ansible_and_arcane():
+def test_t3code_is_part_of_the_single_direct_deployment_project():
     variables = yaml.safe_load(
         (
             REPO_ROOT
@@ -52,19 +56,8 @@ def test_t3code_is_registered_for_ansible_and_arcane():
         ).read_text(encoding="utf-8")
     )
 
-    assert {"name": "code", "compose_path": "apps/compose/code/compose.yml"} in (
-        variables["arcane_gitops_projects"]
-    )
-    code_project = next(
-        project
+    assert [
+        (project["name"], project["src"], project["env_template"])
         for project in variables["docker_compose_projects"]
-        if project["name"] == "code"
-    )
-    assert code_project == {
-        "name": "code",
-        "src": "apps/compose/code",
-        "dest": "{{ docker_apps_compose_root }}/code",
-        "runtime_files": ["compose.yml", "Dockerfile"],
-        "env_template": "t3code.env.j2",
-    }
+    ] == [("homelab", "apps/compose/homelab", "homelab.env.j2")]
     assert variables["t3code_hostname"] == "code.home.hchu.me"

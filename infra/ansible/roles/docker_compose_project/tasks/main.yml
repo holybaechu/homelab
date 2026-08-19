@@ -7,7 +7,7 @@
       - adguard_admin_password is defined and adguard_admin_password | length > 0
       - qbittorrent_webui_password is defined and qbittorrent_webui_password | length > 0
       - copyparty_users is defined and copyparty_users | length > 0
-    fail_msg: Configure every required prod secret before deploying the consolidated Compose host.
+    fail_msg: Configure every required prod secret before preparing the application stack.
   no_log: true
 
 - name: Validate Copyparty account shape
@@ -18,6 +18,64 @@
       - copyparty_users | selectattr('password_hash', 'defined') | list | length == 0
     fail_msg: Copyparty accounts must contain name and plaintext password fields; Ansible protects the rendered config.
   no_log: true
+
+- name: Require the consolidated direct-deployment contract
+  ansible.builtin.assert:
+    that:
+      - docker_apps_runtime_config_root == '/etc/homelab/runtime'
+      - docker_apps_secret_root == '/etc/homelab/secrets'
+      - docker_apps_current_root == '/opt/homelab/current'
+      - docker_apps_deploy_state_root == '/opt/homelab/deploy-state'
+      - docker_compose_projects | map(attribute='name') | list == ['homelab']
+      - docker_compose_projects | map(attribute='src') | list == ['apps/compose/homelab']
+      - >-
+        docker_compose_projects | map(attribute='dest') | list
+        == [docker_apps_current_root + '/homelab']
+      - >-
+        docker_compose_secret_inputs | map(attribute='dest') | sort
+        == [
+          docker_apps_secret_root + '/cloudflare-ddns.env',
+          docker_apps_secret_root + '/traefik.env'
+        ]
+    fail_msg: The application host must prepare only the consolidated homelab release contract.
+
+- name: Validate the consolidated runtime declaration
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[a-z0-9][a-z0-9_-]*$')
+      - item.env_template is string
+      - item.env_template | length > 0
+      - item.smoke_template is string
+      - item.smoke_template | length > 0
+      - item.dest == docker_apps_current_root + '/' + item.name
+    fail_msg: The consolidated runtime project declaration is invalid.
+  loop: "{{ docker_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Validate direct runtime overlay declarations
+  ansible.builtin.assert:
+    that:
+      - item.1.src is string and item.1.src | length > 0
+      - not item.1.dest.startswith('/')
+      - "'..' not in item.1.dest.split('/')"
+      - item.1.dest.split('/')[0] not in ['compose.yml', 'compose.yaml', '.env', '.homelab']
+      - item.1.mode | default('0600') == '0600'
+    fail_msg: Direct runtime overlays must be private, relative, and traversal-free.
+  loop: "{{ docker_compose_projects | subelements('config_templates', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }}:{{ item.1.dest }}"
+
+- name: Validate service secret declarations
+  ansible.builtin.assert:
+    that:
+      - item.src in ['traefik.env.j2', 'cloudflare-ddns.env.j2']
+      - item.dest.startswith(docker_apps_secret_root + '/')
+      - "'..' not in item.dest.split('/')"
+    fail_msg: Service secrets must use the two reviewed private environment files.
+  loop: "{{ docker_compose_secret_inputs }}"
+  loop_control:
+    label: "{{ item.dest }}"
 
 - name: Require the Proxmox homelab bind mount before writing application data
   ansible.builtin.command: mountpoint -q /srv/homelab
@@ -34,7 +92,7 @@
   when: homelab_proxy_network.rc != 0
   changed_when: true
 
-- name: Create Compose and bind-mount directories
+- name: Create application data directories
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
@@ -42,8 +100,6 @@
     group: "{{ item.group | default(service_gid) }}"
     mode: "{{ item.mode | default('0755') }}"
   loop:
-    - {path: "{{ docker_apps_compose_root }}", owner: "{{ service_uid }}", group: "{{ service_gid }}"}
-    - {path: "{{ docker_apps_compose_root }}/platform/adguard", mode: "0750"}
     - {path: /srv/homelab/docker-apps/qbittorrent/qBittorrent, mode: "0700"}
     - {path: /srv/homelab/docker-apps/copyparty}
     - {path: /srv/homelab/downloads/complete}
@@ -54,76 +110,118 @@
     - {path: "{{ t3code_data_root }}", mode: "0700"}
     - {path: "{{ t3code_workspace_root }}"}
 
-- name: Create Compose project directories
-  ansible.builtin.file:
-    path: "{{ item.dest }}"
-    state: directory
-    owner: "{{ service_uid }}"
-    group: "{{ service_gid }}"
-    mode: "0755"
+- name: Initialize the direct-deployment input manifest
+  ansible.builtin.set_fact:
+    docker_compose_managed_directories:
+      - "{{ docker_apps_runtime_config_root | dirname }}"
+      - "{{ docker_apps_runtime_config_root }}"
+      - "{{ docker_apps_secret_root }}"
+    docker_compose_managed_inputs: "{{ docker_compose_secret_inputs }}"
+  changed_when: false
+
+- name: Add the consolidated nonsecret environment to the input manifest
+  ansible.builtin.set_fact:
+    docker_compose_managed_directories: >-
+      {{ docker_compose_managed_directories
+         + [docker_apps_runtime_config_root + '/' + item.name] }}
+    docker_compose_managed_inputs: >-
+      {{ docker_compose_managed_inputs
+         + [{'src': item.env_template,
+             'dest': docker_apps_runtime_config_root + '/' + item.name + '/.env',
+             'mode': '0600', 'force': true}] }}
   loop: "{{ docker_compose_projects }}"
   loop_control:
     label: "{{ item.name }}"
+  changed_when: false
 
-- name: Copy tracked Compose runtime files
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../../{{ item.0.src }}/{{ item.1 }}"
-    dest: "{{ item.0.dest }}/{{ item.1 }}"
-    owner: "{{ service_uid }}"
-    group: "{{ service_gid }}"
-    mode: preserve
-  loop: "{{ docker_compose_projects | subelements('runtime_files') }}"
+- name: Add the mandatory deployment smoke contract to the input manifest
+  ansible.builtin.set_fact:
+    docker_compose_managed_inputs: >-
+      {{ docker_compose_managed_inputs
+         + [{'src': item.smoke_template,
+             'dest': docker_apps_runtime_config_root + '/' + item.name + '/smoke',
+             'mode': '0700', 'force': true}] }}
+  loop: "{{ docker_compose_projects }}"
   loop_control:
-    label: "{{ item.0.name }}:{{ item.1 }}"
-  register: docker_compose_project_file_copy
+    label: "{{ item.name }}"
+  changed_when: false
 
-- name: Inspect tracked Compose hot-reload directories
+- name: Add generated overlays to the input manifest
+  ansible.builtin.set_fact:
+    docker_compose_managed_directories: >-
+      {% set overlay_root = docker_apps_runtime_config_root + '/' + item.0.name + '/files' %}
+      {% set overlay_parent = item.1.dest | dirname %}
+      {{ docker_compose_managed_directories
+         + [overlay_root]
+         + [overlay_root if overlay_parent in ['', '.']
+            else overlay_root + '/' + overlay_parent] }}
+    docker_compose_managed_inputs: >-
+      {{ docker_compose_managed_inputs
+         + [{'src': item.1.src,
+             'dest': docker_apps_runtime_config_root + '/' + item.0.name
+                     + '/files/' + item.1.dest,
+             'mode': item.1.mode | default('0600'),
+             'force': item.1.force | default(true)}] }}
+  loop: "{{ docker_compose_projects | subelements('config_templates', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }}:{{ item.1.dest }}"
+  changed_when: false
+
+- name: Require unique managed input destinations
+  ansible.builtin.assert:
+    that:
+      - >-
+        docker_compose_managed_inputs | map(attribute='dest') | unique | list | length
+        == docker_compose_managed_inputs | length
+    fail_msg: Direct-deployment inputs must have unique destinations.
+
+- name: Inspect direct-deployment input directories
   ansible.builtin.stat:
-    path: "{{ item.0.dest }}/{{ item.1 | dirname }}"
+    path: "{{ item }}"
     follow: false
-  loop: "{{ docker_compose_projects | subelements('hot_reload_files', skip_missing=True) }}"
-  loop_control:
-    label: "{{ item.0.name }}:{{ item.1 | dirname }}"
-  register: docker_compose_hot_reload_directories
+  loop: "{{ docker_compose_managed_directories | unique | list }}"
+  register: docker_compose_managed_directory_metadata
 
-- name: Reject redirected tracked Compose hot-reload directories
+- name: Reject redirected direct-deployment input directories
   ansible.builtin.assert:
     that:
       - >-
         not (item.stat.exists | default(false)) or
-        (
-          item.stat.isdir | default(false) and
-          not (item.stat.islnk | default(false))
-        )
-    fail_msg: >-
-      A tracked Compose hot-reload directory is a symlink or non-directory;
-      refusing to copy files through a redirected path.
-  loop: "{{ docker_compose_hot_reload_directories.results }}"
+        (item.stat.isdir | default(false) and not (item.stat.islnk | default(false)))
+    fail_msg: A direct-deployment input directory is a symlink or non-directory.
+  loop: "{{ docker_compose_managed_directory_metadata.results }}"
   loop_control:
-    label: "{{ item.item.0.name }}:{{ item.item.1 | dirname }}"
+    label: "{{ item.item }}"
 
-- name: Create tracked Compose hot-reload directories
+- name: Create private direct-deployment input directories
   ansible.builtin.file:
-    path: "{{ item.0.dest }}/{{ item.1 | dirname }}"
+    path: "{{ item }}"
     state: directory
-    owner: "{{ service_uid }}"
-    group: "{{ service_gid }}"
-    mode: "0755"
+    owner: root
+    group: root
+    mode: "0700"
     follow: false
-  loop: "{{ docker_compose_projects | subelements('hot_reload_files', skip_missing=True) }}"
-  loop_control:
-    label: "{{ item.0.name }}:{{ item.1 | dirname }}"
+  loop: "{{ docker_compose_managed_directories | unique | list }}"
 
-- name: Copy tracked Compose hot-reload files without forcing recreation
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../../{{ item.0.src }}/{{ item.1 }}"
-    dest: "{{ item.0.dest }}/{{ item.1 }}"
-    owner: "{{ service_uid }}"
-    group: "{{ service_gid }}"
-    mode: preserve
-  loop: "{{ docker_compose_projects | subelements('hot_reload_files', skip_missing=True) }}"
+- name: Inspect existing direct-deployment input files
+  ansible.builtin.stat:
+    path: "{{ item.dest }}"
+    follow: false
+  loop: "{{ docker_compose_managed_inputs }}"
   loop_control:
-    label: "{{ item.0.name }}:{{ item.1 }}"
+    label: "{{ item.dest }}"
+  register: docker_compose_managed_input_metadata
+
+- name: Reject redirected direct-deployment input files
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (item.stat.exists | default(false)) or
+        (item.stat.isreg | default(false) and not (item.stat.islnk | default(false)))
+    fail_msg: A direct-deployment input path is a symlink or non-file.
+  loop: "{{ docker_compose_managed_input_metadata.results }}"
+  loop_control:
+    label: "{{ item.item.dest }}"
 
 - name: Read existing AdGuard admin password hash
   ansible.builtin.command:
@@ -144,7 +242,7 @@
                             print(candidate.split(":", 1)[1].strip().strip('"'))
                             raise SystemExit(0)
         print("")
-      - "{{ docker_apps_compose_root }}/platform/adguard/AdGuardHome.yaml"
+      - "{{ docker_apps_runtime_config_root }}/homelab/files/adguard/AdGuardHome.yaml"
       - "{{ adguard_admin_username }}"
   register: adguard_existing_admin_hash
   changed_when: false
@@ -212,55 +310,72 @@
     qbittorrent_webui_password_pbkdf2: "{{ qbittorrent_webui_password_hash.stdout }}"
   no_log: true
 
-- name: Render Compose project environment files
+- name: Render private direct-deployment input files
   ansible.builtin.template:
-    src: "{{ item.env_template }}"
-    dest: "{{ item.dest }}/.env"
-    owner: "{{ service_uid }}"
-    group: "{{ service_gid }}"
-    mode: "0600"
-  loop: "{{ docker_compose_projects }}"
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode | default('0600') }}"
+    force: "{{ item.force | default(true) }}"
+    follow: false
+  loop: "{{ docker_compose_managed_inputs }}"
   loop_control:
-    label: "{{ item.name }}"
-  register: docker_compose_project_environment_render
+    label: "{{ item.dest }}"
   no_log: true
 
-- name: Require the direct qBittorrent peer port to be available
-  ansible.builtin.shell: |
-    set -eu
-    direct_container="$(docker compose ps -q qbittorrent 2>/dev/null || true)"
-    for owner in $(docker ps --no-trunc -q --filter "publish={{ qbittorrent_direct_peer_port }}"); do
-      test "${owner}" = "${direct_container}" || {
-        printf 'Peer port {{ qbittorrent_direct_peer_port }} is published by another container.\n' >&2
-        exit 1
-      }
-    done
-    if [ -n "${direct_container}" ] \
-      && docker port "${direct_container}" {{ qbittorrent_direct_peer_port }}/tcp >/dev/null 2>&1 \
-      && docker port "${direct_container}" {{ qbittorrent_direct_peer_port }}/udp >/dev/null 2>&1; then
-      exit 0
-    fi
-    python3 - "{{ qbittorrent_direct_peer_port }}" <<'PY'
-    import socket
-    import sys
+- name: Inspect materialized direct-deployment input files
+  ansible.builtin.stat:
+    path: "{{ item.dest }}"
+    follow: false
+  loop: "{{ docker_compose_managed_inputs }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  register: docker_compose_materialized_inputs
 
-    port = int(sys.argv[1])
-    sockets = []
-    try:
-        for kind in (socket.SOCK_STREAM, socket.SOCK_DGRAM):
-            sock = socket.socket(socket.AF_INET, kind)
-            sock.bind(("0.0.0.0", port))
-            if kind == socket.SOCK_STREAM:
-                sock.listen(1)
-            sockets.append(sock)
-    finally:
-        for sock in sockets:
-            sock.close()
-    PY
-  args:
-    executable: /bin/sh
-    chdir: "{{ docker_apps_compose_root }}/media"
-  changed_when: false
+- name: Verify private direct-deployment input metadata
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.uid == 0
+      - item.stat.gid == 0
+      - item.stat.mode == (item.item.mode | default('0600'))
+    fail_msg: A direct-deployment input is not a private root-owned regular file.
+  loop: "{{ docker_compose_materialized_inputs.results }}"
+  loop_control:
+    label: "{{ item.item.dest }}"
+
+- name: Inspect superseded split-project runtime directories
+  ansible.builtin.stat:
+    path: "{{ docker_apps_runtime_config_root }}/{{ item }}"
+    follow: false
+  loop:
+    - platform
+    - media
+    - code
+  register: docker_compose_legacy_runtime_directories
+
+- name: Reject redirected superseded runtime directories
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (item.stat.exists | default(false)) or
+        (item.stat.isdir | default(false) and not (item.stat.islnk | default(false)))
+    fail_msg: A superseded runtime directory is redirected or not a directory.
+  loop: "{{ docker_compose_legacy_runtime_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Remove superseded split-project runtime inputs
+  ansible.builtin.file:
+    path: "{{ docker_apps_runtime_config_root }}/{{ item }}"
+    state: absent
+    follow: false
+  loop:
+    - platform
+    - media
+    - code
 
 - name: Bootstrap qBittorrent configuration without replacing application state
   ansible.builtin.template:
@@ -275,296 +390,4 @@
   loop: "{{ qbittorrent_instances }}"
   loop_control:
     label: "{{ item.service_name }}"
-  no_log: true
-
-- name: Render managed application configuration
-  ansible.builtin.template:
-    src: "{{ item.1.src }}"
-    dest: "{{ item.1.dest if item.1.dest.startswith('/') else item.0.dest + '/' + item.1.dest }}"
-    owner: "{{ item.1.owner | default(service_uid) }}"
-    group: "{{ item.1.group | default(service_gid) }}"
-    mode: "{{ item.1.mode | default('0644') }}"
-    force: "{{ item.1.force | default(true) }}"
-  loop: "{{ docker_compose_projects | subelements('config_templates', skip_missing=True) }}"
-  loop_control:
-    label: "{{ item.0.name }}:{{ item.1.dest }}"
-  register: docker_compose_project_config_render
-  no_log: true
-
-- name: Restrict application-owned AdGuard configuration metadata
-  ansible.builtin.file:
-    path: "{{ docker_apps_compose_root }}/platform/adguard/AdGuardHome.yaml"
-    state: file
-    owner: root
-    group: root
-    mode: "0600"
-
-- name: Select Compose projects that require forced recreation
-  ansible.builtin.set_fact:
-    docker_compose_force_recreate_projects: >-
-      {{
-        (
-          (
-            docker_compose_project_file_copy.results
-            | selectattr('changed')
-            | rejectattr('item.0.runtime_file_force_recreate_services', 'defined')
-            | map(attribute='item.0.name')
-            | list
-          )
-          +
-          (
-            docker_compose_project_environment_render.results
-            | selectattr('changed')
-            | map(attribute='item.name')
-            | list
-          )
-          +
-          (
-            docker_compose_project_config_render.results
-            | selectattr('changed')
-            | map(attribute='item.0.name')
-            | list
-          )
-        ) | unique | list
-      }}
-  changed_when: false
-  no_log: true
-
-- name: Select Compose projects that require isolated service recreation
-  ansible.builtin.set_fact:
-    docker_compose_force_recreate_service_projects: >-
-      {{
-        docker_compose_project_file_copy.results
-        | selectattr('changed')
-        | selectattr('item.0.runtime_file_force_recreate_services', 'defined')
-        | map(attribute='item.0.name')
-        | unique
-        | list
-      }}
-  changed_when: false
-  no_log: true
-
-- name: Validate Compose project forced recreation selection
-  ansible.builtin.assert:
-    that:
-      - >-
-        docker_compose_force_recreate_projects | difference(
-          docker_compose_projects | map(attribute='name') | list
-        ) | length == 0
-      - >-
-        docker_compose_force_recreate_projects | unique | list | length
-        == docker_compose_force_recreate_projects | length
-    fail_msg: The forced recreation selection must contain unique declared Compose project names only.
-
-- name: Validate isolated Compose service recreation declarations
-  ansible.builtin.assert:
-    that:
-      - >-
-        docker_compose_force_recreate_service_projects | difference(
-          docker_compose_projects | map(attribute='name') | list
-        ) | length == 0
-      - >-
-        item.runtime_file_force_recreate_services | default([]) | unique | list | length
-        == item.runtime_file_force_recreate_services | default([]) | length
-      - >-
-        item.runtime_file_force_recreate_services | default([]) | reject('string') | list | length == 0
-      - >-
-        item.runtime_file_force_recreate_services | default([]) | select('equalto', '') | list | length == 0
-    fail_msg: Isolated recreation declarations must contain unique non-empty service names only.
-  loop: "{{ docker_compose_projects }}"
-  loop_control:
-    label: "{{ item.name }}"
-
-- name: Validate isolated recreation services exist in their Compose projects
-  ansible.builtin.command:
-    cmd: docker compose config --services
-    chdir: "{{ item.dest }}"
-  loop: "{{ docker_compose_projects }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when: item.runtime_file_force_recreate_services is defined
-  register: docker_compose_declared_services
-  changed_when: false
-  failed_when: >-
-    docker_compose_declared_services.rc != 0 or
-    item.runtime_file_force_recreate_services | difference(
-      docker_compose_declared_services.stdout_lines
-    ) | length > 0
-
-- name: Recreate only services with changed service-specific runtime inputs
-  ansible.builtin.command:
-    cmd: >-
-      docker compose up -d --build --force-recreate --no-deps
-      {{ item.1 }}
-    chdir: "{{ item.0.dest }}"
-  loop: >-
-    {{ docker_compose_projects
-       | subelements('runtime_file_force_recreate_services', skip_missing=True) }}
-  loop_control:
-    label: "{{ item.0.name }}:{{ item.1 }}"
-  when: item.0.name in docker_compose_force_recreate_service_projects
-  register: docker_compose_service_up
-  changed_when: true
-
-- name: Pull Compose project images
-  ansible.builtin.command:
-    cmd: docker compose pull --ignore-buildable
-    chdir: "{{ item.dest }}"
-  loop: "{{ docker_compose_projects }}"
-  loop_control:
-    label: "{{ item.name }}"
-  changed_when: false
-
-- name: Build and start Compose projects in dependency order
-  ansible.builtin.command:
-    cmd: >-
-      docker compose up -d --build
-      {{ '--force-recreate'
-      if item.name in docker_compose_force_recreate_projects
-      else '' }}
-      --remove-orphans
-    chdir: "{{ item.dest }}"
-  loop: "{{ docker_compose_projects }}"
-  loop_control:
-    label: "{{ item.name }}"
-  register: docker_compose_up
-  changed_when: >-
-    item.name in docker_compose_force_recreate_projects or
-    'Creating' in (docker_compose_up.stdout + docker_compose_up.stderr) or
-    'Created' in (docker_compose_up.stdout + docker_compose_up.stderr) or
-    'Recreating' in (docker_compose_up.stdout + docker_compose_up.stderr) or
-    'Recreated' in (docker_compose_up.stdout + docker_compose_up.stderr) or
-    'Starting' in (docker_compose_up.stdout + docker_compose_up.stderr) or
-    'Started' in (docker_compose_up.stdout + docker_compose_up.stderr) or
-    'Removing' in (docker_compose_up.stdout + docker_compose_up.stderr) or
-    'Removed' in (docker_compose_up.stdout + docker_compose_up.stderr) or
-    'Removed orphan' in (docker_compose_up.stdout + docker_compose_up.stderr)
-
-- name: Read effective qBittorrent Web UI preferences
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - exec
-      - -T
-      - "{{ item.service_name }}"
-      - sh
-      - -c
-      - >-
-        if command -v curl >/dev/null 2>&1; then
-          exec curl -fsS http://127.0.0.1:8080/api/v2/app/preferences;
-        fi;
-        exec wget -qO- http://127.0.0.1:8080/api/v2/app/preferences
-    chdir: "{{ docker_apps_compose_root }}/media"
-  loop: "{{ qbittorrent_instances }}"
-  loop_control:
-    label: "{{ item.service_name }}"
-  register: qbittorrent_effective_preferences
-  changed_when: false
-  retries: 12
-  delay: 5
-  until: qbittorrent_effective_preferences.rc == 0
-  no_log: true
-
-- name: Select VueTorrent through the live qBittorrent API when required
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - exec
-      - -T
-      - "{{ item.item.service_name }}"
-      - sh
-      - -c
-      - |
-        if command -v curl >/dev/null 2>&1; then
-          exec curl -fsS \
-            -H 'Referer: http://127.0.0.1:8080' \
-            -H 'Origin: http://127.0.0.1:8080' \
-            --data-urlencode \
-            'json={"alternative_webui_enabled":true,"alternative_webui_path":"/vuetorrent"}' \
-            http://127.0.0.1:8080/api/v2/app/setPreferences
-        fi;
-        exec wget -qO- \
-          --header='Referer: http://127.0.0.1:8080' \
-          --header='Origin: http://127.0.0.1:8080' \
-          --post-data='json=%7B%22alternative_webui_enabled%22%3Atrue%2C%22alternative_webui_path%22%3A%22%2Fvuetorrent%22%7D' \
-          http://127.0.0.1:8080/api/v2/app/setPreferences
-    chdir: "{{ docker_apps_compose_root }}/media"
-  loop: "{{ qbittorrent_effective_preferences.results }}"
-  loop_control:
-    label: "{{ item.item.service_name }}"
-  when: >-
-    not ((item.stdout | from_json).alternative_webui_enabled | bool) or
-    (item.stdout | from_json).alternative_webui_path != '/vuetorrent'
-  changed_when: true
-  no_log: true
-
-- name: Re-read effective qBittorrent Web UI preferences
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - exec
-      - -T
-      - "{{ item.service_name }}"
-      - sh
-      - -c
-      - >-
-        if command -v curl >/dev/null 2>&1; then
-          exec curl -fsS http://127.0.0.1:8080/api/v2/app/preferences;
-        fi;
-        exec wget -qO- http://127.0.0.1:8080/api/v2/app/preferences
-    chdir: "{{ docker_apps_compose_root }}/media"
-  loop: "{{ qbittorrent_instances }}"
-  loop_control:
-    label: "{{ item.service_name }}"
-  register: qbittorrent_verified_preferences
-  changed_when: false
-  retries: 6
-  delay: 2
-  until: >-
-    qbittorrent_verified_preferences.rc == 0 and
-    (qbittorrent_verified_preferences.stdout | from_json).alternative_webui_enabled | bool and
-    (qbittorrent_verified_preferences.stdout | from_json).alternative_webui_path == '/vuetorrent'
-  no_log: true
-
-- name: Verify effective qBittorrent VueTorrent selection
-  ansible.builtin.assert:
-    that:
-      - (item.stdout | from_json).alternative_webui_enabled | bool
-      - (item.stdout | from_json).alternative_webui_path == '/vuetorrent'
-    fail_msg: qBittorrent must use the VueTorrent Web UI rooted at /vuetorrent.
-  loop: "{{ qbittorrent_verified_preferences.results }}"
-  loop_control:
-    label: "{{ item.item.service_name }}"
-  no_log: true
-
-- name: Restrict qBittorrent configuration metadata after live reconciliation
-  ansible.builtin.file:
-    path: "{{ item.config_root }}/qBittorrent/qBittorrent.conf"
-    state: file
-    owner: "{{ service_uid }}"
-    group: "{{ service_gid }}"
-    mode: "0600"
-  loop: "{{ qbittorrent_instances }}"
-  loop_control:
-    label: "{{ item.service_name }}"
-
-- name: Verify AdGuard runtime Safe Search is disabled
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ adguard_admin_port }}/control/safesearch/status"
-    method: GET
-    url_username: "{{ adguard_admin_username }}"
-    url_password: "{{ adguard_admin_password }}"
-    force_basic_auth: true
-    status_code: 200
-    return_content: true
-  register: adguard_safe_search_runtime
-  changed_when: false
-  retries: 12
-  delay: 5
-  until:
-    - adguard_safe_search_runtime.status == 200
-    - not (adguard_safe_search_runtime.json.enabled | default(true) | bool)
   no_log: true

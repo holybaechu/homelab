@@ -1,5 +1,6 @@
 import importlib.util
 import ipaddress
+import json
 from pathlib import Path
 import sys
 
@@ -332,25 +333,29 @@ def test_preflight_playbook_uses_the_committed_allocation_and_is_read_only():
     playbook = (
         REPO_ROOT / "infra" / "ansible" / "playbooks" / "preflight-openclaw-lxc.yml"
     ).read_text(encoding="utf-8")
-    variables = (
-        REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "group_vars" / "all.yml"
-    ).read_text(encoding="utf-8")
+    topology = json.loads(
+        (REPO_ROOT / "infra/ansible/inventory/prod/topology.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    openclaw = topology["all"]["children"]["debian"]["hosts"]["openclaw"]
 
     assert "hosts: pve_hosts" in playbook
     assert "preflight-openclaw-lxc.py" in playbook
-    assert "openclaw_lxc_allocation.vmid" in playbook
-    assert "openclaw_lxc_allocation.ip_address" in playbook
-    assert "openclaw_lxc_allocation.datastore_id" in playbook
-    assert "openclaw_lxc_allocation.required_storage_gb" in playbook
+    assert "hostvars['openclaw'].vmid" in playbook
+    assert "hostvars['openclaw'].ansible_host" in playbook
+    assert "hostvars['openclaw'].mac_address" in playbook
+    assert "hostvars['openclaw'].root_disk_gb" in playbook
+    assert "openclaw_lxc_allocation" not in playbook
     assert "--required-feature nesting" in playbook
     assert "--required-feature keyctl" in playbook
     assert "--expected-bind-mount" in playbook
     assert "--allow-missing-expected-bind-mounts" not in playbook
     assert "changed_when: false" in playbook
-    assert "vmid: 118" in variables
-    assert 'ip_address: "{{ openclaw_ip }}/24"' in variables
-    assert "mac_address: 02:00:00:BA:EC:05" in variables
-    assert 'datastore_id: "{{ openclaw_root_datastore_id }}"' in variables
-    assert "required_storage_gb: 96" in variables
+    assert openclaw["vmid"] == 118
+    assert openclaw["ansible_host"] == "192.168.0.5"
+    assert openclaw["prefix_length"] == 24
+    assert openclaw["mac_address"] == "02:00:00:BA:EC:05"
+    assert openclaw["root_disk_gb"] == 96
     for mutating_command in ("pct set", "pct create", "qm set", "qm create"):
         assert mutating_command not in SCRIPT.read_text(encoding="utf-8")

@@ -1,6 +1,6 @@
 [Unit]
 Description=Promote autonomous OpenClaw skills into the protected setup repository
-After=network-online.target openclaw-gateway.service
+After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]

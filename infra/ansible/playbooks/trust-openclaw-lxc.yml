@@ -3,21 +3,21 @@
   hosts: pve_hosts
   gather_facts: false
   vars:
-    openclaw_bootstrap_targets: >-
-      {{ pve_lxc_access_bootstrap |
-      selectattr('name', 'equalto', 'openclaw') | list }}
+    openclaw_vmid: "{{ hostvars['openclaw'].vmid }}"
+    openclaw_host: "{{ hostvars['openclaw'].ansible_host }}"
   tasks:
-    - name: Require exactly one declared OpenClaw bootstrap target
+    - name: Require the topology-owned OpenClaw target
       ansible.builtin.assert:
         that:
-          - openclaw_bootstrap_targets | length == 1
+          - openclaw_vmid | int > 0
+          - openclaw_host | length > 0
 
     - name: Read the OpenClaw ed25519 host public key through pct exec
       ansible.builtin.command:
         argv:
           - pct
           - exec
-          - "{{ openclaw_bootstrap_targets[0].vmid }}"
+          - "{{ openclaw_vmid }}"
           - --
           - /bin/sh
           - -lc
@@ -28,16 +28,15 @@
     - name: Add the current OpenClaw SSH host key to runner known_hosts
       ansible.builtin.known_hosts:
         path: "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
-        name: "{{ hostvars['openclaw'].ansible_host }}"
-        key: "{{ hostvars['openclaw'].ansible_host }} {{ openclaw_lxc_host_key.stdout }}"
+        name: "{{ openclaw_host }}"
+        key: "{{ openclaw_host }} {{ openclaw_lxc_host_key.stdout }}"
       delegate_to: localhost
 
     - name: Wait for the OpenClaw SSH port
       ansible.builtin.wait_for:
-        host: "{{ hostvars['openclaw'].ansible_host }}"
+        host: "{{ openclaw_host }}"
         port: 22
         state: started
         connect_timeout: 5
         timeout: 60
       delegate_to: localhost
-

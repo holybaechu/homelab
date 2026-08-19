@@ -1,254 +1,184 @@
 # GitHub Actions CI/CD
 
-This repository has two workflows:
+`.github/workflows/ci.yml` is the repository's only workflow. It classifies an
+exact revision, validates that same `github.sha`, and only then permits a
+single selected production release transaction. Pull requests and scheduled runs never create a
+runtime deployment plan. Unknown paths below `apps/`, `infra/`, or
+`scripts/ci/` fail closed instead of triggering a broad fallback.
 
-- `.github/workflows/ci.yml`: repository tests, Ansible syntax checks, and OpenTofu validation for pushes and pull requests.
-- `.github/workflows/cd.yml`: production deployment through Tailscale, OpenTofu, and Ansible.
+## Fast validation
 
-Create a GitHub environment named `prod` before enabling CD. Pushes to `main`
-deploy automatically; add an environment approval rule only if you intentionally
-want production deployment to pause for review.
+The classifier emits one validation scope before tests begin:
 
-## Dependency Updates
+- `apps-model`: the 18 policy/config/ingress tests for an ordinary
+  `apps/compose/homelab` edit, followed by real Compose rendering;
+- `apps`: the model checks plus direct uploader, locked deployer, and immutable
+  T3 image tests when deployment tooling or image inputs change;
+- `openclaw`: immutable two-image release, deterministic bundle, direct SSH,
+  rollback, host-boundary, and skill-promotion tests;
+- `repo`: routing and workflow contract tests; or
+- `full`: the complete repository suite, OpenTofu validation, every active
+  Ansible playbook syntax check, and Compose validation.
 
-Renovate creates reviewed source-update pull requests for versions stored in
-Git. Minor and patch updates automerge only when the current version is not
-`0.x`; major updates and every `0.x` update require review. Arcane Manager and
-its Docker socket proxy are explicit control-plane exceptions: their updates
-always require review. OpenClaw image updates also always require review.
+Only `full` installs Ansible dependencies, Ansible Galaxy collections, and
+OpenTofu. The daily schedule always selects `full`. Ordinary app or OpenClaw
+runtime changes therefore validate only the deployable unit instead of
+repeating unrelated infrastructure work.
 
-Built-in managers cover supported package manifests. Custom regex managers
-also cover the shared `.opentofu-version`, the annotated Tailscale GitHub
-Action version, the pinned VueTorrent LinuxServer mod, Debian 13 Proxmox LXC
-template versions. The Proxmox template uses its configured custom datasource.
+## Deployment components
 
-Packages installed from apt repositories are runtime dependencies, not
-Renovate dependencies when their versions are not recorded in Git. During each
-deployment, Ansible refreshes apt metadata and upgrades the managed Debian,
-Docker Engine and Compose plugin, and Tailscale packages to the repository
-version available from their configured apt repositories.
+Changed paths map to the deterministic component order
+`tofu,bootstrap,tailnet,openclaw,apps`. Mixed changes take the union.
+Documentation and tests do not deploy. `apps` always means the one `homelab`
+project; the retired `platform`, `media`, `code`, Arcane, and Docker OpenClaw
+projects are not selectable.
 
-## `prod` Environment Variables
+`ADOPTION_RETIREMENT_PATHS` is a temporary exact list of strict-tree files
+deleted by this cutover. It gives the first `--no-renames` push empty ownership
+instead of reviving retired components. Remove the tombstones after the
+cutover commit is the deployment diff base everywhere.
 
-- `PVE_NODE_NAME`: `pve`
-- `PVE_BRIDGE`: `vmbr0`
-- `PVE_ROOT_DATASTORE_ID`: `local-lvm`
-- `PVE_TAILSCALE_IP`: Tailscale IP or MagicDNS name for the Proxmox node
-- `TOFU_STATE_BUCKET`: S3-compatible bucket for OpenTofu state
-- `TOFU_STATE_KEY`: state object key, for example `prod/opentofu.tfstate`
-- `TOFU_STATE_REGION`: use `auto` for Cloudflare R2, or the AWS region for AWS S3
-- `TOFU_STATE_ENDPOINT`: S3-compatible endpoint, for example `https://<account-id>.r2.cloudflarestorage.com` for Cloudflare R2
-- `ADGUARD_ADMIN_USERNAME`: optional AdGuard Home admin username; defaults to the inventory value
-The native OpenClaw reservation is not duplicated as a GitHub variable. Its
-exact production identity (`192.168.0.5`, `02:00:00:BA:EC:05`) is hardcoded in
-the tracked OpenTofu topology and enforced by the LXC preflight. Keep the
-router reservation aligned with that tracked contract.
+The post-validation `prod_mutation` job is one release-level transaction under
+the global `prod-mutation` concurrency group. It waits for both exact-SHA image
+build jobs, prepares only the selected component inputs, checks
+`origin/main == GITHUB_SHA` once immediately before the mutation sequence, and
+then applies selected components in this order:
 
-## `prod` Environment Secrets
+1. OpenTofu;
+2. bootstrap or isolated tailnet reconciliation;
+3. exact OpenClaw release; and
+4. the one homelab Compose release.
 
-- `PROXMOX_ENDPOINT`
-- `PROXMOX_API_TOKEN`
-- `DEPLOY_SSH_PUBLIC_KEYS`
-- `DEPLOY_SSH_PRIVATE_KEY`
-- `DEPLOY_SSH_KNOWN_HOSTS`, pinned OpenSSH `known_hosts` lines for the Proxmox SSH host
-- `TOFU_STATE_ACCESS_KEY_ID`
-- `TOFU_STATE_SECRET_ACCESS_KEY`
-- `TS_OAUTH_CLIENT_ID`
-- `TS_AUDIENCE`
-- `CLOUDFLARE_TRAEFIK_TOKEN`
-- `CLOUDFLARE_DDNS_TOKEN`
-- `ADGUARD_ADMIN_PASSWORD`, as plaintext; Ansible hashes it before rendering or updating AdGuard Home config
-- `TAILSCALE_AUTH_KEY`
-- `QBITTORRENT_WEBUI_PASSWORD`
-- `COPYPARTY_USERS_JSON`, as a JSON list of objects with `name` and plaintext `password`
-- `ARCANE_ENCRYPTION_KEY`, exactly 64 hexadecimal characters representing 32 bytes
-- `ARCANE_JWT_SECRET`, at least 32 characters
-- `OPENCLAW_GATEWAY_TOKEN`, exactly 64 hexadecimal characters representing 32 bytes;
-  the bearer token for the one Gateway
-- `OPENCLAW_DISCORD_BOT_TOKEN`, required; the one shared bot token loaded by
-  the one Gateway for direct channel routing.
-- `OPENCLAW_EXA_API_KEY`, required; the file-backed credential for the pinned
-  Exa web-search provider plugin.
+Skipped component steps run no deployment setup. A push with no deployable
+paths runs only the exact checkout, latest-main watermark gate, and GitHub API
+watermark write; manual validation-only dispatches do not enter the production
+job. OpenClaw precedes apps in a mixed release, so the Gateway is ready before
+the proxy stack activates. Host deployers retain their nonblocking kernel
+locks for manual or out-of-band collision protection.
 
-The active topology has one direct qBittorrent instance and no Gluetun or
-Proton VPN service, so CD does not require a Proton or WireGuard secret.
+GitHub may replace an older pending member of a concurrency group. Therefore
+the workflow never uses an individual push's `before` SHA as its release base.
+Classification queries the newest successful `prod-release` GitHub deployment
+whose exact SHA is an ancestor of the current SHA, then diffs that watermark to
+the current revision with `--no-renames`. After every automatic push release
+succeeds—including a release with no production mutations—the locked job
+rechecks `origin/main == GITHUB_SHA`, creates a `prod-release` deployment for
+that exact SHA, and records a successful deployment status. If an intermediate
+run is coalesced or becomes stale, the next retained run still selects the full
+change range since the last complete release and cannot drop its changes.
 
-The Arcane Ansible role renders these stable values as mode-`0600` files under
-`/opt/homelab-control/arcane/secrets`. Keep the GitHub values stable and
-recoverable: Arcane's persistent database must always be restored with the
-matching encryption key. The runtime files are not the recovery source and may
-be recreated with the same values during an LXC replacement.
+## App release path
 
-Generate the two values independently with `openssl rand -hex 32`; do not reuse
-one output for both secrets.
-
-Generate `OPENCLAW_GATEWAY_TOKEN` with `openssl rand -hex 32`. Ansible writes
-it outside Git on VMID 118 as a root-owned mode-`0600` file below
-`/etc/openclaw/secrets/`; the one Gateway receives it as a systemd credential.
-Keep the value stable and recoverable; rotating it invalidates Gateway clients.
-
-The Gateway uses the owner's `openai:main` ChatGPT/Codex profile; no OpenAI API
-key belongs in GitHub. Do not put an API key, ChatGPT session token, OAuth
-refresh token, or desktop `~/.codex` copy in GitHub secrets or the private
-configuration. The `ctf` agent shares this profile in the one Gateway. Delete
-obsolete `OPENCLAW_CTF_GATEWAY_TOKEN` and `OPENCLAW_CTF_OPENAI_API_KEY`
-secrets after migration.
-
-Do not create per-agent Discord secrets. The one
-`OPENCLAW_DISCORD_BOT_TOKEN` is supplied directly to
-`openclaw-gateway.service`; numeric channel bindings in the private config
-select agents.
-
-Example `COPYPARTY_USERS_JSON`:
-
-```json
-[{"name":"holybaechu","password":"replace-me"}]
-```
-
-`PROXMOX_API_TOKEN` must use the bpg/proxmox provider format:
-
-```text
-<user>@<realm>!<token-id>=<token-secret>
-```
-
-Do not include the Proxmox HTTP authorization prefix.
-
-`DEPLOY_SSH_KNOWN_HOSTS` is written directly to the GitHub runner's
-`~/.ssh/known_hosts` before Ansible connects to Proxmox. It only needs the
-Proxmox host SSH key. During the normal full bootstrap, LXC SSH host keys are
-collected through the pinned Proxmox connection with `pct exec` before the
-runner connects to the guests.
-
-When the optional workload-identity proof is enabled, its read-only baseline runs before bootstrap. The workflow therefore reads the Docker LXC's current Ed25519 host key through the already pinned Proxmox connection and adds it only to the ephemeral runner's `known_hosts` before taking the baseline. It never uses `ssh-keyscan` or trusts a key obtained directly from the network.
-
-Generate the value from a trusted Proxmox console or an already-trusted SSH session:
+The app step inside the common release transaction runs exactly:
 
 ```sh
-awk '{print "192.168.0.2,pve,pve.home.hchu.me " $0}' /etc/ssh/ssh_host_ed25519_key.pub
+sh scripts/ci/deploy-compose-via-ssh.sh "$GITHUB_SHA"
 ```
 
-The secret value should look like this single line:
+It uploads only `apps/compose/homelab`, reads prepared inputs from
+`/etc/homelab/runtime`, and invokes the locked remote deployer. It installs no
+Python runtime, Ansible, Galaxy collection, or OpenTofu on the runner and runs
+no broad live validation. If a T3 image input changed, `t3_build` builds and
+approves the exact same-build digest first, then passes the paired
+`T3_IMAGE_REF` and `T3_SOURCE_SHA`; otherwise the remote trusted approval is
+reused.
 
-```text
-192.168.0.2,pve,pve.home.hchu.me ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... root@pve
+## OpenClaw release path
+
+An OpenClaw release is one canonical state:
+
+- exact Gateway and CTF `repository@sha256:<64 hex>` references;
+- deterministic runtime bundle SHA-256;
+- exact private-config commit and deterministic bundle SHA-256; and
+- exact homelab deployment SHA.
+
+`openclaw_build` builds changed image inputs from digest-pinned bases and uses
+Buildx's same-build metadata to approve the resulting digest. The selected
+OpenClaw steps check out the private `holybaechu/openclaw-setup` commit with
+credentials disabled after checkout, reproduces both bundles, creates the
+canonical manifest, and runs:
+
+```sh
+sh scripts/ci/deploy-openclaw-via-ssh.sh \
+  "$GITHUB_SHA" release.json runtime.tar config.tar
 ```
 
-If the Proxmox SSH host key is regenerated, update this secret before the next CD run.
+This common promotion path uses the preinstalled deployer on the dedicated
+OpenClaw LXC. It does not install Python, Ansible, Galaxy, OpenTofu, Node/npm,
+or build an image. The host deployer verifies the exact digests, runs Compose
+with `--no-build`, waits on `/readyz`, makes one authenticated smoke request,
+and rolls back both images and config to the previous release on failure. The
+SSH client then runs the non-authenticated audit.
 
-## Tailscale Setup
+The retired runtime export described in `docs/runbooks/openclaw.md` stays in
+offline recovery storage. It is not a workflow secret, deployment input, or
+live state record.
 
-Create a Tailscale federated identity for GitHub Actions and allow it to create ephemeral nodes tagged `tag:ci`. The workflow uses `oauth-client-id` plus `audience`, so it requires the GitHub workflow permission `id-token: write`.
+An autonomous skill promotion sends `repository_dispatch` type
+`openclaw-promoted` with its exact private-config commit. The workflow combines
+that commit with the configured current exact image/runtime identities,
+recomputes the deterministic config hash from the exact checkout, and selects
+only `openclaw`. The skill-sync GitHub credential remains in its isolated host
+service and is never mounted into the Gateway.
 
-The `tag:ci` ACL should only reach:
+## Manual dispatch
 
-- Proxmox SSH/API
-- LXC SSH targets at `192.168.0.4:22` (tailnet), `192.168.0.3:22`
-  (Docker apps), `192.168.0.5:22` (the dedicated OpenClaw LXC), and
-  `192.168.0.6:22` (the isolated CTF executor)
+`workflow_dispatch` requires an explicit `components` CSV. Empty means
+validation only; it never means deploy everything. Names must be unique and a
+subset of `tofu,bootstrap,tailnet,openclaw,apps`. Selecting `apps` implicitly
+selects the sole `homelab` project. Selecting `openclaw` also requires all five
+exact release inputs:
 
-Verify the ephemeral CI node can reach all four SSH targets. The normal full
-workflow fails closed during bootstrap if the ACL does not permit the OpenClaw
-or CTF executor address.
+- `openclaw_config_commit`
+- `openclaw_gateway_ref`
+- `openclaw_ctf_ref`
+- `openclaw_runtime_sha256`
+- `openclaw_config_sha256`
 
-## OpenTofu State
+`tofu_force_unlock_id` is a manual diagnostic for a confirmed stale lock in
+the remote state. Leave it empty during ordinary deployment.
 
-Create an S3-compatible bucket for remote state and enable versioning if the provider supports it. The deployment script uses OpenTofu's S3 backend with native `use_lockfile` locking, so no DynamoDB table is required.
+## Provisioning and maintenance
 
-The CI workflow validates OpenTofu with `tofu init -backend=false`; only CD needs the real remote-state credentials.
-Container topology is tracked in `infra/opentofu/envs/prod/containers.auto.tfvars`.
-Private provider values stay in ignored local tfvars files or the generated CI `ci.auto.tfvars.json`.
+`bootstrap` owns OS/Docker prerequisites, firewall boundaries, root-owned
+runtime and secret materialization, and installation of the opaque host
+deployers. It writes the combined `tailnet,openclaw,apps` schema only in the
+provisioning lane, then reconciles `site.yml`. An isolated tailnet selection
+writes and exposes only the tailnet input. Production inventory is the single
+`infra/ansible/inventory/prod/topology.json` file.
 
-### Confirmed stale lock recovery
+The schedule does not run the runtime plan. After exhaustive repository
+validation it runs `maintenance.yml` under `prod-mutation`, waits for controlled
+restart/reboot recovery, and runs the complete live `validate.yml`. Routine
+reconciliation keeps apt packages present; only maintenance enables upgrades.
 
-Use force-unlock only after the owning CD job has completed and no other CD run
-is active. Copy the complete lock UUID from the failed OpenTofu log, open the
-`cd` workflow with `workflow_dispatch`, and supply it as
-`tofu_force_unlock_id`. The workflow validates the UUID, initializes the exact
-production backend, removes that confirmed stale lock, and then performs the
-normal plan and deployment. Leave the input empty for every normal deployment.
+## `prod` environment configuration
 
-## CD Scope and Parallelism
+Connection and provisioning variables:
 
-CD selects exactly one of four scopes: `none`, `openclaw`, `arcane`, or `full`.
-Documentation/test-only pushes use `none`; isolated native OpenClaw, CTF
-executor, and CTF transport changes use `openclaw`; changes only under the
-known safe `platform`, `media`, and `code` Compose trees use `arcane`. Static
-`platform/traefik.yml` changes use the full path for forced recreation. The
-exact `platform/dynamic/routes.yml` ownership tuple also uses the full path so
-the pre-site OpenClaw source-hold, exclusive-owner, and route checks run before
-any service mutation. After Tailscale connects, the runner pins
-`arcane.home.hchu.me` to `192.168.0.3` in its ephemeral hosts file because the
-Tailscale action uses `--accept-dns=false`.
-The Arcane request still uses the HTTPS hostname for correct SNI and certificate
-validation.
+- `PVE_NODE_NAME`, `PVE_BRIDGE`, `PVE_ROOT_DATASTORE_ID`
+- `PVE_TAILSCALE_IP`, optional `DOCKER_APPS_IP`, optional `OPENCLAW_IP`
+- `TOFU_STATE_BUCKET`, `TOFU_STATE_KEY`, `TOFU_STATE_REGION`,
+  `TOFU_STATE_ENDPOINT`
+- optional `ADGUARD_ADMIN_USERNAME`
 
-The runner deploys only affected projects through Arcane and requires the
-expected commit before the normal Docker-host validation runs. Arcane
-control-plane files, mixed pushes, ambiguous paths, and unknown infrastructure
-changes use the safe `full` fallback.
+Exact OpenClaw defaults used for source-path and autonomous promotions:
 
-Before the Arcane path, the serialized workflow force-updates the dedicated
-`arcane-deploy` branch to the current `GITHUB_SHA` and verifies the remote ref.
-Arcane syncs this CI-owned branch rather than mutable `main`, so a newer queued
-push cannot change an older job's deployment source. The workflow has
-`contents: write` only for this branch update; do not update `arcane-deploy`
-outside this serialized workflow.
+- `OPENCLAW_CONFIG_COMMIT`, `OPENCLAW_CONFIG_SHA256`
+- `OPENCLAW_GATEWAY_REF`, `OPENCLAW_CTF_REF`, `OPENCLAW_RUNTIME_SHA256`
+- digest-pinned build bases `OPENCLAW_GATEWAY_BASE_REF`,
+  `OPENCLAW_PYTHON_BASE_REF`, `OPENCLAW_DOCKER_CLI_REF`,
+  `OPENCLAW_CTF_BASE_REF`, and `OPENCLAW_UV_BASE_REF`
 
-Arcane authentication uses GitHub OIDC, not a stored Arcane API key. Trust only
-subject `repo:holybaechu/homelab:environment:prod` with audience
-`https://arcane.home.hchu.me`, and map it to an environment-scoped deployment
-role with only `gitops:list`, `gitops:read`, and `gitops:sync` permissions.
+Shared/provisioning secrets include `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE`,
+`DEPLOY_SSH_PRIVATE_KEY`, `DEPLOY_SSH_KNOWN_HOSTS`, Proxmox/OpenTofu state
+credentials, and `DEPLOY_SSH_PUBLIC_KEYS`. Bootstrap additionally receives the
+component-scoped secrets defined by `infra/deployment/secrets.json`. The direct
+OpenClaw path receives only `OPENCLAW_CONFIG_READ_TOKEN`; the direct apps path
+receives no application secret values.
 
-The `openclaw` path skips OpenTofu, global bootstrap, retained-Gateway fencing,
-and unrelated application roles. It reconciles only the CTF executor, native
-Gateway, credential-scoped transport, and their validations. Retained rollback
-roles, Compose ownership, Traefik route changes, and LXC allocation changes map
-to `full`, preserving the rollback boundary.
-
-The full path keeps allocation preflights, OpenTofu, and bootstrap operations
-serial. Service reconciliation is fail-fast in the order `tailnet`, native
-`openclaw`, `docker_apps`, then Proxmox cleanup. This ensures tailnet recovery
-precedes the new host and a future Traefik route cannot precede a ready native
-Gateway. All applications within `docker_apps` remain ordered Compose projects;
-Arcane is a separate Ansible-owned control project.
-
-The native OpenClaw role reconciles VMID 118 with its integrity-pinned runtime,
-nftables policy, and active system service. The tracked Traefik route points to
-that LXC. The former Docker Gateway stays stopped as exact rollback material,
-and its Arcane sync remains retired behind the permanent source hold.
-
-The full path remains the bootstrap and break-glass recovery route for every
-workload even though app-only pushes use Arcane.
-
-Each service run uses `ansible-playbook --limit <service>` through `scripts/ci/run-ansible-parallel.sh`. GitHub logs are grouped per service, and the step fails if any service deploy or validation process fails.
-
-## Arcane Bootstrap
-
-The first Arcane deployment must use the normal full path so OpenTofu, the
-shared data mount, Docker Engine, workload projects, and the Arcane control
-project are reconciled in order. After deployment, complete the private
-first-login flow and run the live validation gates in
-`docs/runbooks/arcane.md` before using Arcane for workload operations.
-
-## First Deployment
-
-1. Push these workflow changes and confirm `ci` passes.
-2. Set the one-time low-ID confirmation variable to `true`; the preflight
-   hostname-verifies the affected containers and creates local `vzdump` archives
-   before replacement.
-3. Open the `cd` workflow and run it with `workflow_dispatch`.
-4. Approve the `prod` environment deployment if protection rules are enabled.
-5. Confirm the workflow completes `Prepare one-time lowest-ID cutover`,
-   `OpenTofu apply`, `Bootstrap Proxmox and LXC access`, `Deploy services`,
-   and `Validate services`.
-
-The AdGuard role only writes the baseline `AdGuardHome.yaml` when no migrated
-config exists. AdGuard owns and rewrites the existing runtime file, so changing
-the administrator username, password, or template for an existing instance
-requires an explicit reviewed migration; routine deploys preserve runtime state.
-
-The qBittorrent role only bootstraps a missing configuration file. Existing
-application-owned preferences, credentials, and runtime fields are preserved;
-after startup, Ansible conditionally updates only VueTorrent's enabled state
-and `/vuetorrent` root through qBittorrent's loopback Web API. The mod's entry
-asset remains `/vuetorrent/public/index.html`.
+`DEPLOY_SSH_KNOWN_HOSTS` must contain pinned entries for Proxmox and the three
+LXCs. Never discover keys inside a deployment job. Job-level `id-token: write`
+and `deployments: write` exist only on the release job that connects to
+Tailscale and records `prod-release`; plan, validation, and image build jobs
+retain minimal read/package permissions.

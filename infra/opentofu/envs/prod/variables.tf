@@ -32,22 +32,3 @@ variable "root_datastore_id" {
 variable "ssh_public_keys" {
   type = list(string)
 }
-
-variable "containers" {
-  type = map(object({
-    vmid             = number
-    hostname         = string
-    description      = string
-    tags             = list(string)
-    template_file_id = string
-    os_type          = string
-    ip_address       = string
-    mac_address      = string
-    gateway          = string
-    root_disk_gb     = number
-    cores            = number
-    memory_mb        = number
-    swap_mb          = number
-    startup_order    = number
-  }))
-}

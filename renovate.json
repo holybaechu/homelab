@@ -22,7 +22,7 @@
       "customType": "regex",
       "description": "Update the annotated Tailscale GitHub Action version",
       "managerFilePatterns": [
-        "/^\\.github\\/workflows\\/cd\\.yml$/"
+        "/^\\.github\\/workflows\\/ci\\.yml$/"
       ],
       "matchStrings": [
         "# renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=\\^v\\(\\?<version>\\.\\*\\)\\$\\s+version: \\\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\\\""
@@ -36,7 +36,7 @@
       "customType": "regex",
       "description": "Update the VueTorrent LinuxServer Docker mod",
       "managerFilePatterns": [
-        "/^apps\\/compose\\/media\\/compose\\.yml$/"
+        "/^apps\\/compose\\/homelab\\/compose\\.yml$/"
       ],
       "matchStrings": [
         "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:(?<currentValue>\\d+\\.\\d+\\.\\d+)"
@@ -47,12 +47,12 @@
     },
     {
       "customType": "regex",
-      "description": "Update Debian 13 Proxmox LXC template versions in containers.auto.tfvars",
+      "description": "Update Debian 13 Proxmox LXC template versions in the production topology",
       "managerFilePatterns": [
-        "/^infra\\/opentofu\\/envs\\/prod\\/containers\\.auto\\.tfvars$/"
+        "/^infra\\/ansible\\/inventory\\/prod\\/topology\\.json$/"
       ],
       "matchStrings": [
-        "template_file_id\\s*=\\s*\\\"local:vztmpl/debian-13-standard_(?<currentValue>[^_]+)_amd64\\.tar\\.zst\\\""
+        "\\\"template_file_id\\\"\\s*:\\s*\\\"local:vztmpl/debian-13-standard_(?<currentValue>[^_]+)_amd64\\.tar\\.zst\\\""
       ],
       "depNameTemplate": "proxmox-debian-13",
       "datasourceTemplate": "custom.proxmox-debian-13",
@@ -81,16 +81,6 @@
       "matchCurrentVersion": "!/^0/",
       "automerge": true,
       "platformAutomerge": true
-    },
-    {
-      "description": "Require review for the Arcane control plane",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": [
-        "ghcr.io/getarcaneapp/manager",
-        "tecnativa/docker-socket-proxy"
-      ],
-      "automerge": false,
-      "platformAutomerge": false
     },
     {
       "description": "Require review for OpenClaw",
