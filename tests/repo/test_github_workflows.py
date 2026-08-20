@@ -336,6 +336,13 @@ def test_image_jobs_use_same_build_metadata_and_minimal_permissions() -> None:
     for name in ("openclaw_build", "t3_build"):
         job = jobs[name]
         assert job["permissions"] == {"contents": "read", "packages": "write"}
+        setup = step_named(job, "Configure attestation-capable Buildx")
+        assert setup["uses"] == (
+            "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e"
+        )
+        assert job["steps"].index(setup) < job["steps"].index(
+            step_running(job, "docker login ghcr.io")
+        )
         commands = "\n".join(step["run"] for step in run_steps(job))
         assert "immutable_image_release.py" in commands
         assert "--build-metadata" in commands
