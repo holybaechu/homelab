@@ -197,9 +197,14 @@ def test_validation_audits_exact_release_without_duplicate_auth_smoke() -> None:
     assert "auth smoke" in immutable
 
 
-def test_openclaw_vars_use_topology_hostvars_and_no_transition_state_machine() -> None:
+def test_openclaw_vars_avoid_recursive_hostvars_and_no_transition_state_machine() -> None:
     text = _text(VARS)
-    assert "hostvars['openclaw'].ansible_host" in text
+    assert "hostvars[" not in text
+    assert "openclaw_bind_host" not in text
+    assert "openclaw_proxy_ip" not in text
+    assert "hostvars['docker_apps'].ansible_host" in _text(
+        ROLE / "templates/nftables.conf.j2"
+    )
     assert "openclaw_native_activate" not in text
     assert "openclaw_docker_rollback_activate" not in text
     assert "transition_marker" not in text

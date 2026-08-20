@@ -16,7 +16,7 @@ table inet filter {
     ip6 nexthdr ipv6-icmp accept
 
     ip saddr { {{ homelab_lan_cidr }}, {{ homelab_tailscale_cidr }} } tcp dport 22 accept
-    ip saddr {{ openclaw_proxy_ip }} tcp dport {{ openclaw_gateway_port }} accept
+    ip saddr {{ hostvars['docker_apps'].ansible_host }} tcp dport {{ openclaw_gateway_port }} accept
   }
 
   chain forward {

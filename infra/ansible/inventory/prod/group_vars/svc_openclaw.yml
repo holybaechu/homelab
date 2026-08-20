@@ -19,8 +19,6 @@ openclaw_exa_api_key_path: "{{ openclaw_secret_root }}/exa_api_key"
 
 openclaw_gateway_port: 18789
 openclaw_hostname: openclaw.home.hchu.me
-openclaw_bind_host: "{{ hostvars['openclaw'].ansible_host }}"
-openclaw_proxy_ip: "{{ hostvars['docker_apps'].ansible_host }}"
 openclaw_readiness_url: "http://127.0.0.1:{{ openclaw_gateway_port }}/readyz"
 openclaw_smoke_url: "http://127.0.0.1:{{ openclaw_gateway_port }}/api/health"
 
