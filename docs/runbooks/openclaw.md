@@ -28,7 +28,9 @@ resulting immutable refs and the two verified bundles.
 2. rejects symlinks, traversal, incorrect modes, and bundle hash drift;
 3. pulls and inspects both exact OCI digests;
 4. runs Compose with `--no-build`;
-5. waits on `/readyz` and makes exactly one authenticated smoke request;
+5. waits on `/readyz` and makes exactly one bearer-authenticated request to
+   `/control-ui-config.json` (the lightweight endpoint returns `401` without
+   the shared Gateway credential);
 6. atomically replaces one root-owned `release-state.json` containing the
    current and previous immutable manifests.
 

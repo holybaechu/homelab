@@ -88,7 +88,7 @@ set -- "$deployer" \
   --install-root /opt/openclaw \
   --secret-root /etc/openclaw/secrets \
   --readiness-url http://127.0.0.1:18789/readyz \
-  --smoke-url http://127.0.0.1:18789/api/health \
+  --smoke-url http://127.0.0.1:18789/control-ui-config.json \
   deploy \
   --manifest "$root/release.json" \
   --runtime-archive "$root/runtime.tar" \

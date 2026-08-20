@@ -214,3 +214,5 @@ def test_openclaw_vars_avoid_recursive_hostvars_and_no_transition_state_machine(
     assert "openclaw_docker_rollback_activate" not in text
     assert "transition_marker" not in text
     assert "/readyz" in text
+    assert "/control-ui-config.json" in text
+    assert "/api/health" not in text

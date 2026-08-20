@@ -1350,7 +1350,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--install-root", type=Path, default=Path("/opt/openclaw"))
     parser.add_argument("--secret-root", type=Path, default=Path("/etc/openclaw/secrets"))
     parser.add_argument("--readiness-url", default="http://127.0.0.1:18789/readyz")
-    parser.add_argument("--smoke-url", default="http://127.0.0.1:18789/api/health")
+    parser.add_argument(
+        "--smoke-url",
+        default="http://127.0.0.1:18789/control-ui-config.json",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     deploy = commands.add_parser("deploy")
     deploy.add_argument("--manifest", required=True, type=Path)

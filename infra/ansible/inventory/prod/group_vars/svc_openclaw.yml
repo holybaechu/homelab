@@ -20,7 +20,7 @@ openclaw_exa_api_key_path: "{{ openclaw_secret_root }}/exa_api_key"
 openclaw_gateway_port: 18789
 openclaw_hostname: openclaw.home.hchu.me
 openclaw_readiness_url: "http://127.0.0.1:{{ openclaw_gateway_port }}/readyz"
-openclaw_smoke_url: "http://127.0.0.1:{{ openclaw_gateway_port }}/api/health"
+openclaw_smoke_url: "http://127.0.0.1:{{ openclaw_gateway_port }}/control-ui-config.json"
 
 openclaw_skill_sync_enabled: true
 openclaw_skill_sync_user: openclaw-skill-sync

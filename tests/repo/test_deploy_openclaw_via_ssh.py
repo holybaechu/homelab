@@ -45,6 +45,8 @@ def test_direct_openclaw_uploader_has_no_build_or_ansible_toolchain() -> None:
     assert "deploy_openclaw_release.py" in text
     assert "openclaw_release.py" in text
     assert "readyz" in text
+    assert "/control-ui-config.json" in text
+    assert "/api/health" not in text
     assert "legacy-recovery" not in text
     assert "deployment_source_sha" in text
     assert "flock -n 9" in text
