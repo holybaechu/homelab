@@ -104,6 +104,9 @@ def test_release_input_jobs_read_prod_configuration_without_deploying() -> None:
 
 def test_validation_is_path_scoped_and_exhaustive_tooling_is_full_only() -> None:
     job = workflow_data()["jobs"]["validation"]
+    fast_install = step_named(job, "Install fast validation dependencies")
+    for requirement in ("pytest==9.1.1", "Jinja2==3.1.6", "PyYAML==6.0.3"):
+        assert requirement in fast_install["run"]
     fast = {
         "openclaw": step_running(job, "tests/repo/test_openclaw_release.py"),
         "repo": step_running(job, "tests/repo/test_deployment_components.py"),

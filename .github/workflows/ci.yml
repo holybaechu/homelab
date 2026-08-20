@@ -197,7 +197,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install fast validation dependencies
         if: env.VALIDATION_SCOPE != 'full'
-        run: python -m pip install pytest==9.1.1 PyYAML==6.0.3
+        run: python -m pip install pytest==9.1.1 Jinja2==3.1.6 PyYAML==6.0.3
       - name: Install exhaustive validation dependencies
         if: env.VALIDATION_SCOPE == 'full'
         run: python -m pip install -r requirements-dev.txt -r requirements-deploy.txt
