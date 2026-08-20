@@ -149,12 +149,12 @@
 - name: Add generated overlays to the input manifest
   ansible.builtin.set_fact:
     docker_compose_managed_directories: >-
-      {% set overlay_root = docker_apps_runtime_config_root + '/' + item.0.name + '/files' %}
-      {% set overlay_parent = item.1.dest | dirname %}
       {{ docker_compose_managed_directories
-         + [overlay_root]
-         + [overlay_root if overlay_parent in ['', '.']
-            else overlay_root + '/' + overlay_parent] }}
+         + [docker_apps_runtime_config_root + '/' + item.0.name + '/files']
+         + [docker_apps_runtime_config_root + '/' + item.0.name + '/files'
+            if (item.1.dest | dirname) in ['', '.']
+            else docker_apps_runtime_config_root + '/' + item.0.name
+                 + '/files/' + (item.1.dest | dirname)] }}
     docker_compose_managed_inputs: >-
       {{ docker_compose_managed_inputs
          + [{'src': item.1.src,

@@ -199,6 +199,24 @@ def test_runtime_overlays_use_the_requested_homelab_paths():
     ]
 
 
+def test_runtime_overlay_directory_accumulator_is_a_native_list_expression():
+    task = next(
+        task
+        for task in _tasks()
+        if task["name"] == "Add generated overlays to the input manifest"
+    )
+    expression = task["ansible.builtin.set_fact"][
+        "docker_compose_managed_directories"
+    ]
+
+    # Ansible preserves the type of a scalar that is one Jinja expression.
+    # Leading statement blocks stringify the first loop result, so the next
+    # overlay then fails while trying to append a list to that string.
+    assert "{%" not in expression
+    assert expression.strip().startswith("{{")
+    assert expression.strip().endswith("}}")
+
+
 def test_mandatory_smoke_contract_covers_health_dns_and_shared_ingress():
     smoke = (TEMPLATES / "homelab-smoke.sh.j2").read_text(encoding="utf-8")
 
