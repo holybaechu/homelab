@@ -165,12 +165,20 @@ def test_ansible_inventory_cli_loads_topology_groups_and_hostvars():
     assert inventory["_meta"]["hostvars"]["docker_apps"]["vmid"] == 110
 
 
-def test_ansible_aliases_derive_from_inventory_without_duplicate_topology_lists():
+def test_ansible_consumers_derive_addresses_without_duplicate_topology_lists():
     text = (
         REPO_ROOT / "infra/ansible/inventory/prod/group_vars/all.yml"
     ).read_text(encoding="utf-8")
-    assert "tailnet_ip: \"{{ hostvars['tailnet'].ansible_host }}\"" in text
-    assert "docker_apps_ip: \"{{ hostvars['docker_apps'].ansible_host }}\"" in text
+    assert "tailnet_ip:" not in text
+    assert "docker_apps_ip:" not in text
+    for path in (
+        "infra/ansible/playbooks/validate.yml",
+        "infra/ansible/roles/docker_compose_project/templates/AdGuardHome.yaml.j2",
+        "infra/ansible/roles/docker_compose_project/templates/homelab-smoke.sh.j2",
+    ):
+        assert "hostvars['docker_apps'].ansible_host" in (
+            REPO_ROOT / path
+        ).read_text(encoding="utf-8")
     for duplicate in (
         "openclaw_lxc_allocation:",
         "pve_lxc_root_options:",

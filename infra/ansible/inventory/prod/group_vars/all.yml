@@ -4,8 +4,6 @@ homelab_lan_cidr: 192.168.0.0/24
 homelab_tailscale_cidr: 100.64.0.0/10
 homelab_timezone: Asia/Seoul
 
-tailnet_ip: "{{ hostvars['tailnet'].ansible_host }}"
-docker_apps_ip: "{{ hostvars['docker_apps'].ansible_host }}"
 # The immutable Gateway and CTF image keep durable challenge material on the
 # homelab data volume and consume it through the dedicated LXC's Docker daemon.
 openclaw_ctf_shared_host_path: "{{ homelab_data_mount }}/openclaw-ctf"

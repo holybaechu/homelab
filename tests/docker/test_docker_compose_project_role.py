@@ -229,7 +229,7 @@ def test_mandatory_smoke_contract_renders_and_has_valid_posix_shell_syntax():
         undefined=jinja2.StrictUndefined,
         keep_trailing_newline=True,
     ).from_string(source).render(
-        docker_apps_ip="192.0.2.10",
+        hostvars={"docker_apps": {"ansible_host": "192.0.2.10"}},
         t3code_hostname="code.home.hchu.me",
         traefik_domain="hchu.me",
         traefik_private_domain="home.hchu.me",

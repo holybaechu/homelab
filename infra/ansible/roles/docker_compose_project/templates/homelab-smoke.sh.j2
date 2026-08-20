@@ -50,7 +50,7 @@ for service in traefik adguard cloudflare-ddns qbittorrent copyparty metube t3co
 done
 
 dns_name="{{ t3code_hostname }}"
-dns_expected="{{ docker_apps_ip }}"
+dns_expected="{{ hostvars['docker_apps'].ansible_host }}"
 dns_answers=$(dig +short +time=3 +tries=1 @127.0.0.1 "$dns_name" A)
 printf '%s\n' "$dns_answers" | grep -Fqx "$dns_expected" \
   || fail "AdGuard did not return the managed private address for $dns_name"

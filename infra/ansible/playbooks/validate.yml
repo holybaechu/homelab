@@ -209,7 +209,7 @@
       ansible.builtin.command: "dig +short @127.0.0.1 {{ item }} A"
       register: adguard_private_query
       changed_when: false
-      failed_when: docker_apps_ip not in adguard_private_query.stdout_lines
+      failed_when: hostvars['docker_apps'].ansible_host not in adguard_private_query.stdout_lines
       loop:
         - qbt.home.hchu.me
         - metube.home.hchu.me

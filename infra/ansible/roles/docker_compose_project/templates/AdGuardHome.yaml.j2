@@ -51,7 +51,7 @@ filtering:
   rewrites_enabled: true
   rewrites:
     - domain: '*.{{ homelab_private_domain }}'
-      answer: {{ docker_apps_ip }}
+      answer: {{ hostvars['docker_apps'].ansible_host }}
       enabled: true
   blocked_services:
     schedule:
