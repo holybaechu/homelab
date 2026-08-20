@@ -303,9 +303,10 @@ def test_happy_path_stages_only_project_runtime_and_records_good_release(deploym
     ]
 
     actions = _compose_actions(runner)
-    assert actions[:4] == [
+    assert actions[:5] == [
         ("config", "--quiet"),
         ("config", "--services"),
+        ("config", "--images"),
         ("pull", "--ignore-buildable"),
         ("up", "-d", "--wait", "--remove-orphans", "--no-build"),
     ]
@@ -315,10 +316,11 @@ def test_happy_path_stages_only_project_runtime_and_records_good_release(deploym
 
 
 @requires_symlink
-def test_64_character_sha_is_accepted(deployment):
+def test_64_character_release_sha_is_rejected_by_the_40_hex_t3_contract(deployment):
     deployer, _runner, _locks, *_rest = deployment
 
-    assert deployer.deploy(SHA_64).sha == SHA_64
+    with pytest.raises(DeploymentError, match="lowercase 40-character Git SHA"):
+        deployer.deploy(SHA_64)
 
 
 @pytest.mark.parametrize(

@@ -180,10 +180,12 @@ def test_ci_validator_uses_the_one_merged_model_and_an_exact_dummy_digest():
     )
     assert 'stack=apps/compose/homelab' in script
     assert '--env-file "$stack/.env.example"' in script
-    assert '-f "$stack/compose.yml"' in script
+    assert '-f "$temporary/compose.yml"' in script
     assert "config --no-env-resolution --no-path-resolution" in script
     assert "apps/compose/*" not in script
     assert "cp " not in script
+    assert "mktemp -d" in script
+    assert "trap cleanup EXIT" in script
 
 
 def test_runtime_assets_exclude_ci_image_build_inputs():
@@ -223,6 +225,18 @@ def test_docker_compose_accepts_the_merged_model_when_available(tmp_path: Path):
     if probe.returncode != 0:
         pytest.skip("Docker Compose plugin is unavailable")
 
+    validation_compose = tmp_path / "compose.yml"
+    (tmp_path / "traefik.env").write_text("", encoding="utf-8")
+    (tmp_path / "cloudflare-ddns.env").write_text("", encoding="utf-8")
+    validation_compose.write_text(
+        COMPOSE.read_text(encoding="utf-8")
+        .replace("/etc/homelab/secrets/traefik.env", "traefik.env")
+        .replace(
+            "/etc/homelab/secrets/cloudflare-ddns.env",
+            "cloudflare-ddns.env",
+        ),
+        encoding="utf-8",
+    )
     result = subprocess.run(
         [
             docker,
@@ -230,7 +244,7 @@ def test_docker_compose_accepts_the_merged_model_when_available(tmp_path: Path):
             "--env-file",
             str(STACK / ".env.example"),
             "-f",
-            str(COMPOSE),
+            str(validation_compose),
             "config",
             "--format",
             "json",
