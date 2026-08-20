@@ -23,6 +23,7 @@ sed \
   "$stack/compose.yml" >"$temporary/compose.yml"
 T3CODE_IMAGE_REF='ghcr.io/holybaechu/homelab-t3code@sha256:0000000000000000000000000000000000000000000000000000000000000000' \
   docker compose \
+    --project-directory "$temporary" \
     --env-file "$stack/.env.example" \
     -f "$temporary/compose.yml" \
     config --no-env-resolution --no-path-resolution >/dev/null

@@ -180,6 +180,7 @@ def test_ci_validator_uses_the_one_merged_model_and_an_exact_dummy_digest():
     )
     assert 'stack=apps/compose/homelab' in script
     assert '--env-file "$stack/.env.example"' in script
+    assert '--project-directory "$temporary"' in script
     assert '-f "$temporary/compose.yml"' in script
     assert "config --no-env-resolution --no-path-resolution" in script
     assert "apps/compose/*" not in script
@@ -241,6 +242,8 @@ def test_docker_compose_accepts_the_merged_model_when_available(tmp_path: Path):
         [
             docker,
             "compose",
+            "--project-directory",
+            str(tmp_path),
             "--env-file",
             str(STACK / ".env.example"),
             "-f",
