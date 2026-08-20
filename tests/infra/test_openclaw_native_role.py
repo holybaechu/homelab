@@ -50,7 +50,7 @@ def test_routine_host_reconciliation_does_not_upgrade_or_refresh_unconditionally
     assert all(package.get("state") != "latest" for package in apt_tasks)
 
 
-def test_role_materializes_only_root_owned_group_readable_gateway_secrets() -> None:
+def test_role_materializes_only_gateway_owner_readable_secrets() -> None:
     text = _text(TASKS)
     for path in (
         "openclaw_gateway_token_path",
@@ -58,12 +58,17 @@ def test_role_materializes_only_root_owned_group_readable_gateway_secrets() -> N
         "openclaw_exa_api_key_path",
     ):
         assert path in text
-    assert 'owner: root\n    group: "{{ openclaw_group }}"\n    mode: "0440"' in text
+    assert (
+        'owner: "{{ openclaw_user }}"\n'
+        '    group: "{{ openclaw_group }}"\n'
+        '    mode: "0400"'
+    ) in text
     assert 'openclaw_skill_sync_github_token_path' in text
     assert 'group: root\n    mode: "0600"' in text
     workflow = _text(REPO_ROOT / ".github/workflows/ci.yml")
     assert "openclaw-gateway-access-probe" in workflow
-    assert '"0440", str(config_file)' in workflow
+    assert '"1000:1000", str(config_file)' in workflow
+    assert '"0400", str(config_file)' in workflow
     assert "test -r /probe/config/openclaw.json" in workflow
 
 

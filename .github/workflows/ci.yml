@@ -377,9 +377,10 @@ jobs:
                       config_dir.mkdir(parents=True, mode=0o750)
                       config_file = config_dir / "openclaw.json"
                       config_file.write_text('{"access":"verified"}\n', encoding="utf-8")
-                      subprocess.run(["sudo", "chown", "0:1000", str(probe), str(config_dir), str(config_file)], check=True)
+                      subprocess.run(["sudo", "chown", "0:1000", str(probe), str(config_dir)], check=True)
+                      subprocess.run(["sudo", "chown", "1000:1000", str(config_file)], check=True)
                       subprocess.run(["sudo", "chmod", "0750", str(probe), str(config_dir)], check=True)
-                      subprocess.run(["sudo", "chmod", "0440", str(config_file)], check=True)
+                      subprocess.run(["sudo", "chmod", "0400", str(config_file)], check=True)
                       try:
                           subprocess.run(
                               [

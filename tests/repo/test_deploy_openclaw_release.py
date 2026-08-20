@@ -365,11 +365,10 @@ def test_bundle_extraction_rejects_links_and_traversal(tmp_path: Path) -> None:
         _safe_extract(archive, tmp_path / "out")
 
 
-def test_gateway_uid_access_model_requires_controlled_group_read_not_world_read(
-) -> None:
-    metadata = SimpleNamespace(st_uid=0, st_gid=1000, st_mode=stat.S_IFREG | 0o440)
+def test_gateway_uid_access_model_accepts_owner_only_read() -> None:
+    metadata = SimpleNamespace(st_uid=1000, st_gid=1000, st_mode=stat.S_IFREG | 0o400)
     assert identity_can_read(metadata, uid=1000, gids={1000})
-    assert not identity_can_read(metadata, uid=1000, gids={1001})
+    assert not identity_can_read(metadata, uid=1001, gids={1000})
 
 
 def test_deploy_fails_closed_on_bundle_digest_or_missing_smoke_secret(tmp_path: Path) -> None:

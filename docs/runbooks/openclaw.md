@@ -79,8 +79,9 @@ deployer—never a host build.
 ## Host and secret boundary
 
 The Gateway runs as UID/GID 1000. Root owns `/etc/openclaw/secrets`; only the
-three Gateway secret files are bind-mounted read-only with root ownership and
-group-readable mode `0440`. Compose adds the numeric host Docker group so the
+three Gateway secret files are bind-mounted read-only with Gateway ownership
+and owner-readable mode `0400`, which satisfies OpenClaw's strict provider-file
+permission check. Compose adds the numeric host Docker group so the
 Gateway can use `/var/run/docker.sock`; deployment validates the socket type,
 GID, and group access before mutation. The dedicated CTF bridge denies private,
 loopback, link-local, and tailnet destinations. nftables accepts port 18789 only

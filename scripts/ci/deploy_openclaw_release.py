@@ -1001,11 +1001,11 @@ class ReleaseDeployer:
             if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
                 raise DeploymentError(f"Gateway credential is not a regular file: {name}")
             if os.name != "nt" and (
-                metadata.st_uid != self.trusted_uid
+                metadata.st_uid != self.gateway_uid
                 or metadata.st_gid != self.gateway_gid
             ):
                 raise DeploymentError(f"Gateway credential ownership is invalid: {name}")
-            if stat.S_IMODE(metadata.st_mode) != 0o440:
+            if stat.S_IMODE(metadata.st_mode) != 0o400:
                 raise DeploymentError(f"Gateway credential mode is invalid: {name}")
             if not identity_can_read(metadata, uid=self.gateway_uid, gids={self.gateway_gid}):
                 raise DeploymentError(f"Gateway UID cannot read credential: {name}")

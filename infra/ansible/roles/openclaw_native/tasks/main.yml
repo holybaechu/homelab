@@ -132,13 +132,13 @@
     - {path: "{{ openclaw_secret_root }}", owner: root, group: "{{ openclaw_group }}", mode: "0710"}
     - {path: "{{ openclaw_skill_sync_state_root }}", owner: "{{ openclaw_skill_sync_user }}", group: "{{ openclaw_skill_sync_group }}", mode: "0700"}
 
-- name: Materialize root-owned Gateway secret files
+- name: Materialize Gateway-owner-only secret files
   ansible.builtin.copy:
     content: "{{ item.content | trim }}\n"
     dest: "{{ item.path }}"
-    owner: root
+    owner: "{{ openclaw_user }}"
     group: "{{ openclaw_group }}"
-    mode: "0440"
+    mode: "0400"
   loop:
     - {path: "{{ openclaw_gateway_token_path }}", content: "{{ openclaw_gateway_token }}"}
     - {path: "{{ openclaw_discord_bot_token_path }}", content: "{{ openclaw_discord_bot_token }}"}
