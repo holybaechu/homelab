@@ -12,4 +12,4 @@ T3CODE_IMAGE_REF='ghcr.io/holybaechu/homelab-t3code@sha256:000000000000000000000
   docker compose \
     --env-file "$stack/.env.example" \
     -f "$stack/compose.yml" \
-    config --no-env-resolution >/dev/null
+    config --no-env-resolution --no-path-resolution >/dev/null

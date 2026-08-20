@@ -154,5 +154,6 @@ def test_release_lane_bundles_exact_private_config_without_host_git_sync():
     assert "repository: holybaechu/openclaw-setup" in workflow
     assert "persist-credentials: false" in workflow
     assert "--git-commit \"$OPENCLAW_CONFIG_COMMIT\"" in workflow
-    assert "OPENCLAW_CONFIG_READ_TOKEN" in workflow
-    assert "OPENCLAW_CONFIG_READ_TOKEN" not in COMPOSE.read_text(encoding="utf-8")
+    assert "OPENCLAW_CONFIG_READ_SSH_KEY" in workflow
+    assert "OPENCLAW_CONFIG_READ_SSH_KEY" not in COMPOSE.read_text(encoding="utf-8")
+    assert "OPENCLAW_CONFIG_READ_TOKEN" not in workflow

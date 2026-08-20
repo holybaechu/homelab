@@ -54,6 +54,9 @@ jobs:
   deployment_plan:
     name: classify exact revision
     runs-on: ubuntu-24.04
+    environment:
+      name: prod
+      deployment: false
     permissions:
       contents: read
       deployments: read
@@ -290,6 +293,9 @@ jobs:
       needs.validation.result == 'success' &&
       needs.deployment_plan.outputs.openclaw_builds != ''
     runs-on: ubuntu-24.04
+    environment:
+      name: prod
+      deployment: false
     permissions:
       contents: read
       packages: write
@@ -537,7 +543,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: holybaechu/openclaw-setup
-          token: ${{ secrets.OPENCLAW_CONFIG_READ_TOKEN }}
+          ssh-key: ${{ secrets.OPENCLAW_CONFIG_READ_SSH_KEY }}
           ref: ${{ needs.deployment_plan.outputs.openclaw_setup_commit }}
           path: .openclaw-config
           fetch-depth: 1

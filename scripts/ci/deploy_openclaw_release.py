@@ -1109,6 +1109,21 @@ class ReleaseDeployer:
                 or socket_mounts[0].get("Source") != "/var/run/docker.sock" \
                 or socket_mounts[0].get("RW") is not False:
             raise DeploymentError("Gateway Docker socket must be one read-only host bind")
+        for destination in ("/home/node/.openclaw", "/var/lib/openclaw"):
+            state_mounts = [
+                mount for mount in mounts
+                if isinstance(mount, dict)
+                and mount.get("Destination") == destination
+            ]
+            if (
+                len(state_mounts) != 1
+                or state_mounts[0].get("Type") != "bind"
+                or state_mounts[0].get("Source") != "/var/lib/openclaw"
+                or state_mounts[0].get("RW") is not True
+            ):
+                raise DeploymentError(
+                    "Gateway state must expose one writable host bind at both runtime paths"
+                )
         expected_config_root = str(
             self.release_root / release["release_id"] / "config"
         )

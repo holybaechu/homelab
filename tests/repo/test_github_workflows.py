@@ -90,6 +90,18 @@ def test_plan_precedes_validation_and_binds_every_job_to_exact_sha() -> None:
     assert "schedule" not in selector["if"]
 
 
+def test_release_input_jobs_read_prod_configuration_without_deploying() -> None:
+    jobs = workflow_data()["jobs"]
+    configuration_only = {"name": "prod", "deployment": "false"}
+
+    assert jobs["deployment_plan"]["environment"] == configuration_only
+    assert jobs["openclaw_build"]["environment"] == configuration_only
+    assert jobs["prod_mutation"]["environment"] == "prod"
+    assert jobs["maintenance"]["environment"] == "prod"
+    assert "environment" not in jobs["validation"]
+    assert "environment" not in jobs["t3_build"]
+
+
 def test_validation_is_path_scoped_and_exhaustive_tooling_is_full_only() -> None:
     job = workflow_data()["jobs"]["validation"]
     fast = {
@@ -245,6 +257,10 @@ def test_openclaw_common_path_is_direct_exact_bundle_deployment() -> None:
     assert len(config_checkouts) == 1
     assert config_checkouts[0]["if"] == "env.OPENCLAW_SELECTED == 'true'"
     assert config_checkouts[0]["with"]["persist-credentials"] == "false"
+    assert config_checkouts[0]["with"]["ssh-key"] == (
+        "${{ secrets.OPENCLAW_CONFIG_READ_SSH_KEY }}"
+    )
+    assert "token" not in config_checkouts[0]["with"]
     ssh = step_running(job, "configure-ssh.sh")
     refresh = step_named(job, "Refresh OpenClaw trust after bootstrap")
     assert refresh["if"] == (

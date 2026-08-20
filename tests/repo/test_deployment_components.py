@@ -307,6 +307,82 @@ def test_first_push_without_a_watermark_classifies_the_complete_snapshot(
     )
 
 
+def test_first_push_builds_openclaw_images_without_preexisting_image_refs(
+    monkeypatch,
+) -> None:
+    observed = {}
+
+    def fake_run(command, **kwargs):
+        observed["command"] = command
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            "infra/openclaw/gateway/Dockerfile\n"
+            "infra/openclaw/ctf/Dockerfile\n"
+            "infra/openclaw/runtime/compose.yml\n",
+            "",
+        )
+
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    monkeypatch.setenv("GITHUB_DEPLOYMENT_BASE_SHA", selector.NO_DEPLOYED_REVISION)
+    monkeypatch.setenv("GITHUB_SHA", "b" * 40)
+    monkeypatch.setenv("OPENCLAW_DEFAULT_CONFIG_COMMIT", "a" * 40)
+    monkeypatch.setenv("OPENCLAW_DEFAULT_CONFIG_SHA256", "4" * 64)
+    monkeypatch.setenv("OPENCLAW_DEFAULT_GATEWAY_REF", "")
+    monkeypatch.setenv("OPENCLAW_DEFAULT_CTF_REF", "")
+    monkeypatch.setenv("OPENCLAW_DEFAULT_RUNTIME_SHA256", "")
+    monkeypatch.setattr(selector.subprocess, "run", fake_run)
+
+    selection, paths = selector.selection_for_event(REPO_ROOT)
+
+    assert observed["command"] == ["git", "ls-tree", "-r", "--name-only", "b" * 40]
+    assert selection.components == ("openclaw",)
+    assert selection.image_builds == ("openclaw_gateway", "openclaw_ctf")
+    assert selection.openclaw_gateway_ref == ""
+    assert selection.openclaw_ctf_ref == ""
+    assert selection.openclaw_runtime_sha256 == ""
+    assert selection.openclaw_setup_commit == "a" * 40
+    assert selection.openclaw_config_sha256 == "4" * 64
+    assert paths == (
+        "infra/openclaw/gateway/Dockerfile",
+        "infra/openclaw/ctf/Dockerfile",
+        "infra/openclaw/runtime/compose.yml",
+    )
+
+
+def test_push_image_build_still_requires_exact_unbuilt_counterpart(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    monkeypatch.setenv("GITHUB_DEPLOYMENT_BASE_SHA", "a" * 40)
+    monkeypatch.setenv("GITHUB_SHA", "b" * 40)
+    monkeypatch.setenv("OPENCLAW_DEFAULT_CONFIG_COMMIT", "a" * 40)
+    monkeypatch.setenv("OPENCLAW_DEFAULT_CONFIG_SHA256", "4" * 64)
+    monkeypatch.setenv("OPENCLAW_DEFAULT_GATEWAY_REF", "")
+    monkeypatch.setenv("OPENCLAW_DEFAULT_CTF_REF", "")
+    monkeypatch.setenv("OPENCLAW_DEFAULT_RUNTIME_SHA256", "")
+    monkeypatch.setattr(
+        selector.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a[0], 0, "infra/openclaw/gateway/Dockerfile\n", ""
+        ),
+    )
+
+    with pytest.raises(selector.SelectionError, match="image promotion"):
+        selector.selection_for_event(REPO_ROOT)
+
+    monkeypatch.setenv("OPENCLAW_DEFAULT_CTF_REF", CTF_REF)
+    selection, _ = selector.selection_for_event(REPO_ROOT)
+    assert selection.image_builds == ("openclaw_gateway",)
+    assert selection.openclaw_gateway_ref == ""
+    assert selection.openclaw_ctf_ref == CTF_REF
+
+    monkeypatch.setenv("OPENCLAW_DEFAULT_GATEWAY_REF", "mutable:latest")
+    with pytest.raises(selector.SelectionError, match="image promotion"):
+        selector.selection_for_event(REPO_ROOT)
+
+
 def test_manual_dispatch_empty_validates_only_and_apps_implies_homelab(monkeypatch) -> None:
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     assert selector.selection_for_event(REPO_ROOT)[0] == selector.DeploymentSelection(())

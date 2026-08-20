@@ -1124,7 +1124,12 @@ class ComposeReleaseDeployer:
         return services
 
     def _activate(
-        self, release: Release, services: tuple[str, ...], *, smoke: bool
+        self,
+        release: Release,
+        services: tuple[str, ...],
+        *,
+        smoke: bool,
+        process_liveness_services: frozenset[str] | None = None,
     ) -> None:
         self._checked(
             self._compose(
@@ -1137,11 +1142,26 @@ class ComposeReleaseDeployer:
             ),
             cwd=release.path,
         )
-        self._verify_running(release, services, smoke=smoke)
+        self._verify_running(
+            release,
+            services,
+            smoke=smoke,
+            process_liveness_services=process_liveness_services,
+        )
 
     def _verify_running(
-        self, release: Release, services: tuple[str, ...], *, smoke: bool
+        self,
+        release: Release,
+        services: tuple[str, ...],
+        *,
+        smoke: bool,
+        process_liveness_services: frozenset[str] | None = None,
     ) -> None:
+        allowed_process_liveness = (
+            PROCESS_LIVENESS_SERVICES
+            if process_liveness_services is None
+            else process_liveness_services
+        )
         output = self._checked(
             self._compose(release, "ps", "--services", "--status", "running"),
             cwd=release.path,
@@ -1173,7 +1193,7 @@ class ComposeReleaseDeployer:
             ).strip()
             if state == "running healthy":
                 continue
-            if state != "running none" or service not in PROCESS_LIVENESS_SERVICES:
+            if state != "running none" or service not in allowed_process_liveness:
                 raise DeploymentError(
                     f"service {service!r} lacks a passing mandatory health gate"
                 )
@@ -1367,12 +1387,22 @@ class ComposeReleaseDeployer:
         )
         _atomic_write(path, content + "\n")
 
-    def _restore_snapshot(self, snapshot: ProjectSnapshot) -> None:
+    def _restore_snapshot(
+        self,
+        snapshot: ProjectSnapshot,
+        *,
+        process_liveness_services: frozenset[str] | None = None,
+    ) -> None:
         project = snapshot.release.project
         self._write_pointer(project, snapshot.release.sha)
         self._write_state(project, snapshot.release.sha, snapshot.previous)
         services = self._preflight(snapshot.release, pull=False)
-        self._activate(snapshot.release, services, smoke=True)
+        self._activate(
+            snapshot.release,
+            services,
+            smoke=True,
+            process_liveness_services=process_liveness_services,
+        )
 
     def _rollback(
         self,

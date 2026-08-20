@@ -94,4 +94,10 @@ set -- "$deployer" \
   --runtime-archive "$root/runtime.tar" \
   --config-archive "$root/config.tar"
 "$@"
+set -- "$deployer" \
+  --install-root /opt/openclaw \
+  --secret-root /etc/openclaw/secrets \
+  --readiness-url http://127.0.0.1:18789/readyz \
+  audit
+"$@"
 REMOTE_DEPLOY

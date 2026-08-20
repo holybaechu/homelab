@@ -304,3 +304,27 @@
     state: started
     daemon_reload: true
   when: openclaw_skill_sync_enabled | bool
+
+- name: Inspect legacy native Gateway unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/openclaw-gateway.service
+  register: openclaw_legacy_gateway_unit
+
+- name: Stop and disable legacy native Gateway unit
+  ansible.builtin.systemd_service:
+    name: openclaw-gateway.service
+    enabled: false
+    state: stopped
+  when: openclaw_legacy_gateway_unit.stat.exists
+
+- name: Remove legacy native Gateway unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/openclaw-gateway.service
+    state: absent
+  register: openclaw_legacy_gateway_unit_removed
+  when: openclaw_legacy_gateway_unit.stat.exists
+
+- name: Reload systemd after retiring legacy native Gateway unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: openclaw_legacy_gateway_unit_removed.changed | default(false)

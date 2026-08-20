@@ -31,6 +31,8 @@ class FakeDocker:
         self.config_source_override: str | None = None
         self.config_rw = False
         self.socket_rw = False
+        self.omit_state_alias = False
+        self.state_alias_source = "/var/lib/openclaw"
 
     def __call__(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
         args = tuple(argv)
@@ -79,6 +81,18 @@ class FakeDocker:
                         "Destination": "/etc/openclaw",
                         "RW": self.config_rw,
                     },
+                    {
+                        "Type": "bind",
+                        "Source": "/var/lib/openclaw",
+                        "Destination": "/home/node/.openclaw",
+                        "RW": True,
+                    },
+                    *([] if self.omit_state_alias else [{
+                        "Type": "bind",
+                        "Source": self.state_alias_source,
+                        "Destination": "/var/lib/openclaw",
+                        "RW": True,
+                    }]),
                 ],
             }
             return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
@@ -236,6 +250,8 @@ def test_audit_checks_exact_digests_without_another_authenticated_smoke(tmp_path
         ("ctf", "CTF/config identity differs"),
         ("ctf-duplicate", "CTF/config identity differs"),
         ("socket", "Docker socket must be one read-only"),
+        ("state-alias-missing", "Gateway state must expose one writable host bind"),
+        ("state-alias-source", "Gateway state must expose one writable host bind"),
         ("config-source", "config must be the exact release's read-only bind"),
         ("config-rw", "config must be the exact release's read-only bind"),
     ],
@@ -256,6 +272,10 @@ def test_audit_rejects_running_identity_or_socket_drift(
         )
     elif mutation == "socket":
         docker.socket_rw = True
+    elif mutation == "state-alias-missing":
+        docker.omit_state_alias = True
+    elif mutation == "state-alias-source":
+        docker.state_alias_source = "/home/node/.openclaw"
     elif mutation == "config-source":
         docker.config_source_override = "/opt/openclaw/releases/wrong/config"
     else:

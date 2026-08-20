@@ -27,6 +27,7 @@ from scripts.ci.immutable_image_release import (
 from scripts.recovery.compose_stack_cutover import (
     ComposeStackMigrator,
     EMPTY_HOST_APPROVAL_NAME,
+    LEGACY_PROCESS_LIVENESS_SERVICES,
     _load_migration_record,
 )
 
@@ -241,9 +242,10 @@ def deployment(tmp_path: Path):
         runner=runner,
         lock_factory=lock_factory,
     )
-    ArtifactReleaseStore(
-        state_root / "artifacts", artifact="t3code"
-    ).approve(
+    artifact_root = state_root / "artifacts"
+    artifact_root.mkdir(mode=0o700)
+    os.chmod(artifact_root, 0o700)
+    ArtifactReleaseStore(artifact_root, artifact="t3code").approve(
         source_sha=SHA_A,
         image=T3_IMAGE,
         platform="linux/amd64",
@@ -1191,8 +1193,11 @@ def _staged_release(
     *,
     t3_source_sha: str = STACK_SHA,
 ) -> Release:
-    path = root / sha / ".staged" / project
-    path.mkdir(parents=True)
+    staging = root / sha / ".staged"
+    staging.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(staging, 0o700)
+    path = staging / project
+    path.mkdir()
     _write(path / "compose.yml", f"name: {project}\nservices:\n  app:\n    image: x\n", 0o600)
     _write(path / ".env", "TOKEN=test\n", 0o600)
     _write(path / ".homelab" / "smoke", "#!/bin/sh\nexit 0\n", 0o700)
@@ -1404,6 +1409,51 @@ def test_stack_migration_precondition_failure_never_stops_legacy(stack_migration
         "media": MEDIA_SHA,
         "code": CODE_SHA,
     }
+
+
+def test_stack_migration_allows_only_explicit_zero_restart_legacy_process_gates(
+    stack_migration,
+):
+    migration = stack_migration
+    migration.runner.services = ("copyparty", "qbittorrent")
+    migration.runner.no_health.add(MEDIA_SHA)
+
+    assert migration.migrator.migrate(STACK_SHA) == "activated"
+    assert migration.migrator.rollback_to_legacy() == "legacy-restored"
+    assert migration.runner.active == {
+        "platform": PLATFORM_SHA,
+        "media": MEDIA_SHA,
+        "code": CODE_SHA,
+    }
+
+    migration.runner.restart_counts[(MEDIA_SHA, "copyparty")] = 1
+    event_count = len(migration.runner.events)
+    with pytest.raises(DeploymentError, match="process stability gate"):
+        migration.migrator.migrate(STACK_SHA)
+
+    assert migration.runner.active == {
+        "platform": PLATFORM_SHA,
+        "media": MEDIA_SHA,
+        "code": CODE_SHA,
+    }
+    assert not any(event[0] == "down" for event in migration.runner.events[event_count:])
+
+
+def test_normal_release_does_not_inherit_legacy_process_liveness_exceptions(
+    homelab_deployment,
+):
+    deployment = homelab_deployment
+    deployment.runner.services = tuple(
+        sorted(LEGACY_PROCESS_LIVENESS_SERVICES.difference({"cloudflare-ddns"}))
+    )
+    deployment.runner.no_health.add(SHA_A)
+
+    with pytest.raises(DeploymentError, match="mandatory health gate"):
+        deployment.deployer.deploy(
+            SHA_A, t3_approval=_approval(SHA_A, T3_DIGEST_A)
+        )
+
+    assert deployment.runner.active == {}
 
 
 def test_stack_migration_rejects_scaled_legacy_service_before_stopping(stack_migration):

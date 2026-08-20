@@ -37,6 +37,11 @@ services:
         bind:
           create_host_path: false
       - type: bind
+        source: /var/lib/openclaw
+        target: /var/lib/openclaw
+        bind:
+          create_host_path: false
+      - type: bind
         source: /home/openclaw/.config/openclaw
         target: /home/node/.config/openclaw
         bind:

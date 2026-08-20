@@ -82,6 +82,16 @@ def test_compose_uses_two_exact_digest_inputs_and_no_build_surface() -> None:
         if mount.get("source") == "/var/run/docker.sock"
     )
     assert socket_mount["read_only"] is True
+    state_mounts = [
+        mount for mount in gateway["volumes"]
+        if mount.get("source") == "/var/lib/openclaw"
+    ]
+    assert {mount["target"] for mount in state_mounts} == {
+        "/home/node/.openclaw",
+        "/var/lib/openclaw",
+    }
+    assert all(mount.get("read_only", False) is False for mount in state_mounts)
+    assert all(mount["bind"]["create_host_path"] is False for mount in state_mounts)
     assert "/readyz" in " ".join(gateway["healthcheck"]["test"])
     assert "/healthz" not in " ".join(gateway["healthcheck"]["test"])
 
@@ -121,6 +131,37 @@ def test_role_preserves_least_privilege_autonomous_skill_promotion() -> None:
     assert "ReadOnlyPaths={{ openclaw_workspace_root }}/skills" in service
     assert "ReadOnlyPaths={{ openclaw_ctf_workspace_root }}/skills" in service
     assert "ReadWritePaths={{ openclaw_skill_sync_state_root }}" in service
+
+
+def test_role_retires_legacy_native_gateway_only_after_runtime_is_ready() -> None:
+    tasks = yaml.safe_load(_text(TASKS))
+    names = [task["name"] for task in tasks]
+    retirement_names = [
+        "Inspect legacy native Gateway unit",
+        "Stop and disable legacy native Gateway unit",
+        "Remove legacy native Gateway unit",
+        "Reload systemd after retiring legacy native Gateway unit",
+    ]
+    assert names[-4:] == retirement_names
+    assert names.index("Install immutable release utilities") < names.index(
+        retirement_names[0]
+    )
+
+    inspect, stop, remove, reload = tasks[-4:]
+    unit_path = "/etc/systemd/system/openclaw-gateway.service"
+    assert inspect["ansible.builtin.stat"]["path"] == unit_path
+    assert stop["ansible.builtin.systemd_service"] == {
+        "name": "openclaw-gateway.service",
+        "enabled": False,
+        "state": "stopped",
+    }
+    assert stop["when"] == "openclaw_legacy_gateway_unit.stat.exists"
+    assert remove["ansible.builtin.file"] == {"path": unit_path, "state": "absent"}
+    assert remove["when"] == "openclaw_legacy_gateway_unit.stat.exists"
+    assert reload["ansible.builtin.systemd_service"] == {"daemon_reload": True}
+    assert reload["when"] == (
+        "openclaw_legacy_gateway_unit_removed.changed | default(false)"
+    )
 
 
 def test_activation_consumes_only_the_exact_immutable_release() -> None:

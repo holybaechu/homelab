@@ -173,9 +173,10 @@ Exact OpenClaw defaults used for source-path and autonomous promotions:
 Shared/provisioning secrets include `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE`,
 `DEPLOY_SSH_PRIVATE_KEY`, `DEPLOY_SSH_KNOWN_HOSTS`, Proxmox/OpenTofu state
 credentials, and `DEPLOY_SSH_PUBLIC_KEYS`. Bootstrap additionally receives the
-component-scoped secrets defined by `infra/deployment/secrets.json`. The direct
-OpenClaw path receives only `OPENCLAW_CONFIG_READ_TOKEN`; the direct apps path
-receives no application secret values.
+component-scoped secrets defined by `infra/deployment/secrets.json`. The private
+config checkout receives only the repository-scoped read-only deploy key
+`OPENCLAW_CONFIG_READ_SSH_KEY`; the direct OpenClaw and apps upload paths receive
+no application secret values.
 
 `DEPLOY_SSH_KNOWN_HOSTS` must contain pinned entries for Proxmox and the three
 LXCs. Never discover keys inside a deployment job. Job-level `id-token: write`

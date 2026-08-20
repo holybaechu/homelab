@@ -43,6 +43,9 @@ from scripts.ci.deploy_compose_release import (  # noqa: E402
 LEGACY_PROJECTS = ("platform", "media", "code")
 LEGACY_STOP_ORDER = ("code", "media", "platform")
 LEGACY_RESTORE_ORDER = ("platform", "media", "code")
+LEGACY_PROCESS_LIVENESS_SERVICES = frozenset(
+    ("cloudflare-ddns", "copyparty", "qbittorrent")
+)
 MIGRATION_STATE_NAME = "stack-migration.json"
 MIGRATION_LOCK_NAME = "stack-migration.lock"
 EMPTY_HOST_APPROVAL_NAME = "empty-host-reconstruction.json"
@@ -347,7 +350,12 @@ class ComposeStackMigrator:
         for project in LEGACY_PROJECTS:
             release = snapshots[project].release
             services = self.deployer._preflight(release, pull=False)
-            self.deployer._verify_running(release, services, smoke=True)
+            self.deployer._verify_running(
+                release,
+                services,
+                smoke=True,
+                process_liveness_services=LEGACY_PROCESS_LIVENESS_SERVICES,
+            )
 
     def _verify_legacy_stopped(
         self, snapshots: Mapping[str, ProjectSnapshot]
@@ -361,7 +369,10 @@ class ComposeStackMigrator:
 
     def _restore_legacy(self, snapshots: Mapping[str, ProjectSnapshot]) -> None:
         for project in LEGACY_RESTORE_ORDER:
-            self.deployer._restore_snapshot(snapshots[project])
+            self.deployer._restore_snapshot(
+                snapshots[project],
+                process_liveness_services=LEGACY_PROCESS_LIVENESS_SERVICES,
+            )
 
     def _remove_first_homelab_state(self) -> None:
         self.deployer._remove_state(STACK_PROJECT)
@@ -394,7 +405,10 @@ class ComposeStackMigrator:
             errors.append(f"homelab pointer/state restore: {exc}")
         for project in LEGACY_RESTORE_ORDER:
             try:
-                self.deployer._restore_snapshot(legacy[project])
+                self.deployer._restore_snapshot(
+                    legacy[project],
+                    process_liveness_services=LEGACY_PROCESS_LIVENESS_SERVICES,
+                )
             except BaseException as exc:
                 errors.append(f"legacy {project} restore: {exc}")
         if errors:

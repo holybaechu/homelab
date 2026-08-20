@@ -49,6 +49,12 @@ def test_direct_openclaw_uploader_has_no_build_or_ansible_toolchain() -> None:
     assert "deployment_source_sha" in text
     assert "flock -n 9" in text
     assert "secrets.token_hex" in text
+    deploy = '  deploy \\\n'
+    audit = '  audit\n'
+    assert text.count(deploy) == 1
+    assert text.count(audit) == 1
+    assert text.index(deploy) < text.index(audit)
+    assert text.count('"$@"') == 2
     for forbidden in ("docker build", "npm ", "ansible", "tofu", "pip install", "setup-python"):
         assert forbidden not in text
     subprocess.run([BASH, "-n", _posix(SCRIPT)], check=True)

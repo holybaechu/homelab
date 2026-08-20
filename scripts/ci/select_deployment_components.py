@@ -339,13 +339,22 @@ def _release_fields(
     *,
     allow_computed_runtime: bool = False,
     allow_computed_config: bool = False,
+    selected_image_builds: Iterable[str] = (),
 ) -> dict[str, str]:
     def env(suffix: str) -> str:
         return os.environ.get(f"{prefix}_{suffix}", "")
 
+    builds = frozenset(selected_image_builds)
+
+    def image_ref(suffix: str, build: str) -> str:
+        value = env(suffix)
+        if not value and build in builds:
+            return ""
+        return validate_immutable_ref(value)
+
     try:
-        gateway = validate_immutable_ref(env("GATEWAY_REF"))
-        ctf = validate_immutable_ref(env("CTF_REF"))
+        gateway = image_ref("GATEWAY_REF", "openclaw_gateway")
+        ctf = image_ref("CTF_REF", "openclaw_ctf")
     except ContractError as exc:
         raise SelectionError(f"OpenClaw image promotion is invalid: {exc}") from exc
     runtime = env("RUNTIME_SHA256")
@@ -371,6 +380,7 @@ def _with_openclaw_release(
     *,
     allow_computed_runtime: bool = False,
     allow_computed_config: bool = False,
+    allow_selected_image_builds: bool = False,
 ) -> DeploymentSelection:
     if "openclaw" not in selection.components:
         return selection
@@ -382,6 +392,9 @@ def _with_openclaw_release(
             prefix,
             allow_computed_runtime=allow_computed_runtime,
             allow_computed_config=allow_computed_config,
+            selected_image_builds=(
+                selection.image_builds if allow_selected_image_builds else ()
+            ),
         ),
     )
 
@@ -426,6 +439,7 @@ def selection_for_event(repo_root: Path) -> tuple[DeploymentSelection, tuple[str
         classify_paths(paths),
         "OPENCLAW_DEFAULT",
         allow_computed_runtime=True,
+        allow_selected_image_builds=True,
     ), paths
 
 
