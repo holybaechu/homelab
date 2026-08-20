@@ -17,9 +17,13 @@ cleanup() {
 trap cleanup EXIT
 : >"$temporary/traefik.env"
 : >"$temporary/cloudflare-ddns.env"
+secret_root=$temporary
+if command -v cygpath >/dev/null 2>&1; then
+  secret_root=$(cygpath -m "$temporary")
+fi
 sed \
-  -e 's|/etc/homelab/secrets/traefik.env|traefik.env|' \
-  -e 's|/etc/homelab/secrets/cloudflare-ddns.env|cloudflare-ddns.env|' \
+  -e "s|/etc/homelab/secrets/traefik.env|$secret_root/traefik.env|" \
+  -e "s|/etc/homelab/secrets/cloudflare-ddns.env|$secret_root/cloudflare-ddns.env|" \
   "$stack/compose.yml" >"$temporary/compose.yml"
 T3CODE_IMAGE_REF='ghcr.io/holybaechu/homelab-t3code@sha256:0000000000000000000000000000000000000000000000000000000000000000' \
   docker compose \

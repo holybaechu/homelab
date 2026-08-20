@@ -231,10 +231,13 @@ def test_docker_compose_accepts_the_merged_model_when_available(tmp_path: Path):
     (tmp_path / "cloudflare-ddns.env").write_text("", encoding="utf-8")
     validation_compose.write_text(
         COMPOSE.read_text(encoding="utf-8")
-        .replace("/etc/homelab/secrets/traefik.env", "traefik.env")
+        .replace(
+            "/etc/homelab/secrets/traefik.env",
+            (tmp_path / "traefik.env").as_posix(),
+        )
         .replace(
             "/etc/homelab/secrets/cloudflare-ddns.env",
-            "cloudflare-ddns.env",
+            (tmp_path / "cloudflare-ddns.env").as_posix(),
         ),
         encoding="utf-8",
     )
