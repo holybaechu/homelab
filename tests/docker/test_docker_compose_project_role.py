@@ -227,6 +227,9 @@ def test_mandatory_smoke_contract_covers_health_dns_and_shared_ingress():
     assert "dig +short" in smoke
     assert "@127.0.0.1" in smoke
     assert "--resolve" in smoke
+    assert 'while [ "$attempt" -le 10 ]' in smoke
+    assert "sleep 2" in smoke
+    assert 'probe_ingress "$hostname"' in smoke
     for service in (
         "traefik",
         "adguard",
