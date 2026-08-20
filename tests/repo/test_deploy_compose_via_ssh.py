@@ -156,11 +156,16 @@ if [ "$#" -eq 1 ]; then
   esac
 fi
 [ "$1" = sh ] && [ "$2" = -s ] && [ "$3" = -- ] || exit 97
-shift 3
+remote_command=
+for argument do
+  remote_command="${remote_command}${remote_command:+ }${argument}"
+done
 cat >"$FAKE_REMOTE_SCRIPT"
 PATH=$(dirname "$0"):$PATH
 export PATH
-exec sh "$FAKE_REMOTE_SCRIPT" "$@"
+# OpenSSH concatenates command arguments into shell text. All fixture values
+# are token-safe; parsing this text deliberately drops trailing empty args.
+exec sh -c "$remote_command" <"$FAKE_REMOTE_SCRIPT"
 """,
     )
     _write_executable(

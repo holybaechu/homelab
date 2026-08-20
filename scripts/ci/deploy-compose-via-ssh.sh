@@ -243,7 +243,20 @@ assert_root_file() {
     || fail "incoming file is group/world accessible: $path"
 }
 
-[ "$#" -eq 9 ] || fail "invalid installer argument count"
+case "$#" in
+  7)
+    # OpenSSH serializes the remote command as shell text, which drops the two
+    # intentionally empty trailing arguments on a release that reuses the
+    # already approved T3 artifact.
+    t3_source_sha=
+    t3_image_ref=
+    ;;
+  9)
+    t3_source_sha=$8
+    t3_image_ref=$9
+    ;;
+  *) fail "invalid installer argument count" ;;
+esac
 sha=$1
 digest=$2
 incoming=$3
@@ -251,8 +264,6 @@ release_root=$4
 current_root=$5
 state_root=$6
 runtime_root=$7
-t3_source_sha=$8
-t3_image_ref=$9
 
 [ "$(id -u)" = 0 ] || fail "installer must run as root"
 valid_sha "$sha" || fail "invalid release SHA"
