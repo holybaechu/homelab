@@ -106,6 +106,12 @@ def test_secret_inputs_and_smoke_endpoints_are_package_local(model):
     assert "adguard" in smoked
 
 
+def test_adguard_can_persist_runtime_normalization_in_the_rebuilt_slot(model):
+    mounts = model["services"]["adguard"]["volumes"]
+    assert "./generated/adguard:/opt/adguardhome/conf:rw" in mounts
+    assert not any("AdGuardHome.yaml" in mount for mount in mounts)
+
+
 def test_real_compose_render_accepts_one_prepared_package(tmp_path):
     docker = shutil.which("docker")
     if docker is None:
