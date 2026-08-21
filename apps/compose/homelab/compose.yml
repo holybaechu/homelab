@@ -33,7 +33,9 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - ./generated/adguard/AdGuardHome.yaml:/opt/adguardhome/conf/AdGuardHome.yaml:ro
+      # AdGuard persists normalized runtime fields back into its config file.
+      # The slot is rebuilt from the declarative package on every release/audit.
+      - ./generated/adguard:/opt/adguardhome/conf:rw
       - adguard_work:/opt/adguardhome/work
     labels:
       - homelab.smoke.url=https://adguard.home.hchu.me/

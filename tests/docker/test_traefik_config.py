@@ -54,7 +54,7 @@ def test_adguard_static_policy_is_package_owned_and_plain_dns_only():
 
     assert service["network_mode"] == "host"
     assert (
-        "./generated/adguard/AdGuardHome.yaml:/opt/adguardhome/conf/AdGuardHome.yaml:ro"
+        "./generated/adguard:/opt/adguardhome/conf:rw"
         in service["volumes"]
     )
     assert template["dns"]["port"] == 53
