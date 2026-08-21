@@ -125,7 +125,7 @@ services:
       start_period: 30s
 
   metube:
-    image: ghcr.io/alexta69/metube:2026.08.17
+    image: ghcr.io/alexta69/metube:2026.08.20
     restart: unless-stopped
     environment:
       DELETE_FILE_ON_TRASHCAN: "true"
