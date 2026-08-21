@@ -60,10 +60,13 @@ PY
     --secret-bundle "$temporary/apps-secrets.json" \
     --release-root "$apps" \
     --topology infra/ansible/inventory/prod/topology.json
-  docker compose \
-    --project-directory "$apps" \
-    -f "$apps/compose.yml" \
-    config --no-env-resolution --no-path-resolution >/dev/null
+  (
+    cd "$apps"
+    docker compose \
+      --project-directory "$apps" \
+      -f compose.yml \
+      config --no-env-resolution --no-path-resolution >/dev/null
+  )
 fi
 
 if [ "$target" = all ] || [ "$target" = openclaw ]; then
@@ -75,8 +78,8 @@ if [ "$target" = all ] || [ "$target" = openclaw ]; then
   OPENCLAW_SECRET_ROOT="$temporary/openclaw-secrets" \
   OPENCLAW_DOCKER_GID=999 \
     docker compose \
-      --project-directory infra/openclaw/runtime \
-      -f infra/openclaw/runtime/compose.yml \
+      --project-directory "$PWD/infra/openclaw/runtime" \
+      -f "$PWD/infra/openclaw/runtime/compose.yml" \
       config --no-env-resolution --no-path-resolution >/dev/null
 fi
 
