@@ -8,8 +8,8 @@ from tests.helpers import REPO_ROOT
 
 
 ROLE_ROOT = REPO_ROOT / "infra" / "ansible" / "roles"
-MAINTENANCE_PLAYBOOK = (
-    REPO_ROOT / "infra" / "ansible" / "playbooks" / "maintenance.yml"
+RECONCILE_PLAYBOOK = (
+    REPO_ROOT / "infra" / "ansible" / "playbooks" / "reconcile.yml"
 )
 
 
@@ -84,110 +84,74 @@ def test_new_third_party_repository_refresh_does_not_enable_routine_upgrades(
     assert condition.endswith("_apt_repository.changed")
 
 
-def test_maintenance_playbook_enables_upgrades_on_the_three_existing_lxcs():
-    plays = load_yaml(MAINTENANCE_PLAYBOOK)
-    by_hosts = {play["hosts"]: play for play in plays}
+def test_maintenance_is_an_explicit_mode_of_the_single_targeted_entrypoint():
+    text = RECONCILE_PLAYBOOK.read_text(encoding="utf-8")
+    assert "homelab_unit in ['pve', 'tailnet', 'apps-host', 'openclaw-host']" in text
+    assert "homelab_maintenance_upgrade | default(false) | bool" in text
 
-    assert tuple(by_hosts) == (
-        "svc_docker_apps",
-        "svc_openclaw",
-        "svc_tailnet",
+
+def test_targeted_maintenance_reboots_only_the_selected_non_pve_unit():
+    tasks = load_yaml(RECONCILE_PLAYBOOK)[1]["tasks"]
+    marker = next(
+        task for task in tasks
+        if task.get("ansible.builtin.stat", {}).get("path") == "/var/run/reboot-required"
     )
-    expected_roles = {
-        "svc_docker_apps": ["common_debian", "docker_engine"],
-        "svc_openclaw": ["common_debian"],
-        "svc_tailnet": ["common_debian", "tailscale_gateway"],
-    }
-    for hosts, roles in expected_roles.items():
-        play = by_hosts[hosts]
-        assert play["vars"]["homelab_maintenance_upgrade"] is True
-        assert play["roles"] == roles
-
-
-def test_maintenance_reboots_are_marker_gated_and_tailnet_recovers_when_needed():
-    plays = load_yaml(MAINTENANCE_PLAYBOOK)
-
-    for play in plays:
-        post_tasks = play["post_tasks"]
-        marker_checks = [
-            task
-            for task in post_tasks
-            if task.get("ansible.builtin.stat", {}).get("path")
-            == "/var/run/reboot-required"
-        ]
-        reboots = [
-            task for task in post_tasks if "ansible.builtin.reboot" in task
-        ]
-        assert len(marker_checks) == 1
-        assert len(reboots) == 1
-        marker_fact = marker_checks[0]["register"]
-        assert reboots[0]["when"] == f"{marker_fact}.stat.exists"
-
-    assert plays[-1]["hosts"] == "svc_tailnet"
-    tailnet_tasks = plays[-1]["post_tasks"]
-    reconnects = [
-        task
-        for task in tailnet_tasks
-        if "ansible.builtin.wait_for_connection" in task
+    reboot = next(task for task in tasks if "ansible.builtin.reboot" in task)
+    gate = [
+        "homelab_unit != 'pve'",
+        "homelab_maintenance_upgrade | default(false) | bool",
     ]
-    assert len(reconnects) == 1
-    assert reconnects[0]["when"] == (
-        "tailscale_restart_scheduled | default(false)"
-    )
+    assert marker["when"] == gate
+    assert reboot["when"] == gate + ["homelab_unit_reboot_required.stat.exists"]
 
-    scheduled_checks = [
-        task
-        for task in tailnet_tasks
-        if task.get("when") == "tailscale_restart_scheduled | default(false)"
+
+def test_tailnet_restart_recovery_precedes_the_maintenance_reboot_check():
+    tasks = load_yaml(RECONCILE_PLAYBOOK)[1]["tasks"]
+    names = [task["name"] for task in tasks]
+    assert names.index("Wait for SSH after a scheduled tailscaled restart") < names.index(
+        "Wait for the exact tailscaled restart proof"
+    ) < names.index("Verify the deterministic tailscaled restart succeeded") < names.index(
+        "Verify tailscaled runs the installed binary"
+    ) < names.index("Check whether targeted maintenance requires a reboot")
+
+
+def test_targeted_maintenance_ends_with_the_selected_runtime_health_contract():
+    tasks = load_yaml(RECONCILE_PLAYBOOK)[1]["tasks"]
+    by_name = {task["name"]: task for task in tasks}
+    maintenance_gate = "homelab_maintenance_upgrade | default(false) | bool"
+
+    compose_audit = by_name["Audit the selected Compose runtime after host maintenance"]
+    assert compose_audit["ansible.builtin.command"]["argv"] == [
+        "/usr/local/libexec/homelab-release",
+        "audit",
+        "--target",
+        "{{ {'apps-host': 'apps', 'openclaw-host': 'openclaw'}[homelab_unit] }}",
     ]
-    assert len(scheduled_checks) >= 4
-    assert any(
-        "/run/homelab-tailscale-restart.completed"
-        in task.get("ansible.builtin.shell", "")
-        for task in scheduled_checks
+    assert compose_audit["changed_when"] is False
+    assert compose_audit["no_log"] is True
+    assert compose_audit["when"] == [
+        "homelab_unit in ['apps-host', 'openclaw-host']",
+        maintenance_gate,
+    ]
+
+    tailnet_status = by_name["Read tailnet health after host maintenance"]
+    assert tailnet_status["ansible.builtin.command"]["argv"] == [
+        "tailscale",
+        "status",
+        "--json",
+    ]
+    assert tailnet_status["changed_when"] is False
+    assert tailnet_status["when"] == ["homelab_unit == 'tailnet'", maintenance_gate]
+    tailnet_gate = by_name["Require a running tailnet after host maintenance"]
+    assert tailnet_gate["when"] == tailnet_status["when"]
+    assert tailnet_gate["ansible.builtin.assert"]["that"] == [
+        "(homelab_tailnet_maintenance_status.stdout | from_json).BackendState == 'Running'"
+    ]
+
+    names = [task["name"] for task in tasks]
+    assert names.index("Reboot the selected unit after targeted maintenance") < names.index(
+        "Audit the selected Compose runtime after host maintenance"
     )
-
-    completion = next(
-        task
-        for task in scheduled_checks
-        if "/run/homelab-tailscale-restart.completed"
-        in task.get("ansible.builtin.shell", "")
-    )
-    assert completion["retries"] == 36
-    assert completion["delay"] == 5
-    assert completion["until"].endswith(".rc == 0")
-
-    service_result = next(
-        task
-        for task in scheduled_checks
-        if "tailscaled-ansible-restart.service"
-        in task.get("ansible.builtin.command", {}).get("argv", [])
-    )
-    assert service_result["changed_when"] is False
-    assert service_result["failed_when"].endswith('.stdout != "success"')
-
-    installed_binary = next(
-        task
-        for task in scheduled_checks
-        if "/proc/${pid}/exe" in task.get("ansible.builtin.shell", "")
-    )
-    assert installed_binary["changed_when"] is False
-
-    reboot_marker = next(
-        task
-        for task in tailnet_tasks
-        if task.get("ansible.builtin.stat", {}).get("path")
-        == "/var/run/reboot-required"
-    )
-    assert all(
-        tailnet_tasks.index(task) < tailnet_tasks.index(reboot_marker)
-        for task in (reconnects[0], completion, service_result, installed_binary)
-    )
-
-
-def test_normal_reconciliation_playbooks_do_not_enable_maintenance_mode():
-    playbook_root = REPO_ROOT / "infra" / "ansible" / "playbooks"
-
-    for playbook_name in ("site.yml", "bootstrap.yml"):
-        playbook = (playbook_root / playbook_name).read_text(encoding="utf-8")
-        assert "homelab_maintenance_upgrade" not in playbook
+    assert names.index("Reboot the selected unit after targeted maintenance") < names.index(
+        "Read tailnet health after host maintenance"
+    ) < names.index("Require a running tailnet after host maintenance")

@@ -5,7 +5,7 @@ repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 test_root="$(mktemp -d)"
 fake_bin="${test_root}/bin"
 calls="${test_root}/docker-calls"
-validator="${repo_root}/infra/ansible/files/validate-vuetorrent.sh"
+validator="${repo_root}/apps/compose/homelab/validate-vuetorrent.sh"
 mkdir -p "${fake_bin}"
 
 cleanup() {
@@ -33,7 +33,7 @@ case "$*" in
   *"printenv DOCKER_MODS")
     case "${FAKE_DOCKER_SCENARIO}" in
       success)
-        printf '%s\n' 'ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7'
+        printf '%s\n' 'ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
         ;;
       command_fail)
         printf '%s\n' 'printenv-command-leak-z9Q7' >&2
@@ -135,7 +135,7 @@ for service in qbittorrent; do
   printf '%s\n' "${success_output}" | grep -F \
     "PASS ${service} config: exact WebUI\\RootFolder=/vuetorrent"
   printf '%s\n' "${success_output}" | grep -F \
-    "PASS ${service} environment: effective DOCKER_MODS=ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7"
+    "PASS ${service} environment: effective DOCKER_MODS=ghcr.io/vuetorrent/vuetorrent-lsio-mod:9.8.7@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 done
 printf '%s\n' "${success_output}" | grep -F \
   'PASS qbittorrent config: direct instance is not bound to tun0'

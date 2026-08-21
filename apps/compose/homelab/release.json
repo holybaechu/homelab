@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project": "homelab",
+  "compose": "compose.yml",
+  "secret_bundle": {
+    "component": "apps",
+    "version": 1
+  },
+  "prepare": "prepare_release.py",
+  "topology": "topology.json",
+  "smoke": "smoke.sh"
+}

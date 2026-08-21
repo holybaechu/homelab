@@ -1,0 +1,78 @@
+http:
+  middlewares:
+    private-only:
+      ipAllowList:
+        sourceRange:
+          - 192.168.0.0/24
+          - 100.64.0.0/10
+          - 172.16.0.0/12
+    secure-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        referrerPolicy: no-referrer-when-downgrade
+        contentTypeNosniff: true
+        customFrameOptionsValue: DENY
+    pve-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        referrerPolicy: no-referrer-when-downgrade
+        contentTypeNosniff: true
+        customFrameOptionsValue: SAMEORIGIN
+    router-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        referrerPolicy: no-referrer-when-downgrade
+        customFrameOptionsValue: DENY
+
+  routers:
+    adguard:
+      rule: Host(`adguard.home.hchu.me`)
+      entryPoints: [websecure]
+      middlewares: [private-only, secure-headers]
+      service: adguard
+    openclaw:
+      rule: Host(`openclaw.home.hchu.me`)
+      entryPoints: [websecure]
+      middlewares: [private-only, secure-headers]
+      service: openclaw
+    pve:
+      rule: Host(`pve.home.hchu.me`)
+      entryPoints: [websecure]
+      middlewares: [private-only, pve-headers]
+      service: pve
+    router:
+      rule: Host(`router.home.hchu.me`)
+      entryPoints: [websecure]
+      middlewares: [private-only, router-headers]
+      service: router
+
+  services:
+    adguard:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:3000
+    openclaw:
+      loadBalancer:
+        servers:
+          - url: http://@@OPENCLAW_HOST@@:18789
+    pve:
+      loadBalancer:
+        serversTransport: pve-transport
+        servers:
+          - url: https://@@PVE_HOST@@:8006
+    router:
+      loadBalancer:
+        servers:
+          - url: http://@@ROUTER_HOST@@
+
+  serversTransports:
+    pve-transport:
+      serverName: pve.home.hchu.me
+      rootCAs:
+        - /etc/ssl/certs/homelab-pve-root-ca.pem

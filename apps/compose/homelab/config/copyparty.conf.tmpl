@@ -1,0 +1,34 @@
+[accounts]
+@@COPY_PARTY_ACCOUNTS@@
+
+[global]
+  e2dsa
+  e2ts
+  ansi
+  usernames
+  rproxy: -1
+  xff-src: 172.16.0.0/12
+  name: copyparty.hchu.me
+  hist: /config/state
+  localtime
+  gsel
+  lang: kor
+  p: 3923
+
+[/public]
+  /srv/public
+  accs:
+    r: *
+    A: @@COPY_PARTY_OWNER@@
+
+[/shared-readonly]
+  /srv/shared-readonly
+  accs:
+    r: @@COPY_PARTY_USER_NAMES@@
+    A: @@COPY_PARTY_OWNER@@
+
+[/downloads]
+  /srv/downloads
+  accs:
+    r: @@COPY_PARTY_OWNER@@
+    A: @@COPY_PARTY_OWNER@@

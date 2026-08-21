@@ -55,14 +55,32 @@ def test_tailnet_enables_forwarding_while_public_ipv6_is_unroutable():
     assert "net.ipv6.conf.all.forwarding=1" in role
 
 
-def test_tailnet_validation_checks_ip_forwarding():
-    validation = (
-        REPO_ROOT / "infra" / "ansible" / "playbooks" / "validate.yml"
-    ).read_text(encoding="utf-8")
+def test_tailnet_join_passes_the_validated_auth_key_as_one_opaque_argv_value():
+    tasks = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "infra"
+            / "ansible"
+            / "roles"
+            / "tailscale_gateway"
+            / "tasks"
+            / "main.yml"
+        ).read_text(encoding="utf-8")
+    )
+    joins = [
+        task
+        for task in tasks
+        if task.get("ansible.builtin.command", {}).get("argv", [])[:2]
+        == ["tailscale", "up"]
+    ]
 
-    assert "net.ipv4.ip_forward" in validation
-    assert "net.ipv6.conf.all.forwarding" in validation
-    assert 'tailnet_forwarding.stdout | trim != "1"' in validation
+    assert len(joins) == 1
+    join = joins[0]
+    command = join["ansible.builtin.command"]
+    assert "cmd" not in command
+    assert command["argv"].count("--auth-key={{ tailscale_auth_key }}") == 1
+    assert join["no_log"] is True
+    assert join["when"] == "tailscale_auth_key is defined"
 
 
 def test_tailnet_manages_and_validates_persistent_udp_gro_forwarding():
@@ -122,14 +140,6 @@ def test_tailnet_manages_and_validates_persistent_udp_gro_forwarding():
     assert "ExecStart=/usr/local/sbin/configure-tailscale-udp-gro" in service
     assert "RemainAfterExit=yes" in service
     assert "WantedBy=multi-user.target" in service
-
-    validation = (
-        REPO_ROOT / "infra" / "ansible" / "playbooks" / "validate.yml"
-    ).read_text(encoding="utf-8")
-    assert "systemctl\n          - is-enabled\n          - tailscale-udp-gro.service" in validation
-    assert "rx-udp-gro-forwarding: on" in validation
-    assert "rx-gro-list: off" in validation
-
 
 def test_tailscale_package_upgrades_only_during_explicit_maintenance():
     tasks = yaml.safe_load(
@@ -287,14 +297,18 @@ def test_tailscale_upgrade_defers_self_restart_and_recovers_stale_binary():
 def test_tailnet_restart_recovery_is_bounded_and_verifies_the_running_binary():
     plays = yaml.safe_load(
         (
-            REPO_ROOT / "infra" / "ansible" / "playbooks" / "site.yml"
+            REPO_ROOT / "infra" / "ansible" / "playbooks" / "reconcile.yml"
         ).read_text(encoding="utf-8")
     )
-    recovery = next(play for play in plays if play["name"] == "Wait for tailnet route recovery")
-    by_name = {task["name"]: task for task in recovery["tasks"]}
+    recovery = plays[1]["tasks"]
+    by_name = {task["name"]: task for task in recovery}
+    gate = [
+        "homelab_unit == 'tailnet'",
+        "tailscale_restart_scheduled | default(false)",
+    ]
 
-    wait = by_name["Wait for SSH through the restarted subnet route"]
-    assert wait["when"] == "tailscale_restart_scheduled | default(false)"
+    wait = by_name["Wait for SSH after a scheduled tailscaled restart"]
+    assert wait["when"] == gate
     assert wait["ansible.builtin.wait_for_connection"] == {
         "delay": 10,
         "connect_timeout": 5,
@@ -302,8 +316,8 @@ def test_tailnet_restart_recovery_is_bounded_and_verifies_the_running_binary():
         "timeout": 180,
     }
 
-    completion = by_name["Wait for the requested tailscaled restart to complete"]
-    assert completion["when"] == "tailscale_restart_scheduled | default(false)"
+    completion = by_name["Wait for the exact tailscaled restart proof"]
+    assert completion["when"] == gate
     assert completion["changed_when"] is False
     assert completion["retries"] == 36
     assert completion["delay"] == 5
@@ -313,18 +327,16 @@ def test_tailnet_restart_recovery_is_bounded_and_verifies_the_running_binary():
     ]
     assert "tailscale_restart_id" in completion["ansible.builtin.shell"]
 
-    result = by_name["Verify the deterministic restart unit succeeded"]
+    result = by_name["Verify the deterministic tailscaled restart succeeded"]
     assert result["changed_when"] is False
-    assert result["failed_when"] == 'tailscale_restart_result.stdout != "success"'
+    assert result["failed_when"] == "tailscale_restart_result.stdout != 'success'"
 
-    verify = by_name["Verify tailscaled is running the installed binary"]
-    assert verify["when"] == "tailscale_restart_scheduled | default(false)"
+    verify = by_name["Verify tailscaled runs the installed binary"]
+    assert verify["when"] == gate
     assert verify["changed_when"] is False
-    assert 'tailscale_running_executable.stdout != "/usr/sbin/tailscaled"' in verify[
-        "failed_when"
-    ]
+    assert "/usr/sbin/tailscaled" in verify["ansible.builtin.shell"]
 
-    task_names = [task["name"] for task in recovery["tasks"]]
-    assert task_names.index("Wait for the requested tailscaled restart to complete") < task_names.index(
-        "Verify the deterministic restart unit succeeded"
-    ) < task_names.index("Verify tailscaled is running the installed binary")
+    task_names = [task["name"] for task in recovery]
+    assert task_names.index("Wait for the exact tailscaled restart proof") < task_names.index(
+        "Verify the deterministic tailscaled restart succeeded"
+    ) < task_names.index("Verify tailscaled runs the installed binary")

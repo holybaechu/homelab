@@ -1,218 +1,313 @@
-from pathlib import Path
+from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import Any
+
+from jinja2 import Environment
 import yaml
 
 from tests.helpers import REPO_ROOT
 
 
 ROLE = REPO_ROOT / "infra/ansible/roles/openclaw_native"
-TASKS = ROLE / "tasks/main.yml"
-VARS = REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_openclaw.yml"
-SITE = REPO_ROOT / "infra/ansible/playbooks/site.yml"
-VALIDATE = REPO_ROOT / "infra/ansible/playbooks/validate.yml"
+RECONCILE = REPO_ROOT / "infra/ansible/playbooks/reconcile.yml"
 COMPOSE = REPO_ROOT / "infra/openclaw/runtime/compose.yml"
-DEPLOYER = REPO_ROOT / "scripts/ci/deploy_openclaw_release.py"
-UPLOADER = REPO_ROOT / "scripts/ci/deploy-openclaw-via-ssh.sh"
 
 
-def _text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+def load_yaml(path: Path) -> Any:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_native_role_is_now_a_compact_opaque_runtime_reconciler() -> None:
-    text = _text(TASKS)
-    assert len(text.splitlines()) < 450
-    assert "npm install" not in text
-    assert "node-v" not in text
-    assert "docker build" not in text
-    assert "plugins install" not in text
-    assert "openclaw-release-deployer" not in text
-    assert "deploy_openclaw_release.py" in text
-    assert "openclaw_release.py" in text
-    assert "immutable_image_release.py" in text
-    for retired_activation_input in (
-        "openclaw_release_deploy",
-        "openclaw_release_source_sha",
-        "openclaw_release_manifest_local",
-        "openclaw_runtime_bundle_local",
-        "openclaw_config_bundle_local",
-    ):
-        assert retired_activation_input not in text
+def _walk_tasks(tasks: list[dict[str, Any]]):
+    for task in tasks:
+        yield task
+        for section in ("block", "rescue", "always"):
+            nested = task.get(section, [])
+            if isinstance(nested, list):
+                yield from _walk_tasks(nested)
 
 
-def test_routine_host_reconciliation_does_not_upgrade_or_refresh_unconditionally() -> None:
-    tasks = yaml.safe_load(_text(TASKS))
-    apt_tasks = [task["ansible.builtin.apt"] for task in tasks if "ansible.builtin.apt" in task]
-    assert apt_tasks
-    routine_render = _text(TASKS)
-    assert "'latest' if (homelab_maintenance_upgrade" in routine_render
-    assert "update_cache: true\n  when: openclaw_docker_repository.changed" in routine_render
-    assert all(package.get("state") != "latest" for package in apt_tasks)
+def _render_boolean(expression: str, **context: Any) -> bool:
+    environment = Environment()
+    environment.filters["from_json"] = json.loads
+    environment.filters["bool"] = bool
+    rendered = environment.from_string("{{ " + expression + " }}").render(**context)
+    return bool(yaml.safe_load(rendered))
 
 
-def test_role_materializes_only_gateway_owner_readable_secrets() -> None:
-    text = _text(TASKS)
-    for path in (
-        "openclaw_gateway_token_path",
-        "openclaw_discord_bot_token_path",
-        "openclaw_exa_api_key_path",
-    ):
-        assert path in text
-    assert (
-        'owner: "{{ openclaw_user }}"\n'
-        '    group: "{{ openclaw_group }}"\n'
-        '    mode: "0400"'
-    ) in text
-    assert 'openclaw_skill_sync_github_token_path' in text
-    assert 'group: root\n    mode: "0600"' in text
-    workflow = _text(REPO_ROOT / ".github/workflows/ci.yml")
-    assert "openclaw-gateway-access-probe" in workflow
-    assert '"1000:1000", str(config_file)' in workflow
-    assert '"0400", str(config_file)' in workflow
-    assert "test -r /probe/config/openclaw.json" in workflow
+def _assertions_pass(clauses: list[str], **context: Any) -> bool:
+    return all(_render_boolean(clause, **context) for clause in clauses)
 
 
-def test_compose_uses_two_exact_digest_inputs_and_no_build_surface() -> None:
-    compose = yaml.safe_load(_text(COMPOSE))
+def _command_argv(task: dict[str, Any]) -> list[str] | None:
+    command = task.get("ansible.builtin.command")
+    if not isinstance(command, dict):
+        return None
+    argv = command.get("argv")
+    return argv if isinstance(argv, list) and all(isinstance(item, str) for item in argv) else None
+
+
+def _condition_text(task: dict[str, Any]) -> str:
+    condition = task.get("when", "")
+    return " ".join(condition) if isinstance(condition, list) else str(condition)
+
+
+def test_compose_uses_exact_image_descriptors_and_preserves_lxc_isolation() -> None:
+    compose = load_yaml(COMPOSE)
     gateway = compose["services"]["gateway"]
+
     assert gateway["image"].startswith("${OPENCLAW_GATEWAY_REF:")
-    assert gateway["environment"]["OPENCLAW_CTF_IMAGE"].startswith("${OPENCLAW_CTF_REF:")
+    assert gateway["environment"]["OPENCLAW_CTF_IMAGE"].startswith(
+        "${OPENCLAW_CTF_REF:"
+    )
     assert "build" not in gateway
     assert gateway["read_only"] is True
     assert gateway["network_mode"] == "host"
     assert gateway["cap_drop"] == ["ALL"]
-    assert gateway["group_add"] == ["${OPENCLAW_DOCKER_GID:?numeric host Docker group is required}"]
+    assert gateway["group_add"] == [
+        "${OPENCLAW_DOCKER_GID:?numeric host Docker group is required}"
+    ]
+
     socket_mount = next(
-        mount for mount in gateway["volumes"]
+        mount
+        for mount in gateway["volumes"]
         if mount.get("source") == "/var/run/docker.sock"
     )
     assert socket_mount["read_only"] is True
-    state_mounts = [
-        mount for mount in gateway["volumes"]
+    writable_state = [
+        mount
+        for mount in gateway["volumes"]
         if mount.get("source") == "/var/lib/openclaw"
     ]
-    assert {mount["target"] for mount in state_mounts} == {
-        "/home/node/.openclaw",
-        "/var/lib/openclaw",
-    }
-    assert all(mount.get("read_only", False) is False for mount in state_mounts)
-    assert all(mount["bind"]["create_host_path"] is False for mount in state_mounts)
+    assert writable_state
+    assert all(mount.get("read_only", False) is False for mount in writable_state)
+    assert all(mount["bind"]["create_host_path"] is False for mount in writable_state)
     assert "/readyz" in " ".join(gateway["healthcheck"]["test"])
-    assert "/healthz" not in " ".join(gateway["healthcheck"]["test"])
+
+
+def test_runtime_secret_surface_is_exactly_the_gateway_contract() -> None:
+    compose = load_yaml(COMPOSE)
+    gateway = compose["services"]["gateway"]
+    secret_mounts = [
+        mount
+        for mount in gateway["volumes"]
+        if mount["target"].startswith("/run/secrets/openclaw/")
+    ]
+
+    assert {Path(mount["target"]).name for mount in secret_mounts} == {
+        "gateway_token",
+        "discord_bot_token",
+        "exa_api_key",
+    }
+    assert all(mount["source"].startswith("${OPENCLAW_SECRET_ROOT") for mount in secret_mounts)
+    assert all(mount["read_only"] is True for mount in secret_mounts)
+    assert all(mount["bind"]["create_host_path"] is False for mount in secret_mounts)
 
 
 def test_ctf_image_and_private_workspace_share_one_numeric_write_identity() -> None:
-    dockerfile = _text(REPO_ROOT / "infra/openclaw/ctf/Dockerfile")
-    all_vars = yaml.safe_load(
-        _text(REPO_ROOT / "infra/ansible/inventory/prod/group_vars/all.yml")
+    dockerfile = (REPO_ROOT / "infra/openclaw/ctf/Dockerfile").read_text(
+        encoding="utf-8"
     )
-    topology = _text(REPO_ROOT / "infra/ansible/inventory/prod/topology.json")
-    workflow = _text(REPO_ROOT / ".github/workflows/ci.yml")
+    all_vars = load_yaml(REPO_ROOT / "infra/ansible/inventory/prod/group_vars/all.yml")
+    topology = load_yaml(REPO_ROOT / "infra/ansible/inventory/prod/topology.json")
+    openclaw = topology["all"]["children"]["debian"]["hosts"]["openclaw"]
 
-    assert all_vars["openclaw_ctf_uid"] == 1000
-    assert all_vars["openclaw_ctf_gid"] == 1000
+    assert all_vars["openclaw_ctf_uid"] == all_vars["openclaw_ctf_gid"] == 1000
     assert "USER 1000:1000" in dockerfile
-    assert 'bind_mount_source_mode\": \"0700' in topology
-    assert "openclaw-ctf-write-probe" in workflow
-    assert ".identity-probe" in workflow
+    assert all(
+        mount["source_mode"] == "0700"
+        for mount in openclaw["lxc_mounts"].values()
+    )
 
 
-def test_compose_exposes_only_gateway_secrets_not_skill_promotion_credential() -> None:
-    compose = _text(COMPOSE)
-    assert "gateway_token" in compose
-    assert "discord_bot_token" in compose
-    assert "exa_api_key" in compose
-    assert "skill_sync_github_token" not in compose
-    assert "/var/run/docker.sock" in compose
-
-
-def test_role_preserves_least_privilege_autonomous_skill_promotion() -> None:
-    tasks = _text(TASKS)
-    service = _text(ROLE / "templates/openclaw-skill-sync.service.j2")
-    assert "openclaw_skill_sync.py" in tasks
-    assert "openclaw-skill-sync.timer" in tasks
-    assert "LoadCredential=github_token:{{ openclaw_skill_sync_github_token_path }}" in service
-    assert "User={{ openclaw_skill_sync_user }}" in service
-    assert "ReadOnlyPaths={{ openclaw_workspace_root }}/skills" in service
-    assert "ReadOnlyPaths={{ openclaw_ctf_workspace_root }}/skills" in service
-    assert "ReadWritePaths={{ openclaw_skill_sync_state_root }}" in service
-
-
-def test_role_retires_legacy_native_gateway_only_after_runtime_is_ready() -> None:
-    tasks = yaml.safe_load(_text(TASKS))
-    names = [task["name"] for task in tasks]
-    retirement_names = [
-        "Inspect legacy native Gateway unit",
-        "Stop and disable legacy native Gateway unit",
-        "Remove legacy native Gateway unit",
-        "Reload systemd after retiring legacy native Gateway unit",
+def test_openclaw_host_reconcile_is_explicit_and_installs_no_release_payload() -> None:
+    plays = load_yaml(RECONCILE)
+    role_tasks = [
+        task
+        for play in plays
+        for task in play.get("tasks", [])
+        if task.get("ansible.builtin.include_role", {}).get("name") == "openclaw_native"
     ]
-    assert names[-4:] == retirement_names
-    assert names.index("Install immutable release utilities") < names.index(
-        retirement_names[0]
-    )
+    assert len(role_tasks) == 1
+    role_condition = _condition_text(role_tasks[0])
+    assert "homelab_unit" in role_condition and "openclaw-host" in role_condition
 
-    inspect, stop, remove, reload = tasks[-4:]
-    unit_path = "/etc/systemd/system/openclaw-gateway.service"
-    assert inspect["ansible.builtin.stat"]["path"] == unit_path
-    assert stop["ansible.builtin.systemd_service"] == {
-        "name": "openclaw-gateway.service",
-        "enabled": False,
-        "state": "stopped",
+    tasks = list(_walk_tasks(load_yaml(ROLE / "tasks/main.yml")))
+    installed_packages = {
+        package
+        for task in tasks
+        for package in task.get("ansible.builtin.apt", {}).get("name", [])
     }
-    assert stop["when"] == "openclaw_legacy_gateway_unit.stat.exists"
-    assert remove["ansible.builtin.file"] == {"path": unit_path, "state": "absent"}
-    assert remove["when"] == "openclaw_legacy_gateway_unit.stat.exists"
-    assert reload["ansible.builtin.systemd_service"] == {"daemon_reload": True}
-    assert reload["when"] == (
-        "openclaw_legacy_gateway_unit_removed.changed | default(false)"
+    assert {"iptables", "nftables"} <= installed_packages
+
+    forbidden_payload_modules = {
+        "ansible.builtin.git",
+        "ansible.builtin.get_url",
+        "ansible.builtin.unarchive",
+    }
+    assert all(forbidden_payload_modules.isdisjoint(task) for task in tasks)
+    assert all(
+        "docker compose" not in yaml.safe_dump(task).lower()
+        for task in tasks
     )
 
+    # Destructive absence/disable operations belong only to explicit bounded
+    # drift repair, not recurring account/unit/file discovery loops.
+    assert all("ansible.builtin.find" not in task for task in tasks)
+    for task in tasks:
+        for module in (
+            "ansible.builtin.file",
+            "ansible.builtin.user",
+            "ansible.builtin.group",
+        ):
+            assert task.get(module, {}).get("state") != "absent"
+        assert task.get("ansible.builtin.systemd_service", {}).get("enabled") is not False
 
-def test_activation_consumes_only_the_exact_immutable_release() -> None:
-    text = _text(DEPLOYER) + _text(UPLOADER)
-    assert "legacy-recovery.json" not in text
-    assert "--legacy-recovery-manifest" not in text
-    assert "--manifest" in text
-    assert "--runtime-archive" in text
-    assert "--config-archive" in text
 
+def test_ctf_network_drift_reconciliation_preserves_the_isolation_contract() -> None:
+    tasks = load_yaml(ROLE / "tasks/main.yml")
+    probe_tasks = [task for task in tasks if task.get("register") == "openclaw_ctf_network_probe"]
+    assert len(probe_tasks) == 1
+    probe_argv = _command_argv(probe_tasks[0])
+    assert probe_argv is not None
+    assert probe_argv[:3] == ["docker", "network", "inspect"]
+    assert "{{ openclaw_ctf_docker_network }}" in probe_argv
+    assert "[0, 1]" in str(probe_tasks[0].get("failed_when"))
 
-def test_site_has_one_openclaw_role_and_no_docker_apps_foundation() -> None:
-    site = _text(SITE)
-    assert site.count("role: openclaw_native") == 1
-    for retired in (
-        "openclaw_ctf_local_docker",
-        "openclaw_foundation",
-        "openclaw_ctf_gateway",
-        "openclaw_discord_relay",
+    drift_tasks = [
+        task
+        for task in tasks
+        if "openclaw_ctf_network_drift" in task.get("ansible.builtin.set_fact", {})
+    ]
+    assert len(drift_tasks) == 1
+    drift_expression = drift_tasks[0]["ansible.builtin.set_fact"]["openclaw_ctf_network_drift"]
+    template = Environment().from_string(drift_expression)
+    all_vars = load_yaml(REPO_ROOT / "infra/ansible/inventory/prod/group_vars/all.yml")
+    network_cidr = all_vars["openclaw_ctf_docker_network_cidr"]
+    bridge_name = all_vars["openclaw_ctf_docker_bridge"]
+    canonical = {
+        "Driver": "bridge",
+        "IPAM": {"Config": [{"Subnet": network_cidr}]},
+        "Options": {
+            "com.docker.network.bridge.name": bridge_name,
+            "com.docker.network.bridge.enable_icc": "false",
+        },
+        "Containers": {},
+    }
+
+    def is_drift(document: dict, rc: int = 0) -> bool:
+        return bool(
+            yaml.safe_load(
+                template.render(
+                    openclaw_ctf_network_probe={"rc": rc},
+                    openclaw_ctf_network_document=document,
+                    openclaw_ctf_docker_network_cidr=network_cidr,
+                    openclaw_ctf_docker_bridge=bridge_name,
+                )
+            )
+        )
+
+    assert is_drift(canonical) is False
+    assert is_drift({}, rc=1) is False
+    for mutation in (
+        lambda value: value.update(Driver="overlay"),
+        lambda value: value["IPAM"]["Config"][0].update(Subnet="172.31.0.0/24"),
+        lambda value: value["Options"].update(
+            {"com.docker.network.bridge.name": "wrong0"}
+        ),
+        lambda value: value["Options"].update(
+            {"com.docker.network.bridge.enable_icc": "true"}
+        ),
     ):
-        assert f"role: {retired}" not in site
+        candidate = yaml.safe_load(yaml.safe_dump(canonical))
+        mutation(candidate)
+        assert is_drift(candidate) is True
 
-
-def test_validation_audits_exact_release_without_duplicate_auth_smoke() -> None:
-    text = _text(VALIDATE)
-    immutable = text.split("- name: Validate the dedicated immutable OpenClaw runtime", 1)[1]
-    immutable = immutable.split("- name: Validate Docker Compose application host", 1)[0]
-    assert "deploy_openclaw_release.py" in immutable
-    assert "audit" in immutable
-    assert "/readyz" not in immutable  # URL comes from the one group variable.
-    assert "openclaw_readiness_url" in immutable
-    assert "Authorization" not in immutable
-    assert "auth smoke" in immutable
-
-
-def test_openclaw_vars_avoid_recursive_hostvars_and_no_transition_state_machine() -> None:
-    text = _text(VARS)
-    assert "hostvars[" not in text
-    assert "openclaw_bind_host" not in text
-    assert "openclaw_proxy_ip" not in text
-    assert "hostvars['docker_apps'].ansible_host" in _text(
-        ROLE / "templates/nftables.conf.j2"
+    drift_guards = [
+        task
+        for task in tasks
+        if "ansible.builtin.assert" in task
+        and "openclaw_ctf_network_drift" in _condition_text(task)
+        and "openclaw_ctf_network_document" in yaml.safe_dump(task)
+    ]
+    assert len(drift_guards) == 1
+    guard_clauses = drift_guards[0]["ansible.builtin.assert"]["that"]
+    assert _assertions_pass(
+        guard_clauses,
+        openclaw_ctf_network_document=canonical,
     )
-    assert "openclaw_native_activate" not in text
-    assert "openclaw_docker_rollback_activate" not in text
-    assert "transition_marker" not in text
-    assert "/readyz" in text
-    assert "/control-ui-config.json" in text
-    assert "/api/health" not in text
+    occupied = yaml.safe_load(yaml.safe_dump(canonical))
+    occupied["Containers"] = {"container-id": {}}
+    assert not _assertions_pass(
+        guard_clauses,
+        openclaw_ctf_network_document=occupied,
+    )
+
+    drift_commands = [
+        (task, argv)
+        for task in tasks
+        if "openclaw_ctf_network_drift" in _condition_text(task)
+        if (argv := _command_argv(task)) is not None
+    ]
+    remove_commands = [item for item in drift_commands if "rm" in item[1]]
+    assert len(remove_commands) == 1
+    assert "{{ openclaw_ctf_docker_network }}" in remove_commands[0][1]
+
+    create_tasks = [
+        task
+        for task in tasks
+        if (argv := _command_argv(task)) is not None
+        and argv[:3] == ["docker", "network", "create"]
+    ]
+    assert len(create_tasks) == 1
+    create_argv = _command_argv(create_tasks[0])
+    assert create_argv is not None
+    assert create_argv[create_argv.index("--driver") + 1] == "bridge"
+    assert create_argv[create_argv.index("--subnet") + 1] == "{{ openclaw_ctf_docker_network_cidr }}"
+    create_options = {
+        create_argv[index + 1]
+        for index, value in enumerate(create_argv[:-1])
+        if value == "--opt"
+    }
+    assert {
+        "com.docker.network.bridge.name={{ openclaw_ctf_docker_bridge }}",
+        "com.docker.network.bridge.enable_icc=false",
+    } <= create_options
+    create_condition = _condition_text(create_tasks[0])
+    assert _render_boolean(
+        create_condition,
+        openclaw_ctf_network_probe={"rc": 1},
+        openclaw_ctf_network_drift=False,
+    )
+    assert _render_boolean(
+        create_condition,
+        openclaw_ctf_network_probe={"rc": 0},
+        openclaw_ctf_network_drift=True,
+    )
+    assert not _render_boolean(
+        create_condition,
+        openclaw_ctf_network_probe={"rc": 0},
+        openclaw_ctf_network_drift=False,
+    )
+
+    verification_tasks = [
+        task
+        for task in tasks
+        if "ansible.builtin.assert" in task
+        and "openclaw_ctf_network_verified" in yaml.safe_dump(task)
+    ]
+    assert len(verification_tasks) == 1
+    verification_clauses = verification_tasks[0]["ansible.builtin.assert"]["that"]
+
+    def verified(document: Any) -> bool:
+        return _assertions_pass(
+            verification_clauses,
+            openclaw_ctf_network_verified={"stdout": json.dumps([document])},
+            openclaw_ctf_docker_network_cidr=network_cidr,
+            openclaw_ctf_docker_bridge=bridge_name,
+        )
+
+    assert verified(canonical)
+    assert not verified({"Driver": "overlay"})
+    assert not verified({**canonical, "IPAM": {"Config": []}})

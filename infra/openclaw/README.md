@@ -1,21 +1,28 @@
-# OpenClaw immutable release
+# OpenClaw package and images
 
-Production retains one dedicated `openclaw` LXC, but it no longer assembles
-Node, npm packages, plugins, patches, or the CTF tool image. CI builds the two
-OCI images from exact base digests and promotion supplies:
+OpenClaw keeps one dedicated unprivileged LXC. The host owns only Docker,
+firewall/account primitives, durable state, the stable release launcher, and
+the current component secret bundle. It does not build images, retain a Git
+checkout, or install a target-specific deployer.
 
-* exact Gateway and CTF `repository@sha256` references;
-* a deterministic runtime tar digest;
-* an exact private-config Git commit and deterministic config tar digest; and
-* the exact homelab deployment commit.
+`gateway/Dockerfile` and `ctf/Dockerfile` pin every base image by digest and
+run their image-local contract checks while building. The two standard Buildx
+jobs publish independently, with GHA cache, provenance, SBOM attestations, and
+exact `repository@sha256` outputs.
 
-`scripts/ci/openclaw_release.py` creates and verifies that canonical manifest.
-`scripts/ci/deploy_openclaw_release.py` materializes it on the LXC, pulls both
-digests, activates Compose, waits for readiness, performs exactly one
-authenticated smoke, and then atomically replaces `release-state.json`. A failed activation
-restores the previous digest/config pair before reporting failure.
+`runtime` is the self-contained Compose package. Its `release.json` names the
+Compose file, package smoke test, and `openclaw` versioned secret bundle. The
+complete release descriptor contains only the homelab commit, private-config
+commit, and the two exact OCI image identities. Archive SHA-256 values are
+verified as transport checks, not supplied as promotion coordinates.
 
-The deployer `audit` command is non-mutating and does not repeat the
-authenticated smoke. The `recovery` command exports a hash-complete offline
-contract for the runtime/config bundles and both OCI archives; it never treats
-a mutable registry tag as rebuild evidence.
+The common Compose release engine validates the package and image identities,
+stores immutable source by SHA, materializes an inactive runtime slot with the
+current `/etc/openclaw/secrets/openclaw.json`, and activates it with Compose
+health waiting plus `runtime/smoke.sh`. Atomic state and the previous source
+provide rollback and interrupted-deployment recovery. The same engine and
+wrapper serve the apps package; OpenClaw-specific readiness remains a package
+hook rather than a second deploy state machine.
+
+See `docs/runbooks/openclaw.md` and `docs/runbooks/compose-release.md` for the
+operator flow.

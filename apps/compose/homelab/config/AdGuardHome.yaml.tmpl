@@ -1,0 +1,88 @@
+schema_version: 34
+users:
+  - name: @@ADGUARD_ADMIN_USERNAME@@
+    password: @@ADGUARD_ADMIN_PASSWORD_HASH@@
+auth_attempts: 5
+block_auth_min: 15
+http:
+  address: 0.0.0.0:3000
+  pprof:
+    enabled: false
+    port: 6060
+  session_ttl: 720h
+http_proxy: ""
+language: en
+theme: auto
+clients:
+  runtime_sources:
+    whois: true
+    arp: true
+    rdns: false
+    dhcp: true
+    hosts: true
+  persistent: []
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 53
+  anonymize_client_ip: false
+  ratelimit: 20
+  upstream_dns:
+    - tls://1.1.1.1
+    - tls://1.0.0.1
+  bootstrap_dns:
+    - 1.1.1.1
+    - 1.0.0.1
+  fallback_dns:
+    - 1.1.1.1
+    - 1.0.0.1
+  upstream_mode: load_balance
+  cache_optimistic_answer_ttl: 30s
+  cache_optimistic_max_age: 12h
+  trusted_proxies:
+    - 127.0.0.0/8
+    - ::1/128
+    - 172.16.0.0/12
+filtering:
+  protection_enabled: true
+  rewrites_enabled: true
+  rewrites:
+    - domain: '*.home.hchu.me'
+      answer: @@APPS_HOST@@
+      enabled: true
+  blocked_services:
+    schedule:
+      time_zone: Local
+  safe_fs_patterns:
+    - /opt/adguardhome/work/data/userfilters/*
+  safe_search:
+    bing: true
+    duckduckgo: true
+    enabled: false
+    google: true
+    pixabay: true
+    yandex: true
+    youtube: true
+querylog:
+  enabled: true
+  file_enabled: true
+  ignored: []
+  ignored_enabled: false
+  interval: 90d
+  size_memory: 1000
+statistics:
+  enabled: true
+  ignored: []
+  ignored_enabled: false
+  interval: 1d
+tls:
+  enabled: false
+filters:
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_48.txt
+    name: "HaGeZi's Pro Blocklist"
+    id: 48
+os:
+  group: ""
+  rlimit_nofile: 0
+  user: ""

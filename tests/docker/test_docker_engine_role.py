@@ -15,15 +15,16 @@ def render_maintenance_value(value, enabled):
 
 def test_docker_engine_role_installs_engine_compose_plugin_and_live_restore():
     tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "docker_engine" / "tasks" / "main.yml").read_text(encoding="utf-8")
-    daemon = (REPO_ROOT / "infra" / "ansible" / "roles" / "docker_engine" / "templates" / "daemon.json.j2").read_text(encoding="utf-8")
+    reconcile = (REPO_ROOT / "infra/ansible/playbooks/reconcile.yml").read_text(encoding="utf-8")
 
     assert "https://download.docker.com/linux/debian" in tasks
     assert "docker-ce" in tasks
     assert "docker-compose-plugin" in tasks
-    assert "docker-buildx-plugin" in tasks
+    assert "docker-buildx-plugin" not in tasks
     assert "enabled: true" in tasks
-    assert '\"live-restore\": true' in daemon
-    assert '\"max-size\": \"10m\"' in daemon
+    assert "content: \"{{ docker_engine_daemon_config | to_nice_json }}\\n\"" in tasks
+    assert reconcile.count("live-restore: true") == 2
+    assert reconcile.count("max-size: 10m") == 2
 
 
 def test_docker_packages_upgrade_only_during_explicit_maintenance():
@@ -62,7 +63,7 @@ def test_docker_packages_upgrade_only_during_explicit_maintenance():
     assert engine["notify"] == "Restart Docker"
 
 
-def test_docker_apt_prerequisites_use_the_debian_13_dnsutils_provider():
+def test_apps_host_selects_the_debian_13_dnsutils_provider_only_where_needed():
     tasks = yaml.safe_load(
         (
             REPO_ROOT
@@ -75,10 +76,15 @@ def test_docker_apt_prerequisites_use_the_debian_13_dnsutils_provider():
         ).read_text(encoding="utf-8")
     )
     prerequisites = next(
-        task for task in tasks if task["name"] == "Install Docker apt prerequisites"
+        task for task in tasks
+        if task["name"] == "Install host-specific Docker prerequisites without routine upgrades"
     )["ansible.builtin.apt"]
+    assert prerequisites["name"] == "{{ docker_engine_host_packages }}"
 
-    assert "bind9-dnsutils" in prerequisites["name"]
-    assert "dnsutils" not in prerequisites["name"]
-    assert render_maintenance_value(prerequisites["state"], False) == "present"
-    assert render_maintenance_value(prerequisites["state"], True) == "latest"
+    reconcile = yaml.safe_load(
+        (REPO_ROOT / "infra/ansible/playbooks/reconcile.yml").read_text(encoding="utf-8")
+    )[1]["tasks"]
+    apps = next(task for task in reconcile if task["name"] == "Reconcile the Docker application host runtime")
+    openclaw = next(task for task in reconcile if task["name"] == "Reconcile the OpenClaw Docker runtime")
+    assert apps["vars"]["docker_engine_host_packages"] == ["bind9-dnsutils", "systemd-resolved"]
+    assert openclaw["vars"]["docker_engine_host_packages"] == []

@@ -1,0 +1,217 @@
+name: Reconcile one infrastructure unit
+
+on:
+  schedule:
+    # Daily at 03:17 Asia/Seoul (18:17 UTC), one explicit non-PVE unit at a time.
+    - cron: "17 18 * * *"
+  workflow_dispatch:
+    inputs:
+      unit:
+        description: The one infrastructure unit to reconcile
+        required: true
+        type: choice
+        options: [pve, tailnet, apps-host, openclaw-host]
+      pve_mode:
+        description: PVE-only LXC operation
+        required: true
+        default: plan
+        type: choice
+        options: [plan, audit, apply]
+      allow_destructive_vmid:
+        description: Exact PVE VMID approved for destructive change; empty rejects it
+        required: false
+        default: ""
+        type: string
+      allow_replacement_vmid:
+        description: Exact PVE VMID approved for replacement; empty rejects it
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  reconcile:
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        unit: ${{ fromJSON(github.event_name == 'schedule' && '["tailnet","apps-host","openclaw-host"]' || format('["{0}"]', inputs.unit)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: prod
+    concurrency:
+      group: prod-control-plane
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - name: Checkout exact infrastructure state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Ansible Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-deploy.txt
+      - name: Install the sole infrastructure engine
+        run: python -m pip install -r requirements-deploy.txt
+      - name: Resolve the selected host from the sole inventory
+        env:
+          HOMELAB_UNIT: ${{ matrix.unit }}
+        run: |
+          host="$(python - <<'PY'
+          import json, os
+          topology = json.load(open("infra/ansible/inventory/prod/topology.json"))
+          unit = os.environ["HOMELAB_UNIT"]
+          names = {"pve": "pve", "tailnet": "tailnet", "apps-host": "docker_apps", "openclaw-host": "openclaw"}
+          groups = topology["all"]["children"]
+          hosts = groups["pve_hosts"]["hosts"] | groups["debian"]["hosts"]
+          print(hosts[names[unit]]["ansible_host"])
+          PY
+          )"
+          printf 'HOMELAB_SELECTED_HOST=%s\n' "$host" >> "$GITHUB_ENV"
+      - name: Connect to the management tailnet
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
+          version: "1.102.3"
+          args: --accept-dns=false
+          ping: ${{ env.HOMELAB_SELECTED_HOST }}
+      - name: Configure pinned SSH trust
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: ./scripts/ci/configure-ssh.sh
+      - name: Preserve the supplied trust set for post-apply comparison
+        if: matrix.unit == 'pve'
+        run: cp -- "$HOME/.ssh/known_hosts" "$RUNNER_TEMP/provided-known-hosts"
+      - name: Materialize the PVE component bundle
+        if: matrix.unit == 'pve' && inputs.pve_mode == 'apply'
+        env:
+          COMPONENT_SECRET_BUNDLE: ${{ secrets.PVE_SECRET_BUNDLE }}
+        run: |
+          test -n "$COMPONENT_SECRET_BUNDLE"
+          umask 077
+          printf '%s\n' "$COMPONENT_SECRET_BUNDLE" > "$RUNNER_TEMP/pve.json"
+      - name: Bind the PVE access bundle to the configured deploy identity
+        if: matrix.unit == 'pve' && inputs.pve_mode == 'apply'
+        run: >-
+          python scripts/ci/verify_pve_access_bundle.py
+          --private-key "$HOME/.ssh/id_ed25519"
+          --bundle "$RUNNER_TEMP/pve.json"
+      - name: Materialize the tailnet component bundle
+        if: matrix.unit == 'tailnet'
+        env:
+          COMPONENT_SECRET_BUNDLE: ${{ secrets.TAILNET_SECRET_BUNDLE }}
+        run: |
+          test -n "$COMPONENT_SECRET_BUNDLE"
+          umask 077
+          printf '%s\n' "$COMPONENT_SECRET_BUNDLE" > "$RUNNER_TEMP/tailnet.json"
+      - name: Reconcile exactly one unit
+        shell: bash
+        env:
+          UNIT: ${{ matrix.unit }}
+          PVE_MODE: ${{ inputs.pve_mode || 'apply' }}
+          ALLOW_DESTRUCTIVE_VMID: ${{ inputs.allow_destructive_vmid || '' }}
+          ALLOW_REPLACEMENT_VMID: ${{ inputs.allow_replacement_vmid || '' }}
+          SCHEDULED_MAINTENANCE: ${{ github.event_name == 'schedule' }}
+          ANSIBLE_CONFIG: infra/ansible/ansible.cfg
+        run: |
+          set -euo pipefail
+          args=(
+            ansible-playbook
+            -i infra/ansible/inventory/prod/topology.json
+            infra/ansible/playbooks/reconcile.yml
+            -e "homelab_unit=$UNIT"
+          )
+          if test "$UNIT" = tailnet; then
+            args+=(-e "homelab_secret_bundle=$RUNNER_TEMP/tailnet.json")
+          elif test "$UNIT" = pve && test "$PVE_MODE" = apply; then
+            args+=(-e "homelab_secret_bundle=$RUNNER_TEMP/pve.json")
+          fi
+          if test "$UNIT" = pve; then
+            args+=(-e "pve_lxc_reconcile_mode=$PVE_MODE")
+            if test -n "$ALLOW_DESTRUCTIVE_VMID"; then
+              args+=(-e "pve_lxc_reconcile_allow_destructive_vmid=$ALLOW_DESTRUCTIVE_VMID")
+            fi
+            if test -n "$ALLOW_REPLACEMENT_VMID"; then
+              args+=(-e "pve_lxc_reconcile_allow_replacement_vmid=$ALLOW_REPLACEMENT_VMID")
+            fi
+          fi
+          if test "$SCHEDULED_MAINTENANCE" = true; then
+            args+=(-e homelab_maintenance_upgrade=true)
+          fi
+          "${args[@]}"
+      - name: Require an exact post-apply LXC trust handoff
+        if: always() && matrix.unit == 'pve' && inputs.pve_mode == 'apply'
+        shell: bash
+        run: |
+          set -euo pipefail
+          managed="$RUNNER_TEMP/managed-lxc-known-hosts"
+          units="$RUNNER_TEMP/managed-lxc-units"
+          : > "$managed"
+          python - <<'PY' > "$units"
+          import json
+          topology = json.load(open("infra/ansible/inventory/prod/topology.json"))
+          hosts = topology["all"]["children"]["debian"]["hosts"]
+          for host in hosts.values():
+              print(f"{host['vmid']}\t{host['ansible_host']}")
+          PY
+          pve_host="$(python -c 'import json; print(json.load(open("infra/ansible/inventory/prod/topology.json"))["all"]["children"]["pve_hosts"]["hosts"]["pve"]["ansible_host"])')"
+          mismatch=0
+          collection_failed=0
+          while IFS=$'\t' read -r vmid host; do
+            if ! raw_key="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              "root@$pve_host" "pct exec '$vmid' -- cat /etc/ssh/ssh_host_ed25519_key.pub")"; then
+              collection_failed=1
+              mismatch=1
+              continue
+            fi
+            key="$(printf '%s\n' "$raw_key" | awk '$1 == "ssh-ed25519" && NF >= 2 {print $1 " " $2; exit}')"
+            if ! printf '%s\n' "$key" | grep -Eq '^ssh-ed25519 [A-Za-z0-9+/]+={0,3}$'; then
+              collection_failed=1
+              mismatch=1
+              continue
+            fi
+            printf '%s %s\n' "$host" "$key" >> "$managed"
+          done < "$units"
+
+          while IFS= read -r line; do
+            test -n "$line" || continue
+            host="${line%% *}"
+            key="${line#* }"
+            supplied="$(ssh-keygen -F "$host" -f "$RUNNER_TEMP/provided-known-hosts" \
+              | awk '!/^#/ && NF >= 3 {print $2 " " $3}' | sort -u || true)"
+            if test "$supplied" != "$key"; then
+              mismatch=1
+            fi
+          done < "$managed"
+          if test "$mismatch" -ne 0; then
+            {
+              echo '### DEPLOY_SSH_KNOWN_HOSTS update required'
+              echo
+              echo 'Replace every entry for the managed LXC addresses with the'
+              echo 'following pct-verified lines before'
+              echo 'running another host reconcile or runtime deployment:'
+              echo '```text'
+              cat "$managed"
+              echo '```'
+              if test "$collection_failed" -ne 0; then
+                echo
+                echo 'At least one key could not be collected. Re-collect it through the'
+                echo 'trusted PVE console after repairing the partial apply.'
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: Remove controller secret copies
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/pve.json" "$RUNNER_TEMP/tailnet.json"

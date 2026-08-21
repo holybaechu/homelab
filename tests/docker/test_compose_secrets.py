@@ -1,42 +1,30 @@
+import yaml
+
 from tests.helpers import REPO_ROOT
 
 
-def test_real_compose_env_files_are_not_committed():
-    compose_root = REPO_ROOT / "apps" / "compose"
-    assert list(compose_root.rglob(".env")) == []
-    examples = list(compose_root.rglob(".env.example"))
-    assert examples
-    assert all((path.parent / "compose.yml").is_file() for path in examples)
-    assert "*.env" in (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+PACKAGE = REPO_ROOT / "apps" / "compose" / "homelab"
 
 
-def test_ansible_renders_every_secret_environment():
-    template_dir = REPO_ROOT / "infra/ansible/roles/docker_compose_project/templates"
-    for name in (
-        "homelab.env.j2",
-        "traefik.env.j2",
-        "cloudflare-ddns.env.j2",
-        "copyparty.conf.j2",
-        "qBittorrent.conf.j2",
-        "AdGuardHome.yaml.j2",
-    ):
-        assert (template_dir / name).exists()
-
-    assert not (template_dir / "hermes.env.j2").exists()
-    assert not (template_dir / "platform.env.j2").exists()
-    assert not (template_dir / "media.env.j2").exists()
-    assert not (template_dir / "t3code.env.j2").exists()
-
-    openclaw_vars = (
-        REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_openclaw.yml"
-    ).read_text(encoding="utf-8")
-    assert "openclaw_gateway_token_path" in openclaw_vars
-    assert "openclaw_discord_bot_token_path" in openclaw_vars
+def test_compose_uses_only_package_relative_generated_secret_files():
+    model = yaml.safe_load((PACKAGE / "compose.yml").read_text(encoding="utf-8"))
+    secret_inputs = {
+        path
+        for service in model["services"].values()
+        for path in service.get("env_file", [])
+    }
+    assert secret_inputs == {
+        "./.secrets/traefik.env",
+        "./.secrets/cloudflare-ddns.env",
+    }
+    assert "/etc/homelab/secrets" not in (PACKAGE / "compose.yml").read_text(
+        encoding="utf-8"
+    )
 
 
-def test_compose_files_do_not_contain_raw_secret_material():
+def test_public_package_contains_no_recognizable_raw_credentials():
     forbidden = ("BEGIN PRIVATE KEY", "xoxb-", "ghp_", "sk-")
-    for path in (REPO_ROOT / "apps/compose").rglob("*"):
+    for path in PACKAGE.rglob("*"):
         if path.is_file():
-            text = path.read_text(encoding="utf-8")
-            assert all(marker not in text for marker in forbidden)
+            content = path.read_bytes()
+            assert all(marker.encode() not in content for marker in forbidden), path

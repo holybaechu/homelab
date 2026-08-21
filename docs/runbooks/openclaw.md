@@ -1,112 +1,84 @@
 # OpenClaw immutable runtime
 
 OpenClaw keeps its dedicated unprivileged LXC (`openclaw`, VMID 118,
-`192.168.0.5`). The LXC is now only a Docker/Compose runtime. It never builds
-an image, downloads Node/npm, installs a plugin, or applies a JavaScript patch
-during production deployment.
+`192.168.0.5`). The host is a Docker/Compose runtime. Image assembly, plugin
+installation, and patching happen only in CI.
 
-## One promoted release
+## One desired-state descriptor
 
-A production promotion identifies exactly one state:
+Every production release contains exactly four authoritative identities:
 
-| Item | Required identity |
+| Item | Identity |
 | --- | --- |
-| Gateway | registry-qualified `repository@sha256:<64 hex>` |
-| CTF tool image | registry-qualified `repository@sha256:<64 hex>` |
-| Public runtime bundle | deterministic uncompressed tar SHA-256 |
-| Private config bundle | exact 40-character Git commit and tar SHA-256 |
-| Deployment | exact homelab 40-character commit |
+| Public source | exact homelab Git commit |
+| Private configuration | exact `openclaw-setup` Git commit |
+| Gateway | `ghcr.io/holybaechu/homelab-openclaw-gateway@sha256:<64 hex>` |
+| CTF image | `ghcr.io/holybaechu/homelab-openclaw-ctf@sha256:<64 hex>` |
 
-`scripts/ci/openclaw_release.py` creates and validates the canonical release
-manifest. CI builds Gateway plugins/patches and the CTF toolchain from exact
-base-image digests under `infra/openclaw/`; production receives only the two
-resulting immutable refs and the two verified bundles.
+The uploaded tar SHA-256 proves transport integrity only. Runtime and private
+configuration archive hashes are not desired-state coordinates.
 
-`scripts/ci/deploy_openclaw_release.py` is the only activator. On the LXC it:
+`scripts/ci/compose_release_engine.py` builds the descriptor and carries its
+own exact engine version inside the bundle. The small stable launcher verifies
+the upload and embedded engine, then that engine:
 
-1. locks `/opt/openclaw/state` with a nonblocking kernel lock;
-2. rejects symlinks, traversal, incorrect modes, and bundle hash drift;
-3. pulls and inspects both exact OCI digests;
-4. runs Compose with `--no-build`;
-5. waits on `/readyz` and makes exactly one bearer-authenticated request to
-   `/control-ui-config.json` (the lightweight endpoint returns `401` without
-   the shared Gateway credential);
-6. atomically replaces one root-owned `release-state.json` containing the
-   current and previous immutable manifests.
+1. acquires the target `flock`;
+2. validates regular paths, exact metadata, source identities, and image
+   repositories/digests;
+3. stores immutable source in a SHA-addressed release directory;
+4. validates the current `/etc/openclaw/secrets/openclaw.json` component
+   bundle and renders three mode-0600 files into an inactive runtime slot;
+5. runs `docker compose config`, pulls the two exact images, and runs
+   `up -d --wait --no-build --remove-orphans`;
+6. verifies the running Gateway digest and health; and
+7. runs package-owned readiness, rejects unauthenticated and wrong-token
+   control requests, then proves a bearer-authenticated request before
+   atomically committing `pending/current/previous` state.
 
-If activation fails, the same process restores the previous Gateway digest,
-CTF digest, config commit, and runtime bundle on the same LXC and proves it
-healthy. A failed first activation is brought down rather than left partially
-running. `audit` validates the active digest/config without performing another
-authenticated smoke. Manual rollback is:
+No secret value or secret hash is written to the descriptor, release state,
+or command output. A failed candidate recreates the previous source with the
+current component bundle. The next operation resolves an interrupted pending
+transaction before accepting new work.
 
-```sh
-sudo /usr/local/libexec/deploy_openclaw_release.py \
-  --install-root /opt/openclaw \
-  --secret-root /etc/openclaw/secrets \
-  rollback
-```
-
-## Offline recovery artifact
-
-Before the first immutable activation, export the retired Docker Gateway's
-known digest, protected config bundle, and OCI archive. The known legacy image
-is fixed in the contract; tags are rejected.
+Operator commands:
 
 ```sh
-python scripts/ci/openclaw_release.py export-legacy-recovery \
-  --config-commit "$EXACT_CONFIG_COMMIT" \
-  --config-archive recovery/legacy-config.tar \
-  --gateway-oci-archive recovery/legacy-gateway.oci \
-  --output recovery/legacy-recovery.json
-
-python scripts/ci/openclaw_release.py verify-legacy-recovery \
-  --manifest recovery/legacy-recovery.json \
-  --config-archive recovery/legacy-config.tar \
-  --gateway-oci-archive recovery/legacy-gateway.oci
+/usr/local/libexec/homelab-release audit --target openclaw
+/usr/local/libexec/homelab-release rollback --target openclaw
 ```
 
-Store all three files in the protected offline recovery location before
-retiring the old deployment. This export is not uploaded to the LXC and is not
-an input to routine activation or validation. Repository tests use a fake OCI
-archive to verify the export contract; they do not claim that a production
-export has occurred.
+`audit` recreates and proves the current release with the current component
+bundle. `sync-secrets` atomically installs one uploaded bundle and performs the
+same recreation; choose that operation in the manual OpenClaw workflow for a
+rotation with no image build, release archive, or image pull.
 
-For the active immutable release, export both OCI archives and run the
-`recovery` command to create a hash-complete offline manifest. Keep its release
-manifest, runtime/config tars, and OCI archives together. Recovery order is
-image load, exact RepoDigest inspection, then activation through the same
-deployer—never a host build.
+## Host and isolation boundary
 
-## Host and secret boundary
+The Gateway runs as UID/GID 1000 with a read-only root filesystem, all Linux
+capabilities dropped, and only the numeric host Docker group added. It uses
+the host Docker socket to create session CTF containers. The dedicated CTF
+bridge denies private, loopback, link-local, and tailnet destinations.
+nftables accepts Gateway ingress only from the apps host proxy.
 
-The Gateway runs as UID/GID 1000. Root owns `/etc/openclaw/secrets`; only the
-three Gateway secret files are bind-mounted read-only with Gateway ownership
-and owner-readable mode `0400`, which satisfies OpenClaw's strict provider-file
-permission check. Compose adds the numeric host Docker group so the
-Gateway can use `/var/run/docker.sock`; deployment validates the socket type,
-GID, and group access before mutation. The dedicated CTF bridge denies private,
-loopback, link-local, and tailnet destinations. nftables accepts port 18789 only
-from the application host's Traefik proxy.
+Mutable Gateway state remains in `/var/lib/openclaw`; model authorization
+remains in `/home/openclaw/.config/openclaw`. The exact private configuration
+is mounted read-only from the active runtime slot. Only the three service
+credential files are exposed to the Gateway.
 
-Mutable state remains in `/var/lib/openclaw`; model auth remains in
-`/home/openclaw/.config/openclaw`. The promoted config must use container paths
-under `/home/node` and `/etc/openclaw` and file-backed SecretRefs.
+## Skill promotion
 
-## Autonomous skill promotion
+The production LXC has no GitHub client credential, collection user, timer,
+or promotion state. The private `holybaechu/openclaw-setup` repository owns a
+scheduled workflow that:
 
-Skill sync remains deliberately outside the Gateway. Every five minutes,
-`openclaw-skill-sync.timer` runs the compact host service as the separate
-`openclaw-skill-sync` identity. It has read-only ACLs for the main and CTF
-`skills/` roots and write access only to its own state. systemd loads
-`OPENCLAW_SKILL_SYNC_GITHUB_TOKEN` as a credential; Compose neither mounts nor
-exposes it. The service preserves the existing validate, branch, PR, checks,
-squash-merge, and exact promotion-dispatch behavior.
+1. joins the management tailnet and uses pinned SSH trust;
+2. streams a bounded exporter to the host without installing it;
+3. validates UTF-8 regular skill files, ownership, paths, sizes, and
+   credential patterns both remotely and in CI;
+4. creates a content-derived pull request and waits for its independent tests;
+5. squash-merges the validated change; and
+6. dispatches the exact merged private-config commit to the complete OpenClaw
+   deployment lane.
 
-## Operational verification
-
-Scheduled validation runs the deployer's nonmutating `audit`, verifies the
-active manifest equals its materialized release, checks both RepoDigests,
-confirms root/config modes, Docker socket group access, CTF firewall rules,
-Compose hardening, `/readyz`, and the skill-sync timer. Production deployment
-itself owns the single authenticated smoke and rollback decision.
+The GitHub credential exists only in the private repository Actions
+environment and is never sent to production.

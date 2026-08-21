@@ -1,44 +1,71 @@
-# Infrastructure
+# Three-host infrastructure
 
-`opentofu` defines the Proxmox LXC shape that can be managed through the Proxmox API token: VMIDs, OS templates, static IPs, CPU, memory, disks, tags, startup order, and base feature flags.
+Production has exactly three unprivileged Proxmox LXCs:
 
-`ansible/inventory/prod/topology.json` is the single production topology: Ansible
-loads it as static inventory and OpenTofu decodes the same JSON directly.
+- `tailnet` is the management subnet router and exit node;
+- `docker_apps` runs the single `homelab` Compose project; and
+- `openclaw` runs the isolated Gateway and its session CTF containers.
 
-`ansible` configures Tailscale directly on the tailnet appliance, Docker Engine
-and private runtime inputs for the single `homelab` Compose project on the
-application LXC, plus the immutable OpenClaw Compose runtime and its local CTF
-Docker Engine on one dedicated LXC.
-It also applies root-only Proxmox
-settings. VMID 111 retains `/dev/net/tun` for Tailscale. VMID 110 has only the
-Docker nesting/keyctl settings and shared-data bind mount. Dedicated OpenClaw
-VMID 118 is unprivileged, has nesting/keyctl for its local Docker daemon, and
-has no TUN passthrough. CTF sandboxes are session-scoped containers on that
-local daemon; they receive only the CTF workspace, persistent package/browser
-caches, and generated sandbox skills selected by OpenClaw.
-The retired Hermes data at `/srv/homelab/hermes` is preserved but unmanaged.
-The retired VPN qBittorrent data at
-`/srv/homelab/docker-apps/qbittorrent-vpn` is likewise preserved but unmanaged
-for recovery.
+`ansible/inventory/prod/topology.json` is the one topology document. It owns
+the PVE address, VMIDs, host addresses, resources, startup order, features,
+devices, mounts, and the explicit deployment unit for each host. Workflow host
+targets are read from that document and cannot be overridden independently.
 
-App-only releases copy a validated bundle to the application LXC. The locked
-direct deployer exclusively activates or rolls back the `homelab` project;
-Ansible does not run Compose lifecycle commands. OpenTofu and Ansible remain
-the authoritative infrastructure bootstrap and runtime-input preparation path.
+## One targeted infrastructure entrypoint
 
-VMID 118 owns the exact-digest OpenClaw Gateway and CTF images, firewall, and
-mutable runtime state. CI bundles an exact private `openclaw-setup` commit;
-the LXC does not retain a production Git checkout or assemble images. Runtime
-state, CTF evidence, and credentials remain outside Git. The retired Gateway
-is represented only by its protected offline recovery manifest and OCI/config
-artifacts, not an always-on rollback stack.
+`ansible/playbooks/reconcile.yml` requires exactly one unit:
 
-The desired topology is exactly three LXCs. Legacy per-service containers are
-forgotten from state without destruction during cutover and remain stopped; only
-services not explicitly retired may be used as manual rollback targets.
+```sh
+ansible-playbook -i infra/ansible/inventory/prod/topology.json \
+  infra/ansible/playbooks/reconcile.yml -e homelab_unit=apps-host
+```
 
-OpenTofu state is not committed to Git.
+The allowed units are `pve`, `tailnet`, `apps-host`, and `openclaw-host`.
+There is no all-host phase. Shared Debian changes are applied by intentionally
+running the affected units; application deployment never invokes Ansible.
 
-Renovate updates versions stored in Git; scheduled maintenance upgrades
-apt-owned dependencies. OpenClaw image updates remain review-gated and
-do not inherit the general minor/patch automerge policy.
+For `pve`, `pve_lxc_reconcile_mode=plan|audit|apply` runs the small `pct`
+reconciler. Live PVE configuration is runtime state. Plan prints the canonical
+diff, audit exits nonzero on drift, and apply exports each existing `pct
+config` before changing it. Missing LXCs may be created, safe fields and disk
+growth are idempotent, and destructive/replacement changes require the exact
+VMID confirmation. PVE plan/audit need no component secret; apply receives only
+the PVE public-key bundle. The remote workflow marks the tailnet VMID as its
+active control path and rejects any change that would restart or replace it;
+perform such a change from the PVE console or another out-of-band path.
+
+The other units reconcile only their selected Debian/Docker/firewall/storage
+primitives. Both Docker hosts use the same Docker Engine role with an explicit
+host policy. The stable `/usr/local/libexec/homelab-release` launcher is a host
+primitive and changes only through `apps-host` or `openclaw-host` reconciliation.
+
+## Runtime releases
+
+The apps and OpenClaw workflows each construct a complete current release and
+call the same fixed-purpose SSH wrapper. The launcher verifies the upload and
+embedded engine; the shipped engine owns Compose validation, exact image
+verification, pull, health waiting, semantic smoke, atomic state, rollback, and
+interrupted-operation recovery. App/runtime changes do not touch PVE, tailnet,
+or host configuration.
+
+Apps nonsecret configuration and smoke live in `apps/compose/homelab`.
+OpenClaw runtime policy and smoke live in `infra/openclaw/runtime`; its one
+descriptor binds the homelab commit, private-config commit, and two OCI
+digests. Runtime credentials arrive as one versioned component JSON document
+per target and never enter Git or immutable release state.
+
+## Data and recovery
+
+VMID 111 retains only the TUN device needed by tailnet. VMID 110 retains the
+shared `/var/lib/homelab` mount at `/srv/homelab`. VMID 118 retains only the
+private CTF workspace mount with its unprivileged UID mapping and no TUN
+passthrough. OpenClaw remains isolated from both the management and apps hosts.
+
+Compose owns its named network and stable named volumes. Host reconciliation
+and the release engine do not delete durable mounts or volumes. Unknown data
+is reviewed and backed up before manual removal.
+
+The immutable control-plane recovery reference and reconstruction order are in
+`docs/runbooks/recovery.md`. Release details are in
+`docs/runbooks/compose-release.md`, and operator workflow contracts are in
+`docs/runbooks/github-actions.md`.

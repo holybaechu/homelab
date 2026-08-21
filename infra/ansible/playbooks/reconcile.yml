@@ -1,0 +1,402 @@
+---
+- name: Select one homelab deployment unit
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Require one explicit deployment unit
+      ansible.builtin.assert:
+        that:
+          - homelab_unit is defined
+          - homelab_unit in ['pve', 'tailnet', 'apps-host', 'openclaw-host']
+        fail_msg: >-
+          Pass -e homelab_unit=pve|tailnet|apps-host|openclaw-host. There is no
+          implicit whole-homelab reconciliation.
+
+- name: Reconcile the selected homelab deployment unit
+  hosts: >-
+    {{ {
+      'pve': 'pve_hosts',
+      'tailnet': 'svc_tailnet',
+      'apps-host': 'svc_docker_apps',
+      'openclaw-host': 'svc_openclaw'
+    }.get(homelab_unit | default(''), 'localhost') }}
+  gather_facts: "{{ homelab_unit != 'pve' }}"
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require a controller-side bundle path for secret-bearing units
+      ansible.builtin.assert:
+        that:
+          - homelab_secret_bundle is defined
+          - homelab_secret_bundle | string | length > 0
+        fail_msg: Pass -e homelab_secret_bundle=/absolute/path/to/component.json.
+      when: >-
+        homelab_unit == 'tailnet'
+        or (homelab_unit == 'pve'
+            and pve_lxc_reconcile_mode | default('apply') == 'apply')
+
+    - name: Load the unit secret bundle on the controller
+      ansible.builtin.set_fact:
+        homelab_loaded_secret_bundle: >-
+          {{ lookup('ansible.builtin.file', homelab_secret_bundle) | from_json }}
+      when: >-
+        homelab_unit == 'tailnet'
+        or (homelab_unit == 'pve'
+            and pve_lxc_reconcile_mode | default('apply') == 'apply')
+      no_log: true
+
+    - name: Require the versioned unit secret-bundle contract
+      ansible.builtin.assert:
+        that:
+          - homelab_secret_bundle is defined
+          - homelab_loaded_secret_bundle.version | type_debug == 'int'
+          - homelab_loaded_secret_bundle.version == 1
+          - homelab_loaded_secret_bundle.component == homelab_unit
+          - homelab_loaded_secret_bundle.values is mapping
+          - >-
+            homelab_loaded_secret_bundle.keys() | list | sort
+            == ['component', 'values', 'version']
+        fail_msg: >-
+          The selected unit requires a controller-side JSON bundle with
+          version=1, its exact component name, and a values object.
+      when: >-
+        homelab_unit == 'tailnet'
+        or (homelab_unit == 'pve'
+            and pve_lxc_reconcile_mode | default('apply') == 'apply')
+      no_log: true
+
+    - name: Require the exact PVE component secret fields
+      ansible.builtin.assert:
+        that:
+          - >-
+            homelab_loaded_secret_bundle.values.keys() | list | sort
+            == ['deploy_ssh_public_keys']
+          - homelab_loaded_secret_bundle.values.deploy_ssh_public_keys is sequence
+          - homelab_loaded_secret_bundle.values.deploy_ssh_public_keys is not string
+          - homelab_loaded_secret_bundle.values.deploy_ssh_public_keys | length > 0
+          - >-
+            homelab_loaded_secret_bundle.values.deploy_ssh_public_keys
+            | select('string') | list | length
+            == homelab_loaded_secret_bundle.values.deploy_ssh_public_keys | length
+          - >-
+            homelab_loaded_secret_bundle.values.deploy_ssh_public_keys
+            | select(
+              'match',
+                '^(?:ssh-ed25519|ecdsa-sha2-nistp256|rsa-sha2-512) (?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)\Z'
+              )
+            | list | length
+            == homelab_loaded_secret_bundle.values.deploy_ssh_public_keys | length
+        fail_msg: >-
+          The PVE bundle must contain only normalized, single-line deployment
+          public keys using an allowed algorithm and base64 key body.
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+      no_log: true
+
+    - name: Require the exact tailnet component secret fields
+      ansible.builtin.assert:
+        that:
+          - >-
+            homelab_loaded_secret_bundle.values.keys() | list | sort
+            == ['tailscale_auth_key']
+          - homelab_loaded_secret_bundle.values.tailscale_auth_key is string
+          - >-
+            homelab_loaded_secret_bundle.values.tailscale_auth_key
+            is match('^tskey-auth-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\Z')
+        fail_msg: >-
+          The tailnet bundle must contain only one normalized, single-line
+          tskey-auth-* authentication key.
+      when: homelab_unit == 'tailnet'
+      no_log: true
+
+    - name: Bind PVE access public keys from the component bundle
+      ansible.builtin.set_fact:
+        deploy_ssh_public_keys: >-
+          {{ homelab_loaded_secret_bundle.values.deploy_ssh_public_keys }}
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+      no_log: true
+
+    - name: Bind the Tailscale auth key from the component bundle
+      ansible.builtin.set_fact:
+        tailscale_auth_key: "{{ homelab_loaded_secret_bundle.values.tailscale_auth_key }}"
+      when: homelab_unit == 'tailnet'
+      no_log: true
+
+  tasks:
+    - name: Preflight the complete PVE LXC apply before any unit mutation
+      ansible.builtin.include_role:
+        name: pve_lxc_reconcile
+      vars:
+        pve_lxc_reconcile_preflight_only: true
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+
+    - name: Reconcile PVE durable storage
+      ansible.builtin.include_role:
+        name: pve_homelab_storage
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+
+    - name: Reconcile the three PVE LXC definitions
+      ansible.builtin.include_role:
+        name: pve_lxc_reconcile
+      vars:
+        pve_lxc_reconcile_preflight_only: false
+      when: homelab_unit == 'pve'
+
+    - name: Reconcile LXC SSH and Python access through pct
+      ansible.builtin.include_role:
+        name: pve_lxc_access
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+
+    - name: Read managed LXC SSH host keys through pct
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ hostvars[item].vmid }}"
+          - --
+          - cat
+          - /etc/ssh/ssh_host_ed25519_key.pub
+      changed_when: false
+      register: pve_lxc_host_key_results
+      loop: "{{ groups['debian'] }}"
+      loop_control:
+        label: "{{ item }} ({{ hostvars[item].vmid }})"
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+
+    - name: Create the controller SSH directory
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/.ssh"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+
+    - name: Reconcile managed LXC host keys on the controller
+      ansible.builtin.known_hosts:
+        path: "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
+        name: "{{ hostvars[item.item].ansible_host }}"
+        key: "{{ hostvars[item.item].ansible_host }} {{ item.stdout }}"
+      delegate_to: localhost
+      loop: "{{ pve_lxc_host_key_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+
+    - name: Authenticate the configured deploy identity to every managed LXC
+      ansible.builtin.command:
+        argv:
+          - ssh
+          - -n
+          - -T
+          - -o
+          - BatchMode=yes
+          - -o
+          - StrictHostKeyChecking=yes
+          - -o
+          - PreferredAuthentications=publickey
+          - -o
+          - IdentitiesOnly=yes
+          - -o
+          - "IdentityFile={{ lookup('env', 'HOME') }}/.ssh/id_ed25519"
+          - -o
+          - ConnectTimeout=10
+          - "root@{{ hostvars[item].ansible_host }}"
+          - "true"
+      register: pve_lxc_batch_authentication
+      changed_when: false
+      retries: 60
+      delay: 10
+      until: pve_lxc_batch_authentication.rc == 0
+      delegate_to: localhost
+      loop: "{{ groups['debian'] }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+
+    - name: Reconcile the Debian base
+      ansible.builtin.include_role:
+        name: common_debian
+      when: homelab_unit != 'pve'
+
+    - name: Reconcile the tailnet host
+      ansible.builtin.include_role:
+        name: tailscale_gateway
+      when: homelab_unit == 'tailnet'
+
+    - name: Wait for SSH after a scheduled tailscaled restart
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        connect_timeout: 5
+        sleep: 5
+        timeout: 180
+      when:
+        - homelab_unit == 'tailnet'
+        - tailscale_restart_scheduled | default(false)
+
+    - name: Wait for the exact tailscaled restart proof
+      ansible.builtin.shell: |
+        set -eu
+        test "$(cat /run/homelab-tailscale-restart.completed)" = "{{ tailscale_restart_id }}"
+      args:
+        executable: /bin/sh
+      register: tailscale_restart_completion
+      changed_when: false
+      retries: 36
+      delay: 5
+      until: tailscale_restart_completion.rc == 0
+      when:
+        - homelab_unit == 'tailnet'
+        - tailscale_restart_scheduled | default(false)
+
+    - name: Verify the deterministic tailscaled restart succeeded
+      ansible.builtin.command:
+        argv: [systemctl, show, --property=Result, --value, tailscaled-ansible-restart.service]
+      register: tailscale_restart_result
+      changed_when: false
+      failed_when: tailscale_restart_result.stdout != 'success'
+      when:
+        - homelab_unit == 'tailnet'
+        - tailscale_restart_scheduled | default(false)
+
+    - name: Verify tailscaled runs the installed binary
+      ansible.builtin.shell: |
+        set -eu
+        pid="$(systemctl show --property MainPID --value tailscaled)"
+        test "${pid}" -gt 0
+        test "$(readlink "/proc/${pid}/exe")" = /usr/sbin/tailscaled
+      args:
+        executable: /bin/sh
+      changed_when: false
+      when:
+        - homelab_unit == 'tailnet'
+        - tailscale_restart_scheduled | default(false)
+
+    - name: Install the stable release launcher
+      ansible.builtin.include_role:
+        name: release_launcher
+      when: homelab_unit in ['apps-host', 'openclaw-host']
+
+    - name: Reconcile the Docker application host runtime
+      ansible.builtin.include_role:
+        name: docker_engine
+      vars:
+        docker_engine_host_packages: [bind9-dnsutils, systemd-resolved]
+        docker_engine_disable_dns_stub: true
+        docker_engine_daemon_config:
+          log-driver: json-file
+          log-opts:
+            max-size: 10m
+            max-file: "3"
+          live-restore: true
+      when: homelab_unit == 'apps-host'
+
+    - name: Reconcile the Docker application host primitives
+      ansible.builtin.include_role:
+        name: docker_apps_host
+      when: homelab_unit == 'apps-host'
+
+    - name: Read the PVE root CA for the application upstream trust store
+      ansible.builtin.slurp:
+        src: /etc/pve/pve-root-ca.pem
+      delegate_to: pve
+      register: apps_pve_root_ca
+      when: homelab_unit == 'apps-host'
+
+    - name: Install the PVE root CA on the application host
+      ansible.builtin.copy:
+        content: "{{ apps_pve_root_ca.content | b64decode }}"
+        dest: /etc/ssl/certs/homelab-pve-root-ca.pem
+        owner: root
+        group: root
+        mode: "0644"
+      when: homelab_unit == 'apps-host'
+
+    - name: Reconcile the OpenClaw Docker runtime
+      ansible.builtin.include_role:
+        name: docker_engine
+      vars:
+        docker_engine_host_packages: []
+        docker_engine_disable_dns_stub: false
+        docker_engine_daemon_config:
+          dns: [1.1.1.1, 1.0.0.1]
+          icc: false
+          iptables: true
+          ip6tables: false
+          live-restore: true
+          log-driver: local
+          log-opts:
+            max-file: "3"
+            max-size: 10m
+          userland-proxy: false
+      when: homelab_unit == 'openclaw-host'
+
+    - name: Reconcile the OpenClaw host primitives
+      ansible.builtin.include_role:
+        name: openclaw_native
+      when: homelab_unit == 'openclaw-host'
+
+    - name: Check whether targeted maintenance requires a reboot
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: homelab_unit_reboot_required
+      when:
+        - homelab_unit != 'pve'
+        - homelab_maintenance_upgrade | default(false) | bool
+
+    - name: Reboot the selected unit after targeted maintenance
+      ansible.builtin.reboot:
+        connect_timeout: 5
+        reboot_timeout: 600
+      when:
+        - homelab_unit != 'pve'
+        - homelab_maintenance_upgrade | default(false) | bool
+        - homelab_unit_reboot_required.stat.exists
+
+    - name: Audit the selected Compose runtime after host maintenance
+      ansible.builtin.command:
+        argv:
+          - /usr/local/libexec/homelab-release
+          - audit
+          - --target
+          - "{{ {'apps-host': 'apps', 'openclaw-host': 'openclaw'}[homelab_unit] }}"
+      changed_when: false
+      no_log: true
+      when:
+        - homelab_unit in ['apps-host', 'openclaw-host']
+        - homelab_maintenance_upgrade | default(false) | bool
+
+    - name: Read tailnet health after host maintenance
+      ansible.builtin.command:
+        argv: [tailscale, status, --json]
+      register: homelab_tailnet_maintenance_status
+      changed_when: false
+      when:
+        - homelab_unit == 'tailnet'
+        - homelab_maintenance_upgrade | default(false) | bool
+
+    - name: Require a running tailnet after host maintenance
+      ansible.builtin.assert:
+        that:
+          - >-
+            (homelab_tailnet_maintenance_status.stdout | from_json).BackendState
+            == 'Running'
+        fail_msg: Tailscale is not running after targeted maintenance.
+      when:
+        - homelab_unit == 'tailnet'
+        - homelab_maintenance_upgrade | default(false) | bool

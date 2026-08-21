@@ -1,13 +1,6 @@
 *.env
 .worktrees/
 
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfplan
-*.tfvars
-*.tfvars.json
-!*.tfvars.example
 crash.log
 crash.*.log
 

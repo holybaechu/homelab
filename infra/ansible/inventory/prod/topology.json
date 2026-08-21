@@ -1,13 +1,21 @@
 {
   "all": {
     "vars": {
-      "ansible_user": "root"
+      "ansible_user": "root",
+      "pve_bridge": "vmbr0",
+      "pve_root_datastore_id": "local-lvm",
+      "pve_lxc_nameservers": [
+        "192.168.0.3",
+        "1.1.1.1"
+      ],
+      "pve_lxc_searchdomain": "home.hchu.me"
     },
     "children": {
       "pve_hosts": {
         "hosts": {
           "pve": {
-            "ansible_host": "192.168.0.2"
+            "ansible_host": "192.168.0.2",
+            "deployment_unit": "pve"
           }
         }
       },
@@ -15,12 +23,13 @@
         "hosts": {
           "tailnet": {
             "ansible_host": "192.168.0.4",
+            "deployment_unit": "tailnet",
             "vmid": 111,
             "hostname": "tailnet",
-            "description": "Tailscale subnet router and exit node managed by OpenTofu and Ansible",
+            "description": "Tailscale subnet router and exit node managed by Ansible",
             "lxc_tags": [
               "homelab",
-              "managed-by-opentofu",
+              "managed-by-ansible",
               "role-tailnet"
             ],
             "template_file_id": "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst",
@@ -33,34 +42,25 @@
             "memory_mb": 512,
             "swap_mb": 0,
             "startup_order": 1,
-            "lxc_root_options": {
-              "settings": [
-                {
-                  "description": "pass through tun device for Tailscale",
-                  "pattern": "^dev0: /dev/net/tun(,.*)?$",
-                  "pct_args": "-dev0 /dev/net/tun,mode=0666"
-                },
-                {
-                  "description": "enable nesting for Debian systemd",
-                  "pattern": "^features:.*[ ,]nesting=1(,|$)",
-                  "pct_args": "-features nesting=1,keyctl=1"
-                },
-                {
-                  "description": "enable keyctl for Tailscale",
-                  "pattern": "^features:.*[ ,]keyctl=1(,|$)",
-                  "pct_args": "-features nesting=1,keyctl=1"
-                }
-              ]
-            }
+            "unprivileged": true,
+            "lxc_features": {
+              "nesting": true,
+              "keyctl": true
+            },
+            "lxc_devices": {
+              "dev0": "/dev/net/tun,mode=0666"
+            },
+            "lxc_mounts": {}
           },
           "docker_apps": {
             "ansible_host": "192.168.0.3",
+            "deployment_unit": "apps-host",
             "vmid": 110,
             "hostname": "docker-apps",
-            "description": "Docker Compose host for all homelab application services managed by OpenTofu and Ansible",
+            "description": "Docker Compose host for all homelab application services managed by Ansible",
             "lxc_tags": [
               "homelab",
-              "managed-by-opentofu",
+              "managed-by-ansible",
               "role-docker-apps"
             ],
             "template_file_id": "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst",
@@ -73,37 +73,31 @@
             "memory_mb": 8192,
             "swap_mb": 2048,
             "startup_order": 2,
-            "lxc_root_options": {
-              "bind_mount_sources": [
-                "/var/lib/homelab"
-              ],
-              "settings": [
-                {
-                  "description": "enable nesting for Docker Engine in LXC",
-                  "pattern": "^features:.*[ ,]nesting=1(,|$)",
-                  "pct_args": "-features nesting=1,keyctl=1"
-                },
-                {
-                  "description": "enable keyctl for Docker in LXC",
-                  "pattern": "^features:.*[ ,]keyctl=1(,|$)",
-                  "pct_args": "-features nesting=1,keyctl=1"
-                },
-                {
-                  "description": "mount the homelab data root once",
-                  "pattern": "^mp0: /var/lib/homelab,mp=/srv/homelab(,.*)?$",
-                  "pct_args": "-mp0 /var/lib/homelab,mp=/srv/homelab"
-                }
-              ]
+            "unprivileged": true,
+            "lxc_features": {
+              "nesting": true,
+              "keyctl": true
+            },
+            "lxc_devices": {},
+            "lxc_mounts": {
+              "mp0": {
+                "source": "/var/lib/homelab",
+                "target": "/srv/homelab",
+                "source_owner": 0,
+                "source_group": 0,
+                "source_mode": "0755"
+              }
             }
           },
           "openclaw": {
             "ansible_host": "192.168.0.5",
+            "deployment_unit": "openclaw-host",
             "vmid": 118,
             "hostname": "openclaw",
-            "description": "Dedicated immutable OpenClaw Gateway and CTF runtime managed by OpenTofu and Ansible",
+            "description": "Dedicated immutable OpenClaw Gateway and CTF runtime managed by Ansible",
             "lxc_tags": [
               "homelab",
-              "managed-by-opentofu",
+              "managed-by-ansible",
               "role-openclaw"
             ],
             "template_file_id": "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst",
@@ -116,42 +110,20 @@
             "memory_mb": 12288,
             "swap_mb": 3072,
             "startup_order": 3,
-            "lxc_root_options": {
-              "bind_mount_sources": [
-                "{{ openclaw_ctf_shared_host_path }}"
-              ],
-              "bind_mount_source_owner": "{{ (homelab_container_uid_offset | int) + (openclaw_ctf_uid | int) }}",
-              "bind_mount_source_group": "{{ (homelab_container_uid_offset | int) + (openclaw_ctf_gid | int) }}",
-              "bind_mount_source_mode": "0700",
-              "settings": [
-                {
-                  "description": "enable nesting for the local OpenClaw CTF Docker Engine",
-                  "pattern": "^features:.*[ ,]nesting=1(,|$)",
-                  "pct_args": "-features nesting=1,keyctl=1"
-                },
-                {
-                  "description": "enable keyctl for the local OpenClaw CTF Docker Engine",
-                  "pattern": "^features:.*[ ,]keyctl=1(,|$)",
-                  "pct_args": "-features nesting=1,keyctl=1"
-                },
-                {
-                  "description": "mount the dedicated CTF workspace once",
-                  "pattern": "^mp0: {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}(,.*)?$",
-                  "pct_args": "-mp0 {{ openclaw_ctf_shared_host_path }},mp={{ openclaw_ctf_workspace_root }}"
-                }
-              ],
-              "absent_settings": [
-                {
-                  "description": "TUN device passthrough",
-                  "pattern": "^dev[0-9]+: (path=)?/dev/net/tun(,.*)?$",
-                  "delete_matching_keys": true
-                },
-                {
-                  "description": "obsolete or unexpected CTF bind mounts",
-                  "pattern": "^mp[1-9][0-9]*:",
-                  "delete_matching_keys": true
-                }
-              ]
+            "unprivileged": true,
+            "lxc_features": {
+              "nesting": true,
+              "keyctl": true
+            },
+            "lxc_devices": {},
+            "lxc_mounts": {
+              "mp0": {
+                "source": "/var/lib/homelab/openclaw-ctf",
+                "target": "/var/lib/openclaw/workspaces/ctf",
+                "source_owner": 101000,
+                "source_group": 101000,
+                "source_mode": "0700"
+              }
             }
           }
         }

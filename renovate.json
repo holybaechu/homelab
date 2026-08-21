@@ -6,23 +6,9 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Update OpenTofu from the shared version file",
-      "managerFilePatterns": [
-        "/^\\.opentofu-version$/"
-      ],
-      "matchStrings": [
-        "^(?<currentValue>\\d+\\.\\d+\\.\\d+)\\s*$"
-      ],
-      "depNameTemplate": "opentofu/opentofu",
-      "datasourceTemplate": "github-releases",
-      "versioningTemplate": "semver",
-      "extractVersionTemplate": "^v(?<version>.*)$"
-    },
-    {
-      "customType": "regex",
       "description": "Update the annotated Tailscale GitHub Action version",
       "managerFilePatterns": [
-        "/^\\.github\\/workflows\\/ci\\.yml$/"
+        "/^\\.github\\/workflows\\/(?:apps|infra|openclaw)\\.yml$/"
       ],
       "matchStrings": [
         "# renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=\\^v\\(\\?<version>\\.\\*\\)\\$\\s+version: \\\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\\\""
@@ -39,7 +25,7 @@
         "/^apps\\/compose\\/homelab\\/compose\\.yml$/"
       ],
       "matchStrings": [
-        "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:(?<currentValue>\\d+\\.\\d+\\.\\d+)@(?<currentDigest>sha256:[0-9a-f]{64})"
       ],
       "depNameTemplate": "ghcr.io/vuetorrent/vuetorrent-lsio-mod",
       "datasourceTemplate": "docker",

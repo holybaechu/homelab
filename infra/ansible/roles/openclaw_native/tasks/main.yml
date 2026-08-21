@@ -17,65 +17,12 @@
       - openclaw_ctf_docker_bridge == 'occtfbr0'
     fail_msg: The dedicated OpenClaw LXC runtime contract is invalid.
 
-- name: Require root-managed OpenClaw secrets
-  ansible.builtin.assert:
-    that:
-      - openclaw_gateway_token is defined
-      - openclaw_gateway_token | trim is match('^[0-9a-fA-F]{64}$')
-      - openclaw_discord_bot_token is defined
-      - openclaw_discord_bot_token | trim | length > 0
-      - openclaw_exa_api_key is defined
-      - openclaw_exa_api_key | trim | length > 0
-      - openclaw_skill_sync_github_token is defined
-      - openclaw_skill_sync_github_token | length >= 20
-      - openclaw_skill_sync_github_token is not search('\\s')
-  no_log: true
-
-- name: Install OpenClaw host prerequisites without routine upgrades
+- name: Install OpenClaw isolation prerequisites without routine upgrades
   ansible.builtin.apt:
-    name: [acl, ca-certificates, curl, gnupg, iptables, nftables, python3]
+    name: [iptables, nftables]
     state: "{{ 'latest' if (homelab_maintenance_upgrade | default(false) | bool) else 'present' }}"
     update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
     cache_valid_time: "{{ 3600 if (homelab_maintenance_upgrade | default(false) | bool) else omit }}"
-
-- name: Create Docker apt keyring directory
-  ansible.builtin.file:
-    path: /etc/apt/keyrings
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
-- name: Install Docker apt signing key
-  ansible.builtin.get_url:
-    url: https://download.docker.com/linux/debian/gpg
-    dest: /etc/apt/keyrings/docker.asc
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Configure Docker apt repository
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
-      https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
-    filename: docker
-    state: present
-    update_cache: false
-  register: openclaw_docker_repository
-
-- name: Refresh apt metadata only after adding Docker repository
-  ansible.builtin.apt:
-    update_cache: true
-  when: openclaw_docker_repository.changed
-
-- name: Install only the container runtime used in production
-  ansible.builtin.apt:
-    name: [containerd.io, docker-ce, docker-ce-cli, docker-compose-plugin]
-    state: "{{ 'latest' if (homelab_maintenance_upgrade | default(false) | bool) else 'present' }}"
-    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
-    cache_valid_time: "{{ 3600 if (homelab_maintenance_upgrade | default(false) | bool) else omit }}"
-  notify: Restart OpenClaw Docker
 
 - name: Create OpenClaw service group
   ansible.builtin.group:
@@ -95,24 +42,6 @@
     shell: /usr/sbin/nologin
     system: true
 
-- name: Create isolated skill promotion identity
-  ansible.builtin.group:
-    name: "{{ openclaw_skill_sync_group }}"
-    gid: "{{ openclaw_skill_sync_gid }}"
-    system: true
-  when: openclaw_skill_sync_enabled | bool
-
-- name: Create isolated skill promotion account
-  ansible.builtin.user:
-    name: "{{ openclaw_skill_sync_user }}"
-    uid: "{{ openclaw_skill_sync_uid }}"
-    group: "{{ openclaw_skill_sync_group }}"
-    home: "{{ openclaw_skill_sync_state_root }}"
-    create_home: false
-    shell: /usr/sbin/nologin
-    system: true
-  when: openclaw_skill_sync_enabled | bool
-
 - name: Create durable OpenClaw runtime directories
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -122,40 +51,13 @@
     mode: "{{ item.mode }}"
   loop:
     - {path: "{{ openclaw_install_root }}", owner: root, group: root, mode: "0755"}
-    - {path: "{{ openclaw_install_root }}/incoming", owner: root, group: root, mode: "0700"}
-    - {path: "{{ openclaw_install_root }}/state", owner: root, group: root, mode: "0700"}
     - {path: "{{ openclaw_state_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_workspaces_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
+    - {path: "{{ openclaw_workspace_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_workspace_root }}/skills", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_ctf_workspace_root }}/skills", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
     - {path: "{{ openclaw_auth_profile_secret_root }}", owner: "{{ openclaw_user }}", group: "{{ openclaw_group }}", mode: "0700"}
-    - {path: "{{ openclaw_secret_root }}", owner: root, group: "{{ openclaw_group }}", mode: "0710"}
-    - {path: "{{ openclaw_skill_sync_state_root }}", owner: "{{ openclaw_skill_sync_user }}", group: "{{ openclaw_skill_sync_group }}", mode: "0700"}
-
-- name: Materialize Gateway-owner-only secret files
-  ansible.builtin.copy:
-    content: "{{ item.content | trim }}\n"
-    dest: "{{ item.path }}"
-    owner: "{{ openclaw_user }}"
-    group: "{{ openclaw_group }}"
-    mode: "0400"
-  loop:
-    - {path: "{{ openclaw_gateway_token_path }}", content: "{{ openclaw_gateway_token }}"}
-    - {path: "{{ openclaw_discord_bot_token_path }}", content: "{{ openclaw_discord_bot_token }}"}
-    - {path: "{{ openclaw_exa_api_key_path }}", content: "{{ openclaw_exa_api_key }}"}
-  no_log: true
-  diff: false
-
-- name: Materialize skill-promotion credential outside Gateway access
-  ansible.builtin.copy:
-    content: "{{ openclaw_skill_sync_github_token }}\n"
-    dest: "{{ openclaw_skill_sync_github_token_path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-  diff: false
-  when: openclaw_skill_sync_enabled | bool
+    - {path: "{{ openclaw_secret_root }}", owner: root, group: root, mode: "0700"}
 
 - name: Create Docker service drop-in directory
   ansible.builtin.file:
@@ -164,15 +66,6 @@
     owner: root
     group: root
     mode: "0755"
-
-- name: Configure local Docker for isolated CTF sandboxes
-  ansible.builtin.template:
-    src: daemon.json.j2
-    dest: /etc/docker/daemon.json
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Restart OpenClaw Docker
 
 - name: Install CTF egress boundary
   ansible.builtin.template:
@@ -220,6 +113,58 @@
   changed_when: false
   failed_when: openclaw_ctf_network_probe.rc not in [0, 1]
 
+- name: Require a canonical Docker network inspection document
+  ansible.builtin.assert:
+    that:
+      - openclaw_ctf_network_probe.stdout | from_json is sequence
+      - openclaw_ctf_network_probe.stdout | from_json | length == 1
+      - openclaw_ctf_network_probe.stdout | from_json | first is mapping
+    fail_msg: Docker returned an invalid CTF network inspection document.
+  when: openclaw_ctf_network_probe.rc == 0
+
+- name: Bind the existing CTF network document
+  ansible.builtin.set_fact:
+    openclaw_ctf_network_document: >-
+      {{
+        openclaw_ctf_network_probe.stdout | from_json | first
+        if openclaw_ctf_network_probe.rc == 0
+        else {}
+      }}
+
+- name: Detect CTF network isolation drift
+  ansible.builtin.set_fact:
+    openclaw_ctf_network_drift: >-
+      {{
+        openclaw_ctf_network_probe.rc == 0
+        and (
+          openclaw_ctf_network_document.get('Driver') != 'bridge'
+          or openclaw_ctf_network_document.get('IPAM', {}).get('Config', []) | length != 1
+          or openclaw_ctf_network_document.get('IPAM', {}).get('Config', [])[0].get('Subnet')
+             != openclaw_ctf_docker_network_cidr
+          or openclaw_ctf_network_document.get('Options', {}).get(
+               'com.docker.network.bridge.name'
+             ) != openclaw_ctf_docker_bridge
+          or openclaw_ctf_network_document.get('Options', {}).get(
+               'com.docker.network.bridge.enable_icc'
+             ) != 'false'
+        )
+      }}
+
+- name: Refuse occupied CTF network replacement
+  ansible.builtin.assert:
+    that:
+      - openclaw_ctf_network_document.get('Containers', {}) | length == 0
+    fail_msg: >-
+      The existing {{ openclaw_ctf_docker_network }} network has isolation drift
+      and attached containers. In a maintenance window, stop the OpenClaw project,
+      remove that network, rerun openclaw-host reconciliation, and redeploy.
+  when: openclaw_ctf_network_drift | bool
+
+- name: Remove an unused CTF network with isolation drift
+  ansible.builtin.command:
+    argv: [docker, network, rm, "{{ openclaw_ctf_docker_network }}"]
+  when: openclaw_ctf_network_drift | bool
+
 - name: Create isolated CTF network
   ansible.builtin.command:
     argv:
@@ -235,96 +180,40 @@
       - --opt
       - com.docker.network.bridge.enable_icc=false
       - "{{ openclaw_ctf_docker_network }}"
-  when: openclaw_ctf_network_probe.rc == 1
+  when: >-
+    openclaw_ctf_network_probe.rc == 1
+    or openclaw_ctf_network_drift | bool
+
+- name: Inspect the reconciled CTF network
+  ansible.builtin.command:
+    argv: [docker, network, inspect, "{{ openclaw_ctf_docker_network }}"]
+  register: openclaw_ctf_network_verified
+  changed_when: false
+
+- name: Verify the reconciled CTF isolation contract
+  ansible.builtin.assert:
+    that:
+      - openclaw_ctf_network_verified.stdout | from_json is sequence
+      - openclaw_ctf_network_verified.stdout | from_json | length == 1
+      - openclaw_ctf_network_verified.stdout | from_json | first is mapping
+      - (openclaw_ctf_network_verified.stdout | from_json | first).get('Driver') == 'bridge'
+      - >-
+        (openclaw_ctf_network_verified.stdout | from_json | first)
+        .get('IPAM', {}).get('Config', []) | length == 1
+      - >-
+        (openclaw_ctf_network_verified.stdout | from_json | first)
+        .get('IPAM', {}).get('Config', [])[0].get('Subnet')
+        == openclaw_ctf_docker_network_cidr
+      - >-
+        (openclaw_ctf_network_verified.stdout | from_json | first)
+        .get('Options', {}).get('com.docker.network.bridge.name')
+        == openclaw_ctf_docker_bridge
+      - >-
+        (openclaw_ctf_network_verified.stdout | from_json | first)
+        .get('Options', {}).get('com.docker.network.bridge.enable_icc') == 'false'
+    fail_msg: The reconciled CTF Docker network does not enforce the isolation contract.
 
 - name: Apply isolated CTF egress policy
   ansible.builtin.command:
     argv: [/usr/local/libexec/openclaw-ctf-docker-firewall]
   changed_when: false
-
-- name: Install immutable release utilities
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../../scripts/ci/{{ item.source }}"
-    dest: "/usr/local/libexec/{{ item.dest }}"
-    owner: root
-    group: root
-    mode: "0755"
-  loop:
-    - {source: immutable_image_release.py, dest: immutable_image_release.py}
-    - {source: openclaw_release.py, dest: openclaw_release.py}
-    - {source: deploy_openclaw_release.py, dest: deploy_openclaw_release.py}
-
-- name: Install isolated skill promotion utility
-  ansible.builtin.copy:
-    src: openclaw_skill_sync.py
-    dest: "{{ openclaw_skill_sync_script_path }}"
-    owner: root
-    group: root
-    mode: "0755"
-  when: openclaw_skill_sync_enabled | bool
-
-- name: Install isolated skill promotion service files
-  ansible.builtin.template:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    owner: root
-    group: root
-    mode: "{{ item.mode }}"
-  loop:
-    - {src: openclaw-skill-sync-askpass.j2, dest: "{{ openclaw_skill_sync_askpass_path }}", mode: "0755"}
-    - {src: openclaw-skill-sync.service.j2, dest: /etc/systemd/system/openclaw-skill-sync.service, mode: "0644"}
-    - {src: openclaw-skill-sync.timer.j2, dest: /etc/systemd/system/openclaw-skill-sync.timer, mode: "0644"}
-  notify: Reload OpenClaw systemd
-  when: openclaw_skill_sync_enabled | bool
-
-- name: Grant skill promoter traversal without Gateway credentials
-  ansible.builtin.command:
-    argv: [setfacl, -m, "u:{{ openclaw_skill_sync_user }}:--x", "{{ item }}"]
-  loop:
-    - "{{ openclaw_state_root }}"
-    - "{{ openclaw_workspaces_root }}"
-    - "{{ openclaw_workspace_root }}"
-    - "{{ openclaw_ctf_workspace_root }}"
-  changed_when: false
-  when: openclaw_skill_sync_enabled | bool
-
-- name: Grant skill promoter read-only skill roots
-  ansible.builtin.command:
-    argv: [setfacl, -R, -m, "u:{{ openclaw_skill_sync_user }}:r-X", "{{ item }}"]
-  loop:
-    - "{{ openclaw_workspace_root }}/skills"
-    - "{{ openclaw_ctf_workspace_root }}/skills"
-  changed_when: false
-  when: openclaw_skill_sync_enabled | bool
-
-- name: Enable isolated skill promotion timer
-  ansible.builtin.systemd_service:
-    name: openclaw-skill-sync.timer
-    enabled: true
-    state: started
-    daemon_reload: true
-  when: openclaw_skill_sync_enabled | bool
-
-- name: Inspect legacy native Gateway unit
-  ansible.builtin.stat:
-    path: /etc/systemd/system/openclaw-gateway.service
-  register: openclaw_legacy_gateway_unit
-
-- name: Stop and disable legacy native Gateway unit
-  ansible.builtin.systemd_service:
-    name: openclaw-gateway.service
-    enabled: false
-    state: stopped
-  when: openclaw_legacy_gateway_unit.stat.exists
-
-- name: Remove legacy native Gateway unit
-  ansible.builtin.file:
-    path: /etc/systemd/system/openclaw-gateway.service
-    state: absent
-  register: openclaw_legacy_gateway_unit_removed
-  when: openclaw_legacy_gateway_unit.stat.exists
-
-- name: Reload systemd after retiring legacy native Gateway unit
-  ansible.builtin.systemd_service:
-    daemon_reload: true
-  when: openclaw_legacy_gateway_unit_removed.changed | default(false)

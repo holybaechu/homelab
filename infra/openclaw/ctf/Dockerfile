@@ -1,8 +1,7 @@
-ARG CTF_BASE_REF
-ARG UV_BASE_REF
-
-FROM ${UV_BASE_REF} AS uv
-FROM ${CTF_BASE_REF}
+# Base identities live with the Dockerfile. Renovate updates these reviewed
+# digest-pinned lines; the workflow has no image-variable control plane.
+FROM ghcr.io/astral-sh/uv:0.8.14@sha256:f3660c56d5b08d6c516360981bedc439f499b9bf37f46a216018da3777a74011 AS uv
+FROM docker.io/kalilinux/kali-rolling:latest@sha256:d2560fdc054793be92236322113fa231e609f95403dd68c613ca864b0d872b1f
 
 COPY --from=uv /uv /uvx /usr/local/bin/
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -29,7 +28,12 @@ RUN apt-get update \
            --shell /bin/bash ctf; \
        fi \
     && install -d -o 1000 -g 1000 -m 0700 /home/ctf \
-    && install -d -o 1000 -g 1000 -m 0700 /workspace
+    && install -d -o 1000 -g 1000 -m 0700 /workspace \
+    && command -v uv >/dev/null \
+    && command -v chromium >/dev/null \
+    && command -v python3 >/dev/null \
+    && test "$(getent passwd 1000 | cut -d: -f6)" = /home/ctf \
+    && ! command -v docker >/dev/null
 
 LABEL org.opencontainers.image.title="OpenClaw immutable CTF sandbox" \
       org.opencontainers.image.description="Prebuilt analysis image without Docker tooling or a host socket"
