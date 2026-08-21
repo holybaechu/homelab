@@ -2,7 +2,7 @@ name: homelab
 
 services:
   traefik:
-    image: traefik:v3.7.10
+    image: traefik:v3.7.11
     restart: unless-stopped
     env_file:
       - /etc/homelab/secrets/traefik.env
