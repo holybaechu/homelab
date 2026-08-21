@@ -561,7 +561,7 @@ jobs:
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
           # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
-          version: "1.102.2"
+          version: "1.102.3"
           args: --accept-dns=false
           ping: >-
             ${{ env.PROVISIONING_SELECTED == 'true' &&
@@ -838,7 +838,7 @@ jobs:
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
           # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
-          version: "1.102.2"
+          version: "1.102.3"
           args: --accept-dns=false
           ping: ${{ vars.PVE_TAILSCALE_IP }}
       - name: Configure pinned SSH trust before mutation
