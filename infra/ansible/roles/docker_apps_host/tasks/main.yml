@@ -1,0 +1,29 @@
+---
+- name: Require the Proxmox homelab bind mount before writing application data
+  ansible.builtin.command: mountpoint -q /srv/homelab
+  changed_when: false
+
+- name: Create durable application data directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop:
+    - {path: /srv/homelab/docker-apps/qbittorrent, mode: "0700"}
+    - {path: /srv/homelab/docker-apps/copyparty}
+    - {path: /srv/homelab/downloads/complete}
+    - {path: /srv/homelab/downloads/incomplete}
+    - {path: /srv/homelab/copyparty/downloads}
+    - {path: /srv/homelab/copyparty/public}
+    - {path: /srv/homelab/copyparty/shared-readonly}
+
+- name: Create private application component secret directory
+  ansible.builtin.file:
+    path: /etc/homelab/secrets
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+    follow: false

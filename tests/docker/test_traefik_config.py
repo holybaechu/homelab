@@ -1,36 +1,40 @@
+import yaml
+
 from tests.helpers import REPO_ROOT
 
 
+PACKAGE = REPO_ROOT / "apps" / "compose" / "homelab"
+
+
 def read(name: str) -> str:
-    return (REPO_ROOT / "apps" / "compose" / "homelab" / name).read_text(encoding="utf-8")
+    return (PACKAGE / name).read_text(encoding="utf-8")
 
 
-def test_traefik_replaces_caddy_and_defaults_to_no_container_exposure():
-    compose = read("compose.yml")
+def test_traefik_defaults_to_no_container_exposure_and_uses_one_owned_network():
+    model = yaml.safe_load(read("compose.yml"))
     static = read("traefik.yml")
+    service = model["services"]["traefik"]
 
-    assert "traefik:v3" in compose
-    assert "/var/run/docker.sock:/var/run/docker.sock:ro" in compose
+    assert service["image"].startswith("traefik:v3")
+    assert "/var/run/docker.sock:/var/run/docker.sock:ro" in service["volumes"]
     assert "exposedByDefault: false" in static
     assert "certResolver: cloudflare" in static
-    assert "./dynamic:/etc/traefik/dynamic:ro" in compose
+    assert (
+        "./generated/traefik/routes.yml:/etc/traefik/dynamic/routes.yml:ro"
+        in service["volumes"]
+    )
     assert "directory: /etc/traefik/dynamic" in static
-    assert "filename: /etc/traefik/dynamic.yml" not in static
+    assert model["networks"]["proxy"] == {"name": "homelab_proxy"}
 
 
 def test_private_routes_and_headers_preserve_edge_policy():
-    dynamic = read("dynamic/routes.yml")
+    dynamic = read("config/routes.yml.tmpl")
 
     assert "192.168.0.0/24" in dynamic
     assert "100.64.0.0/10" in dynamic
     assert "adguard.home.hchu.me" in dynamic
     assert "rule: Host(`openclaw.home.hchu.me`)" in dynamic
     assert "middlewares: [private-only, secure-headers]" in dynamic
-    openclaw_backends = (
-        "url: http://192.168.0.5:18789",
-        "url: http://openclaw-rollback:18789",
-    )
-    assert sum(backend in dynamic for backend in openclaw_backends) == 1
     assert "pve.home.hchu.me" in dynamic
     assert "customFrameOptionsValue: SAMEORIGIN" in dynamic
     assert "/etc/ssl/certs/homelab-pve-root-ca.pem" in dynamic
@@ -38,27 +42,25 @@ def test_private_routes_and_headers_preserve_edge_policy():
     assert "dns-query" not in dynamic
 
 
-def test_adguard_uses_host_network_only_for_plain_dns_and_private_admin():
-    compose = read("compose.yml")
-    template = (
-        REPO_ROOT
-        / "infra/ansible/roles/docker_compose_project/templates/AdGuardHome.yaml.j2"
-    ).read_text(encoding="utf-8")
+def test_adguard_static_policy_is_package_owned_and_plain_dns_only():
+    model = yaml.safe_load(read("compose.yml"))
+    service = model["services"]["adguard"]
+    template_text = read("config/AdGuardHome.yaml.tmpl")
+    template = yaml.safe_load(
+        template_text.replace("@@ADGUARD_ADMIN_USERNAME@@", '"admin"')
+        .replace("@@ADGUARD_ADMIN_PASSWORD_HASH@@", '"$2y$10$' + '.' * 53 + '"')
+        .replace("@@APPS_HOST@@", "192.0.2.10")
+    )
 
-    assert "network_mode: host" in compose
-    assert "./adguard:/opt/adguardhome/conf:rw" in compose
-    assert "./AdGuardHome.yaml:/opt/adguardhome/conf/AdGuardHome.yaml" not in compose
-    assert "port: {{ adguard_dns_port }}" in template
-    assert "address: 0.0.0.0:{{ adguard_admin_port }}" in template
-    assert "enabled: false" in template.split("tls:", 1)[1]
-    assert "port_dns_over_tls" not in template
-
-
-def test_adguard_safe_search_is_disabled():
-    template = (
-        REPO_ROOT
-        / "infra/ansible/roles/docker_compose_project/templates/AdGuardHome.yaml.j2"
-    ).read_text(encoding="utf-8")
-    safe_search = template.split("  safe_search:", 1)[1].split("querylog:", 1)[0]
-
-    assert "    enabled: false" in safe_search
+    assert service["network_mode"] == "host"
+    assert (
+        "./generated/adguard/AdGuardHome.yaml:/opt/adguardhome/conf/AdGuardHome.yaml:ro"
+        in service["volumes"]
+    )
+    assert template["dns"]["port"] == 53
+    assert template["http"]["address"] == "0.0.0.0:3000"
+    assert template["tls"]["enabled"] is False
+    assert template["filtering"]["safe_search"]["enabled"] is False
+    assert template["filtering"]["rewrites"] == [
+        {"domain": "*.home.hchu.me", "answer": "192.0.2.10", "enabled": True}
+    ]

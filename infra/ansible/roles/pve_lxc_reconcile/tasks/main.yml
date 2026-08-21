@@ -1,0 +1,111 @@
+---
+- name: Require an explicit PVE LXC reconcile mode
+  ansible.builtin.assert:
+    that:
+      - pve_lxc_reconcile_mode in ['plan', 'audit', 'apply']
+      - >-
+        pve_lxc_reconcile_allow_destructive_vmid | default('') | string
+        is match('^$|^[0-9]+$')
+      - >-
+        pve_lxc_reconcile_allow_replacement_vmid | default('') | string
+        is match('^$|^[0-9]+$')
+    fail_msg: Select plan, audit, or apply and use exact numeric VMID confirmations.
+
+- name: Create the PVE reconciliation control directory
+  ansible.builtin.file:
+    path: /etc/homelab
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when:
+    - pve_lxc_reconcile_mode == 'apply'
+    - not (pve_lxc_reconcile_preflight_only | default(false) | bool)
+
+- name: Create the immutable pre-mutation export directory
+  ansible.builtin.file:
+    path: "{{ pve_lxc_config_export_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when:
+    - pve_lxc_reconcile_mode == 'apply'
+    - not (pve_lxc_reconcile_preflight_only | default(false) | bool)
+
+- name: Create the PVE local executable library directory
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - pve_lxc_reconcile_mode == 'apply'
+    - not (pve_lxc_reconcile_preflight_only | default(false) | bool)
+
+- name: Install the topology reconciliation helper
+  ansible.builtin.copy:
+    src: pve_lxc_reconcile.py
+    dest: /usr/local/libexec/pve-lxc-reconcile
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - pve_lxc_reconcile_mode == 'apply'
+    - not (pve_lxc_reconcile_preflight_only | default(false) | bool)
+
+- name: Install the exact topology used by the reconciliation helper
+  ansible.builtin.copy:
+    src: "{{ inventory_dir }}/topology.json"
+    dest: /etc/homelab/topology.json
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - pve_lxc_reconcile_mode == 'apply'
+    - not (pve_lxc_reconcile_preflight_only | default(false) | bool)
+
+- name: Build exact-risk confirmation arguments
+  ansible.builtin.set_fact:
+    pve_lxc_reconcile_argv: >-
+      {{
+        (['/usr/local/libexec/pve-lxc-reconcile', pve_lxc_reconcile_mode,
+          '--topology', '/etc/homelab/topology.json']
+         if (pve_lxc_reconcile_mode == 'apply'
+             and not (pve_lxc_reconcile_preflight_only | default(false) | bool))
+         else ['/usr/bin/python3', '-c',
+               lookup('ansible.builtin.file', role_path + '/files/pve_lxc_reconcile.py'),
+               pve_lxc_reconcile_mode,
+               '--topology-json',
+               lookup('ansible.builtin.file', inventory_dir + '/topology.json')])
+        + [
+         '--export-dir', pve_lxc_config_export_root,
+         '--protect-control-vmid', hostvars['tailnet'].vmid | string]
+        + (['--allow-destructive',
+            pve_lxc_reconcile_allow_destructive_vmid | string]
+           if (pve_lxc_reconcile_allow_destructive_vmid | default('') | string | length > 0)
+           else [])
+        + (['--allow-replacement',
+            pve_lxc_reconcile_allow_replacement_vmid | string]
+           if (pve_lxc_reconcile_allow_replacement_vmid | default('') | string | length > 0)
+           else [])
+        + (['--preflight-only']
+           if (pve_lxc_reconcile_preflight_only | default(false) | bool)
+           else [])
+      }}
+  changed_when: false
+
+- name: Plan, audit, or apply the topology-owned PVE LXCs
+  ansible.builtin.command:
+    argv: "{{ pve_lxc_reconcile_argv }}"
+  register: pve_lxc_reconcile_result
+  changed_when: >-
+    pve_lxc_reconcile_mode == 'apply'
+    and not (pve_lxc_reconcile_preflight_only | default(false) | bool)
+    and (pve_lxc_reconcile_result.stdout | from_json).changed
+
+- name: Report the canonical PVE LXC reconciliation result
+  ansible.builtin.debug:
+    var: pve_lxc_reconcile_result.stdout
+  changed_when: false

@@ -1,8 +1,0 @@
-proxmox_endpoint     = "https://192.168.0.2:8006/"
-proxmox_api_token    = "replace-with-secret"
-proxmox_insecure_tls = true
-proxmox_ssh_user     = "root"
-node_name            = "pve"
-bridge               = "vmbr0"
-root_datastore_id    = "local-lvm"
-ssh_public_keys      = ["ssh-ed25519 replace-with-public-key homelab-deploy"]

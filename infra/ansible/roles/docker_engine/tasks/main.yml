@@ -1,13 +1,16 @@
 ---
-- name: Install Docker apt prerequisites
+- name: Require one explicit Docker host contract
+  ansible.builtin.assert:
+    that:
+      - docker_engine_host_packages is sequence
+      - docker_engine_host_packages is not string
+      - docker_engine_disable_dns_stub is boolean
+      - docker_engine_daemon_config is mapping
+    fail_msg: The selected host must provide its Docker packages, DNS policy, and daemon mapping.
+
+- name: Install host-specific Docker prerequisites without routine upgrades
   ansible.builtin.apt:
-    name:
-      - apache2-utils
-      - ca-certificates
-      - curl
-      - bind9-dnsutils
-      - gnupg
-      - systemd-resolved
+    name: "{{ docker_engine_host_packages }}"
     update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
     cache_valid_time: >-
       {{ 3600
@@ -17,16 +20,18 @@
       {{ 'latest'
          if (homelab_maintenance_upgrade | default(false) | bool)
          else 'present' }}
+  when: docker_engine_host_packages | length > 0
 
-- name: Disable systemd-resolved DNS stub for AdGuard port 53
+- name: Create systemd-resolved configuration directory for the DNS host
   ansible.builtin.file:
     path: /etc/systemd/resolved.conf.d
     state: directory
     owner: root
     group: root
     mode: "0755"
+  when: docker_engine_disable_dns_stub
 
-- name: Configure systemd-resolved without a local DNS stub
+- name: Free the local DNS port for the application resolver
   ansible.builtin.copy:
     dest: /etc/systemd/resolved.conf.d/adguardhome.conf
     owner: root
@@ -38,30 +43,38 @@
       FallbackDNS=8.8.8.8
       DNSStubListener=no
   notify: Restart systemd-resolved
+  when: docker_engine_disable_dns_stub
 
-- name: Use systemd-resolved upstream resolvers without the local stub
+- name: Select the upstream resolver file on the DNS host
   ansible.builtin.file:
     src: /run/systemd/resolve/resolv.conf
     dest: /etc/resolv.conf
     state: link
     force: true
   notify: Restart systemd-resolved
+  when: docker_engine_disable_dns_stub
 
-- name: Create Docker apt keyring directory
+- name: Create the Docker apt keyring directory
   ansible.builtin.file:
     path: /etc/apt/keyrings
     state: directory
+    owner: root
+    group: root
     mode: "0755"
 
-- name: Install Docker apt signing key
+- name: Install the Docker apt signing key
   ansible.builtin.get_url:
     url: https://download.docker.com/linux/debian/gpg
     dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
     mode: "0644"
 
-- name: Configure Docker apt repository
+- name: Configure the Docker apt repository
   ansible.builtin.apt_repository:
-    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ docker_engine_debian_codename | default(ansible_distribution_release) }} stable"
+    repo: >-
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
     filename: docker
     state: present
     update_cache: false
@@ -72,14 +85,9 @@
     update_cache: true
   when: docker_apt_repository.changed
 
-- name: Install Docker Engine and Compose plugin
+- name: Install the production Docker runtime and Compose plugin
   ansible.builtin.apt:
-    name:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      - docker-buildx-plugin
-      - docker-compose-plugin
+    name: [containerd.io, docker-ce, docker-ce-cli, docker-compose-plugin]
     update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
     cache_valid_time: >-
       {{ 3600
@@ -91,20 +99,20 @@
          else 'present' }}
   notify: Restart Docker
 
-- name: Configure Docker daemon defaults
-  ansible.builtin.template:
-    src: daemon.json.j2
+- name: Install the selected Docker daemon policy
+  ansible.builtin.copy:
+    content: "{{ docker_engine_daemon_config | to_nice_json }}\n"
     dest: /etc/docker/daemon.json
     owner: root
     group: root
     mode: "0644"
   notify: Restart Docker
 
-- name: Enable and start Docker service
-  ansible.builtin.systemd:
+- name: Enable and start the Docker service
+  ansible.builtin.systemd_service:
     name: docker
     enabled: true
     state: started
 
-- name: Apply Docker and resolver changes before Compose starts
+- name: Apply Docker and resolver changes before host-specific policy
   ansible.builtin.meta: flush_handlers

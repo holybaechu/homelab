@@ -1,63 +1,52 @@
-# Deployment Secrets
+# Component secret bundles
 
-`infra/deployment/secrets.json` is the machine-readable contract for service
-values passed from the GitHub `prod` environment to Ansible. Each entry names
-its GitHub environment key, Ansible variable, owning component, required or
-optional kind, and validation type. It is the only GitHub-to-Ansible mapping;
-the workflow only exposes selected environment keys to the helper.
+Production receives one UTF-8 JSON document per deployment component. GitHub
+stores each complete document as one environment secret; workflows write a
+mode-0600 temporary file without printing it. There is no repository-wide
+field registry or mapping program.
 
-## Component contract
+| Component | GitHub environment secret | Authoritative validator |
+| --- | --- | --- |
+| Apps runtime | `APPS_SECRET_BUNDLE` | `apps/compose/homelab/prepare_release.py` |
+| OpenClaw runtime | `OPENCLAW_SECRET_BUNDLE` | `scripts/ci/compose_release_engine.py` |
+| PVE access | `PVE_SECRET_BUNDLE` | `infra/ansible/playbooks/reconcile.yml` |
+| Tailnet | `TAILNET_SECRET_BUNDLE` | `infra/ansible/playbooks/reconcile.yml` |
 
-### `apps`
-
-| GitHub environment name | Ansible variable | Kind | Validation |
-| --- | --- | --- | --- |
-| `CLOUDFLARE_TRAEFIK_TOKEN` | `cloudflare_traefik_token` | required | non-empty string |
-| `CLOUDFLARE_DDNS_TOKEN` | `cloudflare_ddns_token` | required | non-empty string |
-| `ADGUARD_ADMIN_PASSWORD` | `adguard_admin_password` | required | non-empty string |
-| `QBITTORRENT_WEBUI_PASSWORD` | `qbittorrent_webui_password` | required | non-empty string |
-| `COPYPARTY_USERS_JSON` | `copyparty_users` | required | non-empty JSON user list |
-| `ADGUARD_ADMIN_USERNAME` | `adguard_admin_username` | optional | non-empty when supplied |
-
-AdGuard hashes its plaintext admin password while rendering its service
-configuration. `COPYPARTY_USERS_JSON` must be a JSON list of objects containing
-non-empty `name` and plaintext `password` fields, for example:
+Every document has exact `component` and `version: 1` fields. Runtime bundle
+schemas are intentionally defined beside their consumers. OpenClaw accepts:
 
 ```json
-[{"name":"example","password":"replace-me"}]
+{
+  "component": "openclaw",
+  "version": 1,
+  "gateway_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "discord_bot_token": "...",
+  "exa_api_key": "..."
+}
 ```
 
-### `tailnet`
+The OpenClaw field set is exact. `gateway_token` is exactly 64 lowercase hex;
+the other two values are nonempty single lines. The apps package documents its
+own exact nested schema in `apps/compose/homelab/README.md` and validates it by
+actually rendering a throwaway release before host installation.
 
-| GitHub environment name | Ansible variable | Kind | Validation |
-| --- | --- | --- | --- |
-| `TAILSCALE_AUTH_KEY` | `tailscale_auth_key` | required | non-empty string |
+Infrastructure bundles use this envelope:
 
-### `openclaw`
-
-| GitHub environment name | Ansible variable | Kind | Validation |
-| --- | --- | --- | --- |
-| `OPENCLAW_GATEWAY_TOKEN` | `openclaw_gateway_token` | required | exactly 64 hexadecimal characters |
-| `OPENCLAW_DISCORD_BOT_TOKEN` | `openclaw_discord_bot_token` | required | non-empty string |
-| `OPENCLAW_EXA_API_KEY` | `openclaw_exa_api_key` | required | 1–4096 non-whitespace characters |
-| `OPENCLAW_SKILL_SYNC_GITHUB_TOKEN` | `openclaw_skill_sync_github_token` | required | 20–4096 non-whitespace characters |
-
-Generate `OPENCLAW_GATEWAY_TOKEN` with `openssl rand -hex 32`. Keep every real
-value only in the GitHub `prod` environment or its intended runtime secret
-store; do not commit generated extra-vars files.
-
-## Scoped writer
-
-The writer requires an explicit comma-separated component set:
-
-```sh
-python3 scripts/ci/write_ansible_extra_vars.py \
-  /path/to/ansible-extra-vars.json \
-  apps,tailnet,openclaw
+```json
+{"component":"tailnet","version":1,"values":{"tailscale_auth_key":"..."}}
 ```
 
-It reads only entries owned by the selected components, unions mixed component
-sets, omits unset optional values, rejects empty or unknown component names,
-and validates values before publishing the JSON by same-directory atomic
-replacement. The resulting file is mode `0600`. There is no aggregate legacy
-scope alias.
+The PVE `values` object contains `deploy_ssh_public_keys`; the tailnet `values`
+object contains `tailscale_auth_key`. Unknown or missing fields fail the
+selected reconciliation before mutation.
+
+The release SSH wrapper validates and atomically installs an apps or OpenClaw
+bundle at its fixed root-owned path, then renders only the active runtime slot.
+Bundle values and their hashes never enter the release descriptor, state file,
+command output, or rollback source. A manual run of the owning runtime workflow
+rotates secrets without a repository change; rollback always combines the
+selected code release with the current component bundle.
+
+Tailnet OAuth, the deploy SSH key and known-host set, and the private-config
+read key are CI connection credentials rather than service configuration. They
+remain individually scoped to the jobs that establish those connections.

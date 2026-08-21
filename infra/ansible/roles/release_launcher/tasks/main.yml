@@ -1,0 +1,16 @@
+---
+- name: Create the local executable library directory
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the stable package release launcher
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../scripts/ci/release_launcher.py"
+    dest: /usr/local/libexec/homelab-release
+    owner: root
+    group: root
+    mode: "0755"

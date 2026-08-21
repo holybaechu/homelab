@@ -1,0 +1,282 @@
+name: Deploy OpenClaw desired state
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/openclaw/**"
+      - "infra/ansible/inventory/prod/topology.json"
+      - "scripts/ci/compose_release_engine.py"
+      - "scripts/ci/deploy-release-via-ssh.sh"
+      - "scripts/ci/configure-ssh.sh"
+      - ".github/workflows/openclaw.yml"
+  repository_dispatch:
+    types: [openclaw-promoted]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Deploy the complete descriptor or rotate only its component bundle
+        required: true
+        default: deploy
+        type: choice
+        options: [deploy, sync-secrets]
+      config_commit:
+        description: Optional exact private-config commit; empty resolves current main
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-control-plane
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  build_gateway:
+    if: inputs.operation != 'sync-secrets'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout exact image source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Configure Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Authenticate Buildx to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build, attest, and publish Gateway
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: infra/openclaw/gateway
+          file: infra/openclaw/gateway/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/holybaechu/homelab-openclaw-gateway:${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=openclaw-gateway
+          cache-to: type=gha,mode=max,scope=openclaw-gateway
+          provenance: mode=max
+          sbom: true
+
+  build_ctf:
+    if: inputs.operation != 'sync-secrets'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout exact image source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Configure Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Authenticate Buildx to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build, attest, and publish CTF
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: infra/openclaw/ctf
+          file: infra/openclaw/ctf/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/holybaechu/homelab-openclaw-ctf:${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=openclaw-ctf
+          cache-to: type=gha,mode=max,scope=openclaw-ctf
+          provenance: mode=max
+          sbom: true
+
+  deploy:
+    if: inputs.operation != 'sync-secrets'
+    needs: [build_gateway, build_ctf]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout exact runtime source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Checkout current or explicitly promoted private configuration
+        id: private_config
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: holybaechu/openclaw-setup
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.config_commit || 'main' }}
+          path: .openclaw-config
+          ssh-key: ${{ secrets.OPENCLAW_CONFIG_READ_SSH_KEY }}
+          persist-credentials: false
+      - name: Bind and verify one exact private-config commit
+        env:
+          REQUESTED_CONFIG_COMMIT: ${{ github.event.client_payload.config_commit || inputs.config_commit || '' }}
+        run: |
+          commit="$(git -C .openclaw-config rev-parse HEAD)"
+          case "$commit" in *[!0-9a-f]*|'') exit 1 ;; esac
+          test "${#commit}" = 40
+          if test -n "$REQUESTED_CONFIG_COMMIT"; then
+            test "$commit" = "$REQUESTED_CONFIG_COMMIT"
+          fi
+          printf 'OPENCLAW_CONFIG_COMMIT=%s\n' "$commit" >> "$GITHUB_ENV"
+      - name: Build one authoritative OpenClaw release descriptor
+        env:
+          GATEWAY_DIGEST: ${{ needs.build_gateway.outputs.digest }}
+          CTF_DIGEST: ${{ needs.build_ctf.outputs.digest }}
+        run: |
+          gateway_ref="ghcr.io/holybaechu/homelab-openclaw-gateway@$GATEWAY_DIGEST"
+          ctf_ref="ghcr.io/holybaechu/homelab-openclaw-ctf@$CTF_DIGEST"
+          python scripts/ci/compose_release_engine.py bundle \
+            --target openclaw \
+            --source-sha "$GITHUB_SHA" \
+            --stack infra/openclaw/runtime \
+            --config .openclaw-config \
+            --config-commit "$OPENCLAW_CONFIG_COMMIT" \
+            --gateway-ref "$gateway_ref" \
+            --ctf-ref "$ctf_ref" \
+            --output "$RUNNER_TEMP/openclaw.tar" \
+            --result "$RUNNER_TEMP/openclaw-result.json"
+      - name: Materialize the one OpenClaw component secret bundle
+        env:
+          COMPONENT_SECRET_BUNDLE: ${{ secrets.OPENCLAW_SECRET_BUNDLE }}
+        run: |
+          test -n "$COMPONENT_SECRET_BUNDLE"
+          umask 077
+          printf '%s\n' "$COMPONENT_SECRET_BUNDLE" > "$RUNNER_TEMP/openclaw.json"
+      - name: Resolve the OpenClaw host from the sole inventory
+        run: |
+          host="$(python -c 'import json; print(json.load(open("infra/ansible/inventory/prod/topology.json"))["all"]["children"]["debian"]["hosts"]["openclaw"]["ansible_host"])')"
+          printf 'OPENCLAW_HOST=%s\n' "$host" >> "$GITHUB_ENV"
+      - name: Connect to the management tailnet
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
+          version: "1.102.3"
+          args: --accept-dns=false
+          ping: ${{ env.OPENCLAW_HOST }}
+      - name: Configure pinned SSH trust
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: ./scripts/ci/configure-ssh.sh
+      - name: Reject a superseded automatic desired state
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git fetch --no-tags --depth=1 origin refs/heads/main
+          if ! git diff --quiet "$GITHUB_SHA" FETCH_HEAD -- \
+            infra/openclaw \
+            infra/ansible/inventory/prod/topology.json \
+            scripts/ci/compose_release_engine.py \
+            scripts/ci/deploy-release-via-ssh.sh \
+            scripts/ci/configure-ssh.sh \
+            .github/workflows/openclaw.yml; then
+            echo "Refusing superseded OpenClaw inputs from $GITHUB_SHA." >&2
+            exit 1
+          fi
+      - name: Re-check current private configuration immediately before mutation
+        if: github.event_name != 'workflow_dispatch'
+        id: private_config_fresh
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: holybaechu/openclaw-setup
+          ref: main
+          path: .openclaw-config-current
+          ssh-key: ${{ secrets.OPENCLAW_CONFIG_READ_SSH_KEY }}
+          persist-credentials: false
+      - name: Reject superseded private desired state
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          current_commit="$(git -C .openclaw-config-current rev-parse HEAD)"
+          test "$current_commit" = "$OPENCLAW_CONFIG_COMMIT" || {
+            echo "Refusing superseded OpenClaw private config $OPENCLAW_CONFIG_COMMIT." >&2
+            exit 1
+          }
+      - name: Deploy complete OpenClaw desired state
+        run: >-
+          sh scripts/ci/deploy-release-via-ssh.sh
+          deploy openclaw "$RUNNER_TEMP/openclaw.tar" "$RUNNER_TEMP/openclaw.json"
+      - name: Remove the runner secret copy
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/openclaw.json"
+
+  sync_secrets:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'sync-secrets'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout the fixed transport wrapper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Materialize the one OpenClaw component secret bundle
+        env:
+          COMPONENT_SECRET_BUNDLE: ${{ secrets.OPENCLAW_SECRET_BUNDLE }}
+        run: |
+          test -n "$COMPONENT_SECRET_BUNDLE"
+          umask 077
+          printf '%s\n' "$COMPONENT_SECRET_BUNDLE" > "$RUNNER_TEMP/openclaw.json"
+      - name: Resolve the OpenClaw host from the sole inventory
+        run: |
+          host="$(python -c 'import json; print(json.load(open("infra/ansible/inventory/prod/topology.json"))["all"]["children"]["debian"]["hosts"]["openclaw"]["ansible_host"])')"
+          printf 'OPENCLAW_HOST=%s\n' "$host" >> "$GITHUB_ENV"
+      - name: Connect to the management tailnet
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
+          version: "1.102.3"
+          args: --accept-dns=false
+          ping: ${{ env.OPENCLAW_HOST }}
+      - name: Configure pinned SSH trust
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: ./scripts/ci/configure-ssh.sh
+      - name: Rotate only the OpenClaw component bundle
+        run: >-
+          sh scripts/ci/deploy-release-via-ssh.sh
+          sync-secrets openclaw "$RUNNER_TEMP/openclaw.json"
+      - name: Remove the runner secret copy
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/openclaw.json"

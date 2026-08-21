@@ -1,0 +1,93 @@
+---
+- name: Require the topology-owned deployment SSH public keys
+  ansible.builtin.assert:
+    that:
+      - deploy_ssh_public_keys is defined
+      - deploy_ssh_public_keys is sequence
+      - deploy_ssh_public_keys is not string
+      - deploy_ssh_public_keys | length > 0
+      - deploy_ssh_public_keys | select('string') | list | length == deploy_ssh_public_keys | length
+    fail_msg: The pve unit requires at least one deployment SSH public key.
+  no_log: true
+
+- name: Install SSH and Python through pct exec
+  ansible.builtin.shell: |
+    set -eu
+    vmid="{{ hostvars[item].vmid }}"
+    test "{{ hostvars[item].os_type }}" = debian || {
+      echo "Unsupported os_type={{ hostvars[item].os_type }}" >&2
+      exit 1
+    }
+
+    nameservers="$(pct config "${vmid}" | awk -F ': ' '$1 == "nameserver" { print $2 }')"
+    pct exec "${vmid}" -- /usr/bin/env \
+      HOMELAB_NAMESERVERS="${nameservers}" \
+      HOMELAB_SEARCH_DOMAIN="{{ pve_lxc_searchdomain }}" \
+      HOMELAB_AUTHORIZED_KEYS_B64="{{ deploy_ssh_public_keys | join('\n') | b64encode }}" \
+      /bin/bash -lc '
+      set -eu
+      changed=0
+      export DEBIAN_FRONTEND=noninteractive
+
+      python_bootstrap=0
+      if ! command -v python3 >/dev/null 2>&1; then
+        python_bootstrap=1
+      fi
+      if [ "${python_bootstrap}" -eq 1 ]; then
+        if [ -z "${HOMELAB_NAMESERVERS}" ]; then
+          printf "No Proxmox nameservers configured for Python bootstrap\n" >&2
+          exit 1
+        fi
+        expected_resolver="$(
+          printf "# --- BEGIN PVE ---\nsearch %s\n" "${HOMELAB_SEARCH_DOMAIN}"
+          for nameserver in ${HOMELAB_NAMESERVERS}; do
+            printf "nameserver %s\n" "${nameserver}"
+          done
+          printf "# --- END PVE ---"
+        )"
+        current_resolver="$(cat /etc/resolv.conf 2>/dev/null || true)"
+        if [ "${current_resolver}" != "${expected_resolver}" ]; then
+          rm -f /etc/resolv.conf
+          printf "%s\n" "${expected_resolver}" > /etc/resolv.conf
+          changed=1
+        fi
+      fi
+
+      install -d -o root -g root -m 0700 /root/.ssh
+      expected_authorized_keys="$(printf %s "${HOMELAB_AUTHORIZED_KEYS_B64}" | base64 -d)"
+      current_authorized_keys="$(cat /root/.ssh/authorized_keys 2>/dev/null || true)"
+      if [ "${current_authorized_keys}" != "${expected_authorized_keys}" ]; then
+        printf "%s\n" "${expected_authorized_keys}" > /root/.ssh/authorized_keys
+        chown root:root /root/.ssh/authorized_keys
+        chmod 0600 /root/.ssh/authorized_keys
+        changed=1
+      fi
+
+      missing=0
+      for pkg in openssh-server python3; do
+        if ! dpkg -s "${pkg}" >/dev/null 2>&1; then
+          missing=1
+        fi
+      done
+      if [ "${missing}" -eq 1 ]; then
+        apt-get update
+        apt-get install -y openssh-server python3
+        changed=1
+      fi
+      if ! systemctl is-enabled ssh >/dev/null 2>&1; then
+        systemctl enable ssh
+        changed=1
+      fi
+      if ! systemctl is-active ssh >/dev/null 2>&1; then
+        systemctl start ssh
+        changed=1
+      fi
+      if [ "${changed}" -eq 1 ]; then echo changed=yes; else echo changed=no; fi
+    '
+  args:
+    executable: /bin/sh
+  register: pve_lxc_access_results
+  changed_when: "'changed=yes' in pve_lxc_access_results.stdout"
+  loop: "{{ groups['debian'] }}"
+  loop_control:
+    label: "{{ item }} ({{ hostvars[item].vmid }})"

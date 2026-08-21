@@ -1,0 +1,129 @@
+name: Deploy apps desired state
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/compose/homelab/**"
+      - "infra/ansible/inventory/prod/topology.json"
+      - "scripts/ci/compose_release_engine.py"
+      - "scripts/ci/deploy-release-via-ssh.sh"
+      - "scripts/ci/configure-ssh.sh"
+      - ".github/workflows/apps.yml"
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Deploy the complete package or rotate only its component bundle
+        required: true
+        default: deploy
+        type: choice
+        options: [deploy, sync-secrets]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: prod-control-plane
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: prod
+    steps:
+      - name: Checkout exact desired state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up fast-path Python
+        if: inputs.operation != 'sync-secrets'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install app-lane test dependencies
+        if: inputs.operation != 'sync-secrets'
+        run: python -m pip install pytest==9.1.1 Jinja2==3.1.6 PyYAML==6.0.3
+      - name: Validate the complete app package and release transaction
+        if: inputs.operation != 'sync-secrets'
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest -q \
+            tests/docker \
+            tests/repo/test_compose_release_engine.py \
+            tests/repo/test_release_launcher.py \
+            tests/repo/test_deploy_release_via_ssh.py
+          ./scripts/ci/validate-compose.sh apps
+      - name: Build the exact-source release bundle
+        if: inputs.operation != 'sync-secrets'
+        run: |
+          python scripts/ci/compose_release_engine.py bundle \
+            --target apps \
+            --source-sha "$GITHUB_SHA" \
+            --stack apps/compose/homelab \
+            --topology infra/ansible/inventory/prod/topology.json \
+            --output "$RUNNER_TEMP/apps.tar" \
+            --result "$RUNNER_TEMP/apps-result.json"
+      - name: Materialize the one apps component secret bundle
+        env:
+          COMPONENT_SECRET_BUNDLE: ${{ secrets.APPS_SECRET_BUNDLE }}
+        run: |
+          test -n "$COMPONENT_SECRET_BUNDLE"
+          umask 077
+          printf '%s\n' "$COMPONENT_SECRET_BUNDLE" > "$RUNNER_TEMP/apps.json"
+      - name: Resolve the apps host from the sole inventory
+        run: |
+          host="$(python -c 'import json; print(json.load(open("infra/ansible/inventory/prod/topology.json"))["all"]["children"]["debian"]["hosts"]["docker_apps"]["ansible_host"])')"
+          printf 'DOCKER_APPS_HOST=%s\n' "$host" >> "$GITHUB_ENV"
+      - name: Connect to the management tailnet
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
+          version: "1.102.3"
+          args: --accept-dns=false
+          ping: ${{ env.DOCKER_APPS_HOST }}
+      - name: Configure pinned SSH trust
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: ./scripts/ci/configure-ssh.sh
+      - name: Reject a superseded automatic desired state
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git fetch --no-tags --depth=1 origin refs/heads/main
+          if ! git diff --quiet "$GITHUB_SHA" FETCH_HEAD -- \
+            apps/compose/homelab \
+            infra/ansible/inventory/prod/topology.json \
+            scripts/ci/compose_release_engine.py \
+            scripts/ci/deploy-release-via-ssh.sh \
+            scripts/ci/configure-ssh.sh \
+            .github/workflows/apps.yml; then
+            echo "Refusing superseded apps inputs from $GITHUB_SHA." >&2
+            exit 1
+          fi
+      - name: Deploy complete apps desired state
+        if: inputs.operation != 'sync-secrets'
+        run: >-
+          sh scripts/ci/deploy-release-via-ssh.sh
+          deploy apps "$RUNNER_TEMP/apps.tar" "$RUNNER_TEMP/apps.json"
+      - name: Rotate only the apps component bundle
+        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'sync-secrets'
+        run: >-
+          sh scripts/ci/deploy-release-via-ssh.sh
+          sync-secrets apps "$RUNNER_TEMP/apps.json"
+      - name: Remove the runner secret copy
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/apps.json"

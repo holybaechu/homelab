@@ -32,18 +32,20 @@ space between the filesystem and final LV size before the LV is reduced.
 
 ## LXC Root Disk Changes
 
-- `edge` root disk grows from `4G` to `6G`; this can be applied through the
-  normal OpenTofu/Proxmox workflow.
-- `files` root disk is declared as `4G`; shrinking an existing root disk should
-  be handled through rebuild/restore or a cautious manual shrink, not by routine
-  automation.
+- Change `root_disk_gb` for one of the three hosts in
+  `infra/ansible/inventory/prod/topology.json`.
+- Preview the exact live diff with the `pve` unit and
+  `pve_lxc_reconcile_mode=plan`. A root-disk grow is a routine safe-field
+  reconcile through `pct resize`.
+- A shrink is classified as replacement and fails closed. Back up the guest,
+  review the exported `pct config`, and use the exact
+  `pve_lxc_reconcile_allow_replacement_vmid` only for an intentional rebuild.
 
 ## Verification
 
-- Copyparty reports the reduced total capacity.
-- `/srv/downloads` is mounted read-only in the `files` LXC.
-- `/downloads` is writable in the `downloads` LXC.
-- `/downloads/incomplete` is not mounted into the `files` LXC.
-- `/srv/music` and `/srv/bjh_deepfake_contest` are no longer active Copyparty
-  shares.
-- qBittorrent can still write complete and incomplete downloads.
+- The `pve` audit reports no topology drift for VMIDs 110, 111, and 118.
+- `/var/lib/homelab` is mounted on the Proxmox host and exposed only to the
+  application LXC at `/srv/homelab`.
+- `/var/lib/homelab/openclaw-ctf` is exposed only to the OpenClaw LXC at
+  `/var/lib/openclaw/workspaces/ctf` with the declared unprivileged UID map.
+- qBittorrent and Copyparty can still write their declared durable paths.

@@ -1,0 +1,5 @@
+---
+pve_lxc_reconcile_mode: apply
+pve_lxc_config_export_root: /var/backups/homelab/pct-config
+pve_lxc_reconcile_allow_destructive_vmid: ""
+pve_lxc_reconcile_allow_replacement_vmid: ""

@@ -1,0 +1,50 @@
+name: Validate repository
+
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install validation dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Run behavioral and invariant tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest -q
+      - name: Render both Compose packages
+        run: ./scripts/ci/validate-compose.sh
+      - name: Syntax-check every explicit infrastructure unit
+        env:
+          ANSIBLE_CONFIG: infra/ansible/ansible.cfg
+        run: |
+          for unit in pve tailnet apps-host openclaw-host; do
+            ansible-playbook \
+              -i infra/ansible/inventory/prod/topology.json \
+              infra/ansible/playbooks/reconcile.yml \
+              --syntax-check \
+              -e "homelab_unit=$unit" \
+              -e "homelab_secret_bundle=/tmp/not-read-during-syntax-check.json"
+          done

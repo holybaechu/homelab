@@ -1,5 +1,5 @@
 ---
-- name: Configure homelab data filesystem
+- name: Configure the homelab data filesystem and active application paths
   ansible.builtin.shell: |
     set -eu
     changed=0
@@ -7,102 +7,140 @@
     mount_path="{{ homelab_data_mount }}"
     app_uid={{ homelab_container_uid_offset + service_uid }}
     tmp_mount="/mnt/{{ homelab_data_lv_name }}-init"
-    permissions_marker="${mount_path}/.homelab-two-lxc-permissions-v1"
-    migration_marker="${mount_path}/.homelab-two-lxc-data-migrated-v1"
-    retired_qbittorrent_vpn_path="${mount_path}/docker-apps/qbittorrent-vpn"
+    fstab_tmp=""
+    tmp_is_mounted=0
+
+    cleanup() {
+      if [ "${tmp_is_mounted}" -eq 1 ]; then
+        umount "${tmp_mount}" >/dev/null 2>&1 || true
+      fi
+      if [ -n "${fstab_tmp}" ]; then
+        rm -f -- "${fstab_tmp}"
+      fi
+    }
+    trap cleanup 0
+    trap 'exit 129' 1
+    trap 'exit 130' 2
+    trap 'exit 143' 15
 
     if [ ! -e "${lv_path}" ]; then
       lvcreate -V "{{ homelab_data_lv_size }}" -T pve/data -n "{{ homelab_data_lv_name }}"
       mkfs.ext4 -F "${lv_path}"
       changed=1
+    elif ! blkid "${lv_path}" >/dev/null 2>&1; then
+      printf 'Refusing to format existing unrecognized device %s\n' "${lv_path}" >&2
+      exit 1
     fi
 
-    if ! blkid "${lv_path}" >/dev/null 2>&1; then
-      mkfs.ext4 -F "${lv_path}"
+    filesystem_type="$(blkid -s TYPE -o value "${lv_path}")"
+    if [ "${filesystem_type}" != ext4 ]; then
+      printf 'Expected ext4 on %s, found %s\n' "${lv_path}" "${filesystem_type}" >&2
+      exit 1
+    fi
+    uuid="$(blkid -s UUID -o value "${lv_path}")"
+    if [ -z "${uuid}" ]; then
+      printf 'Device %s has no filesystem UUID\n' "${lv_path}" >&2
+      exit 1
+    fi
+    expected_device="$(readlink -f "${lv_path}")"
+    expected_fstab="UUID=${uuid} ${mount_path} ext4 defaults,noatime 0 2"
+
+    if [ -L "${mount_path}" ] || { [ -e "${mount_path}" ] && [ ! -d "${mount_path}" ]; }; then
+      printf 'Mount target %s must be a regular directory\n' "${mount_path}" >&2
+      exit 1
+    fi
+    mkdir -p "${mount_path}"
+    if mountpoint -q "${mount_path}"; then
+      mounted_source="$(findmnt -n -o SOURCE --target "${mount_path}")"
+      if [ "$(readlink -f "${mounted_source}")" != "${expected_device}" ]; then
+        printf 'Refusing data operations: %s is mounted from %s, expected %s\n' \
+          "${mount_path}" "${mounted_source}" "${lv_path}" >&2
+        exit 1
+      fi
+    fi
+
+    if [ ! -f /etc/fstab ] || [ -L /etc/fstab ]; then
+      printf '/etc/fstab must be a regular file\n' >&2
+      exit 1
+    fi
+    current_fstab="$(
+      awk -v target="${mount_path}" \
+        '!/^[[:space:]]*#/ && NF >= 2 && $2 == target { print }' /etc/fstab
+    )"
+    if [ "${current_fstab}" != "${expected_fstab}" ]; then
+      fstab_tmp="$(mktemp /etc/fstab.homelab.XXXXXX)"
+      awk -v target="${mount_path}" \
+        '/^[[:space:]]*#/ || NF < 2 || $2 != target { print }' /etc/fstab \
+        > "${fstab_tmp}"
+      printf '%s\n' "${expected_fstab}" >> "${fstab_tmp}"
+      chown --reference=/etc/fstab "${fstab_tmp}"
+      chmod --reference=/etc/fstab "${fstab_tmp}"
+      mv -f -- "${fstab_tmp}" /etc/fstab
+      fstab_tmp=""
       changed=1
     fi
 
-    mkdir -p "${mount_path}"
     if ! mountpoint -q "${mount_path}"; then
+      if [ -L "${tmp_mount}" ] || { [ -e "${tmp_mount}" ] && [ ! -d "${tmp_mount}" ]; }; then
+        printf 'Temporary mount target %s must be a regular directory\n' "${tmp_mount}" >&2
+        exit 1
+      fi
       mkdir -p "${tmp_mount}"
-      if ! mountpoint -q "${tmp_mount}"; then
+      if mountpoint -q "${tmp_mount}"; then
+        mounted_source="$(findmnt -n -o SOURCE --target "${tmp_mount}")"
+        if [ "$(readlink -f "${mounted_source}")" != "${expected_device}" ]; then
+          printf 'Temporary mount %s uses %s, expected %s\n' \
+            "${tmp_mount}" "${mounted_source}" "${lv_path}" >&2
+          exit 1
+        fi
+        tmp_is_mounted=1
+      else
         mount "${lv_path}" "${tmp_mount}"
+        tmp_is_mounted=1
       fi
       rsync -a "${mount_path}/" "${tmp_mount}/"
       umount "${tmp_mount}"
-      uuid="$(blkid -s UUID -o value "${lv_path}")"
-      if ! grep -qE "[[:space:]]${mount_path}[[:space:]]" /etc/fstab; then
-        printf 'UUID=%s %s ext4 defaults,noatime 0 2\n' "${uuid}" "${mount_path}" >> /etc/fstab
-      fi
+      tmp_is_mounted=0
       mount "${mount_path}"
       changed=1
     fi
 
-    mkdir -p \
-      "${mount_path}/docker-apps/qbittorrent/qBittorrent" \
-      "${mount_path}/docker-apps/copyparty" \
+    mounted_source="$(findmnt -n -o SOURCE --target "${mount_path}")"
+    if [ "$(readlink -f "${mounted_source}")" != "${expected_device}" ]; then
+      printf 'Mounted source verification failed for %s\n' "${mount_path}" >&2
+      exit 1
+    fi
+
+    managed_paths="
+    ${mount_path}/docker-apps/qbittorrent
+    ${mount_path}/docker-apps/copyparty
+    ${mount_path}/downloads
+    ${mount_path}/copyparty
+    "
+    for path in ${managed_paths}; do
+      if [ ! -d "${path}" ]; then
+        mkdir -p "${path}"
+        changed=1
+      fi
+      if find "${path}" -xdev \( ! -uid "${app_uid}" -o ! -gid "${app_uid}" \) \
+        -print -quit | grep -q .; then
+        chown -R "${app_uid}:${app_uid}" "${path}"
+        changed=1
+      fi
+    done
+
+    for path in \
       "${mount_path}/downloads/complete" \
       "${mount_path}/downloads/incomplete" \
+      "${mount_path}/copyparty/downloads" \
       "${mount_path}/copyparty/public" \
-      "${mount_path}/copyparty/shared-readonly"
-
-    mounted_vmid=""
-    cleanup_lxc_mount() {
-      if [ -n "${mounted_vmid}" ]; then
-        pct unmount "${mounted_vmid}" >/dev/null 2>&1 || true
+      "${mount_path}/copyparty/shared-readonly"; do
+      if [ ! -d "${path}" ]; then
+        mkdir -p "${path}"
+        chown "${app_uid}:${app_uid}" "${path}"
+        changed=1
       fi
-    }
-    trap cleanup_lxc_mount EXIT
-
-    migrate_tree() {
-      vmid="$1"
-      source_path="$2"
-      target_path="$3"
-      if ! pct status "${vmid}" >/dev/null 2>&1; then
-        return 0
-      fi
-      pct mount "${vmid}" >/dev/null
-      mounted_vmid="${vmid}"
-      rootfs="/var/lib/lxc/${vmid}/rootfs"
-      if [ -d "${rootfs}${source_path}" ]; then
-        mkdir -p "${target_path}"
-        rsync -a --ignore-existing "${rootfs}${source_path}/" "${target_path}/"
-      fi
-      pct unmount "${vmid}"
-      mounted_vmid=""
-    }
-
-    if [ ! -e "${migration_marker}" ]; then
-      migrate_tree 113 /var/lib/qbittorrent/.config/QBittorrent \
-        "${mount_path}/docker-apps/qbittorrent/qBittorrent"
-      migrate_tree 113 /var/lib/qbittorrent/.config/qBittorrent \
-        "${mount_path}/docker-apps/qbittorrent/qBittorrent"
-      migrate_tree 113 /var/lib/qbittorrent/.local/share/qBittorrent \
-        "${mount_path}/docker-apps/qbittorrent/qBittorrent"
-      migrate_tree 114 /var/lib/copyparty \
-        "${mount_path}/docker-apps/copyparty"
-      touch "${migration_marker}"
-      changed=1
-    fi
-
-    if [ ! -e "${permissions_marker}" ] || [ "{{ homelab_data_reconcile_permissions | default(false) | lower }}" = "true" ]; then
-      chown "${app_uid}:${app_uid}" "${mount_path}/docker-apps"
-      find "${mount_path}/docker-apps" \
-        -mindepth 1 -maxdepth 1 \
-        ! -path "${retired_qbittorrent_vpn_path}" \
-        -exec chown -R "${app_uid}:${app_uid}" {} +
-      chown -R "${app_uid}:${app_uid}" \
-        "${mount_path}/downloads" \
-        "${mount_path}/copyparty"
-      find \
-        "${mount_path}/docker-apps" \
-        "${mount_path}/downloads" \
-        "${mount_path}/copyparty" \
-        -path "${retired_qbittorrent_vpn_path}" -prune -o \
-        -type d -exec chmod 0755 {} +
-      touch "${permissions_marker}"
-      changed=1
-    fi
+    done
 
     if [ "${changed}" -eq 1 ]; then
       echo changed=yes

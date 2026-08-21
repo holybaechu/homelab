@@ -1,9 +1,6 @@
 import json
 import re
 
-import yaml
-
-from scripts.ci import select_deployment_components as selector
 from tests.helpers import REPO_ROOT
 
 
@@ -11,13 +8,18 @@ def read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_operational_dependencies_do_not_use_latest_aliases():
-    paths = [
-        ".github/workflows/ci.yml",
-        "scripts/ci/install-tools.sh",
-        *[str(path.relative_to(REPO_ROOT)) for path in (REPO_ROOT / "apps/compose").rglob("compose.yml")],
-    ]
-    contents = "\n".join(read(path) for path in paths)
+def workflow_text() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((REPO_ROOT / ".github/workflows").glob("*.yml"))
+    )
+
+
+def test_operational_dependencies_do_not_use_floating_latest_aliases():
+    compose_files = sorted((REPO_ROOT / "apps/compose").rglob("compose.yml"))
+    contents = workflow_text() + "\n" + "\n".join(
+        path.read_text(encoding="utf-8") for path in compose_files
+    )
     assert "ubuntu-latest" not in contents
     assert "version: latest" not in contents
     assert ":latest" not in contents
@@ -33,72 +35,75 @@ def test_renovate_uses_builtin_compose_and_dockerfile_managers():
     )
 
 
-def test_ansible_install_is_pinned_and_opentofu_lockfile_is_tracked():
-    assert "ansible==" in read("requirements-deploy.txt")
-    assert "requirements-deploy.txt" in read(".github/workflows/ci.yml")
-    assert ".terraform.lock.hcl" not in read(".gitignore")
-
-
 def test_action_sha_pins_keep_release_comments_for_renovate():
-    workflows = read(".github/workflows/ci.yml")
-    action_lines = [line.strip() for line in workflows.splitlines() if "uses:" in line]
+    action_lines = [
+        line.strip() for line in workflow_text().splitlines() if "uses:" in line
+    ]
     sha_lines = [line for line in action_lines if re.search(r"@[0-9a-f]{40}\b", line)]
 
-    assert sha_lines
+    assert action_lines == sha_lines
     assert all(re.search(r"\s#\s+v?\d+(?:\.\d+){0,2}$", line) for line in sha_lines)
 
 
-def test_nonstandard_version_surfaces_have_focused_managers():
+def test_openclaw_dockerfile_bases_are_locally_digest_pinned():
+    dockerfiles = sorted((REPO_ROOT / "infra/openclaw").glob("*/Dockerfile"))
+    assert len(dockerfiles) == 2
+    for dockerfile in dockerfiles:
+        lines = dockerfile.read_text(encoding="utf-8").splitlines()
+        references = [line.split()[1] for line in lines if line.startswith("FROM ")]
+        assert references
+        assert all(re.search(r"@sha256:[0-9a-f]{64}$", ref) for ref in references)
+        assert not any(line.startswith("ARG ") and "REF" in line for line in lines)
+
+
+def test_nonstandard_versions_have_only_focused_managers():
     config = json.loads(read("renovate.json"))
-    manager_text = json.dumps(config.get("customManagers", []))
-    datasource_text = json.dumps(config.get("customDatasources", {}))
+    managers = config["customManagers"]
+    by_dependency = {manager["depNameTemplate"]: manager for manager in managers}
 
-    for marker in (
-        ".opentofu-version",
+    assert set(by_dependency) == {
         "tailscale/tailscale",
-        "vuetorrent-lsio-mod",
-        "topology",
-    ):
-        assert marker in manager_text
-    assert "download.proxmox.com/images/system" in datasource_text
-
-
+        "ghcr.io/vuetorrent/vuetorrent-lsio-mod",
+        "proxmox-debian-13",
+    }
+    assert by_dependency["tailscale/tailscale"]["managerFilePatterns"] == [
+        "/^\\.github\\/workflows\\/(?:apps|infra|openclaw)\\.yml$/"
+    ]
+    assert by_dependency["ghcr.io/vuetorrent/vuetorrent-lsio-mod"]["managerFilePatterns"] == [
+        "/^apps\\/compose\\/homelab\\/compose\\.yml$/"
+    ]
+    assert by_dependency["proxmox-debian-13"]["managerFilePatterns"] == [
+        "/^infra\\/ansible\\/inventory\\/prod\\/topology\\.json$/"
+    ]
+    assert (
+        config["customDatasources"]["proxmox-debian-13"]["defaultRegistryUrlTemplate"]
+        == "https://download.proxmox.com/images/system/"
+    )
 
 
 def test_vuetorrent_mod_manager_tracks_official_semver():
     config = json.loads(read("renovate.json"))
     manager = next(
-        manager
-        for manager in config["customManagers"]
-        if manager.get("depNameTemplate")
-        == "ghcr.io/vuetorrent/vuetorrent-lsio-mod"
+        item
+        for item in config["customManagers"]
+        if item.get("depNameTemplate") == "ghcr.io/vuetorrent/vuetorrent-lsio-mod"
     )
 
-    assert manager["managerFilePatterns"] == [
-        "/^apps\\/compose\\/homelab\\/compose\\.yml$/"
-    ]
     assert manager["matchStrings"] == [
         "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:"
         "(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "@(?<currentDigest>sha256:[0-9a-f]{64})"
     ]
     assert manager["datasourceTemplate"] == "docker"
     assert manager["versioningTemplate"] == "semver"
 
 
-def test_custom_managers_reference_only_current_workflow_and_compose_paths():
-    manager_text = json.dumps(json.loads(read("renovate.json"))["customManagers"])
-    assert "workflows\\\\/ci\\\\.yml" in manager_text
-    assert "compose\\\\/homelab\\\\/compose" in manager_text
-    assert "workflows\\\\/cd\\\\.yml" not in manager_text
-    assert "compose\\\\/media\\\\/compose" not in manager_text
-
-
 def test_metube_image_uses_explicit_calendar_versioning():
     config = json.loads(read("renovate.json"))
     rule = next(
-        rule
-        for rule in config["packageRules"]
-        if rule.get("matchPackageNames") == ["ghcr.io/alexta69/metube"]
+        item
+        for item in config["packageRules"]
+        if item.get("matchPackageNames") == ["ghcr.io/alexta69/metube"]
     )
 
     assert rule["matchDatasources"] == ["docker"]
@@ -107,41 +112,29 @@ def test_metube_image_uses_explicit_calendar_versioning():
     )
 
 
-def test_direct_requirements_and_collections_are_exactly_pinned():
-    requirement_lines = [
-        line.strip()
-        for line in read("requirements-dev.txt").splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
-    assert requirement_lines
-    assert all(
-        re.fullmatch(r"[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[^<>=!~;\s]+", line)
-        for line in requirement_lines
-    )
-
-    galaxy = yaml.safe_load(read("infra/ansible/requirements.yml"))
-    collections = galaxy["collections"]
-    assert collections
-    assert all(re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", item["name"]) for item in collections)
-    assert all(
-        isinstance(item.get("version"), str)
-        and re.fullmatch(r"\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?", item["version"])
-        for item in collections
-    )
-
-
-def test_opentofu_updates_remain_in_deployment_path_scope():
-    selection = selector.classify_paths([".opentofu-version"])
-
-    assert selection.components == ("tofu", "bootstrap")
+def test_direct_python_requirements_are_exactly_pinned():
+    for filename in ("requirements-dev.txt", "requirements-deploy.txt"):
+        requirement_lines = [
+            line.strip()
+            for line in read(filename).splitlines()
+            if line.strip() and not line.lstrip().startswith(("#", "-r "))
+        ]
+        assert requirement_lines
+        assert all(
+            re.fullmatch(
+                r"[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[^<>=!~;\s]+",
+                line,
+            )
+            for line in requirement_lines
+        )
 
 
 def test_openclaw_image_updates_always_require_review():
     config = json.loads(read("renovate.json"))
     rule = next(
-        rule
-        for rule in config["packageRules"]
-        if rule.get("description") == "Require review for OpenClaw"
+        item
+        for item in config["packageRules"]
+        if item.get("description") == "Require review for OpenClaw"
     )
 
     assert rule["matchDatasources"] == ["docker"]

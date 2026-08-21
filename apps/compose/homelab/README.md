@@ -1,52 +1,94 @@
-# Merged homelab Compose project
+# Homelab application release package
 
-This is the only application stack. The routine direct deployer operates only
-this project and contains no legacy-stack branch. Ansible prepares inputs but
-never activates application containers.
+This directory is the complete deployable unit for the application host:
 
-## Runtime inputs
+- `compose.yml` defines all services and owns `homelab_proxy`;
+- `config/` and `traefik.yml` contain nonsecret runtime policy;
+- `release.json` is the fixed package/deployer contract;
+- `prepare_release.py` validates one component secret bundle and writes the
+  private generated files inside a staged copy of this directory; and
+- `smoke.sh` derives ingress endpoints from Compose, then verifies DNS,
+  ingress, required AdGuard policy, and qBittorrent behavior.
 
-Ansible renders the release input at
-`/etc/homelab/runtime/homelab/.env`. It contains only the nonsecret keys shown
-in `.env.example`. Root provisions these service-specific files separately:
+Every service image and the VueTorrent modification are tag-and-digest pinned.
+Tags remain readable update coordinates, while the OCI digests make activation,
+audit, and rollback select the same bytes even if an upstream tag moves.
 
-- `/etc/homelab/secrets/traefik.env` contains only Traefik's
-  `CF_DNS_API_TOKEN` credential.
-- `/etc/homelab/secrets/cloudflare-ddns.env` contains only the updater's
-  `CLOUDFLARE_API_TOKEN` credential.
+An application change therefore normally touches only this package. It does
+not require an Ansible template, inventory variable, runtime `.env`, service
+manifest, or separately maintained validation list.
 
-Both secret files are root-owned and mode `0600`. The private runtime overlay
-also contains:
+## Secret bundle
 
-- `/etc/homelab/runtime/homelab/files/adguard/AdGuardHome.yaml`
-- `/etc/homelab/runtime/homelab/files/copyparty.conf`
+The deployer supplies the root-owned, mode `0600`, regular file
+`/etc/homelab/secrets/apps.json`. Version 1 has this exact shape:
 
-The direct deployer copies those inputs into an immutable staged release.
-It separately injects a release-scoped `.homelab/artifacts.env` containing
-only `T3CODE_IMAGE_REF`. The value comes from trusted deployment state and is
-validated as `ghcr.io/holybaechu/homelab-t3code@sha256:<64hex>` before Compose
-configuration, pull, or activation. It is never part of Ansible runtime
-configuration.
+```json
+{
+  "component": "apps",
+  "version": 1,
+  "cloudflare": {
+    "traefik_dns_api_token": "...",
+    "ddns_api_token": "..."
+  },
+  "adguard": {
+    "username": "admin",
+    "password_hash": "$2y$..."
+  },
+  "qbittorrent": {
+    "username": "...",
+    "password_hash": "@ByteArray(base64-salt:base64-pbkdf2-digest)"
+  },
+  "copyparty_users": [
+    {"name": "...", "password": "..."}
+  ]
+}
+```
 
-## Deployment and recovery
+The first `copyparty_users` entry owns the writable shares; every listed user
+can read the shared read-only area.
 
-- `platform_traefik_data` and `platform_adguard_work` are declared external so
-  they must already exist before the first merged deployment. This preserves
-  certificates and AdGuard work data without copying Docker volumes.
-- The fixed project name changes container identities. Monitoring and backup
-  selectors that use old project/container labels need an explicit cutover.
-- CI builds `apps/images/t3code/Dockerfile`, publishes a source-addressed
-  staging tag, and records the digest emitted by that same Buildx operation.
-  The production release contains neither the Dockerfile nor a build context.
-  Activation uses `--no-build` and the exact recorded digest. An unrelated
-  application release reuses the last health-approved digest; the first
-  release fails closed until its source SHA supplies an exact digest approval.
-- The source-only recovery tool records the already-tested split-stack cutover
-  procedure. It is never shipped in normal release archives or consulted by
-  routine deployment. A reconstructed host uses the ordinary targeted
-  bootstrap followed by the same exact-SHA initial activation.
-- Repository-wide Compose validation must use Compose's no-env-resolution mode
-  until the required absolute secret files exist on the validation host; the
-  service env files deliberately remain required in production.
-- Routine rollback restores the previous homelab release as one unit, including
-  the exact T3 digest recorded with that release.
+Unknown keys, wrong component/version values, unsafe account names, multiline
+values, malformed hashes, symlinks, and overly broad POSIX permissions fail
+closed. The materializer creates only `.secrets/` and `generated/`; both are
+ignored by Git and every output is mode `0600` on POSIX hosts.
+
+Prepare an isolated staged copy with:
+
+```sh
+python3 prepare_release.py \
+  --secret-bundle /etc/homelab/secrets/apps.json \
+  --release-root "$PWD" \
+  --topology ../../../infra/ansible/inventory/prod/topology.json
+docker compose --project-name homelab -f compose.yml config --quiet
+```
+
+The production release engine performs this before `pull` or `up`. It owns the
+generic Compose render, health, and exact-running-set gates once, then executes
+package-local `smoke.sh` only for application semantics. Any failure restores
+the previously active immutable release. The scratch DDNS image declares the
+package-local `homelab.health=process` exception; the engine derives it from
+the rendered model and requires exactly one running, non-restarting container
+with zero activation restarts.
+
+## Host primitives and recovery
+
+The host must provide `/srv/homelab`, the declared persistent directories, the
+local root CA mounted by Traefik, Docker, and the component secret bundle. The
+bundle builder copies the exact repository topology into the immutable package;
+the materializer renders cross-host routes and the local DNS answer from that
+snapshot. Managed host addresses therefore remain declared only in inventory,
+and audit/rollback cannot pick up ambient host configuration from another
+commit.
+Ansible may establish those host primitives, but it does not own application
+runtime configuration or activation.
+
+Compose creates the shared `homelab_proxy` network and the stable explicitly
+named `platform_traefik_data` and `platform_adguard_work` volumes on first
+activation. The release engine intentionally never passes `--volumes` when it
+stops a release, so those volumes and the host mounts retain durable state.
+Ordinary rollback reactivates the previous complete package. Service policy is
+declarative: AdGuard and Copyparty configuration is mounted read-only, and a
+container restart reapplies the package-generated qBittorrent configuration.
+UI preference edits are therefore not durable; downloads, filter work data,
+and other application data remain durable.

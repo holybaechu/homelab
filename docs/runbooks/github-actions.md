@@ -1,185 +1,129 @@
-# GitHub Actions CI/CD
+# GitHub Actions deployment lanes
 
-`.github/workflows/ci.yml` is the repository's only workflow. It classifies an
-exact revision, validates that same `github.sha`, and only then permits a
-single selected production release transaction. Pull requests and scheduled runs never create a
-runtime deployment plan. Unknown paths below `apps/`, `infra/`, or
-`scripts/ci/` fail closed instead of triggering a broad fallback.
+The repository has four coarse workflows. Each production lane starts from a
+complete desired state and does not read another workflow run or a previous
+GitHub deployment record.
 
-## Fast validation
+## Validation
 
-The classifier emits one validation scope before tests begin:
+`validate.yml` runs on pull requests, merge queues, and manual requests. One
+exact checkout runs the complete behavioral/invariant test suite, renders the
+apps and OpenClaw Compose packages, and syntax-checks `reconcile.yml` for all
+four infrastructure units. It has read-only repository permission and no
+production environment.
 
-- `apps-model`: the 18 policy/config/ingress tests for an ordinary
-  `apps/compose/homelab` edit, followed by real Compose rendering;
-- `apps`: the model checks plus direct uploader, locked deployer, and immutable
-  T3 image tests when deployment tooling or image inputs change;
-- `openclaw`: immutable two-image release, deterministic bundle, direct SSH,
-  rollback, host-boundary, and skill-promotion tests;
-- `repo`: routing and workflow contract tests; or
-- `full`: the complete repository suite, OpenTofu validation, every active
-  Ansible playbook syntax check, and Compose validation.
+## Apps
 
-Only `full` installs Ansible dependencies, Ansible Galaxy collections, and
-OpenTofu. The daily schedule always selects `full`. Ordinary app or OpenClaw
-runtime changes therefore validate only the deployable unit instead of
-repeating unrelated infrastructure work.
+`apps.yml` is the ordinary application path. A change below
+`apps/compose/homelab` runs in one job and one checkout:
 
-## Deployment components
+1. run package and common release-transaction tests;
+2. render the apps Compose package;
+3. bundle the complete apps package with the exact homelab commit;
+4. materialize the single `APPS_SECRET_BUNDLE` runner file;
+5. join the management tailnet and configure pinned SSH trust; and
+6. upload the release plus component bundle once and invoke the stable host
+   launcher.
 
-Changed paths map to the deterministic component order
-`tofu,bootstrap,tailnet,openclaw,apps`. Mixed changes take the union.
-Documentation and tests do not deploy. `apps` always means the one `homelab`
-project; the retired `platform`, `media`, `code`, Arcane, and Docker OpenClaw
-projects are not selectable.
+The lane never calls Ansible or an image build. Manual dispatch defaults to the
+same complete deployment; selecting `sync-secrets` uploads only the component
+document and recreates the current release through the installed engine.
 
-`ADOPTION_RETIREMENT_PATHS` is a temporary exact list of strict-tree files
-deleted by this cutover. It gives the first `--no-renames` push empty ownership
-instead of reviving retired components. Remove the tombstones after the
-cutover commit is the deployment diff base everywhere.
+## OpenClaw
 
-The post-validation `prod_mutation` job is one release-level transaction under
-the global `prod-mutation` concurrency group. It waits for both exact-SHA image
-build jobs, prepares only the selected component inputs, checks
-`origin/main == GITHUB_SHA` once immediately before the mutation sequence, and
-then applies selected components in this order:
+`openclaw.yml` runs for public runtime/image changes, a private-config
+promotion dispatch, or a manual request. Gateway and CTF jobs build in
+parallel from Dockerfiles whose `FROM` lines contain exact digests. The pinned
+Buildx actions use independent GitHub Actions caches, publish the two images,
+attach maximum provenance and SBOM attestations, and return exact OCI digests.
 
-1. OpenTofu;
-2. bootstrap or isolated tailnet reconciliation;
-3. exact OpenClaw release; and
-4. the one homelab Compose release.
+The deploy job checks out the exact homelab source and either an explicitly
+promoted private-config commit or current private `main`. It records the exact
+resolved commit and builds one descriptor containing:
 
-Skipped component steps run no deployment setup. A push with no deployable
-paths runs only the exact checkout, latest-main watermark gate, and GitHub API
-watermark write; manual validation-only dispatches do not enter the production
-job. OpenClaw precedes apps in a mixed release, so the Gateway is ready before
-the proxy stack activates. Host deployers retain their nonblocking kernel
-locks for manual or out-of-band collision protection.
+- homelab commit;
+- private-config commit;
+- Gateway `repository@sha256` identity; and
+- CTF `repository@sha256` identity.
 
-GitHub may replace an older pending member of a concurrency group. Therefore
-the workflow never uses an individual push's `before` SHA as its release base.
-Classification queries the newest successful `prod-release` GitHub deployment
-whose exact SHA is an ancestor of the current SHA, then diffs that watermark to
-the current revision with `--no-renames`. After every automatic push release
-succeeds—including a release with no production mutations—the locked job
-rechecks `origin/main == GITHUB_SHA`, creates a `prod-release` deployment for
-that exact SHA, and records a successful deployment status. If an intermediate
-run is coalesced or becomes stale, the next retained run still selects the full
-change range since the last complete release and cannot drop its changes.
+The bundle checksum proves only upload integrity. It is not another desired
+state input. The job sends that bundle and `OPENCLAW_SECRET_BUNDLE` through the
+same release wrapper used by apps.
 
-## App release path
+Manual dispatch defaults to the complete descriptor path. Selecting
+`sync-secrets` skips both image jobs, bundle construction, and image pulls; it
+uploads only `OPENCLAW_SECRET_BUNDLE` and recreates the already-current release
+under the same host lock and semantic smoke gate.
 
-The app step inside the common release transaction runs exactly:
+Live skill collection is not a production-host service. The private
+`holybaechu/openclaw-setup` repository runs its pinned scheduled workflow,
+snapshots the two bounded skill roots over read-only SSH, validates a
+content-derived pull request, merges it, then dispatches the exact resulting
+private-config commit to this lane.
+
+## Infrastructure
+
+`infra.yml` exposes exactly four manual units:
+
+- `pve`
+- `tailnet`
+- `apps-host`
+- `openclaw-host`
+
+Every invocation passes one required `homelab_unit` to the sole Ansible
+entrypoint, `infra/ansible/playbooks/reconcile.yml`. PVE additionally chooses
+`plan`, `audit`, or `apply`; potentially destructive or replacement changes
+remain rejected unless the matching exact VMID is supplied in the manual
+approval input. The daily schedule runs the three non-PVE units sequentially
+with targeted package upgrades and marker-gated reboot handling.
+
+After a PVE apply, the job compares every host key read through trusted `pct`
+against the supplied `DEPLOY_SSH_KNOWN_HOSTS`. A new or replaced LXC key fails
+the job after reconciliation and writes the exact verified public lines to the
+job summary. Update that production environment secret before another host or
+runtime job; this makes the rare trust handoff explicit instead of leaving the
+next deployment with a silent stale-key failure.
+
+PVE and tailnet receive only their versioned component bundle. Apps/OpenClaw
+host units create OS, Docker, firewall, storage, account, release-root, and
+launcher primitives; application activation remains in the runtime lanes.
+
+## Production environment contract
+
+Component documents:
+
+- `APPS_SECRET_BUNDLE`
+- `OPENCLAW_SECRET_BUNDLE`
+- `PVE_SECRET_BUNDLE`
+- `TAILNET_SECRET_BUNDLE`
+
+Connection credentials:
+
+- `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE`
+- `DEPLOY_SSH_PRIVATE_KEY`, `DEPLOY_SSH_KNOWN_HOSTS`
+- `OPENCLAW_CONFIG_READ_SSH_KEY`
+
+Host addresses are read only from
+`infra/ansible/inventory/prod/topology.json`. Workflows do not provide address
+overrides. All actions use immutable commit pins, runtime jobs receive only
+`contents: read` plus the narrow write/OIDC permission they consume. All
+production mutations share one non-cancelling concurrency group so a host
+package/reboot or tailnet restart cannot interrupt a release transaction;
+`queue: max` preserves every waiting desired-state run instead of replacing a
+pending deployment. Validation remains independent. The two OpenClaw image
+builds run in parallel inside the admitted OpenClaw workflow.
+
+## Operator commands
+
+The stable host launcher is `/usr/local/libexec/homelab-release`:
 
 ```sh
-sh scripts/ci/deploy-compose-via-ssh.sh "$GITHUB_SHA"
+/usr/local/libexec/homelab-release audit --target apps
+/usr/local/libexec/homelab-release rollback --target apps
+/usr/local/libexec/homelab-release audit --target openclaw
+/usr/local/libexec/homelab-release rollback --target openclaw
 ```
 
-It uploads only `apps/compose/homelab`, reads prepared inputs from
-`/etc/homelab/runtime`, and invokes the locked remote deployer. It installs no
-Python runtime, Ansible, Galaxy collection, or OpenTofu on the runner and runs
-no broad live validation. If a T3 image input changed, `t3_build` builds and
-approves the exact same-build digest first, then passes the paired
-`T3_IMAGE_REF` and `T3_SOURCE_SHA`; otherwise the remote trusted approval is
-reused.
-
-## OpenClaw release path
-
-An OpenClaw release is one canonical state:
-
-- exact Gateway and CTF `repository@sha256:<64 hex>` references;
-- deterministic runtime bundle SHA-256;
-- exact private-config commit and deterministic bundle SHA-256; and
-- exact homelab deployment SHA.
-
-`openclaw_build` builds changed image inputs from digest-pinned bases and uses
-Buildx's same-build metadata to approve the resulting digest. The selected
-OpenClaw steps check out the private `holybaechu/openclaw-setup` commit with
-credentials disabled after checkout, reproduces both bundles, creates the
-canonical manifest, and runs:
-
-```sh
-sh scripts/ci/deploy-openclaw-via-ssh.sh \
-  "$GITHUB_SHA" release.json runtime.tar config.tar
-```
-
-This common promotion path uses the preinstalled deployer on the dedicated
-OpenClaw LXC. It does not install Python, Ansible, Galaxy, OpenTofu, Node/npm,
-or build an image. The host deployer verifies the exact digests, runs Compose
-with `--no-build`, waits on `/readyz`, makes one authenticated smoke request,
-and rolls back both images and config to the previous release on failure. The
-SSH client then runs the non-authenticated audit.
-
-The retired runtime export described in `docs/runbooks/openclaw.md` stays in
-offline recovery storage. It is not a workflow secret, deployment input, or
-live state record.
-
-An autonomous skill promotion sends `repository_dispatch` type
-`openclaw-promoted` with its exact private-config commit. The workflow combines
-that commit with the configured current exact image/runtime identities,
-recomputes the deterministic config hash from the exact checkout, and selects
-only `openclaw`. The skill-sync GitHub credential remains in its isolated host
-service and is never mounted into the Gateway.
-
-## Manual dispatch
-
-`workflow_dispatch` requires an explicit `components` CSV. Empty means
-validation only; it never means deploy everything. Names must be unique and a
-subset of `tofu,bootstrap,tailnet,openclaw,apps`. Selecting `apps` implicitly
-selects the sole `homelab` project. Selecting `openclaw` also requires all five
-exact release inputs:
-
-- `openclaw_config_commit`
-- `openclaw_gateway_ref`
-- `openclaw_ctf_ref`
-- `openclaw_runtime_sha256`
-- `openclaw_config_sha256`
-
-`tofu_force_unlock_id` is a manual diagnostic for a confirmed stale lock in
-the remote state. Leave it empty during ordinary deployment.
-
-## Provisioning and maintenance
-
-`bootstrap` owns OS/Docker prerequisites, firewall boundaries, root-owned
-runtime and secret materialization, and installation of the opaque host
-deployers. It writes the combined `tailnet,openclaw,apps` schema only in the
-provisioning lane, then reconciles `site.yml`. An isolated tailnet selection
-writes and exposes only the tailnet input. Production inventory is the single
-`infra/ansible/inventory/prod/topology.json` file.
-
-The schedule does not run the runtime plan. After exhaustive repository
-validation it runs `maintenance.yml` under `prod-mutation`, waits for controlled
-restart/reboot recovery, and runs the complete live `validate.yml`. Routine
-reconciliation keeps apt packages present; only maintenance enables upgrades.
-
-## `prod` environment configuration
-
-Connection and provisioning variables:
-
-- `PVE_NODE_NAME`, `PVE_BRIDGE`, `PVE_ROOT_DATASTORE_ID`
-- `PVE_TAILSCALE_IP`, optional `DOCKER_APPS_IP`, optional `OPENCLAW_IP`
-- `TOFU_STATE_BUCKET`, `TOFU_STATE_KEY`, `TOFU_STATE_REGION`,
-  `TOFU_STATE_ENDPOINT`
-- optional `ADGUARD_ADMIN_USERNAME`
-
-Exact OpenClaw defaults used for source-path and autonomous promotions:
-
-- `OPENCLAW_CONFIG_COMMIT`, `OPENCLAW_CONFIG_SHA256`
-- `OPENCLAW_GATEWAY_REF`, `OPENCLAW_CTF_REF`, `OPENCLAW_RUNTIME_SHA256`
-- digest-pinned build bases `OPENCLAW_GATEWAY_BASE_REF`,
-  `OPENCLAW_PYTHON_BASE_REF`, `OPENCLAW_DOCKER_CLI_REF`,
-  `OPENCLAW_CTF_BASE_REF`, and `OPENCLAW_UV_BASE_REF`
-
-Shared/provisioning secrets include `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE`,
-`DEPLOY_SSH_PRIVATE_KEY`, `DEPLOY_SSH_KNOWN_HOSTS`, Proxmox/OpenTofu state
-credentials, and `DEPLOY_SSH_PUBLIC_KEYS`. Bootstrap additionally receives the
-component-scoped secrets defined by `infra/deployment/secrets.json`. The private
-config checkout receives only the repository-scoped read-only deploy key
-`OPENCLAW_CONFIG_READ_SSH_KEY`; the direct OpenClaw and apps upload paths receive
-no application secret values.
-
-`DEPLOY_SSH_KNOWN_HOSTS` must contain pinned entries for Proxmox and the three
-LXCs. Never discover keys inside a deployment job. Job-level `id-token: write`
-and `deployments: write` exist only on the release job that connects to
-Tailscale and records `prod-release`; plan, validation, and image build jobs
-retain minimal read/package permissions.
+`sync-secrets` accepts one already uploaded component JSON file, atomically
+installs it, and recreates the current release. Normal rotations use the manual
+runtime workflow so validation, transport, smoke, and cleanup remain uniform.

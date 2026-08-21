@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "project": "openclaw",
+  "compose": "compose.yml",
+  "secret_bundle": {
+    "component": "openclaw",
+    "version": 1
+  },
+  "smoke": "smoke.sh"
+}

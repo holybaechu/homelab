@@ -13,24 +13,5 @@ openclaw_workspaces_root: "{{ openclaw_state_root }}/workspaces"
 openclaw_workspace_root: "{{ openclaw_workspaces_root }}/main"
 openclaw_auth_profile_secret_root: "{{ openclaw_home }}/.config/openclaw"
 openclaw_secret_root: /etc/openclaw/secrets
-openclaw_gateway_token_path: "{{ openclaw_secret_root }}/gateway_token"
-openclaw_discord_bot_token_path: "{{ openclaw_secret_root }}/discord_bot_token"
-openclaw_exa_api_key_path: "{{ openclaw_secret_root }}/exa_api_key"
 
 openclaw_gateway_port: 18789
-openclaw_hostname: openclaw.home.hchu.me
-openclaw_readiness_url: "http://127.0.0.1:{{ openclaw_gateway_port }}/readyz"
-openclaw_smoke_url: "http://127.0.0.1:{{ openclaw_gateway_port }}/control-ui-config.json"
-
-openclaw_skill_sync_enabled: true
-openclaw_skill_sync_user: openclaw-skill-sync
-openclaw_skill_sync_group: openclaw-skill-sync
-openclaw_skill_sync_uid: 1002
-openclaw_skill_sync_gid: 1002
-openclaw_skill_sync_state_root: /var/lib/openclaw-skill-sync
-openclaw_skill_sync_script_path: /usr/local/libexec/openclaw-skill-sync
-openclaw_skill_sync_askpass_path: /usr/local/libexec/openclaw-skill-sync-askpass
-openclaw_skill_sync_github_token_path: "{{ openclaw_secret_root }}/skill_sync_github_token"
-openclaw_skill_sync_repository: holybaechu/openclaw-setup
-openclaw_skill_sync_deploy_repository: holybaechu/homelab
-openclaw_skill_sync_check_timeout: 900
