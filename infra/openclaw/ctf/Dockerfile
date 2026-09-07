@@ -1,7 +1,7 @@
 # Base identities live with the Dockerfile. Renovate updates these reviewed
 # digest-pinned lines; the workflow has no image-variable control plane.
 FROM ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 AS uv
-FROM docker.io/kalilinux/kali-rolling:latest@sha256:d2560fdc054793be92236322113fa231e609f95403dd68c613ca864b0d872b1f
+FROM docker.io/kalilinux/kali-rolling:latest@sha256:b7211f1d3aeb8674b95f9f3ba0ec5f04185d4b543d174a04aab388a3c2e33c27
 
 COPY --from=uv /uv /uvx /usr/local/bin/
 ENV DEBIAN_FRONTEND=noninteractive \
