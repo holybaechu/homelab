@@ -17,7 +17,7 @@ RUN python /patches/patch-openclaw-codex-sandbox-cwd.py \
     && python /patches/patch-openclaw-discord-autothread-queue.py \
       /opt/openclaw-plugins
 
-FROM docker.io/library/docker:29-cli@sha256:000bb62ff495f986c9f5578eb67cc2cb98b91138eda81d7762d5371eb8a497fe AS docker-cli
+FROM docker.io/library/docker:29-cli@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66 AS docker-cli
 
 FROM ghcr.io/openclaw/openclaw:2026.7.1-2@sha256:8789721d2e9b24b780a1504b56deb4c6bd5c7dbf96a1dd117e7c45c2ed72c8ac
 USER root
