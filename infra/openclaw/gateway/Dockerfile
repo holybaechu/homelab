@@ -9,7 +9,7 @@ RUN mkdir -p /opt/openclaw-plugins/project \
       @openclaw/discord@2026.7.1 \
       @openclaw/exa-plugin@2026.7.1
 
-FROM docker.io/library/python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS patch-assembly
+FROM docker.io/library/python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS patch-assembly
 COPY --from=plugin-assembly /opt/openclaw-plugins /opt/openclaw-plugins
 COPY patches/ /patches/
 RUN python /patches/patch-openclaw-codex-sandbox-cwd.py \
