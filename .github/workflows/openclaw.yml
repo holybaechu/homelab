@@ -37,7 +37,7 @@ concurrency:
 jobs:
   build_gateway:
     if: inputs.operation != 'sync-secrets'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -75,7 +75,7 @@ jobs:
 
   build_ctf:
     if: inputs.operation != 'sync-secrets'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -114,7 +114,7 @@ jobs:
   deploy:
     if: inputs.operation != 'sync-secrets'
     needs: [build_gateway, build_ctf]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: prod
     permissions:
@@ -235,7 +235,7 @@ jobs:
 
   sync_secrets:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'sync-secrets'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     environment: prod
     permissions:

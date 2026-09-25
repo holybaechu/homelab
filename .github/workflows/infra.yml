@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         unit: ${{ fromJSON(github.event_name == 'schedule' && '["tailnet","apps-host","openclaw-host"]' || format('["{0}"]', inputs.unit)) }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     environment: prod
     concurrency:
