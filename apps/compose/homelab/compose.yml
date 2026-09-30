@@ -71,7 +71,7 @@ services:
     image: lscr.io/linuxserver/qbittorrent:5.2.4@sha256:b522f9f4b769f8f36d49d22d5eb6a92e9aa18904c6a1830b1439df511ec21983
     restart: unless-stopped
     environment:
-      DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.35.0@sha256:f6445ce1eefc597650d4f469ad7b18e35451ce79fc9588f4276a2a0221ca793e
+      DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.36.0@sha256:174f1c29fda45ecc3251ad649036f618c1697bbc612a34358707688404c8557b
       PGID: "1000"
       PUID: "1000"
       TORRENTING_PORT: "35435"
