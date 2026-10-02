@@ -146,7 +146,6 @@ jobs:
           set -euo pipefail
           args=(
             ansible-playbook
-            -i infra/ansible/inventory/prod/topology.json
             infra/ansible/playbooks/reconcile.yml
             -e "homelab_unit=$UNIT"
           )

@@ -4,8 +4,8 @@ Configuration and operating guides for two unprivileged Proxmox containers:
 `tailnet` provides management access, and `docker_apps` runs the applications.
 
 Host addresses, VMIDs, resources, and mounts are defined in
-[topology.json](infra/ansible/inventory/prod/topology.json). Ansible prepares the
-hosts; Docker Compose deploys the applications.
+[topology.json](infra/ansible/inventory/prod/topology.json). Ansible provisions
+and configures the hosts; Docker Compose deploys the applications.
 
 ## Getting started
 
@@ -35,7 +35,7 @@ python -m pytest -q
 ./scripts/ci/validate-compose.sh
 export ANSIBLE_CONFIG=infra/ansible/ansible.cfg
 for unit in pve tailnet apps-host; do
-  ansible-playbook -i infra/ansible/inventory/prod/topology.json \
+  ansible-playbook \
     infra/ansible/playbooks/reconcile.yml --syntax-check \
     -e "homelab_unit=$unit" \
     -e homelab_secret_bundle=/tmp/not-read-during-syntax-check.json

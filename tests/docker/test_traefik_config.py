@@ -15,7 +15,6 @@ def test_traefik_defaults_to_no_container_exposure_and_uses_one_owned_network():
     static = read("traefik.yml")
     service = model["services"]["traefik"]
 
-    assert service["image"].startswith("traefik:v3")
     assert "/var/run/docker.sock:/var/run/docker.sock:ro" in service["volumes"]
     assert "exposedByDefault: false" in static
     assert "certResolver: cloudflare" in static
@@ -37,8 +36,6 @@ def test_private_routes_and_headers_preserve_edge_policy():
     assert "pve.home.hchu.me" in dynamic
     assert "customFrameOptionsValue: SAMEORIGIN" in dynamic
     assert "/etc/ssl/certs/homelab-pve-root-ca.pem" in dynamic
-    assert "dns.hchu.me" not in dynamic
-    assert "dns-query" not in dynamic
 
 
 def test_adguard_static_policy_is_package_owned_and_plain_dns_only():

@@ -83,8 +83,8 @@
               "mp0": {
                 "source": "/var/lib/homelab",
                 "target": "/srv/homelab",
-                "source_owner": 0,
-                "source_group": 0,
+                "source_owner": 100000,
+                "source_group": 100000,
                 "source_mode": "0755"
               }
             }

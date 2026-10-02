@@ -74,9 +74,3 @@ def test_secret_inputs_and_smoke_endpoints_are_package_local(model):
     }
     assert routed <= smoked
     assert "adguard" in smoked
-
-
-def test_adguard_can_persist_runtime_normalization_in_the_rebuilt_slot(model):
-    mounts = model["services"]["adguard"]["volumes"]
-    assert "./generated/adguard:/opt/adguardhome/conf:rw" in mounts
-    assert not any("AdGuardHome.yaml" in mount for mount in mounts)

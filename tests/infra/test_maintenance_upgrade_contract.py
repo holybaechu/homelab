@@ -84,12 +84,6 @@ def test_new_third_party_repository_refresh_does_not_enable_routine_upgrades(
     assert condition.endswith("_apt_repository.changed")
 
 
-def test_maintenance_is_an_explicit_mode_of_the_single_targeted_entrypoint():
-    text = RECONCILE_PLAYBOOK.read_text(encoding="utf-8")
-    assert "homelab_unit in ['pve', 'tailnet', 'apps-host']" in text
-    assert "homelab_maintenance_upgrade | default(false) | bool" in text
-
-
 def test_targeted_maintenance_reboots_only_the_selected_non_pve_unit():
     tasks = load_yaml(RECONCILE_PLAYBOOK)[1]["tasks"]
     marker = next(
@@ -104,15 +98,11 @@ def test_targeted_maintenance_reboots_only_the_selected_non_pve_unit():
     assert marker["when"] == gate
     assert reboot["when"] == gate + ["homelab_unit_reboot_required.stat.exists"]
 
-
-def test_tailnet_restart_recovery_precedes_the_maintenance_reboot_check():
-    tasks = load_yaml(RECONCILE_PLAYBOOK)[1]["tasks"]
-    names = [task["name"] for task in tasks]
-    assert names.index("Wait for SSH after a scheduled tailscaled restart") < names.index(
-        "Wait for the exact tailscaled restart proof"
-    ) < names.index("Verify the deterministic tailscaled restart succeeded") < names.index(
-        "Verify tailscaled runs the installed binary"
-    ) < names.index("Check whether targeted maintenance requires a reboot")
+    tailnet = next(
+        task for task in tasks
+        if task.get("ansible.builtin.include_role", {}).get("name") == "tailscale_gateway"
+    )
+    assert tasks.index(tailnet) < tasks.index(marker)
 
 
 def test_targeted_maintenance_ends_with_the_selected_runtime_health_contract():

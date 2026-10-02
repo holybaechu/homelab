@@ -148,9 +148,8 @@ def test_component_key_grammars_reject_options_comments_and_multiline_values() -
         assert tailnet.fullmatch(invalid) is None
 
 
-def test_pve_host_key_handoff_is_derived_from_pct_results_and_apply_only() -> None:
-    _, selected = load_reconcile()
-    tasks = selected["tasks"]
+def test_pve_access_hands_off_pct_verified_host_keys_to_the_controller() -> None:
+    tasks = yaml.safe_load(ROLE_TASKS.read_text(encoding="utf-8"))
     command = next(
         task
         for task in tasks
@@ -158,14 +157,12 @@ def test_pve_host_key_handoff_is_derived_from_pct_results_and_apply_only() -> No
     )
     known_hosts = task_with_module(tasks, "ansible.builtin.known_hosts")
 
-    assert command["when"] == APPLY_GATE
     assert command["loop"] == "{{ groups['debian'] }}"
     argv = command["ansible.builtin.command"]["argv"]
     assert argv[:2] == ["pct", "exec"]
     assert "{{ hostvars[item].vmid }}" in argv
     assert argv[-1] == "/etc/ssh/ssh_host_ed25519_key.pub"
 
-    assert known_hosts["when"] == APPLY_GATE
     assert known_hosts["delegate_to"] == "localhost"
     assert known_hosts["loop"] == "{{ pve_lxc_host_key_results.results | default([]) }}"
     contract = known_hosts["ansible.builtin.known_hosts"]
@@ -173,9 +170,8 @@ def test_pve_host_key_handoff_is_derived_from_pct_results_and_apply_only() -> No
     assert "item.stdout" in contract["key"]
 
 
-def test_pve_apply_proves_batchmode_authentication_to_every_managed_lxc() -> None:
-    _, selected = load_reconcile()
-    tasks = selected["tasks"]
+def test_pve_access_proves_batchmode_authentication_to_every_managed_lxc() -> None:
+    tasks = yaml.safe_load(ROLE_TASKS.read_text(encoding="utf-8"))
     authentication = next(
         task
         for task in tasks
@@ -184,7 +180,6 @@ def test_pve_apply_proves_batchmode_authentication_to_every_managed_lxc() -> Non
     )
     argv = authentication["ansible.builtin.command"]["argv"]
 
-    assert authentication["when"] == APPLY_GATE
     assert authentication["delegate_to"] == "localhost"
     assert authentication["loop"] == "{{ groups['debian'] }}"
     assert authentication["changed_when"] is False

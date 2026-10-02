@@ -269,12 +269,11 @@ def test_tailscale_upgrade_defers_self_restart_and_recovers_stale_binary():
 
 
 def test_tailnet_restart_recovery_is_bounded_and_verifies_the_running_binary():
-    plays = yaml.safe_load(
+    recovery = yaml.safe_load(
         (
-            REPO_ROOT / "infra" / "ansible" / "playbooks" / "reconcile.yml"
+            REPO_ROOT / "infra/ansible/roles/tailscale_gateway/tasks/main.yml"
         ).read_text(encoding="utf-8")
     )
-    recovery = plays[1]["tasks"]
     by_name = {task["name"]: task for task in recovery}
     gate = [
         "homelab_unit == 'tailnet'",
@@ -311,6 +310,8 @@ def test_tailnet_restart_recovery_is_bounded_and_verifies_the_running_binary():
     assert "/usr/sbin/tailscaled" in verify["ansible.builtin.shell"]
 
     task_names = [task["name"] for task in recovery]
-    assert task_names.index("Wait for the exact tailscaled restart proof") < task_names.index(
+    assert task_names.index("Schedule the deterministic tailscaled restart") < task_names.index(
+        "Wait for SSH after a scheduled tailscaled restart"
+    ) < task_names.index("Wait for the exact tailscaled restart proof") < task_names.index(
         "Verify the deterministic tailscaled restart succeeded"
     ) < task_names.index("Verify tailscaled runs the installed binary")

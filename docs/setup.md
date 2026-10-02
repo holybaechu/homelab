@@ -23,6 +23,8 @@ python -m pip install -r requirements-deploy.txt
 export ANSIBLE_CONFIG=infra/ansible/ansible.cfg
 ```
 
+The Ansible configuration selects the production inventory and role directory.
+
 Put the deployment private key at `~/.ssh/id_ed25519` and independently verify
 PVE's SSH host key before adding it to `~/.ssh/known_hosts`. PVE apply installs
 the deployment key's public identity in the guests.
@@ -36,7 +38,7 @@ paths below with their actual locations.
 1. Preview the changes. This step needs no bundle:
 
    ```sh
-   ansible-playbook -i infra/ansible/inventory/prod/topology.json \
+   ansible-playbook \
      infra/ansible/playbooks/reconcile.yml \
      -e homelab_unit=pve -e pve_lxc_reconcile_mode=plan
    ```
@@ -44,7 +46,7 @@ paths below with their actual locations.
 2. Review the plan, then apply from the same checkout:
 
    ```sh
-   ansible-playbook -i infra/ansible/inventory/prod/topology.json \
+   ansible-playbook \
      infra/ansible/playbooks/reconcile.yml \
      -e homelab_unit=pve -e pve_lxc_reconcile_mode=apply \
      -e homelab_secret_bundle=/absolute/private/path/pve.json
@@ -66,10 +68,10 @@ paths below with their actual locations.
 Run each unit separately:
 
 ```sh
-ansible-playbook -i infra/ansible/inventory/prod/topology.json \
+ansible-playbook \
   infra/ansible/playbooks/reconcile.yml -e homelab_unit=tailnet \
   -e homelab_secret_bundle=/absolute/private/path/tailnet.json
-ansible-playbook -i infra/ansible/inventory/prod/topology.json \
+ansible-playbook \
   infra/ansible/playbooks/reconcile.yml -e homelab_unit=apps-host
 ```
 

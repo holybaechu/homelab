@@ -132,7 +132,21 @@
   ansible.builtin.command: mountpoint -q /srv/homelab
   changed_when: false
 
-- name: Create durable application data directories
+- name: Create durable application roots and repair restored data ownership
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    recurse: true
+    follow: false
+  loop:
+    - /srv/homelab/docker-apps/qbittorrent
+    - /srv/homelab/docker-apps/copyparty
+    - /srv/homelab/downloads
+    - /srv/homelab/copyparty
+
+- name: Set durable application directory permissions
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory

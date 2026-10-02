@@ -10,41 +10,11 @@ import sys
 import pytest
 import yaml
 
-from tests.helpers import REPO_ROOT
+from tests.helpers import REPO_ROOT, posix_shell, shell_path, shell_environment_path, write_tool
 
 
 APPS_PACKAGE = REPO_ROOT / "apps/compose/homelab"
 TOPOLOGY = REPO_ROOT / "infra/ansible/inventory/prod/topology.json"
-
-
-def posix_shell() -> str:
-    shell = shutil.which("sh")
-    if shell is not None:
-        return shell
-    for candidate in (
-        Path("C:/Program Files/Git/bin/sh.exe"),
-        Path("C:/Program Files/Git/usr/bin/sh.exe"),
-    ):
-        if candidate.is_file():
-            return str(candidate)
-    pytest.skip("POSIX sh is unavailable")
-
-
-def shell_path(path: Path) -> str:
-    resolved = path.resolve()
-    if os.name != "nt":
-        return str(resolved)
-    drive, remainder = os.path.splitdrive(str(resolved))
-    return f"/{drive[0].lower()}{remainder.replace(os.sep, '/')}"
-
-
-def shell_environment_path(path: Path) -> str:
-    return str(path.resolve()).replace("\\", "/")
-
-
-def write_tool(path: Path, source: str) -> None:
-    path.write_text("#!/bin/sh\nset -eu\n" + source, encoding="utf-8", newline="\n")
-    path.chmod(0o755)
 
 
 def fake_app_environment(tmp_path: Path, *, ingress_failure: bool = False) -> dict[str, str]:
@@ -105,10 +75,17 @@ case "$*" in
   *"port container-id 35435/tcp"*|*"port container-id 35435/udp"*)
     printf '0.0.0.0:35435\n'
     ;;
-  *"exec -T qbittorrent test -f /vuetorrent/public/index.html"*) exit 0 ;;
-  *"Connection\\Interface=tun0"*) exit 1 ;;
-  *"exec -T qbittorrent grep -Fx --"*) exit 0 ;;
+  *"exec -T qbittorrent test -f /vuetorrent/public/index.html"*)
+    [ "${FAKE_VUETORRENT_FAILURE:-}" != assets ] ;;
+  *"Connection\\Interface=tun0"*)
+    [ "${FAKE_VUETORRENT_FAILURE:-}" = tun0 ] ;;
+  *"exec -T qbittorrent grep -Fx --"*)
+    [ "${FAKE_VUETORRENT_FAILURE:-}" != config ] ;;
   *"exec -T qbittorrent printenv DOCKER_MODS"*)
+    if [ "${FAKE_VUETORRENT_FAILURE:-}" = environment ]; then
+      printf 'container-secret-must-stay-private\n' >&2
+      exit 77
+    fi
     printf '%s\n' "$FAKE_DOCKER_MOD_REF"
     ;;
   *) printf 'unexpected fake docker command: %s\n' "$*" >&2; exit 97 ;;
@@ -170,7 +147,6 @@ def test_apps_smoke_executes_every_semantic_probe(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "homelab smoke passed" in result.stdout
-    assert "effective DOCKER_MODS=" in result.stdout
 
 
 def test_apps_smoke_fails_when_a_declared_ingress_is_unreachable(tmp_path: Path) -> None:
@@ -179,3 +155,26 @@ def test_apps_smoke_fails_when_a_declared_ingress_is_unreachable(tmp_path: Path)
 
     assert result.returncode == 1
     assert "shared ingress route failed for one.home.example" in result.stderr
+
+
+@pytest.mark.parametrize("failure,message", (
+    ("assets", "VueTorrent assets are unavailable"),
+    ("config", "qBittorrent VueTorrent configuration is incorrect"),
+    ("tun0", "qBittorrent is unexpectedly bound to tun0"),
+    ("environment", "VueTorrent mod environment is unavailable"),
+    ("unpinned", "VueTorrent mod must use an official version and exact digest"),
+))
+def test_apps_smoke_rejects_a_broken_vuetorrent_without_printing_container_values(
+    tmp_path: Path, failure: str, message: str
+) -> None:
+    stage = app_stage(tmp_path)
+    env = fake_app_environment(tmp_path)
+    env["FAKE_VUETORRENT_FAILURE"] = failure
+    if failure == "unpinned":
+        env["FAKE_DOCKER_MOD_REF"] = "container-secret-must-stay-private"
+
+    result = run_app_smoke(stage, env)
+
+    assert result.returncode == 1
+    assert message in result.stderr
+    assert "container-secret-must-stay-private" not in result.stdout + result.stderr

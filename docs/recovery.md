@@ -29,12 +29,39 @@ also do not restore an earlier copy of application data.
 4. Restore the private controller bundles and GitHub environment credentials.
    Reconcile `tailnet` and `apps-host` separately.
 5. With applications stopped, restore durable files and named Docker volumes from
-   backup. Preserve ownership and permissions. Confirm the shared filesystem is
-   mounted correctly before writing data.
+   backup. Preserve permissions and numeric ownership when restoring PVE backups
+   (for example, use `rsync -a --numeric-ids`). Confirm the shared filesystem is
+   mounted correctly before writing data. For unmapped restored owners, follow
+   [restore ownership](#restore-ownership) before guest reconciliation.
+   Reconcile `apps-host` again to repair ownership of restored application files;
+   this preserves file permissions and leaves other filesystem contents alone.
 6. Dispatch `apps.yml` with `operation=deploy`. The workflow installs the apps
    bundle and activates the complete package.
 7. Run the [release audit](operations.md#audit-and-rollback) and check that
    restored files are available and the expected shares are writable.
+
+## Restore ownership
+
+Guest root can repair owners within its UID/GID mapping. Files restored on PVE
+with unmapped owners, such as host UID `0`, require repair on PVE first.
+
+With applications stopped, check the bind-source mapping in
+[topology](../infra/ansible/inventory/prod/topology.json) and the application
+UID/GID in [group variables](../infra/ansible/inventory/prod/group_vars/all.yml).
+The current mapping starts at `100000` and the application UID/GID is `1000`,
+giving PVE ownership `101000:101000`. Confirm those values and the declared
+application paths before running this on the PVE console:
+
+```sh
+chown -R --no-dereference 101000:101000 \
+  /var/lib/homelab/docker-apps/qbittorrent \
+  /var/lib/homelab/docker-apps/copyparty \
+  /var/lib/homelab/downloads \
+  /var/lib/homelab/copyparty
+```
+
+This changes ownership only in the application roots and preserves file
+permissions. Reconcile `apps-host` after the repair, then resume the rebuild.
 
 ## When tailnet is unavailable
 

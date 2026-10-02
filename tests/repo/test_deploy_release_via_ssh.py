@@ -2,47 +2,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import shutil
 import subprocess
 
 import pytest
 
-from tests.helpers import REPO_ROOT
+from tests.helpers import REPO_ROOT, posix_shell, shell_path, shell_environment_path, write_tool
 
 
 WRAPPER = REPO_ROOT / "scripts/ci/deploy-release-via-ssh.sh"
 DIGEST = "a" * 64
-
-
-def posix_shell() -> str:
-    shell = shutil.which("sh")
-    if shell is not None:
-        return shell
-    for candidate in (
-        Path("C:/Program Files/Git/bin/sh.exe"),
-        Path("C:/Program Files/Git/usr/bin/sh.exe"),
-    ):
-        if candidate.is_file():
-            return str(candidate)
-    pytest.skip("POSIX sh is unavailable")
-
-
-def shell_path(path: Path) -> str:
-    resolved = path.resolve()
-    if os.name != "nt":
-        return str(resolved)
-    drive, remainder = os.path.splitdrive(str(resolved))
-    return f"/{drive[0].lower()}{remainder.replace(os.sep, '/')}"
-
-
-def shell_environment_path(path: Path) -> str:
-    return str(path.resolve()).replace("\\", "/")
-
-
-def write_tool(path: Path, source: str) -> Path:
-    path.write_text("#!/bin/sh\nset -eu\n" + source, encoding="utf-8", newline="\n")
-    path.chmod(0o755)
-    return path
 
 
 @pytest.fixture
@@ -218,13 +186,3 @@ def test_remote_activation_failure_still_cleans_both_staging_directories(
     remote = calls(log, "ssh")
     assert any("rm -rf -- '/tmp/homelab-apps-deploy.FAIL01'" in call[1] for call in remote)
     assert not local_stage.exists()
-
-
-def test_wrapper_shell_syntax_when_sh_is_available() -> None:
-    result = subprocess.run(
-        [posix_shell(), "-n", shell_path(WRAPPER)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr

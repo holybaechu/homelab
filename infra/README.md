@@ -18,6 +18,13 @@ one unit.
 | `tailnet` | Debian base and Tailscale routing | Tailnet bundle |
 | `apps-host` | Debian base, Docker, DNS policy, data directories, release launcher, and PVE certificate trust | None |
 
+Each role completes its own preparation and recovery checks. PVE owns the shared
+filesystem and bind mount; `apps-host` creates application directories and
+repairs restored data ownership. The bind-source UID/GID in topology maps to
+root inside the unprivileged guest, so application paths can be created there.
+When adopting this ownership handoff on an existing host, review and apply the
+`pve` plan first, then reconcile `apps-host` using the [setup commands](../docs/setup.md).
+
 For routine hosted runs, select the unit in
 [infra.yml](../.github/workflows/infra.yml). Manual controller commands are in
 [setup](../docs/setup.md#configure-the-hosts). Application

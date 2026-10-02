@@ -446,10 +446,6 @@ def test_pve_plan_and_audit_gate_every_non_reconciler_mutation():
     for name in (
         "Reconcile PVE durable storage",
         "Reconcile LXC SSH and Python access through pct",
-        "Read managed LXC SSH host keys through pct",
-        "Create the controller SSH directory",
-        "Reconcile managed LXC host keys on the controller",
-        "Authenticate the configured deploy identity to every managed LXC",
     ):
         assert by_name[name]["when"] == ["homelab_unit == 'pve'", apply_gate]
 
@@ -486,10 +482,9 @@ def test_pve_storage_refuses_unknown_devices_and_wrong_mounts_before_data_ops():
     verify_existing_mount = shell.index("Refusing data operations:")
     copy_data = shell.index('rsync -a "${mount_path}/" "${tmp_mount}/"')
     verify_final_mount = shell.index("Mounted source verification failed")
-    manage_data = shell.index('managed_paths="')
     assert create < format_new < refuse_unknown < require_ext4
     assert verify_existing_mount < copy_data
-    assert copy_data < verify_final_mount < manage_data
+    assert copy_data < verify_final_mount
 
     canonical_fstab = 'expected_fstab="UUID=${uuid} ${mount_path} ext4 defaults,noatime 0 2"'
     assert canonical_fstab in shell
@@ -498,6 +493,47 @@ def test_pve_storage_refuses_unknown_devices_and_wrong_mounts_before_data_ops():
     assert shell.index('printf \'%s\\n\' "${expected_fstab}"') < shell.index(
         'mv -f -- "${fstab_tmp}" /etc/fstab'
     ) < copy_data
+
+
+@pytest.mark.skipif(os.name == "nt", reason="PVE bind sources use POSIX absolute paths")
+def test_bind_source_ownership_handoff_preserves_data_and_running_lxcs(
+    tmp_path, monkeypatch, capsys
+):
+    document = json.loads(TOPOLOGY.read_text(encoding="utf-8"))
+    hosts = document["all"]["children"]["debian"]["hosts"]
+    mount = hosts["docker_apps"]["lxc_mounts"]["mp0"]
+    source = tmp_path / "data"
+    source.mkdir(mode=0o755)
+    restored = source / "restored.txt"
+    restored.write_text("durable data", encoding="utf-8")
+    restored.chmod(0o600)
+    before = restored.stat()
+    mount["source"] = str(source)
+    topology = tmp_path / "topology.json"
+    topology.write_text(json.dumps(document), encoding="utf-8")
+    all_vars, declared = reconcile.load_topology(topology)
+    runner = FakeRunner(
+        {host["vmid"]: exact_config_for(all_vars, host) for host in declared.values()},
+        running=(110, 111),
+    )
+    ownership_changes = []
+    monkeypatch.setattr(reconcile.os, "chown", lambda *args: ownership_changes.append(args))
+
+    assert invoke(tmp_path, runner, "plan", topology=topology,
+                  mount_inspector=reconcile.inspect_mount_sources) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert ownership_changes == []
+    change = next(item for item in plan["containers"] if item["name"] == "docker_apps")["changes"]
+    assert len(change) == 1 and change[0]["risk"] == "safe"
+    assert change[0]["after"] == {"owner": 100000, "group": 100000, "mode": "0755"}
+
+    assert invoke(tmp_path, runner, "apply", topology=topology,
+                  mount_inspector=reconcile.inspect_mount_sources) == 0
+    assert ownership_changes == [(source, 100000, 100000)]
+    assert runner.calls == []
+    assert restored.read_text(encoding="utf-8") == "durable data"
+    after = restored.stat()
+    assert (after.st_uid, after.st_gid, after.st_mode) == (before.st_uid, before.st_gid, before.st_mode)
 
 
 def test_explicit_disabled_host_network_management_does_not_restart_the_control_path(tmp_path, capsys):

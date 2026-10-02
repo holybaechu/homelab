@@ -3,7 +3,6 @@
 import json
 from pathlib import PurePosixPath
 
-from jinja2 import Environment
 import yaml
 
 from tests.helpers import REPO_ROOT
@@ -16,26 +15,6 @@ def host_tasks():
     return yaml.safe_load((ROLE / "tasks/main.yml").read_text(encoding="utf-8"))
 
 
-def test_apps_host_preparation_runs_only_for_the_application_unit():
-    plays = yaml.safe_load(
-        (REPO_ROOT / "infra/ansible/playbooks/reconcile.yml").read_text(encoding="utf-8")
-    )
-    invocations = [
-        task for task in plays[1]["tasks"]
-        if task.get("ansible.builtin.include_role", {}).get("name") == "docker_apps_host"
-    ]
-    assert invocations
-    environment = Environment()
-    for unit in ("pve", "tailnet", "apps-host"):
-        selected = [
-            task for task in invocations
-            if environment.from_string("{{ " + task["when"] + " }}").render(
-                homelab_unit=unit
-            ) == "True"
-        ]
-        assert len(selected) == (1 if unit == "apps-host" else 0)
-
-
 def test_durable_directories_are_guarded_by_the_pve_mount():
     tasks = host_tasks()
     mount_guard = next(
@@ -44,14 +23,30 @@ def test_durable_directories_are_guarded_by_the_pve_mount():
     )
     directory_tasks = [
         (index, task) for index, task in enumerate(tasks)
-        if any(item.get("path", "").startswith("/srv/homelab/") for item in task.get("loop", []))
+        if any(
+            (item if isinstance(item, str) else item.get("path", "")).startswith("/srv/homelab/")
+            for item in task.get("loop", [])
+        )
     ]
     assert directory_tasks
+    assert any(task["ansible.builtin.file"].get("recurse") for _, task in directory_tasks)
     created = set()
     for index, task in directory_tasks:
         assert mount_guard < index
         assert task["ansible.builtin.file"]["state"] == "directory"
-        created.update(PurePosixPath(item["path"]) for item in task["loop"])
+        created.update(
+            PurePosixPath(item if isinstance(item, str) else item["path"])
+            for item in task["loop"]
+        )
+        if task["ansible.builtin.file"].get("recurse"):
+            assert "mode" not in task["ansible.builtin.file"]
+            assert task["ansible.builtin.file"]["follow"] is False
+
+    topology = json.loads(
+        (REPO_ROOT / "infra/ansible/inventory/prod/topology.json").read_text(encoding="utf-8")
+    )
+    mount = topology["all"]["children"]["debian"]["hosts"]["docker_apps"]["lxc_mounts"]["mp0"]
+    assert mount["source_owner"] == mount["source_group"] == 100000
 
     model = yaml.safe_load(
         (REPO_ROOT / "apps/compose/homelab/compose.yml").read_text(encoding="utf-8")
@@ -63,7 +58,7 @@ def test_durable_directories_are_guarded_by_the_pve_mount():
         if volume.startswith("/srv/homelab/")
     }
     for source in mounted:
-        assert any(source == path or source in path.parents or path in source.parents for path in created), source
+        assert source in created, source
 
     private = next(
         task["ansible.builtin.file"] for task in tasks
