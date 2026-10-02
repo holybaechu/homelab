@@ -90,7 +90,6 @@ class TargetSpec:
     project: str
     default_install_root: Path
     default_secret_root: Path | None
-    package_metadata: dict[str, Any]
     image_repositories: dict[str, str]
     needs_config: bool
 
@@ -101,15 +100,6 @@ TARGETS: dict[str, TargetSpec] = {
         project="homelab",
         default_install_root=Path("/opt/homelab"),
         default_secret_root=Path("/etc/homelab/secrets"),
-        package_metadata={
-            "version": 1,
-            "project": "homelab",
-            "compose": "compose.yml",
-            "secret_bundle": {"component": "apps", "version": 1},
-            "prepare": "prepare_release.py",
-            "topology": "topology.json",
-            "smoke": "smoke.sh",
-        },
         image_repositories={},
         needs_config=False,
     ),
@@ -118,13 +108,6 @@ TARGETS: dict[str, TargetSpec] = {
         project="openclaw",
         default_install_root=Path("/opt/openclaw"),
         default_secret_root=Path("/etc/openclaw/secrets"),
-        package_metadata={
-            "version": 1,
-            "project": "openclaw",
-            "compose": "compose.yml",
-            "secret_bundle": {"component": "openclaw", "version": 1},
-            "smoke": "smoke.sh",
-        },
         image_repositories={
             "gateway": "ghcr.io/holybaechu/homelab-openclaw-gateway",
             "ctf": "ghcr.io/holybaechu/homelab-openclaw-ctf",
@@ -592,11 +575,13 @@ def _validate_package_root(
         path = root / name
         if path.is_symlink() or not path.is_file():
             raise ReleaseError(f"{spec.name} package is missing regular {name}")
-    package_metadata = _load_unique_json(root / "release.json")
+    # Older installed engines require this marker when rolling forward again.
+    metadata = _load_unique_json(root / "release.json")
     if (
-        not isinstance(package_metadata, dict)
-        or type(package_metadata.get("version")) is not int
-        or package_metadata != spec.package_metadata
+        not isinstance(metadata, dict)
+        or type(metadata.get("version")) is not int
+        or metadata.get("version") != 1
+        or metadata.get("project") != spec.project
     ):
         raise ReleaseError(f"{spec.name} package release.json is invalid")
     if os.name != "nt" and not (root / "smoke.sh").stat().st_mode & stat.S_IXUSR:
@@ -2126,7 +2111,6 @@ def build_parser() -> argparse.ArgumentParser:
     bundle.add_argument("--ctf-ref")
     bundle.add_argument("--engine", type=Path, default=Path(__file__).resolve())
     bundle.add_argument("--output", type=Path, required=True)
-    bundle.add_argument("--result", type=Path)
 
     for name in ("deploy", "sync-secrets", "audit", "rollback"):
         command = subparsers.add_parser(name)
@@ -2164,8 +2148,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 engine_path=args.engine,
                 output=args.output,
             )
-            if args.result is not None:
-                atomic_write_json(args.result, result, mode=0o644)
             print(json.dumps(result, sort_keys=True))
             return 0
         engine = _engine_from_args(args)

@@ -352,7 +352,7 @@ def test_openclaw_descriptor_and_freshness_are_ordered_by_capability() -> None:
     for automatic_gate in (repository_gate, refresh, private_gate):
         assert "workflow_dispatch" in automatic_gate["if"] and "!=" in automatic_gate["if"]
     options = cli_options(descriptor["run"])
-    assert {"source-sha", "config-commit", "gateway-ref", "ctf-ref", "output", "result"} <= set(options)
+    assert {"source-sha", "config-commit", "gateway-ref", "ctf-ref", "output"} <= set(options)
     assert options["source-sha"] == "$GITHUB_SHA"
     assert options["config-commit"] == "$OPENCLAW_CONFIG_COMMIT"
     assert options["output"] in deploy["run"]

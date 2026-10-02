@@ -13,6 +13,10 @@ targets are read from that document and cannot be overridden independently.
 
 ## One targeted infrastructure entrypoint
 
+Ansible owns provisioning and guest configuration together. The Docker role is
+invoked once for either Docker host, using the selected host's inventory policy.
+Start a new or rebuilt deployment with [bootstrap](../docs/runbooks/bootstrap.md).
+
 `ansible/playbooks/reconcile.yml` requires exactly one unit:
 
 ```sh

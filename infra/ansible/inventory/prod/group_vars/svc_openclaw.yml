@@ -1,5 +1,4 @@
 # The dedicated LXC is an OCI runtime, not an application build machine.
-common_debian_create_service_account: false
 
 openclaw_user: openclaw
 openclaw_group: openclaw
@@ -15,3 +14,18 @@ openclaw_auth_profile_secret_root: "{{ openclaw_home }}/.config/openclaw"
 openclaw_secret_root: /etc/openclaw/secrets
 
 openclaw_gateway_port: 18789
+
+# Keep CTF traffic under the dedicated host's isolation policy.
+docker_engine_host_packages: []
+docker_engine_disable_dns_stub: false
+docker_engine_daemon_config:
+  dns: [1.1.1.1, 1.0.0.1]
+  icc: false
+  iptables: true
+  ip6tables: false
+  live-restore: true
+  log-driver: local
+  log-opts:
+    max-file: "3"
+    max-size: 10m
+  userland-proxy: false

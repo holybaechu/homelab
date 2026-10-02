@@ -141,32 +141,6 @@ def test_tailnet_manages_and_validates_persistent_udp_gro_forwarding():
     assert "RemainAfterExit=yes" in service
     assert "WantedBy=multi-user.target" in service
 
-def test_tailscale_package_upgrades_only_during_explicit_maintenance():
-    tasks = yaml.safe_load(
-        (
-            REPO_ROOT
-            / "infra"
-            / "ansible"
-            / "roles"
-            / "tailscale_gateway"
-            / "tasks"
-            / "main.yml"
-        ).read_text(encoding="utf-8")
-    )
-    package = next(
-        task
-        for task in tasks
-        if task["name"] == "Install Tailscale without disrupting the active route"
-    )["ansible.builtin.apt"]
-
-    assert render_maintenance_value(package["state"], False) == "present"
-    assert render_maintenance_value(package["update_cache"], False) is False
-    assert render_maintenance_value(package["state"], True) == "latest"
-    assert render_maintenance_value(package["update_cache"], True) is True
-    assert render_maintenance_value(package["cache_valid_time"], False) is None
-    assert render_maintenance_value(package["cache_valid_time"], True) == 3600
-
-
 def test_tailscale_upgrade_defers_self_restart_and_recovers_stale_binary():
     tasks = yaml.safe_load(
         (

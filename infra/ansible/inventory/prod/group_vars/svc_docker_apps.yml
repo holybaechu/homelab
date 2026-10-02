@@ -1,0 +1,9 @@
+# AdGuard owns port 53; the host resolver uses upstream DNS directly.
+docker_engine_host_packages: [bind9-dnsutils, systemd-resolved]
+docker_engine_disable_dns_stub: true
+docker_engine_daemon_config:
+  log-driver: json-file
+  log-opts:
+    max-size: 10m
+    max-file: "3"
+  live-restore: true

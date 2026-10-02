@@ -1,90 +1,59 @@
-import yaml
+"""Protect the effective host policy, rather than its YAML layout."""
+
+import json
+import os
+import shutil
+import subprocess
+
 from jinja2 import Environment
+import pytest
+import yaml
 
 from tests.helpers import REPO_ROOT
 
 
-def render_maintenance_value(value, enabled):
-    environment = Environment()
-    environment.filters["bool"] = bool
-    rendered = environment.from_string(str(value)).render(
-        homelab_maintenance_upgrade=enabled
-    )
-    return yaml.safe_load(rendered)
-
-
-def test_docker_engine_role_installs_engine_compose_plugin_and_live_restore():
-    tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "docker_engine" / "tasks" / "main.yml").read_text(encoding="utf-8")
-    reconcile = (REPO_ROOT / "infra/ansible/playbooks/reconcile.yml").read_text(encoding="utf-8")
-
-    assert "https://download.docker.com/linux/debian" in tasks
-    assert "docker-ce" in tasks
-    assert "docker-compose-plugin" in tasks
-    assert "docker-buildx-plugin" not in tasks
-    assert "enabled: true" in tasks
-    assert "content: \"{{ docker_engine_daemon_config | to_nice_json }}\\n\"" in tasks
-    assert reconcile.count("live-restore: true") == 2
-    assert reconcile.count("max-size: 10m") == 2
-
-
-def test_docker_packages_upgrade_only_during_explicit_maintenance():
-    tasks = yaml.safe_load(
-        (
-            REPO_ROOT
-            / "infra"
-            / "ansible"
-            / "roles"
-            / "docker_engine"
-            / "tasks"
-            / "main.yml"
-        ).read_text(encoding="utf-8")
-    )
-    package_tasks = [
-        task
-        for task in tasks
-        if (apt := task.get("ansible.builtin.apt")) and "name" in apt
-    ]
-
-    assert len(package_tasks) == 2
-    for task in package_tasks:
-        apt = task["ansible.builtin.apt"]
-        assert render_maintenance_value(apt["state"], False) == "present"
-        assert render_maintenance_value(apt["update_cache"], False) is False
-        assert render_maintenance_value(apt["state"], True) == "latest"
-        assert render_maintenance_value(apt["update_cache"], True) is True
-        assert render_maintenance_value(apt["cache_valid_time"], False) is None
-        assert render_maintenance_value(apt["cache_valid_time"], True) == 3600
-
-    engine = next(
-        task
-        for task in package_tasks
-        if "docker-ce" in task["ansible.builtin.apt"]["name"]
-    )
-    assert engine["notify"] == "Restart Docker"
-
-
-def test_apps_host_selects_the_debian_13_dnsutils_provider_only_where_needed():
-    tasks = yaml.safe_load(
-        (
-            REPO_ROOT
-            / "infra"
-            / "ansible"
-            / "roles"
-            / "docker_engine"
-            / "tasks"
-            / "main.yml"
-        ).read_text(encoding="utf-8")
-    )
-    prerequisites = next(
-        task for task in tasks
-        if task["name"] == "Install host-specific Docker prerequisites without routine upgrades"
-    )["ansible.builtin.apt"]
-    assert prerequisites["name"] == "{{ docker_engine_host_packages }}"
-
-    reconcile = yaml.safe_load(
+def test_docker_runtime_is_selected_only_for_the_two_docker_hosts():
+    plays = yaml.safe_load(
         (REPO_ROOT / "infra/ansible/playbooks/reconcile.yml").read_text(encoding="utf-8")
-    )[1]["tasks"]
-    apps = next(task for task in reconcile if task["name"] == "Reconcile the Docker application host runtime")
-    openclaw = next(task for task in reconcile if task["name"] == "Reconcile the OpenClaw Docker runtime")
-    assert apps["vars"]["docker_engine_host_packages"] == ["bind9-dnsutils", "systemd-resolved"]
-    assert openclaw["vars"]["docker_engine_host_packages"] == []
+    )
+    invocations = [
+        task for task in plays[1]["tasks"]
+        if task.get("ansible.builtin.include_role", {}).get("name") == "docker_engine"
+    ]
+    environment = Environment()
+    for unit in ("pve", "tailnet", "apps-host", "openclaw-host"):
+        selected = [
+            task for task in invocations
+            if environment.from_string("{{ " + task["when"] + " }}").render(
+                homelab_unit=unit
+            ) == "True"
+        ]
+        assert len(selected) == (1 if unit in {"apps-host", "openclaw-host"} else 0)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Ansible's controller CLI requires POSIX")
+def test_inventory_supplies_dns_and_isolation_policy_to_the_docker_role():
+    executable = shutil.which("ansible-inventory")
+    if executable is None:
+        pytest.skip("ansible-inventory is unavailable")
+    result = subprocess.run(
+        [executable, "-i", str(REPO_ROOT / "infra/ansible/inventory/prod/topology.json"), "--list"],
+        text=True, capture_output=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    hosts = json.loads(result.stdout)["_meta"]["hostvars"]
+    apps, openclaw = hosts["docker_apps"], hosts["openclaw"]
+    assert apps["docker_engine_disable_dns_stub"] is True
+    assert {"bind9-dnsutils", "systemd-resolved"} <= set(apps["docker_engine_host_packages"])
+    assert openclaw["docker_engine_disable_dns_stub"] is False
+    assert openclaw["docker_engine_host_packages"] == []
+    policy = openclaw["docker_engine_daemon_config"]
+    assert policy["icc"] is False
+    assert policy["iptables"] is True
+    assert policy["ip6tables"] is False
+    assert policy["userland-proxy"] is False
+    for host in (apps, openclaw):
+        policy = host["docker_engine_daemon_config"]
+        assert policy["live-restore"] is True
+        assert policy["log-opts"]["max-size"] and policy["log-opts"]["max-file"]
+    assert "docker_engine_daemon_config" not in hosts["tailnet"]

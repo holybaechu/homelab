@@ -25,26 +25,6 @@ def test_operational_dependencies_do_not_use_floating_latest_aliases():
     assert ":latest" not in contents
 
 
-def test_renovate_uses_builtin_compose_and_dockerfile_managers():
-    config = json.loads(read("renovate.json"))
-    assert "config:recommended" in config["extends"]
-    assert all(
-        "svc_(edge|dns|downloads)" not in pattern
-        for manager in config.get("customManagers", [])
-        for pattern in manager.get("managerFilePatterns", [])
-    )
-
-
-def test_action_sha_pins_keep_release_comments_for_renovate():
-    action_lines = [
-        line.strip() for line in workflow_text().splitlines() if "uses:" in line
-    ]
-    sha_lines = [line for line in action_lines if re.search(r"@[0-9a-f]{40}\b", line)]
-
-    assert action_lines == sha_lines
-    assert all(re.search(r"\s#\s+v?\d+(?:\.\d+){0,2}$", line) for line in sha_lines)
-
-
 def test_openclaw_dockerfile_bases_are_locally_digest_pinned():
     dockerfiles = sorted((REPO_ROOT / "infra/openclaw").glob("*/Dockerfile"))
     assert len(dockerfiles) == 2

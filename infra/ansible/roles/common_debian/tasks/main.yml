@@ -23,23 +23,6 @@
     argv: [timedatectl, set-timezone, "{{ homelab_timezone }}"]
   when: common_debian_current_timezone.stdout != homelab_timezone
 
-- name: Create service group
-  ansible.builtin.group:
-    name: "{{ service_group }}"
-    gid: "{{ service_gid }}"
-    state: present
-  when: common_debian_create_service_account | default(true) | bool
-
-- name: Create service user
-  ansible.builtin.user:
-    name: "{{ service_user }}"
-    uid: "{{ service_uid }}"
-    group: "{{ service_group }}"
-    shell: /usr/sbin/nologin
-    create_home: false
-    state: present
-  when: common_debian_create_service_account | default(true) | bool
-
 - name: Configure Debian SSH hardening
   ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config

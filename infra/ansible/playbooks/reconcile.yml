@@ -292,19 +292,10 @@
         name: release_launcher
       when: homelab_unit in ['apps-host', 'openclaw-host']
 
-    - name: Reconcile the Docker application host runtime
+    - name: Reconcile the selected Docker host runtime
       ansible.builtin.include_role:
         name: docker_engine
-      vars:
-        docker_engine_host_packages: [bind9-dnsutils, systemd-resolved]
-        docker_engine_disable_dns_stub: true
-        docker_engine_daemon_config:
-          log-driver: json-file
-          log-opts:
-            max-size: 10m
-            max-file: "3"
-          live-restore: true
-      when: homelab_unit == 'apps-host'
+      when: homelab_unit in ['apps-host', 'openclaw-host']
 
     - name: Reconcile the Docker application host primitives
       ansible.builtin.include_role:
@@ -326,25 +317,6 @@
         group: root
         mode: "0644"
       when: homelab_unit == 'apps-host'
-
-    - name: Reconcile the OpenClaw Docker runtime
-      ansible.builtin.include_role:
-        name: docker_engine
-      vars:
-        docker_engine_host_packages: []
-        docker_engine_disable_dns_stub: false
-        docker_engine_daemon_config:
-          dns: [1.1.1.1, 1.0.0.1]
-          icc: false
-          iptables: true
-          ip6tables: false
-          live-restore: true
-          log-driver: local
-          log-opts:
-            max-file: "3"
-            max-size: 10m
-          userland-proxy: false
-      when: homelab_unit == 'openclaw-host'
 
     - name: Reconcile the OpenClaw host primitives
       ansible.builtin.include_role:

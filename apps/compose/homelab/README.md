@@ -4,7 +4,7 @@ This directory is the complete deployable unit for the application host:
 
 - `compose.yml` defines all services and owns `homelab_proxy`;
 - `config/` and `traefik.yml` contain nonsecret runtime policy;
-- `release.json` is the fixed package/deployer contract;
+- `release.json` retains compatibility with older embedded engines during rollback;
 - `prepare_release.py` validates one component secret bundle and writes the
   private generated files inside a staged copy of this directory; and
 - `smoke.sh` derives ingress endpoints from Compose, then verifies DNS,
@@ -88,7 +88,8 @@ named `platform_traefik_data` and `platform_adguard_work` volumes on first
 activation. The release engine intentionally never passes `--volumes` when it
 stops a release, so those volumes and the host mounts retain durable state.
 Ordinary rollback reactivates the previous complete package. Service policy is
-declarative: AdGuard and Copyparty configuration is mounted read-only, and a
-container restart reapplies the package-generated qBittorrent configuration.
+declarative: Copyparty configuration is mounted read-only, AdGuard may normalize
+its generated directory within the active slot, and a container restart
+reapplies the package-generated qBittorrent configuration.
 UI preference edits are therefore not durable; downloads, filter work data,
 and other application data remain durable.

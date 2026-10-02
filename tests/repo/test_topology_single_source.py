@@ -1,6 +1,7 @@
 import ipaddress
 import json
 import os
+from pathlib import PurePosixPath
 import re
 import shutil
 import subprocess
@@ -93,8 +94,8 @@ def test_each_special_mount_or_device_is_owned_by_only_one_lxc() -> None:
     assert set(mount_owners) == {"docker_apps", "openclaw"}
     for name in mount_owners:
         for mount in hosts[name]["lxc_mounts"].values():
-            assert os.path.isabs(mount["source"])
-            assert os.path.isabs(mount["target"])
+            assert PurePosixPath(mount["source"]).is_absolute()
+            assert PurePosixPath(mount["target"]).is_absolute()
             assert re.fullmatch(r"0[0-7]{3}", mount["source_mode"])
 
 

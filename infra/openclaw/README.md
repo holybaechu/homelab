@@ -10,8 +10,9 @@ run their image-local contract checks while building. The two standard Buildx
 jobs publish independently, with GHA cache, provenance, SBOM attestations, and
 exact `repository@sha256` outputs.
 
-`runtime` is the self-contained Compose package. Its `release.json` names the
-Compose file, package smoke test, and `openclaw` versioned secret bundle. The
+`runtime` is the self-contained Compose package: `compose.yml` and `smoke.sh`.
+The release engine validates these executable inputs directly. `release.json`
+is retained for rollback compatibility with older embedded engines. The
 complete release descriptor contains only the homelab commit, private-config
 commit, and the two exact OCI image identities. Archive SHA-256 values are
 verified as transport checks, not supplied as promotion coordinates.

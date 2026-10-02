@@ -668,6 +668,33 @@ def test_complete_descriptor_and_deterministic_bundle(tmp_path: Path) -> None:
     assert results[0]["sha256"] == results[1]["sha256"]
 
 
+@pytest.mark.parametrize(
+    "target,missing",
+    (("apps", "compose.yml"), ("apps", "smoke.sh"), ("apps", "release.json"),
+     ("apps", "prepare_release.py"), ("openclaw", "compose.yml"),
+     ("openclaw", "smoke.sh"), ("openclaw", "release.json")),
+)
+def test_incomplete_package_cannot_produce_a_release_bundle(
+    tmp_path: Path, target: str, missing: str,
+) -> None:
+    source = (
+        REPO_ROOT / "apps/compose/homelab"
+        if target == "apps"
+        else REPO_ROOT / "infra/openclaw/runtime"
+    )
+    stack = tmp_path / "stack"
+    shutil.copytree(source, stack)
+    (stack / missing).unlink()
+    output = tmp_path / "incomplete.tar"
+    with pytest.raises(ReleaseError, match=missing):
+        build_bundle(
+            target=target, source_sha="a" * 40, stack_root=stack,
+            engine_path=ENGINE, output=output,
+            topology_path=TOPOLOGY if target == "apps" else None,
+        )
+    assert not output.exists()
+
+
 def test_bundle_rejects_rendered_secret_state_in_source_package(tmp_path: Path) -> None:
     stack = tmp_path / "stack"
     shutil.copytree(REPO_ROOT / "apps" / "compose" / "homelab", stack)

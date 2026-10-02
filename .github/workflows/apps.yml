@@ -48,7 +48,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install app-lane test dependencies
         if: inputs.operation != 'sync-secrets'
-        run: python -m pip install pytest==9.1.1 Jinja2==3.1.6 PyYAML==6.0.3
+        run: python -m pip install -r requirements-dev.txt
       - name: Validate the complete app package and release transaction
         if: inputs.operation != 'sync-secrets'
         env:
@@ -68,8 +68,7 @@ jobs:
             --source-sha "$GITHUB_SHA" \
             --stack apps/compose/homelab \
             --topology infra/ansible/inventory/prod/topology.json \
-            --output "$RUNNER_TEMP/apps.tar" \
-            --result "$RUNNER_TEMP/apps-result.json"
+            --output "$RUNNER_TEMP/apps.tar"
       - name: Materialize the one apps component secret bundle
         env:
           COMPONENT_SECRET_BUNDLE: ${{ secrets.APPS_SECRET_BUNDLE }}

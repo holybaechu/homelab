@@ -31,7 +31,7 @@ def render_maintenance_value(value, enabled=None):
 
 @pytest.mark.parametrize(
     "role_name",
-    ("common_debian", "docker_engine", "tailscale_gateway"),
+    ("common_debian", "docker_engine", "tailscale_gateway", "openclaw_native"),
 )
 def test_package_reconciliation_is_stable_until_maintenance(role_name):
     tasks = load_yaml(ROLE_ROOT / role_name / "tasks" / "main.yml")

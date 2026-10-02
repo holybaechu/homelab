@@ -5,8 +5,8 @@
 Production retains three LXCs: `docker_apps`, `tailnet`, and `openclaw`. The
 application LXC runs one Compose project, `homelab`, from the self-contained
 `apps/compose/homelab` package. The package contains its Compose model,
-nonsecret configuration, strict secret-bundle materializer, release metadata,
-and semantic smoke test.
+nonsecret configuration, strict secret-bundle materializer, and semantic smoke
+test.
 
 CI bundles that directory from one exact commit. The stable host launcher
 checks the upload checksum and embedded engine digest. The versioned engine
@@ -70,119 +70,39 @@ workflow. That path uploads one component JSON document, atomically installs
 it, and recreates the current release; it does not build images, construct or
 upload a release archive, or pull images.
 
-## Host-first activation and launcher changes
+## Launcher updates
 
-The stable launcher is infrastructure-owned and is never uploaded by an
-application workflow. A merge to `main` can automatically start a runtime
-workflow, so installing the launcher after merge is too late. For the first
-activation and every future `release_launcher.py` change, use this order:
+The stable launcher is infrastructure-owned. Before merging a change to
+`scripts/ci/release_launcher.py`, check out the exact candidate commit on a
+trusted controller and reconcile `apps-host` and `openclaw-host` separately.
+Compare `/usr/local/libexec/homelab-release` on each host with the candidate
+file's SHA-256 before allowing automatic runtime deployments. The versioned
+release engine travels with each runtime package and does not require this
+host-first step when the launcher itself is unchanged.
 
-1. Keep the change unmerged and check out its exact candidate commit on a
-   trusted, tailnet-connected Ansible controller with pinned SSH trust.
-2. From that candidate checkout, reconcile `apps-host` and `openclaw-host`
-   explicitly. These out-of-band runs install the candidate launcher before any
-   automatic runtime trigger:
+For a new host, follow [bootstrap.md](bootstrap.md). Hosts still running the
+pre-simplification stack use the one-time [legacy cutover](legacy-cutover.md).
+The engine refuses an externally owned `homelab_proxy` network before stopping
+or replacing it; the historical procedure documents that bounded transition.
 
-   ```sh
-   export ANSIBLE_CONFIG=infra/ansible/ansible.cfg
-   ansible-playbook -i infra/ansible/inventory/prod/topology.json \
-     infra/ansible/playbooks/reconcile.yml -e homelab_unit=apps-host
-   ansible-playbook -i infra/ansible/inventory/prod/topology.json \
-     infra/ansible/playbooks/reconcile.yml -e homelab_unit=openclaw-host
-   ```
+## Audit and rollback
 
-3. Compare each host's `/usr/local/libexec/homelab-release` SHA-256 with the
-   candidate `scripts/ci/release_launcher.py`; do not merge if either differs.
-4. Take the documented PVE snapshot and data backup, then merge while holding
-   the apps production-environment approval. The OpenClaw workflow may remain
-   queued behind the shared control-plane lock.
-5. The previous apps host has an externally created `homelab_proxy` network
-   without Compose ownership labels. Run this bounded transition on the apps
-   host in the maintenance window:
-
-   ```sh
-   previous_stack="$(readlink -e /opt/homelab/current/homelab)"
-   test -d "$previous_stack"
-   test -f "$previous_stack/.env"
-   test -f "$previous_stack/.homelab/artifacts.env"
-   docker compose --project-name homelab --project-directory "$previous_stack" \
-     --env-file "$previous_stack/.env" \
-     --env-file "$previous_stack/.homelab/artifacts.env" \
-     -f "$previous_stack/compose.yml" down --remove-orphans
-   test "$(docker network inspect homelab_proxy --format '{{len .Containers}}')" = 0
-   docker network rm homelab_proxy
-   ```
-
-   Skip these commands when inspection already shows both
-   `com.docker.compose.project=homelab` and
-   `com.docker.compose.network=proxy`.
-6. Approve the apps job immediately afterward. The new release creates the
-   same named network with Compose labels. Until the transition is complete,
-   the new engine detects the unowned network before image pull, `up`, or
-   `down`, restores its empty pending state, and leaves the previous project
-   running. The normal apps and OpenClaw workflows may then activate the new
-   engine. OpenClaw keeps the
-   whole workflow in the non-cancelling `prod-control-plane` queue, so its two
-   image builds run in parallel within one admitted workflow. GitHub does not
-   guarantee dispatch-order admission to a concurrency group, so each automatic
-   runtime job compares its exact lane input paths with current homelab `main`
-   immediately before mutation. Unrelated newer documentation or test commits
-   do not suppress a deployment, while a newer package, topology, transport, or
-   workflow change makes the older run fail without touching the host. An
-   automatic OpenClaw run also checks out private-config `main` again directly
-   before the deploy command and rejects a promotion whose bound commit no
-   longer matches that tip. Manual dispatch remains the explicit rollback path.
-7. After both first deployments and launcher audits succeed, archive the old
-   control directories and retire old unit/account/executable/individual-secret
-   artifacts using the immutable pre-simplification reference in
-   `docs/runbooks/recovery.md`. Record that one-time host operation separately;
-   current reconciliation owns only host primitives and carries no recurring
-   conversion or obsolete-host cleanup branch.
-
-On a new/rebuilt host, complete the same out-of-band host reconcile before
-allowing its first runtime job. Prepare all component documents before the
-merge; the host-primitives run does not install application secrets.
-
-The control plane uses `compose-releases`, `compose-runtime`, and
-`compose-control` below each target install root, so it never interprets an
-unrelated state schema. Its first activation has no recorded previous release.
-Take a PVE snapshot and a separate durable-data/secret backup, use a maintenance
-window, then run one complete target deployment. After its audit passes,
-archive or remove unreferenced older control directories; do not delete
-`/srv/homelab`, `/var/lib/openclaw`, or named Compose volumes.
-
-Create all four versioned component documents before releasing production
-jobs. Exact runtime shapes are documented in `secrets/README.md` and the apps
-package README. PVE apply and tailnet use, respectively:
-
-```json
-{"component":"pve","version":1,"values":{"deploy_ssh_public_keys":["ssh-ed25519 ..."]}}
-{"component":"tailnet","version":1,"values":{"tailscale_auth_key":"tskey-auth-..."}}
-```
-
-Existing application hashes can be copied from the live AdGuard and
-qBittorrent configuration. To deliberately replace them, generate compatible
-values without putting plaintext in Git:
+Run these commands on the corresponding host:
 
 ```sh
-read -rsp 'AdGuard password: ' password; echo
-htpasswd -bnBC 12 '' "$password" | tr -d ':\n'; echo
-unset password
-
-python3 - <<'PY'
-import base64, getpass, hashlib, secrets
-password = getpass.getpass("qBittorrent password: ").encode()
-salt = secrets.token_bytes(16)
-digest = hashlib.pbkdf2_hmac("sha512", password, salt, 100000)
-print("@ByteArray(%s:%s)" % (
-    base64.b64encode(salt).decode(), base64.b64encode(digest).decode()))
-PY
+/usr/local/libexec/homelab-release audit --target apps
+/usr/local/libexec/homelab-release rollback --target apps
+# On the dedicated OpenClaw host:
+/usr/local/libexec/homelab-release audit --target openclaw
+/usr/local/libexec/homelab-release rollback --target openclaw
 ```
 
-Validate each JSON with its owning consumer and populate the four GitHub
-environment secrets. Reconcile `pve` only if topology/access needs work, then
-reconcile `tailnet`; if PVE apply reports new public host-key lines, update
-`DEPLOY_SSH_KNOWN_HOSTS`. Perform the candidate-commit, out-of-band
-`apps-host`/`openclaw-host` sequence above before merging the change. After the
-merge, require successful apps and OpenClaw releases and both launcher audits,
-then complete and record the one-time retirement in step 7.
+`audit` re-materializes and verifies the current release; it is a mutating
+recovery operation. `rollback` selects the previous source with current secrets.
+The state and runtime-slot markers remain part of the transaction; package
+source carries its Compose file, smoke script, and apps preparer/configuration.
+The small package `release.json` files retain the exact older engine contract:
+a rollback selects the restored release's embedded engine, which may require
+those markers for a subsequent rollback. Keep them unchanged while releases
+built with the earlier engine remain reachable. The current engine has no
+parallel metadata table and validates package identity and executable inputs.

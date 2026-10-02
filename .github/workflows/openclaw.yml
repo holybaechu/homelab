@@ -161,8 +161,7 @@ jobs:
             --config-commit "$OPENCLAW_CONFIG_COMMIT" \
             --gateway-ref "$gateway_ref" \
             --ctf-ref "$ctf_ref" \
-            --output "$RUNNER_TEMP/openclaw.tar" \
-            --result "$RUNNER_TEMP/openclaw-result.json"
+            --output "$RUNNER_TEMP/openclaw.tar"
       - name: Materialize the one OpenClaw component secret bundle
         env:
           COMPONENT_SECRET_BUNDLE: ${{ secrets.OPENCLAW_SECRET_BUNDLE }}

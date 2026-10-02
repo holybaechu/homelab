@@ -209,9 +209,9 @@ def prepare(secret_bundle: Path, release_root: Path, topology: Path) -> None:
     if release_root.is_symlink() or not release_root.is_dir():
         raise PreparationError("release root must be a real directory")
     release_root = release_root.resolve()
-    for required in (release_root / "release.json", release_root / "compose.yml"):
-        if not required.is_file() or required.is_symlink():
-            raise PreparationError(f"release package is incomplete: {required}")
+    compose = release_root / "compose.yml"
+    if not compose.is_file() or compose.is_symlink():
+        raise PreparationError(f"release package is incomplete: {compose}")
 
     bundle = _read_bundle(secret_bundle)
     topology_values = _read_topology(topology)

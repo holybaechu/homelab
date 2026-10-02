@@ -10,7 +10,9 @@ GitHub deployment record.
 exact checkout runs the complete behavioral/invariant test suite, renders the
 apps and OpenClaw Compose packages, and syntax-checks `reconcile.yml` for all
 four infrastructure units. It has read-only repository permission and no
-production environment.
+production environment. Test dependencies are declared in `requirements-dev.txt`;
+Ansible is declared separately in `requirements-deploy.txt`. Validation installs
+both, while the apps lane installs only the test dependencies.
 
 ## Apps
 
@@ -45,6 +47,12 @@ resolved commit and builds one descriptor containing:
 - private-config commit;
 - Gateway `repository@sha256` identity; and
 - CTF `repository@sha256` identity.
+
+Automatic runtime runs compare their lane inputs with current public `main`
+immediately before mutation; OpenClaw also rechecks private-config `main`.
+Superseded inputs fail without touching the host. Manual dispatch permits an
+intentional older release. This freshness gate complements the shared queue,
+whose admission order is not guaranteed.
 
 The bundle checksum proves only upload integrity. It is not another desired
 state input. The job sends that bundle and `OPENCLAW_SECRET_BUNDLE` through the

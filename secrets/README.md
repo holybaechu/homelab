@@ -50,3 +50,27 @@ selected code release with the current component bundle.
 Tailnet OAuth, the deploy SSH key and known-host set, and the private-config
 read key are CI connection credentials rather than service configuration. They
 remain individually scoped to the jobs that establish those connections.
+
+## Preparing application password hashes
+
+Existing compatible hashes can be copied from the live AdGuard and qBittorrent
+configuration. To replace them, generate the required values on a trusted
+controller and store the results only in the private apps bundle:
+
+```sh
+read -rsp 'AdGuard password: ' password; echo
+htpasswd -bnBC 12 '' "$password" | tr -d ':\n'; echo
+unset password
+
+python3 - <<'PY'
+import base64, getpass, hashlib, secrets
+password = getpass.getpass("qBittorrent password: ").encode()
+salt = secrets.token_bytes(16)
+digest = hashlib.pbkdf2_hmac("sha512", password, salt, 100000)
+print("@ByteArray(%s:%s)" % (
+    base64.b64encode(salt).decode(), base64.b64encode(digest).decode()))
+PY
+```
+
+The AdGuard command requires Apache's `htpasswd` utility. Keep these values,
+component documents, and their backups outside the public repository.
