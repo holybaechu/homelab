@@ -1800,7 +1800,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result, sort_keys=True))
         return 0
     except (OSError, ReleaseError, subprocess.SubprocessError) as exc:
-        print(f"compose-release-engine: {exc}", file=sys.stderr)
+        # ReleaseError messages name controlled stages; captured command output
+        # remains private. Preserve the reason even after successful rollback.
+        messages = []
+        cause = exc
+        while isinstance(cause, ReleaseError):
+            if str(cause) not in messages:
+                messages.append(str(cause))
+            cause = cause.__cause__
+        detail = ": ".join(messages) if messages else str(exc)
+        print(f"compose-release-engine: {detail}", file=sys.stderr)
         return 2
 
 

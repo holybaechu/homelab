@@ -108,3 +108,7 @@ The apps wire protocol and version-1 state fields remain unchanged. Removing
 unused target choices does not require a new launcher for apps activation; the
 next `apps-host` reconciliation installs the apps-only launcher. Historical
 release source remains immutable and can still be audited or rolled back.
+
+The CLI reports controlled failure stages and exit statuses after rollback; raw
+command output remains private. Use that reason to distinguish network ownership,
+capacity, Compose, image verification, and smoke failures.

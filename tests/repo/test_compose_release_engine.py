@@ -699,3 +699,23 @@ with FileLock(lock_path):
         if process is not None and process.poll() is None:
             process.kill()
             process.wait(timeout=5)
+
+
+def test_cli_reports_the_failed_stage_without_exposing_command_output(tmp_path, monkeypatch, capsys):
+    from scripts.ci import compose_release_engine as module
+    runner = FakeDockerRunner()
+    engine = engine_for(tmp_path, "apps", runner)
+    first, _ = make_bundle_root(tmp_path, "1")
+    second, _ = make_bundle_root(tmp_path, "2")
+    incoming = tmp_path / "apps.json"
+    write_json(incoming, app_secrets("new"))
+    engine.deploy_bundle(first, incoming)
+    runner.fail_next_up = True
+    monkeypatch.setattr(module, "_engine_from_args", lambda _args: engine)
+    assert module.main(["deploy", "--target", "apps", "--bundle-root", str(second),
+                        "--secret-bundle", str(incoming)]) == 2
+    error = capsys.readouterr().err
+    assert "prior state was restored" in error
+    assert "Compose activation failed with exit status 7" in error
+    assert "secret-output-is-hidden" not in error
+    assert "traefik-new" not in error
