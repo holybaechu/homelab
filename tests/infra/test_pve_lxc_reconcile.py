@@ -512,12 +512,21 @@ def test_explicit_disabled_host_network_management_does_not_restart_the_control_
     assert enabled.calls == []
 
 
+@pytest.mark.skipif(os.name == "nt", reason="PVE bind sources use POSIX absolute paths")
 def test_apps_disk_growth_keeps_both_hosts_running_and_preserves_the_control_path(tmp_path, capsys):
-    _, hosts = topology_data()
-    vmid = hosts["docker_apps"]["vmid"]
-    target = hosts["docker_apps"]["root_disk_gb"]
-    runner = FakeRunner({vmid: exact_config("docker_apps", rootfs=f"local-lvm:vm-{vmid}-disk-0,size={target - 16}G")}, running=(110, 111))
-    assert invoke(tmp_path, runner, "apply", "--protect-control-vmid", "111") == 0
+    document = json.loads(TOPOLOGY.read_text(encoding="utf-8"))
+    host = document["all"]["children"]["debian"]["hosts"]["docker_apps"]
+    source = tmp_path / "apps-data"
+    source.mkdir(mode=0o700)
+    host["lxc_mounts"]["mp0"].update(source=str(source), source_owner=os.getuid(),
+                                    source_group=os.getgid(), source_mode="0700")
+    custom = tmp_path / "topology.json"
+    custom.write_text(json.dumps(document), encoding="utf-8")
+    all_vars, hosts = reconcile.load_topology(custom)
+    vmid, target = host["vmid"], host["root_disk_gb"]
+    runner = FakeRunner({vmid: exact_config_for(all_vars, hosts["docker_apps"],
+                        rootfs=f"local-lvm:vm-{vmid}-disk-0,size={target - 16}G")}, running=(110, 111))
+    assert invoke(tmp_path, runner, "apply", "--protect-control-vmid", "111", topology=custom) == 0
     assert ["pct", "resize", str(vmid), "rootfs", f"{target}G"] in runner.calls
     assert not any(call[:2] in (["pct", "stop"], ["pct", "destroy"], ["pct", "start"])
                    for call in runner.calls)
