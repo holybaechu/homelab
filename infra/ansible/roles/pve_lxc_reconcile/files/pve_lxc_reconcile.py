@@ -274,6 +274,9 @@ def normalize_tags(value: str | Sequence[str]) -> tuple[str, ...]:
 
 def normalize_net(value: str) -> dict[str, str]:
     result = parse_options(value)
+    # Proxmox may serialize this disabled optional switch explicitly.
+    if result.get("host-managed") == "0":
+        result.pop("host-managed")
     if "hwaddr" in result:
         result["hwaddr"] = result["hwaddr"].upper()
     return result

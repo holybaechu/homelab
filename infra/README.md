@@ -45,3 +45,7 @@ and stable data volumes. Reconciliation and deployment retain durable data.
 See [release operations](../docs/runbooks/compose-release.md),
 [workflow contracts](../docs/runbooks/github-actions.md), and
 [recovery](../docs/runbooks/recovery.md).
+
+PVE plan/audit/apply report root-storage headroom. An explicit disabled
+`host-managed=0` network option is normalized as unset; enabling host management
+still counts as connectivity-affecting drift and preserves the control-path guard.

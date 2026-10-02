@@ -498,3 +498,15 @@ def test_pve_storage_refuses_unknown_devices_and_wrong_mounts_before_data_ops():
     assert shell.index('printf \'%s\\n\' "${expected_fstab}"') < shell.index(
         'mv -f -- "${fstab_tmp}" /etc/fstab'
     ) < copy_data
+
+
+def test_explicit_disabled_host_network_management_does_not_restart_the_control_path(tmp_path, capsys):
+    all_vars, hosts = topology_data()
+    network = reconcile._format_options(reconcile.desired_config(all_vars, hosts["tailnet"])["net0"])
+    runner = FakeRunner({111: exact_config("tailnet", net0=network + ",host-managed=0")}, running=(111,))
+    assert invoke(tmp_path, runner, "apply", "--protect-control-vmid", "111") == 0
+    assert json.loads(capsys.readouterr().out)["changed"] is False
+    assert runner.calls == []
+    enabled = FakeRunner({111: exact_config("tailnet", net0=network + ",host-managed=1")}, running=(111,))
+    assert invoke(tmp_path, enabled, "apply", "--protect-control-vmid", "111") == 2
+    assert enabled.calls == []
