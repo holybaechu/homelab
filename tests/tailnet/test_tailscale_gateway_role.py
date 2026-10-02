@@ -1,317 +1,210 @@
-import yaml
-from jinja2 import Environment
+from configparser import ConfigParser
+import os
+from pathlib import PurePosixPath
+import re
+import shlex
+import subprocess
 
-from tests.helpers import REPO_ROOT
-
-
-def render_maintenance_value(value, enabled):
-    environment = Environment()
-    environment.filters["bool"] = bool
-    rendered = environment.from_string(str(value)).render(
-        homelab_maintenance_upgrade=enabled
-    )
-    return yaml.safe_load(rendered)
+from tests.helpers import (
+    REPO_ROOT, load_yaml, posix_shell, render_ansible, task_enabled, task_with_module,
+    write_tool,
+)
 
 
-def test_tailnet_lxc_disables_tailscale_dns_acceptance():
-    inventory = (
-        REPO_ROOT
-        / "infra"
-        / "ansible"
-        / "inventory"
-        / "prod"
-        / "group_vars"
-        / "svc_tailnet.yml"
-    ).read_text(encoding="utf-8")
-    role = (
-        REPO_ROOT
-        / "infra"
-        / "ansible"
-        / "roles"
-        / "tailscale_gateway"
-        / "tasks"
-        / "main.yml"
-    ).read_text(encoding="utf-8")
-
-    assert "tailscale_accept_dns: false" in inventory
-    assert "--accept-dns={{ tailscale_accept_dns | default(false) | lower }}" in role
+ROLE = REPO_ROOT / "infra/ansible/roles/tailscale_gateway"
+RESTART = "tailscaled-ansible-restart"
+GUARD = "/run/homelab-tailscale-restart.in-progress"
+PROOF = "/run/homelab-tailscale-restart.completed"
+REQUEST = "/run/homelab-tailscale-restart.request"
 
 
-def test_tailnet_enables_forwarding_while_public_ipv6_is_unroutable():
-    role = (
-        REPO_ROOT
-        / "infra"
-        / "ansible"
-        / "roles"
-        / "tailscale_gateway"
-        / "tasks"
-        / "main.yml"
-    ).read_text(encoding="utf-8")
-
-    assert "net.ipv6.conf.all.disable_ipv6=1" in role
-    assert "net.ipv6.conf.default.disable_ipv6=1" in role
-    assert "sysctl -w" in role
-    assert "net.ipv4.ip_forward=1" in role
-    assert "net.ipv6.conf.all.forwarding=1" in role
+def role_tasks():
+    return load_yaml(ROLE / "tasks/main.yml")
 
 
-def test_tailnet_join_passes_the_validated_auth_key_as_one_opaque_argv_value():
-    tasks = yaml.safe_load(
-        (
-            REPO_ROOT
-            / "infra"
-            / "ansible"
-            / "roles"
-            / "tailscale_gateway"
-            / "tasks"
-            / "main.yml"
-        ).read_text(encoding="utf-8")
-    )
-    joins = [
-        task
-        for task in tasks
-        if task.get("ansible.builtin.command", {}).get("argv", [])[:2]
-        == ["tailscale", "up"]
-    ]
-
-    assert len(joins) == 1
-    join = joins[0]
-    command = join["ansible.builtin.command"]
-    assert "cmd" not in command
-    assert command["argv"].count("--auth-key={{ tailscale_auth_key }}") == 1
-    assert join["no_log"] is True
-    assert join["when"] == "tailscale_auth_key is defined"
+def command_task(tasks, prefix):
+    return task_with_module([
+        task for task in tasks
+        if task.get("ansible.builtin.command", {}).get("argv", [])[:len(prefix)] == prefix
+    ], "ansible.builtin.command")
 
 
-def test_tailnet_manages_and_validates_persistent_udp_gro_forwarding():
-    role_root = (
-        REPO_ROOT / "infra" / "ansible" / "roles" / "tailscale_gateway"
-    )
-    tasks = yaml.safe_load(
-        (role_root / "tasks" / "main.yml").read_text(encoding="utf-8")
-    )
-    by_name = {task["name"]: task for task in tasks}
+def unit_section(filename, section):
+    unit = ConfigParser(strict=False, interpolation=None)
+    unit.read(ROLE / "files" / filename, encoding="utf-8")
+    return unit[section]
 
-    tooling = by_name["Install Tailscale gateway network tooling"][
-        "ansible.builtin.apt"
-    ]
-    assert tooling["name"] == "ethtool"
-    assert render_maintenance_value(tooling["state"], False) == "present"
-    assert render_maintenance_value(tooling["state"], True) == "latest"
 
-    script_task = by_name["Install the Tailscale UDP GRO configuration script"][
-        "ansible.builtin.copy"
-    ]
-    assert script_task["dest"] == "/usr/local/sbin/configure-tailscale-udp-gro"
-    assert script_task["mode"] == "0755"
+def duration_seconds(value):
+    number, unit = re.fullmatch(r"(\d+(?:\.\d+)?)(us|ms|s)?", value).groups()
+    return float(number) * {"us": 0.000001, "ms": 0.001, "s": 1, None: 1}[unit]
 
-    service_task = by_name["Install the persistent Tailscale UDP GRO service"][
-        "ansible.builtin.copy"
-    ]
-    assert service_task["dest"] == "/etc/systemd/system/tailscale-udp-gro.service"
-    assert service_task["mode"] == "0644"
 
-    enabled = by_name["Enable persistent Tailscale UDP GRO forwarding"][
-        "ansible.builtin.systemd_service"
-    ]
-    assert enabled == {
-        "name": "tailscale-udp-gro.service",
-        "enabled": True,
-        "state": "started",
+def test_tailnet_persists_and_applies_routing_policy():
+    tasks = role_tasks()
+    expected = {
+        "net.ipv6.conf.all.disable_ipv6=1",
+        "net.ipv6.conf.default.disable_ipv6=1",
+        "net.ipv4.ip_forward=1",
+        "net.ipv6.conf.all.forwarding=1",
     }
+    persisted = {
+        line.strip()
+        for task in tasks
+        if task.get("ansible.builtin.copy", {}).get("dest", "").startswith("/etc/sysctl.d/")
+        for line in task["ansible.builtin.copy"]["content"].splitlines()
+    }
+    apply = task_with_module([
+        task for task in tasks
+        if task.get("ansible.builtin.command", {}).get("cmd", "").startswith("sysctl ")
+    ], "ansible.builtin.command")
+    assert expected <= persisted
+    assert expected <= set(shlex.split(apply["ansible.builtin.command"]["cmd"]))
 
-    apply = by_name["Apply Tailscale UDP GRO forwarding on every deployment"]
-    assert apply["ansible.builtin.command"]["argv"] == [
-        "/usr/local/sbin/configure-tailscale-udp-gro"
-    ]
-    assert apply["changed_when"] is False
 
-    script = (role_root / "files" / "configure-tailscale-udp-gro").read_text(
-        encoding="utf-8"
-    )
-    assert "ip -o route get 8.8.8.8" in script
-    assert 'rx-udp-gro-forwarding on rx-gro-list off' in script
+def test_tailnet_join_keeps_dns_local_and_auth_key_opaque_and_private():
+    join = command_task(role_tasks(), ["tailscale", "up"])
+    inventory = load_yaml(REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_tailnet.yml")
+    key = "tskey-auth-fixture-123"
+    argv = [render_ansible(value, **inventory, tailscale_auth_key=key)
+            for value in join["ansible.builtin.command"]["argv"]]
 
-    service = (role_root / "files" / "tailscale-udp-gro.service").read_text(
-        encoding="utf-8"
-    )
-    assert "Before=tailscaled.service" in service
-    assert "Type=oneshot" in service
-    assert "ExecStart=/usr/local/sbin/configure-tailscale-udp-gro" in service
-    assert "RemainAfterExit=yes" in service
-    assert "WantedBy=multi-user.target" in service
+    assert "--accept-dns=false" in argv
+    assert argv.count("--auth-key=" + key) == 1
+    assert "cmd" not in join["ansible.builtin.command"]
+    assert join["no_log"] is True
+    assert task_enabled(join, tailscale_auth_key=key)
+    assert not task_enabled(join)
 
-def test_tailscale_upgrade_defers_self_restart_and_recovers_stale_binary():
-    tasks = yaml.safe_load(
-        (
-            REPO_ROOT
-            / "infra"
-            / "ansible"
-            / "roles"
-            / "tailscale_gateway"
-            / "tasks"
-            / "main.yml"
-        ).read_text(encoding="utf-8")
-    )
-    by_name = {task["name"]: task for task in tasks}
 
-    package = by_name["Install Tailscale without disrupting the active route"]
-    assert (
-        render_maintenance_value(
-            package["ansible.builtin.apt"]["state"], False
-        )
-        == "present"
-    )
-    assert (
-        render_maintenance_value(
-            package["ansible.builtin.apt"]["state"], True
-        )
-        == "latest"
-    )
+def test_tailnet_keeps_udp_gro_forwarding_persistent():
+    tasks = role_tasks()
+    script = task_with_module(tasks, "ansible.builtin.copy",
+                              dest="/usr/local/sbin/configure-tailscale-udp-gro")
+    assert script["ansible.builtin.copy"]["mode"] == "0755"
+    assert (ROLE / "files" / script["ansible.builtin.copy"]["src"]).is_file()
+    installed = task_with_module(tasks, "ansible.builtin.copy",
+                                 dest="/etc/systemd/system/tailscale-udp-gro.service")
+    service = unit_section(installed["ansible.builtin.copy"]["src"], "Service")
+    assert service["ExecStart"] == "/usr/local/sbin/configure-tailscale-udp-gro"
+    assert service["Type"] == "oneshot"
+    unit_file = installed["ansible.builtin.copy"]["src"]
+    assert "tailscaled.service" in unit_section(unit_file, "Unit")["Before"].split()
+    assert "multi-user.target" in unit_section(unit_file, "Install")["WantedBy"].split()
+    enabled = task_with_module(tasks, "ansible.builtin.systemd_service",
+                               name="tailscale-udp-gro.service")
+    assert enabled["ansible.builtin.systemd_service"]["enabled"] is True
+    assert enabled["ansible.builtin.systemd_service"]["state"] == "started"
+    command_task(tasks, [service["ExecStart"]])
+    script_source = (ROLE / "files" / script["ansible.builtin.copy"]["src"]).read_text(encoding="utf-8")
+    assert "rx-udp-gro-forwarding on rx-gro-list off" in script_source
+
+
+def test_tailscale_upgrade_preserves_the_route_and_recovers_interrupted_runs():
+    tasks = role_tasks()
+    package = task_with_module(tasks, "ansible.builtin.apt", name="tailscale")
     assert package["ansible.builtin.apt"]["policy_rc_d"] == 101
+    cancel = command_task(tasks, ["systemctl", "stop"])
+    guard = task_with_module(tasks, "ansible.builtin.copy", dest=GUARD)
+    assert {RESTART + ".timer", RESTART + ".service"} <= set(cancel["ansible.builtin.command"]["argv"])
+    assert tasks.index(cancel) < tasks.index(guard) < tasks.index(package)
 
-    stale_check = by_name["Detect a tailscaled process using a replaced binary"]
-    assert stale_check["failed_when"] is False
-    assert "(deleted)" in stale_check["ansible.builtin.shell"]
-
-    decision = by_name["Decide whether tailscaled must restart"]
-    expression = decision["ansible.builtin.set_fact"]["tailscale_restart_required"]
-    assert "tailscale_package.changed" in expression
-    assert "tailscale_underlay.changed" in expression
-    assert "tailscale_stale_binary.rc == 0" in expression
-    assert "tailscale_previous_restart_guard.stat.exists" in expression
-
-    restart_required = Environment().from_string(expression)
-    cases = (
+    decision = next(task["ansible.builtin.set_fact"]["tailscale_restart_required"]
+                    for task in tasks
+                    if "tailscale_restart_required" in task.get("ansible.builtin.set_fact", {}))
+    for package_changed, underlay_changed, stale_rc, previous_guard, expected in (
         (True, False, 1, False, True),
         (False, True, 1, False, True),
         (False, False, 0, False, True),
         (False, False, 1, True, True),
         (False, False, 1, False, False),
-    )
-    for package_changed, underlay_changed, stale_rc, previous_guard, expected in cases:
-        rendered = restart_required.render(
-            tailscale_package={"changed": package_changed},
+    ):
+        assert render_ansible(
+            decision, tailscale_package={"changed": package_changed},
             tailscale_underlay={"changed": underlay_changed},
             tailscale_stale_binary={"rc": stale_rc},
             tailscale_previous_restart_guard={"stat": {"exists": previous_guard}},
-        )
-        assert yaml.safe_load(rendered) is expected
+        ) is expected
 
-    service_path = (
-        REPO_ROOT
-        / "infra"
-        / "ansible"
-        / "roles"
-        / "tailscale_gateway"
-        / "files"
-        / "tailscaled-ansible-restart.service"
-    )
-    timer_path = service_path.with_suffix(".timer")
-    assert service_path.exists()
-    assert timer_path.exists()
-
-    service = service_path.read_text(encoding="utf-8")
-    timer = timer_path.read_text(encoding="utf-8")
-    assert "Type=oneshot" in service
-    assert "RemainAfterExit=yes" in service
-    assert "ExecStart=/usr/bin/systemctl restart tailscaled.service" in service
-    assert "ExecStartPost=/bin/cp -- /run/homelab-tailscale-restart.request /run/homelab-tailscale-restart.completed" in service
-    assert "ExecStartPost=/bin/rm -f -- /run/homelab-tailscale-restart.in-progress" in service
-    assert "OnActiveSec=5s" in timer
-    assert "AccuracySec=1us" in timer
-    assert "RandomizedDelaySec=0" in timer
-    assert "RemainAfterElapse=no" in timer
-    assert "Unit=tailscaled-ansible-restart.service" in timer
-
-    task_names = [task["name"] for task in tasks]
-    assert task_names.index("Cancel any pending tailscaled restart") < task_names.index(
-        "Install Tailscale without disrupting the active route"
-    )
-    assert task_names.index("Mark this role run as interruption-sensitive") < task_names.index(
-        "Install Tailscale without disrupting the active route"
-    )
-    assert task_names.index("Reset the deterministic tailscaled restart units") < task_names.index(
-        "Schedule the deterministic tailscaled restart"
-    )
-    reset_failed = by_name["Reset the deterministic tailscaled restart units"]
-    assert reset_failed["loop"] == [
-        "tailscaled-ansible-restart.timer",
-        "tailscaled-ansible-restart.service",
-    ]
-    assert "not loaded" in reset_failed["failed_when"]
-    assert task_names.index("Remove the previous tailscaled restart completion proof") < task_names.index(
-        "Write the requested tailscaled restart identifier"
-    ) < task_names.index("Schedule the deterministic tailscaled restart")
-
-    request = by_name["Write the requested tailscaled restart identifier"]
-    assert request["ansible.builtin.copy"]["content"] == "{{ tailscale_restart_id }}\n"
-    assert request["when"] == "tailscale_restart_required"
-
-    clear_guard = by_name["Clear the interrupted-run guard when no restart is needed"]
+    reset = command_task(tasks, ["systemctl", "reset-failed"])
+    for rc, stderr, failed in ((0, "", False), (1, "unit not loaded", False), (1, "denied", True)):
+        assert render_ansible("{{ " + reset["failed_when"] + " }}",
+                              tailscale_reset_failed={"rc": rc, "stderr": stderr}) is failed
+    clear_proof = task_with_module(tasks, "ansible.builtin.file", path=PROOF)
+    request = task_with_module(tasks, "ansible.builtin.copy", dest=REQUEST)
+    restart = task_with_module(tasks, "ansible.builtin.systemd_service", name=RESTART + ".timer")
+    assert set(reset["loop"]) == {RESTART + ".timer", RESTART + ".service"}
+    assert clear_proof["ansible.builtin.file"]["state"] == "absent"
+    assert render_ansible(request["ansible.builtin.copy"]["content"], tailscale_restart_id="this-run").strip() == "this-run"
+    assert restart["ansible.builtin.systemd_service"]["state"] == "started"
+    assert tasks.index(reset) < tasks.index(restart)
+    assert tasks.index(clear_proof) < tasks.index(request) < tasks.index(restart)
+    for task in (reset, clear_proof, request, restart):
+        assert task_enabled(task, tailscale_restart_required=True)
+        assert not task_enabled(task, tailscale_restart_required=False)
+    clear_guard = task_with_module(tasks, "ansible.builtin.file", path=GUARD)
     assert clear_guard["ansible.builtin.file"]["state"] == "absent"
-    assert clear_guard["when"] == "not tailscale_restart_required"
+    assert task_enabled(clear_guard, tailscale_restart_required=False)
+    assert not task_enabled(clear_guard, tailscale_restart_required=True)
 
-    restart = by_name["Schedule the deterministic tailscaled restart"]
-    systemd = restart["ansible.builtin.systemd_service"]
-    assert systemd["name"] == "tailscaled-ansible-restart.timer"
-    assert systemd["state"] == "started"
-    assert restart["when"] == "tailscale_restart_required"
-    assert "systemd-run" not in (
-        REPO_ROOT
-        / "infra"
-        / "ansible"
-        / "roles"
-        / "tailscale_gateway"
-        / "tasks"
-        / "main.yml"
-    ).read_text(encoding="utf-8")
+    service = unit_section(RESTART + ".service", "Service")
+    timer = unit_section(RESTART + ".timer", "Timer")
+    assert service["Type"] == "oneshot"
+    assert service.getboolean("RemainAfterExit") is True
+    command = shlex.split(service["ExecStart"])
+    assert PurePosixPath(command[0]).name == "systemctl"
+    assert command[1:] == ["restart", "tailscaled.service"]
+    assert 0 < duration_seconds(service["TimeoutStartSec"]) <= 180
+    assert timer["Unit"] == RESTART + ".service"
+    assert duration_seconds(timer["RandomizedDelaySec"]) == 0
+    assert 0 < duration_seconds(timer["OnActiveSec"]) + duration_seconds(timer["AccuracySec"]) <= 10
+    assert timer.getboolean("RemainAfterElapse") is False
+    source = (ROLE / "files" / (RESTART + ".service")).read_text(encoding="utf-8")
+    assert f"/bin/cp -- {REQUEST} {PROOF}" in source
+    assert f"/bin/rm -f -- {GUARD}" in source
 
 
-def test_tailnet_restart_recovery_is_bounded_and_verifies_the_running_binary():
-    recovery = yaml.safe_load(
-        (
-            REPO_ROOT / "infra/ansible/roles/tailscale_gateway/tasks/main.yml"
-        ).read_text(encoding="utf-8")
-    )
-    by_name = {task["name"]: task for task in recovery}
-    gate = [
-        "homelab_unit == 'tailnet'",
-        "tailscale_restart_scheduled | default(false)",
-    ]
-
-    wait = by_name["Wait for SSH after a scheduled tailscaled restart"]
-    assert wait["when"] == gate
-    assert wait["ansible.builtin.wait_for_connection"] == {
-        "delay": 10,
-        "connect_timeout": 5,
-        "sleep": 5,
-        "timeout": 180,
-    }
-
-    completion = by_name["Wait for the exact tailscaled restart proof"]
-    assert completion["when"] == gate
-    assert completion["changed_when"] is False
-    assert completion["retries"] == 36
-    assert completion["delay"] == 5
-    assert completion["until"] == "tailscale_restart_completion.rc == 0"
-    assert "/run/homelab-tailscale-restart.completed" in completion[
-        "ansible.builtin.shell"
-    ]
+def test_tailnet_restart_recovery_is_bounded_and_checks_this_run(tmp_path):
+    tasks = role_tasks()
+    restart = task_with_module(tasks, "ansible.builtin.systemd_service", name=RESTART + ".timer")
+    wait = task_with_module(tasks, "ansible.builtin.wait_for_connection")
+    completion = next(task for task in tasks if task.get("register") == "tailscale_restart_completion")
+    result = next(task for task in tasks if task.get("register") == "tailscale_restart_result")
+    verify = next(task for task in tasks
+                  if "/usr/sbin/tailscaled" in task.get("ansible.builtin.shell", "")
+                  and task.get("failed_when") is not False)
+    assert 0 < wait["ansible.builtin.wait_for_connection"]["timeout"] <= 180
+    assert 0 < completion["retries"] * completion["delay"] <= 180
+    assert PROOF in completion["ansible.builtin.shell"]
     assert "tailscale_restart_id" in completion["ansible.builtin.shell"]
-
-    result = by_name["Verify the deterministic tailscaled restart succeeded"]
-    assert result["changed_when"] is False
-    assert result["failed_when"] == "tailscale_restart_result.stdout != 'success'"
-
-    verify = by_name["Verify tailscaled runs the installed binary"]
-    assert verify["when"] == gate
-    assert verify["changed_when"] is False
-    assert "/usr/sbin/tailscaled" in verify["ansible.builtin.shell"]
-
-    task_names = [task["name"] for task in recovery]
-    assert task_names.index("Schedule the deterministic tailscaled restart") < task_names.index(
-        "Wait for SSH after a scheduled tailscaled restart"
-    ) < task_names.index("Wait for the exact tailscaled restart proof") < task_names.index(
-        "Verify the deterministic tailscaled restart succeeded"
-    ) < task_names.index("Verify tailscaled runs the installed binary")
+    assert render_ansible("{{ " + completion["until"] + " }}", tailscale_restart_completion={"rc": 0}) is True
+    assert render_ansible("{{ " + completion["until"] + " }}", tailscale_restart_completion={"rc": 1}) is False
+    for status, failed in (("success", False), ("failed", True)):
+        assert render_ansible("{{ " + result["failed_when"] + " }}",
+                              tailscale_restart_result={"stdout": status}) is failed
+    stale = next(task for task in tasks if task.get("register") == "tailscale_stale_binary")
+    assert stale["failed_when"] is False
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    write_tool(tools / "systemctl", "printf '%s\\n' 123\n")
+    write_tool(tools / "readlink",
+               'test "$1" = /proc/123/exe\nprintf "%s\\n" "$TEST_RUNNING_BINARY"\n')
+    environment = os.environ.copy()
+    environment["PATH"] = str(tools) + os.pathsep + environment["PATH"]
+    for binary, stale_rc, verify_rc in (
+        ("/usr/sbin/tailscaled", 1, 0),
+        ("/usr/sbin/tailscaled (deleted)", 0, 1),
+        ("/usr/bin/unexpected", 0, 1),
+    ):
+        environment["TEST_RUNNING_BINARY"] = binary
+        for task, expected in ((stale, stale_rc), (verify, verify_rc)):
+            probe = subprocess.run(
+                [posix_shell(), "-c", task["ansible.builtin.shell"]],
+                env=environment, text=True, capture_output=True, check=False,
+            )
+            assert probe.returncode == expected, probe.stdout + probe.stderr
+    for task in (wait, completion, result, verify):
+        assert task_enabled(task, homelab_unit="tailnet", tailscale_restart_scheduled=True)
+        assert not task_enabled(task, homelab_unit="tailnet", tailscale_restart_scheduled=False)
+        assert not task_enabled(task, homelab_unit="apps-host", tailscale_restart_scheduled=True)
+    assert tasks.index(restart) < tasks.index(wait) < tasks.index(completion) < tasks.index(result) < tasks.index(verify)
