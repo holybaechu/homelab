@@ -25,15 +25,6 @@ def test_operational_dependencies_do_not_use_floating_latest_aliases():
     assert ":latest" not in contents
 
 
-def test_openclaw_dockerfile_bases_are_locally_digest_pinned():
-    dockerfiles = sorted((REPO_ROOT / "infra/openclaw").glob("*/Dockerfile"))
-    assert len(dockerfiles) == 2
-    for dockerfile in dockerfiles:
-        lines = dockerfile.read_text(encoding="utf-8").splitlines()
-        references = [line.split()[1] for line in lines if line.startswith("FROM ")]
-        assert references
-        assert all(re.search(r"@sha256:[0-9a-f]{64}$", ref) for ref in references)
-        assert not any(line.startswith("ARG ") and "REF" in line for line in lines)
 
 
 def test_nonstandard_versions_have_only_focused_managers():
@@ -47,7 +38,7 @@ def test_nonstandard_versions_have_only_focused_managers():
         "proxmox-debian-13",
     }
     assert by_dependency["tailscale/tailscale"]["managerFilePatterns"] == [
-        "/^\\.github\\/workflows\\/(?:apps|infra|openclaw)\\.yml$/"
+        "/^\\.github\\/workflows\\/(?:apps|infra)\\.yml$/"
     ]
     assert by_dependency["ghcr.io/vuetorrent/vuetorrent-lsio-mod"]["managerFilePatterns"] == [
         "/^apps\\/compose\\/homelab\\/compose\\.yml$/"
@@ -109,15 +100,20 @@ def test_direct_python_requirements_are_exactly_pinned():
         )
 
 
-def test_openclaw_image_updates_always_require_review():
-    config = json.loads(read("renovate.json"))
-    rule = next(
-        item
-        for item in config["packageRules"]
-        if item.get("description") == "Require review for OpenClaw"
-    )
 
-    assert rule["matchDatasources"] == ["docker"]
-    assert rule["matchPackageNames"] == ["ghcr.io/openclaw/openclaw"]
-    assert rule["automerge"] is False
-    assert rule["platformAutomerge"] is False
+
+def test_tailscale_action_tracks_published_linux_packages_instead_of_all_git_tags():
+    config = json.loads(read("renovate.json"))
+    manager = next(item for item in config["customManagers"]
+                   if item.get("depNameTemplate") == "tailscale/tailscale")
+    assert manager["datasourceTemplate"] == "custom.tailscale-linux"
+    source = config["customDatasources"]["tailscale-linux"]
+    assert source["defaultRegistryUrlTemplate"] == "https://pkgs.tailscale.com/stable/?mode=json"
+    assert source["format"] == "json"
+    # GitHub can publish a tag for a different platform without a Linux build.
+    # Only the artifact feed's TarballsVersion may select the runner version.
+    assert source["transformTemplates"] == ['{"releases":[{"version":TarballsVersion}]}']
+    expression = re.sub(r"\(\?<([A-Za-z][A-Za-z0-9_]*)>", r"(?P<\1>", manager["matchStrings"][0])
+    for path in (".github/workflows/apps.yml", ".github/workflows/infra.yml"):
+        matches = list(re.finditer(expression, read(path)))
+        assert len(matches) == 1

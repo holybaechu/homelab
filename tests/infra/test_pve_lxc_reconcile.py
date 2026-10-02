@@ -300,7 +300,7 @@ def test_missing_bind_sources_are_planned_and_reconciled_without_pct_mutation(
     owner = os.getuid() if hasattr(os, "getuid") else 0
     group = os.getgid() if hasattr(os, "getgid") else 0
     expected_paths: dict[int, Path] = {}
-    for index, name in enumerate(("docker_apps", "openclaw"), start=1):
+    for index, name in enumerate(("docker_apps",), start=1):
         host = hosts[name]
         mount = host["lxc_mounts"]["mp0"]
         source = tmp_path / f"mount-source-{index}"
@@ -391,21 +391,21 @@ def test_unmanaged_or_malformed_manual_confirmation_is_rejected(tmp_path, capsys
     assert runner.calls == []
 
 
-def test_topology_validation_locks_three_units_and_unique_identities():
+def test_topology_validation_locks_two_units_and_unique_identities():
     all_vars, hosts = topology_data()
     assert {host["deployment_unit"] for host in hosts.values()} == {
         "tailnet",
         "apps-host",
-        "openclaw-host",
+
     }
 
     duplicate = json.loads(json.dumps(hosts))
-    duplicate["openclaw"]["vmid"] = duplicate["tailnet"]["vmid"]
+    duplicate["docker_apps"]["vmid"] = duplicate["tailnet"]["vmid"]
     with pytest.raises(reconcile.ReconcileError, match="duplicate vmid"):
         reconcile.validate_topology(all_vars, duplicate)
 
     incomplete = dict(hosts)
-    incomplete.pop("openclaw")
+    incomplete.pop("docker_apps")
     with pytest.raises(reconcile.ReconcileError, match="exactly tailnet"):
         reconcile.validate_topology(all_vars, incomplete)
 
@@ -453,7 +453,7 @@ def test_pve_plan_and_audit_gate_every_non_reconciler_mutation():
     ):
         assert by_name[name]["when"] == ["homelab_unit == 'pve'", apply_gate]
 
-    reconciler = by_name["Reconcile the three PVE LXC definitions"]
+    reconciler = by_name["Reconcile the two PVE LXC definitions"]
     assert reconciler["when"] == "homelab_unit == 'pve'"
     assert by_name["Preflight the complete PVE LXC apply before any unit mutation"][
         "vars"
@@ -463,7 +463,7 @@ def test_pve_plan_and_audit_gate_every_non_reconciler_mutation():
     assert names.index(
         "Preflight the complete PVE LXC apply before any unit mutation"
     ) < names.index("Reconcile PVE durable storage") < names.index(
-        "Reconcile the three PVE LXC definitions"
+        "Reconcile the two PVE LXC definitions"
     )
 
 

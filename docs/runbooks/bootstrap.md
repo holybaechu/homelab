@@ -64,24 +64,21 @@ ansible-playbook -i infra/ansible/inventory/prod/topology.json \
   -e homelab_secret_bundle=/absolute/private/path/tailnet.json
 ansible-playbook -i infra/ansible/inventory/prod/topology.json \
   infra/ansible/playbooks/reconcile.yml -e homelab_unit=apps-host
-ansible-playbook -i infra/ansible/inventory/prod/topology.json \
-  infra/ansible/playbooks/reconcile.yml -e homelab_unit=openclaw-host
 ```
 
 These establish networking, OS/Docker policy, durable directories, isolation,
 and the stable release launcher. Application secrets and activation are owned
 by the runtime workflows. Rebuilding an existing host also requires restoring
-its durable data and private model authorization from independent backups;
+its durable data  from independent backups;
 follow [recovery](recovery.md) before starting applications.
 
 ## Activate applications
 
 Configure the GitHub production environment's component bundles and connection
 credentials using [the workflow contract](github-actions.md#production-environment-contract).
-Prepare private OpenClaw configuration in `openclaw-setup`. Keep both runtime
-lanes held until host configuration and launcher installation have completed.
-Dispatch the complete `apps.yml` and `openclaw.yml` workflows with
-`operation=deploy`, then run each host's [release audit](compose-release.md#audit-and-rollback).
+Keep the apps lane held until host configuration and launcher installation
+have completed. Dispatch `apps.yml` with `operation=deploy`, then run the apps
+host's [release audit](compose-release.md#audit-and-rollback).
 
 Daily application edits use those same runtime lanes. Host changes use the
 single targeted Ansible entrypoint; credential-only rotations use

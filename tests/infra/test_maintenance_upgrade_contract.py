@@ -31,7 +31,7 @@ def render_maintenance_value(value, enabled=None):
 
 @pytest.mark.parametrize(
     "role_name",
-    ("common_debian", "docker_engine", "tailscale_gateway", "openclaw_native"),
+    ("common_debian", "docker_engine", "tailscale_gateway"),
 )
 def test_package_reconciliation_is_stable_until_maintenance(role_name):
     tasks = load_yaml(ROLE_ROOT / role_name / "tasks" / "main.yml")
@@ -86,7 +86,7 @@ def test_new_third_party_repository_refresh_does_not_enable_routine_upgrades(
 
 def test_maintenance_is_an_explicit_mode_of_the_single_targeted_entrypoint():
     text = RECONCILE_PLAYBOOK.read_text(encoding="utf-8")
-    assert "homelab_unit in ['pve', 'tailnet', 'apps-host', 'openclaw-host']" in text
+    assert "homelab_unit in ['pve', 'tailnet', 'apps-host']" in text
     assert "homelab_maintenance_upgrade | default(false) | bool" in text
 
 
@@ -125,12 +125,12 @@ def test_targeted_maintenance_ends_with_the_selected_runtime_health_contract():
         "/usr/local/libexec/homelab-release",
         "audit",
         "--target",
-        "{{ {'apps-host': 'apps', 'openclaw-host': 'openclaw'}[homelab_unit] }}",
+        "apps",
     ]
     assert compose_audit["changed_when"] is False
     assert compose_audit["no_log"] is True
     assert compose_audit["when"] == [
-        "homelab_unit in ['apps-host', 'openclaw-host']",
+        "homelab_unit == 'apps-host'",
         maintenance_gate,
     ]
 

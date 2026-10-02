@@ -2,7 +2,7 @@
 
 ## Normal architecture
 
-Production retains three LXCs: `docker_apps`, `tailnet`, and `openclaw`. The
+Production retains two LXCs: `docker_apps` and `tailnet`. The
 application LXC runs one Compose project, `homelab`, from the self-contained
 `apps/compose/homelab` package. The package contains its Compose model,
 nonsecret configuration, strict secret-bundle materializer, and semantic smoke
@@ -41,7 +41,7 @@ restarts before smoke and state commit.
 ## Bounded storage and image retention
 
 Before any image pull, the engine refuses to proceed unless the target release
-filesystem has at least 4 GiB free for apps or 12 GiB free for OpenClaw. It
+filesystem has at least 4 GiB free for apps. It
 retains immutable source only for release records still reachable as
 `current`, `previous`, or an interrupted `pending` transaction.
 
@@ -51,8 +51,7 @@ state commit. It considers only image references previously observed in the
 managed Compose project or an unreferenced managed release, and it protects
 every current, previous, or pending release reference. It never prunes volumes.
 Docker also refuses to remove an image used by another live container, so an
-active OpenClaw session container keeps its image after the parent release no
-longer references it. Cleanup failure does not turn a successfully committed
+image still used by an unrelated container remains protected. Cleanup failure does not turn a successfully committed
 activation into a reported deployment failure; the deferred-ref journal makes
 a later operation retry it.
 
@@ -72,10 +71,10 @@ upload a release archive, or pull images.
 
 ## Launcher updates
 
-The stable launcher is infrastructure-owned. Before merging a change to
+The stable launcher is infrastructure-owned. When a runtime change requires new launcher behavior, before merging
 `scripts/ci/release_launcher.py`, check out the exact candidate commit on a
-trusted controller and reconcile `apps-host` and `openclaw-host` separately.
-Compare `/usr/local/libexec/homelab-release` on each host with the candidate
+trusted controller and reconcile `apps-host`.
+Compare `/usr/local/libexec/homelab-release` on the apps host with the candidate
 file's SHA-256 before allowing automatic runtime deployments. The versioned
 release engine travels with each runtime package and does not require this
 host-first step when the launcher itself is unchanged.
@@ -92,9 +91,6 @@ Run these commands on the corresponding host:
 ```sh
 /usr/local/libexec/homelab-release audit --target apps
 /usr/local/libexec/homelab-release rollback --target apps
-# On the dedicated OpenClaw host:
-/usr/local/libexec/homelab-release audit --target openclaw
-/usr/local/libexec/homelab-release rollback --target openclaw
 ```
 
 `audit` re-materializes and verifies the current release; it is a mutating
@@ -106,3 +102,9 @@ a rollback selects the restored release's embedded engine, which may require
 those markers for a subsequent rollback. Keep them unchanged while releases
 built with the earlier engine remain reachable. The current engine has no
 parallel metadata table and validates package identity and executable inputs.
+
+
+The apps wire protocol and version-1 state fields remain unchanged. Removing
+unused target choices does not require a new launcher for apps activation; the
+next `apps-host` reconciliation installs the apps-only launcher. Historical
+release source remains immutable and can still be audited or rolled back.

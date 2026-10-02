@@ -1,137 +1,68 @@
 # GitHub Actions deployment lanes
 
-The repository has four coarse workflows. Each production lane starts from a
-complete desired state and does not read another workflow run or a previous
-GitHub deployment record.
+The repository has three workflows: validation, targeted infrastructure, and
+apps. All production mutations share the non-cancelling `prod-control-plane`
+queue; validation is independent.
 
 ## Validation
 
-`validate.yml` runs on pull requests, merge queues, and manual requests. One
-exact checkout runs the complete behavioral/invariant test suite, renders the
-apps and OpenClaw Compose packages, and syntax-checks `reconcile.yml` for all
-four infrastructure units. It has read-only repository permission and no
-production environment. Test dependencies are declared in `requirements-dev.txt`;
-Ansible is declared separately in `requirements-deploy.txt`. Validation installs
-both, while the apps lane installs only the test dependencies.
+`validate.yml` runs on pull requests, merge queues and manual requests. It
+installs `requirements-dev.txt` and `requirements-deploy.txt`, tests behavior
+and invariants, renders the apps package, and syntax-checks every infrastructure
+unit. It has read-only repository permissions and no production environment.
 
 ## Apps
 
-`apps.yml` is the ordinary application path. A change below
-`apps/compose/homelab` runs in one job and one checkout:
+`apps.yml` checks out the exact source, runs package/release tests, renders
+Compose, and bundles the complete `apps/compose/homelab` package with its
+embedded engine and topology snapshot. The runner materializes one temporary
+`APPS_SECRET_BUNDLE`, joins tailnet, establishes pinned SSH trust, uploads once,
+and calls the stable host launcher. It does not reconcile infrastructure.
 
-1. run package and common release-transaction tests;
-2. render the apps Compose package;
-3. bundle the complete apps package with the exact homelab commit;
-4. materialize the single `APPS_SECRET_BUNDLE` runner file;
-5. join the management tailnet and configure pinned SSH trust; and
-6. upload the release plus component bundle once and invoke the stable host
-   launcher.
-
-The lane never calls Ansible or an image build. Manual dispatch defaults to the
-same complete deployment; selecting `sync-secrets` uploads only the component
-document and recreates the current release through the installed engine.
-
-## OpenClaw
-
-`openclaw.yml` runs for public runtime/image changes, a private-config
-promotion dispatch, or a manual request. Gateway and CTF jobs build in
-parallel from Dockerfiles whose `FROM` lines contain exact digests. The pinned
-Buildx actions use independent GitHub Actions caches, publish the two images,
-attach maximum provenance and SBOM attestations, and return exact OCI digests.
-
-The deploy job checks out the exact homelab source and either an explicitly
-promoted private-config commit or current private `main`. It records the exact
-resolved commit and builds one descriptor containing:
-
-- homelab commit;
-- private-config commit;
-- Gateway `repository@sha256` identity; and
-- CTF `repository@sha256` identity.
-
-Automatic runtime runs compare their lane inputs with current public `main`
-immediately before mutation; OpenClaw also rechecks private-config `main`.
-Superseded inputs fail without touching the host. Manual dispatch permits an
-intentional older release. This freshness gate complements the shared queue,
-whose admission order is not guaranteed.
-
-The bundle checksum proves only upload integrity. It is not another desired
-state input. The job sends that bundle and `OPENCLAW_SECRET_BUNDLE` through the
-same release wrapper used by apps.
-
-Manual dispatch defaults to the complete descriptor path. Selecting
-`sync-secrets` skips both image jobs, bundle construction, and image pulls; it
-uploads only `OPENCLAW_SECRET_BUNDLE` and recreates the already-current release
-under the same host lock and semantic smoke gate.
-
-Live skill collection is not a production-host service. The private
-`holybaechu/openclaw-setup` repository runs its pinned scheduled workflow,
-snapshots the two bounded skill roots over read-only SSH, validates a
-content-derived pull request, merges it, then dispatches the exact resulting
-private-config commit to this lane.
+Before automatic mutation, the lane compares its input paths with current
+`main` and refuses superseded inputs. Manual dispatch permits an intentional
+older release. `operation=sync-secrets` uploads only the component document and
+recreates the installed release without a new archive or image pull.
 
 ## Infrastructure
 
-`infra.yml` exposes exactly four manual units:
+`infra.yml` accepts exactly one unit: `pve`, `tailnet`, or `apps-host`. PVE
+chooses `plan`, `audit`, or `apply`; destructive/replacement changes require
+exact VMID inputs. The daily schedule reconciles tailnet and apps-host
+sequentially, with explicit package upgrades and marker-gated reboot recovery.
 
-- `pve`
-- `tailnet`
-- `apps-host`
-- `openclaw-host`
+PVE apply installs LXC access and compares keys read through trusted `pct` with
+`DEPLOY_SSH_KNOWN_HOSTS`. If keys differ, the job reports the verified public
+lines and fails until the production trust secret is updated. PVE and tailnet
+receive only their respective component documents. Apps-host provisions host
+primitives, including the launcher, while the apps lane owns activation.
 
-Every invocation passes one required `homelab_unit` to the sole Ansible
-entrypoint, `infra/ansible/playbooks/reconcile.yml`. PVE additionally chooses
-`plan`, `audit`, or `apply`; potentially destructive or replacement changes
-remain rejected unless the matching exact VMID is supplied in the manual
-approval input. The daily schedule runs the three non-PVE units sequentially
-with targeted package upgrades and marker-gated reboot handling.
+## Runner Tailscale version
 
-After a PVE apply, the job compares every host key read through trusted `pct`
-against the supplied `DEPLOY_SSH_KNOWN_HOSTS`. A new or replaced LXC key fails
-the job after reconciliation and writes the exact verified public lines to the
-job summary. Update that production environment secret before another host or
-runtime job; this makes the rare trust handoff explicit instead of leaving the
-next deployment with a silent stale-key failure.
-
-PVE and tailnet receive only their versioned component bundle. Apps/OpenClaw
-host units create OS, Docker, firewall, storage, account, release-root, and
-launcher primitives; application activation remains in the runtime lanes.
+Runner Linux builds are pinned to a version published at
+[the stable package feed](https://pkgs.tailscale.com/stable/?mode=json).
+Renovate reads `TarballsVersion` through `custom.tailscale-linux`; platform-wide
+GitHub tags are unsuitable because they may have no Linux tarball. The action
+still verifies the publisher's checksum. A missing checksum/artifact fails
+before a production connection rather than silently selecting another build.
 
 ## Production environment contract
 
-Component documents:
+Store `APPS_SECRET_BUNDLE` and `TAILSCALE_AUTH_KEY`. The infrastructure job
+renders versioned PVE/tailnet JSON on the runner: the PVE public key is derived
+from the configured SSH identity. Connection credentials: `TS_OAUTH_CLIENT_ID`,
+`TS_AUDIENCE`, `DEPLOY_SSH_PRIVATE_KEY`, and `DEPLOY_SSH_KNOWN_HOSTS`.
 
-- `APPS_SECRET_BUNDLE`
-- `OPENCLAW_SECRET_BUNDLE`
-- `PVE_SECRET_BUNDLE`
-- `TAILNET_SECRET_BUNDLE`
+Host targets come only from topology. Actions use full commit pins with readable
+version comments. Runtime jobs use `contents: read` and `id-token: write` for
+the tailnet connection. `queue: max` retains pending desired-state runs.
 
-Connection credentials:
-
-- `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE`
-- `DEPLOY_SSH_PRIVATE_KEY`, `DEPLOY_SSH_KNOWN_HOSTS`
-- `OPENCLAW_CONFIG_READ_SSH_KEY`
-
-Host addresses are read only from
-`infra/ansible/inventory/prod/topology.json`. Workflows do not provide address
-overrides. All actions use immutable commit pins, runtime jobs receive only
-`contents: read` plus the narrow write/OIDC permission they consume. All
-production mutations share one non-cancelling concurrency group so a host
-package/reboot or tailnet restart cannot interrupt a release transaction;
-`queue: max` preserves every waiting desired-state run instead of replacing a
-pending deployment. Validation remains independent. The two OpenClaw image
-builds run in parallel inside the admitted OpenClaw workflow.
-
-## Operator commands
-
-The stable host launcher is `/usr/local/libexec/homelab-release`:
+## Host commands
 
 ```sh
 /usr/local/libexec/homelab-release audit --target apps
 /usr/local/libexec/homelab-release rollback --target apps
-/usr/local/libexec/homelab-release audit --target openclaw
-/usr/local/libexec/homelab-release rollback --target openclaw
 ```
 
-`sync-secrets` accepts one already uploaded component JSON file, atomically
-installs it, and recreates the current release. Normal rotations use the manual
-runtime workflow so validation, transport, smoke, and cleanup remain uniform.
+Audit re-materializes and verifies current state; it is a mutating recovery
+operation. Normal credential rotations use the manual apps workflow.

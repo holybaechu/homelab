@@ -10,7 +10,7 @@ on:
         description: The one infrastructure unit to reconcile
         required: true
         type: choice
-        options: [pve, tailnet, apps-host, openclaw-host]
+        options: [pve, tailnet, apps-host]
       pve_mode:
         description: PVE-only LXC operation
         required: true
@@ -38,7 +38,7 @@ jobs:
       max-parallel: 1
       fail-fast: false
       matrix:
-        unit: ${{ fromJSON(github.event_name == 'schedule' && '["tailnet","apps-host","openclaw-host"]' || format('["{0}"]', inputs.unit)) }}
+        unit: ${{ fromJSON(github.event_name == 'schedule' && '["tailnet","apps-host"]' || format('["{0}"]', inputs.unit)) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: prod
@@ -68,7 +68,7 @@ jobs:
           import json, os
           topology = json.load(open("infra/ansible/inventory/prod/topology.json"))
           unit = os.environ["HOMELAB_UNIT"]
-          names = {"pve": "pve", "tailnet": "tailnet", "apps-host": "docker_apps", "openclaw-host": "openclaw"}
+          names = {"pve": "pve", "tailnet": "tailnet", "apps-host": "docker_apps"}
           groups = topology["all"]["children"]
           hosts = groups["pve_hosts"]["hosts"] | groups["debian"]["hosts"]
           print(hosts[names[unit]]["ansible_host"])
@@ -81,8 +81,8 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
-          # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
-          version: "1.102.5"
+          # renovate: datasource=custom.tailscale-linux depName=tailscale/tailscale versioning=semver
+          version: "1.102.4"
           args: --accept-dns=false
           ping: ${{ env.HOMELAB_SELECTED_HOST }}
       - name: Configure pinned SSH trust
@@ -93,14 +93,24 @@ jobs:
       - name: Preserve the supplied trust set for post-apply comparison
         if: matrix.unit == 'pve'
         run: cp -- "$HOME/.ssh/known_hosts" "$RUNNER_TEMP/provided-known-hosts"
-      - name: Materialize the PVE component bundle
+      - name: Materialize the PVE component bundle from the configured deploy identity
         if: matrix.unit == 'pve' && inputs.pve_mode == 'apply'
-        env:
-          COMPONENT_SECRET_BUNDLE: ${{ secrets.PVE_SECRET_BUNDLE }}
         run: |
-          test -n "$COMPONENT_SECRET_BUNDLE"
           umask 077
-          printf '%s\n' "$COMPONENT_SECRET_BUNDLE" > "$RUNNER_TEMP/pve.json"
+          python - "$RUNNER_TEMP/pve.json" <<'PY'
+          import json, subprocess, sys
+          from pathlib import Path
+          public = subprocess.check_output(
+              ["ssh-keygen", "-y", "-f", str(Path.home() / ".ssh/id_ed25519")],
+              text=True,
+          ).strip()
+          public = " ".join(public.split()[:2])
+          payload = {"component": "pve", "version": 1,
+                     "values": {"deploy_ssh_public_keys": [public]}}
+          destination = Path(sys.argv[1])
+          destination.write_text(json.dumps(payload), encoding="utf-8")
+          destination.chmod(0o600)
+          PY
       - name: Bind the PVE access bundle to the configured deploy identity
         if: matrix.unit == 'pve' && inputs.pve_mode == 'apply'
         run: >-
@@ -110,11 +120,19 @@ jobs:
       - name: Materialize the tailnet component bundle
         if: matrix.unit == 'tailnet'
         env:
-          COMPONENT_SECRET_BUNDLE: ${{ secrets.TAILNET_SECRET_BUNDLE }}
+          TAILNET_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
-          test -n "$COMPONENT_SECRET_BUNDLE"
+          test -n "$TAILNET_AUTH_KEY"
           umask 077
-          printf '%s\n' "$COMPONENT_SECRET_BUNDLE" > "$RUNNER_TEMP/tailnet.json"
+          python - "$RUNNER_TEMP/tailnet.json" <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          payload = {"component": "tailnet", "version": 1,
+                     "values": {"tailscale_auth_key": os.environ["TAILNET_AUTH_KEY"]}}
+          destination = Path(sys.argv[1])
+          destination.write_text(json.dumps(payload), encoding="utf-8")
+          destination.chmod(0o600)
+          PY
       - name: Reconcile exactly one unit
         shell: bash
         env:

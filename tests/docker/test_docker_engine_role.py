@@ -21,14 +21,14 @@ def test_docker_runtime_is_selected_only_for_the_two_docker_hosts():
         if task.get("ansible.builtin.include_role", {}).get("name") == "docker_engine"
     ]
     environment = Environment()
-    for unit in ("pve", "tailnet", "apps-host", "openclaw-host"):
+    for unit in ("pve", "tailnet", "apps-host"):
         selected = [
             task for task in invocations
             if environment.from_string("{{ " + task["when"] + " }}").render(
                 homelab_unit=unit
             ) == "True"
         ]
-        assert len(selected) == (1 if unit in {"apps-host", "openclaw-host"} else 0)
+        assert len(selected) == (1 if unit in {"apps-host"} else 0)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Ansible's controller CLI requires POSIX")
@@ -42,17 +42,10 @@ def test_inventory_supplies_dns_and_isolation_policy_to_the_docker_role():
     )
     assert result.returncode == 0, result.stderr
     hosts = json.loads(result.stdout)["_meta"]["hostvars"]
-    apps, openclaw = hosts["docker_apps"], hosts["openclaw"]
+    apps = hosts["docker_apps"]
     assert apps["docker_engine_disable_dns_stub"] is True
     assert {"bind9-dnsutils", "systemd-resolved"} <= set(apps["docker_engine_host_packages"])
-    assert openclaw["docker_engine_disable_dns_stub"] is False
-    assert openclaw["docker_engine_host_packages"] == []
-    policy = openclaw["docker_engine_daemon_config"]
-    assert policy["icc"] is False
-    assert policy["iptables"] is True
-    assert policy["ip6tables"] is False
-    assert policy["userland-proxy"] is False
-    for host in (apps, openclaw):
+    for host in (apps,):
         policy = host["docker_engine_daemon_config"]
         assert policy["live-restore"] is True
         assert policy["log-opts"]["max-size"] and policy["log-opts"]["max-file"]

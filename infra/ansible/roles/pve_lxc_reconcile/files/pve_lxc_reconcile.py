@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan, audit, and reconcile the three topology-owned Proxmox LXCs.
+"""Plan, audit, and reconcile the two topology-owned Proxmox LXCs.
 
 The live Proxmox configuration is the only runtime state.  A normal apply may
 create a missing container, grow a root disk, and change fields that Proxmox can
@@ -30,7 +30,7 @@ class ReconcileError(RuntimeError):
 
 
 MANAGED_HOSTS_PATH = ("all", "children", "debian", "hosts")
-VALID_UNITS = {"tailnet", "apps-host", "openclaw-host"}
+VALID_UNITS = {"tailnet", "apps-host"}
 SAFE_FIELDS = {
     "cores",
     "memory",
@@ -142,8 +142,8 @@ def load_topology(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]
 def validate_topology(
     all_vars: Mapping[str, object], hosts: Mapping[str, Mapping[str, object]]
 ) -> None:
-    if set(hosts) != {"tailnet", "docker_apps", "openclaw"}:
-        raise ReconcileError("topology must contain exactly tailnet, docker_apps, and openclaw")
+    if set(hosts) != {"tailnet", "docker_apps"}:
+        raise ReconcileError("topology must contain exactly tailnet and docker_apps")
 
     bridge = _require_string(all_vars.get("pve_bridge"), "all.vars.pve_bridge")
     datastore = _require_string(
@@ -169,7 +169,6 @@ def validate_topology(
         expected_unit = {
             "tailnet": "tailnet",
             "docker_apps": "apps-host",
-            "openclaw": "openclaw-host",
         }[name]
         if unit != expected_unit or unit not in VALID_UNITS:
             raise ReconcileError(f"{name}.deployment_unit must be {expected_unit}")

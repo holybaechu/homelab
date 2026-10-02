@@ -12,8 +12,8 @@ from tests.helpers import REPO_ROOT
 
 
 TOPOLOGY_PATH = REPO_ROOT / "infra/ansible/inventory/prod/topology.json"
-MANAGED_SERVICES = ("tailnet", "docker_apps", "openclaw")
-DEPLOYMENT_UNITS = {"tailnet", "apps-host", "openclaw-host"}
+MANAGED_SERVICES = ("tailnet", "docker_apps")
+DEPLOYMENT_UNITS = {"tailnet", "apps-host"}
 REQUIRED_HOST_FIELDS = {
     "ansible_host",
     "deployment_unit",
@@ -46,7 +46,7 @@ def managed_hosts() -> dict[str, dict]:
     return load_topology()["all"]["children"]["debian"]["hosts"]
 
 
-def test_inventory_preserves_exactly_the_three_runtime_boundaries() -> None:
+def test_inventory_preserves_exactly_the_two_runtime_boundaries() -> None:
     topology = load_topology()
     children = topology["all"]["children"]
     hosts = managed_hosts()
@@ -82,7 +82,7 @@ def test_managed_host_schema_and_routable_identities_are_valid_and_unique() -> N
     for field in ("vmid", "hostname", "ansible_host", "mac_address", "startup_order"):
         values = [host[field] for host in hosts.values()]
         assert len(values) == len(set(values)), f"duplicate {field}: {values}"
-    assert sorted(host["startup_order"] for host in hosts.values()) == [1, 2, 3]
+    assert sorted(host["startup_order"] for host in hosts.values()) == [1, 2]
 
 
 def test_each_special_mount_or_device_is_owned_by_only_one_lxc() -> None:
@@ -91,7 +91,7 @@ def test_each_special_mount_or_device_is_owned_by_only_one_lxc() -> None:
     mount_owners = [name for name, host in hosts.items() if host["lxc_mounts"]]
 
     assert device_owners == ["tailnet"]
-    assert set(mount_owners) == {"docker_apps", "openclaw"}
+    assert set(mount_owners) == {"docker_apps"}
     for name in mount_owners:
         for mount in hosts[name]["lxc_mounts"].values():
             assert PurePosixPath(mount["source"]).is_absolute()

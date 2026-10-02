@@ -144,14 +144,14 @@ def test_installed_commands_use_pending_versioned_engine_for_recovery(tmp_path: 
     }
     state = {
         "schema": 1,
-        "target": "openclaw",
+        "target": "apps",
         "current": None,
         "pending": {"candidate": {"release_id": release_id, "engine": descriptor}},
     }
     state_path = install / "compose-control" / "release-state.json"
     state_path.parent.mkdir(parents=True)
     state_path.write_text(json.dumps(state), encoding="utf-8")
-    assert launcher._installed_engine(install, target="openclaw") == engine
+    assert launcher._installed_engine(install, target="apps") == engine
 
 
 def test_sync_secret_cli_is_fixed_to_component_targets() -> None:
@@ -159,21 +159,21 @@ def test_sync_secret_cli_is_fixed_to_component_targets() -> None:
         [
             "sync-secrets",
             "--target",
-            "openclaw",
+            "apps",
             "--secret-bundle",
-            "/tmp/openclaw.json",
+            "/tmp/apps.json",
         ]
     )
     assert args.command == "sync-secrets"
-    assert args.target == "openclaw"
-    assert args.secret_bundle == Path("/tmp/openclaw.json")
+    assert args.target == "apps"
+    assert args.secret_bundle == Path("/tmp/apps.json")
 
 
 def test_sync_secret_launcher_runs_installed_engine_without_release_archive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    incoming = tmp_path / "openclaw.json"
-    incoming.write_text('{"component":"openclaw","version":1}', encoding="utf-8")
+    incoming = tmp_path / "apps.json"
+    incoming.write_text('{"component":"apps","version":1}', encoding="utf-8")
     captured: list[str] = []
     monkeypatch.setattr(launcher, "_installed_engine", lambda *_args, **_kwargs: ENGINE)
 
@@ -185,12 +185,12 @@ def test_sync_secret_launcher_runs_installed_engine_without_release_archive(
     assert (
         launcher.run_installed(
             command="sync-secrets",
-            target="openclaw",
+            target="apps",
             install_root=tmp_path / "install",
             secret_bundle=incoming,
         )
         == 0
     )
-    assert captured[2:5] == ["sync-secrets", "--target", "openclaw"]
+    assert captured[2:5] == ["sync-secrets", "--target", "apps"]
     assert captured[captured.index("--secret-bundle") + 1] == str(incoming)
     assert "--bundle-root" not in captured

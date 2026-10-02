@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""One fixed-purpose, versioned release engine for the two Compose targets.
+"""One fixed-purpose, versioned release engine for the homelab Compose project.
 
 The stable host launcher verifies and extracts an uploaded bundle, then runs the
 copy of this file carried by that bundle.  The engine deliberately supports only
-the ``apps`` and ``openclaw`` release shapes; it is not a plugin framework.
+the ``apps`` release shape; it is not a plugin framework.
 """
 
 from __future__ import annotations
 
 import argparse
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -25,26 +24,16 @@ import tempfile
 from typing import Any, Mapping, Protocol, Sequence
 import uuid
 
-try:  # Windows support is useful for repository tests; production hosts are Linux.
-    import grp
-except ImportError:  # pragma: no cover - exercised only on Windows
-    grp = None  # type: ignore[assignment]
-
-
 SCHEMA_VERSION = 1
 ENGINE_VERSION = 1
 ENGINE_BUNDLE_PATH = "engine/compose_release_engine.py"
 SOURCE_SHA_RE = re.compile(r"[0-9a-f]{40}")
 RELEASE_ID_RE = re.compile(r"[0-9a-f]{64}")
 SHA256_RE = RELEASE_ID_RE
-IMAGE_REF_RE = re.compile(
-    r"(?P<image>[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+)"
-    r"@(?P<digest>sha256:[0-9a-f]{64})"
-)
 MAX_BUNDLE_FILES = 10_000
 MAX_BUNDLE_BYTES = 512 * 1024 * 1024
 GIB = 1024 * 1024 * 1024
-MINIMUM_FREE_BYTES = {"apps": 4 * GIB, "openclaw": 12 * GIB}
+MINIMUM_FREE_BYTES = 4 * GIB
 COMPOSE_IMAGE_LINE_RE = re.compile(
     r"^\s+image:\s*(?:['\"])?(?P<ref>[a-zA-Z0-9][a-zA-Z0-9._/:@-]*)"
     r"(?:['\"])?\s*(?:#.*)?$"
@@ -84,37 +73,7 @@ class SubprocessRunner:
         )
 
 
-@dataclass(frozen=True)
-class TargetSpec:
-    name: str
-    project: str
-    default_install_root: Path
-    default_secret_root: Path | None
-    image_repositories: dict[str, str]
-    needs_config: bool
-
-
-TARGETS: dict[str, TargetSpec] = {
-    "apps": TargetSpec(
-        name="apps",
-        project="homelab",
-        default_install_root=Path("/opt/homelab"),
-        default_secret_root=Path("/etc/homelab/secrets"),
-        image_repositories={},
-        needs_config=False,
-    ),
-    "openclaw": TargetSpec(
-        name="openclaw",
-        project="openclaw",
-        default_install_root=Path("/opt/openclaw"),
-        default_secret_root=Path("/etc/openclaw/secrets"),
-        image_repositories={
-            "gateway": "ghcr.io/holybaechu/homelab-openclaw-gateway",
-            "ctf": "ghcr.io/holybaechu/homelab-openclaw-ctf",
-        },
-        needs_config=True,
-    ),
-}
+TARGETS = ("apps",)
 
 
 def canonical_json_bytes(payload: Any) -> bytes:
@@ -147,17 +106,6 @@ def _require_sha256(value: Any, *, name: str) -> str:
     return value
 
 
-def validate_image_ref(value: Any, *, expected_repository: str, name: str) -> str:
-    if not isinstance(value, str):
-        raise ReleaseError(f"{name} must be an exact repository@sha256 reference")
-    match = IMAGE_REF_RE.fullmatch(value)
-    if match is None or match.group("image") != expected_repository:
-        raise ReleaseError(
-            f"{name} must be {expected_repository}@sha256:<64 lowercase hex>"
-        )
-    return value
-
-
 MANIFEST_FIELDS = {
     "schema",
     "target",
@@ -179,7 +127,6 @@ def validate_manifest(payload: Any, *, expected_target: str | None = None) -> di
     target = payload.get("target")
     if target not in TARGETS or (expected_target is not None and target != expected_target):
         raise ReleaseError("bundle target is invalid")
-    spec = TARGETS[target]
     source_sha = _require_source_sha(payload.get("source_sha"))
 
     engine = payload.get("engine")
@@ -205,33 +152,19 @@ def validate_manifest(payload: Any, *, expected_target: str | None = None) -> di
     config_sha256 = payload_descriptor.get("config_sha256")
 
     images = payload.get("images")
-    if not isinstance(images, dict) or set(images) != set(spec.image_repositories):
-        expected = ",".join(spec.image_repositories) or "none"
-        raise ReleaseError(f"{target} images must contain exactly: {expected}")
-    validated_images = {
-        name: validate_image_ref(
-            images[name], expected_repository=repository, name=f"images.{name}"
-        )
-        for name, repository in spec.image_repositories.items()
-    }
-
-    config_commit = payload.get("config_commit")
-    if spec.needs_config:
-        config_commit = _require_source_sha(config_commit, name="config_commit")
-        config_sha256 = _require_sha256(
-            config_sha256, name="payload.config_sha256"
-        )
-    elif config_commit is not None:
+    if not isinstance(images, dict) or images:
+        raise ReleaseError("apps images must contain exactly: none")
+    if payload.get("config_commit") is not None:
         raise ReleaseError("apps config_commit must be null")
-    elif config_sha256 is not None:
+    if config_sha256 is not None:
         raise ReleaseError("apps payload.config_sha256 must be null")
 
     return {
         "schema": SCHEMA_VERSION,
         "target": target,
         "source_sha": source_sha,
-        "config_commit": config_commit,
-        "images": validated_images,
+        "config_commit": None,
+        "images": {},
         "engine": {
             "version": ENGINE_VERSION,
             "path": ENGINE_BUNDLE_PATH,
@@ -465,52 +398,34 @@ def build_bundle(
     stack_root: Path,
     output: Path,
     engine_path: Path,
-    config_root: Path | None = None,
-    config_commit: str | None = None,
-    images: Mapping[str, str] | None = None,
     topology_path: Path | None = None,
 ) -> dict[str, Any]:
     if target not in TARGETS:
-        raise ReleaseError("target must be apps or openclaw")
-    spec = TARGETS[target]
+        raise ReleaseError("target must be apps")
     source_sha = _require_source_sha(source_sha)
     engine_path = Path(engine_path)
     if engine_path.is_symlink() or not engine_path.is_file():
         raise ReleaseError("engine source must be a regular file")
     engine_bytes = engine_path.read_bytes()
     stack_root = Path(stack_root)
-    _validate_package_root(stack_root, spec)
-    topology_bytes: bytes | None = None
-    if spec.needs_config:
-        if config_root is None:
-            raise ReleaseError("openclaw bundle requires config_root")
-        config_root = Path(config_root)
-        _require_config_root(config_root)
-        if topology_path is not None:
-            raise ReleaseError("openclaw bundle cannot contain an apps topology")
-    else:
-        if config_root is not None:
-            raise ReleaseError("apps bundle cannot contain a config tree")
-        if topology_path is None:
-            raise ReleaseError("apps bundle requires the exact repository topology")
-        topology_path = Path(topology_path)
-        if topology_path.is_symlink() or not topology_path.is_file():
-            raise ReleaseError("apps topology must be a regular file")
-        if topology_path.stat().st_size > 1024 * 1024:
-            raise ReleaseError("apps topology exceeds the size limit")
-        _load_unique_json(topology_path)
-        topology_bytes = topology_path.read_bytes()
-
-    stack_additions = (
-        {"topology.json": topology_bytes} if topology_bytes is not None else None
-    )
+    _validate_package_root(stack_root)
+    if topology_path is None:
+        raise ReleaseError("apps bundle requires the exact repository topology")
+    topology_path = Path(topology_path)
+    if topology_path.is_symlink() or not topology_path.is_file():
+        raise ReleaseError("apps topology must be a regular file")
+    if topology_path.stat().st_size > 1024 * 1024:
+        raise ReleaseError("apps topology exceeds the size limit")
+    _load_unique_json(topology_path)
+    topology_bytes = topology_path.read_bytes()
+    stack_additions = {"topology.json": topology_bytes}
     manifest = validate_manifest(
         {
             "schema": SCHEMA_VERSION,
             "target": target,
             "source_sha": source_sha,
-            "config_commit": config_commit,
-            "images": dict(images or {}),
+            "config_commit": None,
+            "images": {},
             "engine": {
                 "version": ENGINE_VERSION,
                 "path": ENGINE_BUNDLE_PATH,
@@ -520,11 +435,7 @@ def build_bundle(
                 "stack_sha256": _tree_content_sha256(
                     stack_root, private=False, additions=stack_additions
                 ),
-                "config_sha256": (
-                    _tree_content_sha256(config_root, private=True)
-                    if config_root is not None
-                    else None
-                ),
+                "config_sha256": None,
             },
         },
         expected_target=target,
@@ -538,15 +449,7 @@ def build_bundle(
             _add_bytes(bundle, "manifest.json", canonical_json_bytes(manifest), 0o600)
             _add_bytes(bundle, ENGINE_BUNDLE_PATH, engine_bytes, 0o755)
             _add_tree(bundle, stack_root, "payload/stack", private=False)
-            if topology_bytes is not None:
-                _add_bytes(
-                    bundle,
-                    "payload/stack/topology.json",
-                    topology_bytes,
-                    0o644,
-                )
-            if config_root is not None:
-                _add_tree(bundle, Path(config_root), "payload/config", private=True)
+            _add_bytes(bundle, "payload/stack/topology.json", topology_bytes, 0o644)
         os.replace(temporary, output)
         _fsync_directory(output.parent)
     finally:
@@ -564,70 +467,38 @@ def build_bundle(
     return result
 
 
-def _validate_package_root(
-    root: Path,
-    spec: TargetSpec,
-    *,
-    rendered: bool = False,
-    bundled: bool = False,
-) -> None:
-    for name in ("compose.yml", "release.json", "smoke.sh"):
+def _validate_package_root(root: Path, *, rendered: bool = False, bundled: bool = False) -> None:
+    for name in ("compose.yml", "release.json", "smoke.sh", "prepare_release.py"):
         path = root / name
         if path.is_symlink() or not path.is_file():
-            raise ReleaseError(f"{spec.name} package is missing regular {name}")
-    # Older installed engines require this marker when rolling forward again.
+            raise ReleaseError(f"apps package is missing regular {name}")
+    # This marker is also consumed by older installed release engines.
     metadata = _load_unique_json(root / "release.json")
-    if (
-        not isinstance(metadata, dict)
-        or type(metadata.get("version")) is not int
-        or metadata.get("version") != 1
-        or metadata.get("project") != spec.project
-    ):
-        raise ReleaseError(f"{spec.name} package release.json is invalid")
+    if (not isinstance(metadata, dict) or type(metadata.get("version")) is not int
+        or metadata.get("version") != 1 or metadata.get("project") != "homelab"):
+        raise ReleaseError("apps package release.json is invalid")
     if os.name != "nt" and not (root / "smoke.sh").stat().st_mode & stat.S_IXUSR:
-        raise ReleaseError(f"{spec.name} package smoke.sh must be owner-executable")
+        raise ReleaseError("apps package smoke.sh must be owner-executable")
     if not rendered:
-        forbidden = {".secrets", ".release.env", "generated"}
-        for name in forbidden:
+        for name in (".secrets", ".release.env", "generated"):
             path = root / name
             if path.exists() or path.is_symlink():
-                raise ReleaseError(
-                    f"{spec.name} source package contains rendered runtime state: {name}"
-                )
-    if spec.name == "apps":
-        preparer = root / "prepare_release.py"
-        if preparer.is_symlink() or not preparer.is_file():
-            raise ReleaseError("apps package is missing regular prepare_release.py")
-        topology = root / "topology.json"
-        if bundled:
-            if topology.is_symlink() or not topology.is_file():
-                raise ReleaseError("apps bundle is missing its exact topology snapshot")
-            _load_unique_json(topology)
-        elif topology.exists() or topology.is_symlink():
-            raise ReleaseError("apps source package must not duplicate the topology")
-
-
-def _require_config_root(root: Path) -> None:
-    _tree_entries(root)
-    required = root / "config" / "openclaw.json"
-    if required.is_symlink() or not required.is_file():
-        raise ReleaseError("openclaw config tree must contain config/openclaw.json")
+                raise ReleaseError(f"apps source package contains rendered runtime state: {name}")
+    topology = root / "topology.json"
+    if bundled:
+        if topology.is_symlink() or not topology.is_file():
+            raise ReleaseError("apps bundle is missing its exact topology snapshot")
+        _load_unique_json(topology)
+    elif topology.exists() or topology.is_symlink():
+        raise ReleaseError("apps source package must not duplicate the topology")
 
 
 def _verify_payload_descriptor(root: Path, manifest: Mapping[str, Any]) -> None:
     canonical = validate_manifest(dict(manifest))
-    spec = TARGETS[canonical["target"]]
     stack = root / "payload" / "stack"
-    _validate_package_root(stack, spec, bundled=True)
-    actual_stack = _tree_content_sha256(stack, private=False)
-    if actual_stack != canonical["payload"]["stack_sha256"]:
+    _validate_package_root(stack, bundled=True)
+    if _tree_content_sha256(stack, private=False) != canonical["payload"]["stack_sha256"]:
         raise ReleaseError("bundle stack content differs from its manifest checksum")
-    if spec.needs_config:
-        config = root / "payload" / "config"
-        _require_config_root(config)
-        actual_config = _tree_content_sha256(config, private=True)
-        if actual_config != canonical["payload"]["config_sha256"]:
-            raise ReleaseError("bundle config content differs from its manifest checksum")
 
 
 SLOTS = {"a", "b"}
@@ -728,27 +599,25 @@ class ComposeReleaseEngine:
         *,
         install_root: Path | None = None,
         secret_root: Path | None = None,
-        docker_gid: int | None = None,
         docker_command: str = "docker",
         runner: CommandRunner | None = None,
         lock_factory: Any = FileLock,
         minimum_free_bytes: int | None = None,
     ):
         if target not in TARGETS:
-            raise ReleaseError("target must be apps or openclaw")
-        self.spec = TARGETS[target]
-        self.install_root = Path(install_root or self.spec.default_install_root)
+            raise ReleaseError("target must be apps")
+        self.target = target
+        self.install_root = Path(install_root or Path("/opt/homelab"))
         self.secret_root = (
             Path(secret_root)
             if secret_root is not None
-            else self.spec.default_secret_root
+            else Path("/etc/homelab/secrets")
         )
-        self.docker_gid = docker_gid
         self.docker_command = docker_command
         self.runner = runner or SubprocessRunner()
         self.lock_factory = lock_factory
         self.minimum_free_bytes = (
-            MINIMUM_FREE_BYTES[target]
+            MINIMUM_FREE_BYTES
             if minimum_free_bytes is None
             else minimum_free_bytes
         )
@@ -802,7 +671,7 @@ class ComposeReleaseEngine:
             if self.secret_root.is_symlink() or not self.secret_root.is_dir():
                 raise ReleaseError("component secret directory is unsafe")
             pattern = re.compile(
-                rf"\.{re.escape(self.spec.name)}\.json\.tmp-[0-9a-f]{{32}}"
+                rf"\.{re.escape(self.target)}\.json\.tmp-[0-9a-f]{{32}}"
             )
             for path in self.secret_root.iterdir():
                 if pattern.fullmatch(path.name):
@@ -822,7 +691,7 @@ class ComposeReleaseEngine:
             or set(payload) != {"schema", "target", "refs"}
             or type(payload.get("schema")) is not int
             or payload.get("schema") != SCHEMA_VERSION
-            or payload.get("target") != self.spec.name
+            or payload.get("target") != self.target
         ):
             raise ReleaseError("deferred image state has an invalid schema")
         refs = payload.get("refs")
@@ -855,7 +724,7 @@ class ComposeReleaseEngine:
             self.deferred_image_path,
             {
                 "schema": SCHEMA_VERSION,
-                "target": self.spec.name,
+                "target": self.target,
                 "refs": canonical,
             },
             mode=0o600,
@@ -888,11 +757,9 @@ class ComposeReleaseEngine:
         """Read only image identities declared by one verified immutable release."""
 
         canonical = validate_release_record(
-            dict(record), expected_target=self.spec.name
+            dict(record), expected_target=self.target
         )
-        refs = set(canonical["images"].values())
-        if self.spec.name != "apps":
-            return refs
+        refs: set[str] = set()
         compose = self._release_path(canonical) / "payload" / "stack" / "compose.yml"
         try:
             lines = compose.read_text(encoding="utf-8").splitlines()
@@ -915,7 +782,7 @@ class ComposeReleaseEngine:
         """
 
         protected = {
-            validate_release_record(dict(record), expected_target=self.spec.name)[
+            validate_release_record(dict(record), expected_target=self.target)[
                 "release_id"
             ]
             for record in self._state_records(state)
@@ -936,7 +803,7 @@ class ComposeReleaseEngine:
             try:
                 manifest = validate_manifest(
                     _load_unique_json(path / "manifest.json"),
-                    expected_target=self.spec.name,
+                    expected_target=self.target,
                 )
                 record = release_record(manifest)
                 if record["release_id"] != path.name:
@@ -964,7 +831,7 @@ class ComposeReleaseEngine:
                 "ps",
                 "--all",
                 "--filter",
-                f"label=com.docker.compose.project={self.spec.project}",
+                "label=com.docker.compose.project=homelab",
                 "--format",
                 "{{.Image}}",
             ],
@@ -1001,7 +868,7 @@ class ComposeReleaseEngine:
 
         Image IDs that also have a current/previous reference remain protected.
         Docker itself refuses removal while an external/session container still
-        uses an image, so live OpenClaw CTF sessions are not interrupted.
+        uses an image, so unrelated live containers are not interrupted.
         """
 
         raw_candidates = set(candidates)
@@ -1092,13 +959,13 @@ class ComposeReleaseEngine:
 
     def _load_state(self) -> dict[str, Any]:
         if not self.state_path.exists():
-            return empty_state(self.spec.name)
+            return empty_state(self.target)
         if self.state_path.is_symlink() or not self.state_path.is_file():
             raise ReleaseError("release state path is not a regular file")
-        return validate_state(_load_unique_json(self.state_path), target=self.spec.name)
+        return validate_state(_load_unique_json(self.state_path), target=self.target)
 
     def _write_state(self, state: Mapping[str, Any]) -> dict[str, Any]:
-        canonical = validate_state(dict(state), target=self.spec.name)
+        canonical = validate_state(dict(state), target=self.target)
         atomic_write_json(self.state_path, canonical)
         return canonical
 
@@ -1114,11 +981,11 @@ class ComposeReleaseEngine:
         return self.runtime_root / slot
 
     def _verify_materialized(self, record: Mapping[str, Any]) -> Path:
-        record = validate_release_record(dict(record), expected_target=self.spec.name)
+        record = validate_release_record(dict(record), expected_target=self.target)
         root = self._release_path(record)
         if root.is_symlink() or not root.is_dir():
             raise ReleaseError("materialized release directory is unavailable")
-        manifest = validate_manifest(_load_unique_json(root / "manifest.json"), expected_target=self.spec.name)
+        manifest = validate_manifest(_load_unique_json(root / "manifest.json"), expected_target=self.target)
         if release_record(manifest) != record:
             raise ReleaseError("materialized release manifest differs from state")
         engine = root / ENGINE_BUNDLE_PATH
@@ -1162,9 +1029,9 @@ class ComposeReleaseEngine:
 
     def _component_secret_bundle(self) -> Path:
         if self.secret_root is None:
-            raise ReleaseError(f"{self.spec.name} secret root is unavailable")
+            raise ReleaseError(f"{self.target} secret root is unavailable")
         return self._require_secret_source(
-            self.secret_root / f"{self.spec.name}.json", installed=True
+            self.secret_root / f"{self.target}.json", installed=True
         )
 
     def _prepare_apps(self, slot_root: Path) -> None:
@@ -1185,95 +1052,6 @@ class ComposeReleaseEngine:
             action="apps release preparation",
         )
 
-    def _docker_group_gid(self) -> int:
-        docker_gid = self.docker_gid
-        if docker_gid is None:
-            if grp is None:
-                raise ReleaseError("host Docker group lookup is unavailable")
-            try:
-                docker_gid = grp.getgrnam("docker").gr_gid
-            except KeyError as exc:
-                raise ReleaseError("host Docker group does not exist") from exc
-        if not isinstance(docker_gid, int) or docker_gid <= 0:
-            raise ReleaseError("host Docker group GID must be positive")
-        return docker_gid
-
-    def _openclaw_environment(
-        self, record: Mapping[str, Any], slot_root: Path
-    ) -> dict[str, str]:
-        return {
-            "OPENCLAW_GATEWAY_REF": record["images"]["gateway"],
-            "OPENCLAW_CTF_REF": record["images"]["ctf"],
-            "OPENCLAW_CONFIG_COMMIT": record["config_commit"],
-            "OPENCLAW_RELEASE_ID": record["release_id"],
-            "OPENCLAW_CONFIG_ROOT": str(slot_root / "config"),
-            "OPENCLAW_SECRET_ROOT": str(slot_root / ".secrets"),
-            "OPENCLAW_DOCKER_GID": str(self._docker_group_gid()),
-        }
-
-    @staticmethod
-    def _write_text(path: Path, value: str, *, mode: int = 0o600) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.parent / f".{path.name}.tmp-{uuid.uuid4().hex}"
-        try:
-            descriptor = os.open(
-                temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode
-            )
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
-                output.write(value)
-                output.flush()
-                os.fsync(output.fileno())
-            if os.name != "nt":
-                os.chmod(temporary, mode)
-            os.replace(temporary, path)
-            _fsync_directory(path.parent)
-        finally:
-            try:
-                temporary.unlink()
-            except FileNotFoundError:
-                pass
-
-    @staticmethod
-    def _private_runtime_owner(path: Path) -> None:
-        if os.name == "nt":
-            return
-        if hasattr(os, "geteuid") and os.geteuid() != 0:
-            return
-        os.chown(path, 1000, 1000)
-
-    def _load_openclaw_secrets(self, path: Path | None = None) -> dict[str, str]:
-        source = self._component_secret_bundle() if path is None else self._require_secret_source(path, installed=False)
-        payload = _load_unique_json(source)
-        fields = {
-            "component",
-            "version",
-            "gateway_token",
-            "discord_bot_token",
-            "exa_api_key",
-        }
-        if not isinstance(payload, dict) or set(payload) != fields:
-            raise ReleaseError("OpenClaw component secret bundle has an invalid field set")
-        if (
-            payload.get("component") != "openclaw"
-            or type(payload.get("version")) is not int
-            or payload.get("version") != 1
-        ):
-            raise ReleaseError("OpenClaw component secret bundle identity is invalid")
-        gateway = payload.get("gateway_token")
-        if not isinstance(gateway, str) or re.fullmatch(r"[0-9a-f]{64}", gateway) is None:
-            raise ReleaseError("OpenClaw gateway token must be exact lowercase 64-hex")
-        result = {"gateway_token": gateway}
-        for name in ("discord_bot_token", "exa_api_key"):
-            value = payload.get(name)
-            if (
-                not isinstance(value, str)
-                or not value.strip()
-                or len(value) > 4096
-                or any(character in value for character in ("\0", "\r", "\n"))
-            ):
-                raise ReleaseError(f"OpenClaw {name} must be a nonempty single line")
-            result[name] = value
-        return result
 
     def _validate_apps_secret_bundle(
         self, source: Path, package_root: Path
@@ -1305,12 +1083,9 @@ class ComposeReleaseEngine:
 
     def _install_secret_bundle(self, source: Path, package_root: Path) -> Path:
         source = self._require_secret_source(source, installed=False)
-        if self.spec.name == "apps":
-            self._validate_apps_secret_bundle(source, package_root)
-        else:
-            self._load_openclaw_secrets(source)
+        self._validate_apps_secret_bundle(source, package_root)
         if self.secret_root is None:
-            raise ReleaseError(f"{self.spec.name} secret root is unavailable")
+            raise ReleaseError(f"{self.target} secret root is unavailable")
         if self.secret_root.is_symlink():
             raise ReleaseError("component secret directory cannot be a symlink")
         self.secret_root.mkdir(parents=True, exist_ok=True)
@@ -1318,7 +1093,7 @@ class ComposeReleaseEngine:
             raise ReleaseError("component secret directory is unavailable")
         if os.name != "nt":
             os.chmod(self.secret_root, 0o700)
-        destination = self.secret_root / f"{self.spec.name}.json"
+        destination = self.secret_root / f"{self.target}.json"
         if destination.exists() or destination.is_symlink():
             if destination.is_symlink() or not destination.is_file():
                 raise ReleaseError("installed component secret bundle is unsafe")
@@ -1343,45 +1118,6 @@ class ComposeReleaseEngine:
                 pass
         return destination
 
-    def _prepare_openclaw(
-        self,
-        record: Mapping[str, Any],
-        temporary_root: Path,
-        final_root: Path,
-    ) -> None:
-        secrets = self._load_openclaw_secrets()
-        secret_directory = temporary_root / ".secrets"
-        secret_directory.mkdir(mode=0o700)
-        if os.name != "nt":
-            os.chmod(secret_directory, 0o700)
-        self._private_runtime_owner(secret_directory)
-        for name, value in secrets.items():
-            destination = secret_directory / name
-            self._write_text(destination, value + "\n", mode=0o600)
-            self._private_runtime_owner(destination)
-
-        config_root = temporary_root / "config"
-        for path in [config_root, *config_root.rglob("*")]:
-            if path.is_symlink():
-                raise ReleaseError("OpenClaw runtime config contains a symlink")
-            if path.is_dir():
-                if os.name != "nt":
-                    os.chmod(path, 0o700)
-                self._private_runtime_owner(path)
-            elif path.is_file():
-                if os.name != "nt":
-                    mode = 0o700 if path.stat().st_mode & stat.S_IXUSR else 0o600
-                    os.chmod(path, mode)
-                self._private_runtime_owner(path)
-            else:
-                raise ReleaseError("OpenClaw runtime config has an unsupported entry")
-
-        values = self._openclaw_environment(record, final_root)
-        for name, value in values.items():
-            if not isinstance(value, str) or not value or "\n" in value or "\r" in value:
-                raise ReleaseError(f"release environment value is invalid: {name}")
-        content = "".join(f"{name}={value}\n" for name, value in sorted(values.items()))
-        self._write_text(temporary_root / "stack" / ".release.env", content)
 
     def _replace_slot(self, temporary: Path, slot: str) -> Path:
         target = self._slot_path(slot)
@@ -1410,17 +1146,12 @@ class ComposeReleaseEngine:
         try:
             temporary.mkdir(mode=0o700)
             shutil.copytree(immutable / "payload" / "stack", temporary / "stack")
-            if self.spec.needs_config:
-                shutil.copytree(immutable / "payload" / "config", temporary / "config")
             atomic_write_json(
                 temporary / "release.json",
                 {"schema": SCHEMA_VERSION, "release_id": record["release_id"]},
                 mode=0o644,
             )
-            if self.spec.name == "apps":
-                self._prepare_apps(temporary)
-            else:
-                self._prepare_openclaw(record, temporary, target)
+            self._prepare_apps(temporary)
             self._replace_slot(temporary, slot)
         except BaseException:
             shutil.rmtree(temporary, ignore_errors=True)
@@ -1435,20 +1166,8 @@ class ComposeReleaseEngine:
         if marker != {"schema": SCHEMA_VERSION, "release_id": record["release_id"]}:
             raise ReleaseError("runtime slot release identity is invalid")
         _validate_package_root(
-            root / "stack", self.spec, rendered=True, bundled=True
+            root / "stack", rendered=True, bundled=True
         )
-        if self.spec.name == "openclaw":
-            for path in (
-                root / "stack" / ".release.env",
-                root / ".secrets" / "gateway_token",
-                root / ".secrets" / "discord_bot_token",
-                root / ".secrets" / "exa_api_key",
-            ):
-                if path.is_symlink() or not path.is_file():
-                    raise ReleaseError("OpenClaw runtime slot is incomplete")
-                if os.name != "nt" and stat.S_IMODE(path.stat().st_mode) & 0o077:
-                    raise ReleaseError("OpenClaw runtime secret permissions are too broad")
-            _require_config_root(root / "config")
         return root
 
     def _slot_matches(self, record: Mapping[str, Any], slot: str) -> bool:
@@ -1478,12 +1197,10 @@ class ComposeReleaseEngine:
             self.docker_command,
             "compose",
             "--project-name",
-            self.spec.project,
+            "homelab",
             "--project-directory",
             str(stack),
         ]
-        if self.spec.name == "openclaw":
-            argv.extend(("--env-file", str(stack / ".release.env")))
         argv.extend(("--file", str(stack / "compose.yml")))
         argv.extend(arguments)
         return argv
@@ -1575,50 +1292,32 @@ class ComposeReleaseEngine:
                 process_health_services.append(service)
         if pull:
             self._require_pull_capacity()
-        if self.spec.name == "apps":
-            expected_images = self._record_image_refs(record)
-            if (
-                not rendered_images
-                or any(
-                    re.fullmatch(r".+@sha256:[0-9a-f]{64}", image) is None
-                    for image in rendered_images
-                )
-                or {
-                    image.rsplit("@", 1)[-1]
-                    for image in rendered_images
-                }
-                != {image.rsplit("@", 1)[-1] for image in expected_images}
-            ):
-                raise ReleaseError(
-                    "apps Compose model must select every exact package image digest"
-                )
-        else:
-            if rendered_images != [record["images"]["gateway"]]:
-                raise ReleaseError("Compose model does not select the exact Gateway digest")
-            for name, exact_ref in record["images"].items():
-                if pull:
-                    self._checked(
-                        [self.docker_command, "image", "pull", exact_ref],
-                        cwd=stack,
-                        action=f"pull exact {name} image",
-                    )
-                self._verify_exact_image(name, exact_ref, stack)
+        expected_images = self._record_image_refs(record)
+        if (
+            not rendered_images
+            or any(
+                re.fullmatch(r".+@sha256:[0-9a-f]{64}", image) is None
+                for image in rendered_images
+            )
+            or {
+                image.rsplit("@", 1)[-1]
+                for image in rendered_images
+            }
+            != {image.rsplit("@", 1)[-1] for image in expected_images}
+        ):
+            raise ReleaseError(
+                "apps Compose model must select every exact package image digest"
+            )
         if pull:
             self._checked(
                 self._compose(record, slot, "pull"),
                 cwd=stack,
                 action="Compose pull",
             )
-            verification_refs = (
-                record["images"]
-                if self.spec.name == "openclaw"
-                else {
-                    f"service-{index}": exact_ref
-                    for index, exact_ref in enumerate(
-                        sorted(self._record_image_refs(record)), start=1
-                    )
-                }
-            )
+            verification_refs = {
+                f"service-{index}": exact_ref
+                for index, exact_ref in enumerate(sorted(self._record_image_refs(record)), start=1)
+            }
             for name, exact_ref in verification_refs.items():
                 self._verify_exact_image(name, exact_ref, stack)
         return services, tuple(process_health_services)
@@ -1631,8 +1330,7 @@ class ComposeReleaseEngine:
         pull: bool,
         mark_pending_activation: bool = False,
     ) -> None:
-        if self.spec.name == "apps":
-            self._require_compose_owned_apps_network(self._slot_path(slot) / "stack")
+        self._require_compose_owned_apps_network(self._slot_path(slot) / "stack")
         services, process_health_services = self._preflight(record, slot, pull=pull)
         root = self._slot_path(slot)
         stack = root / "stack"
@@ -1669,8 +1367,6 @@ class ComposeReleaseEngine:
             stack,
             process_health_services,
         )
-        if self.spec.name == "openclaw":
-            self._verify_openclaw_container(record, slot, stack)
         self._run_smoke(record, slot, stack)
 
     def _verify_process_health_services(
@@ -1763,7 +1459,7 @@ class ComposeReleaseEngine:
         except json.JSONDecodeError as exc:
             raise ReleaseError("apps proxy network labels are invalid") from exc
         if not isinstance(labels, dict) or (
-            labels.get("com.docker.compose.project") != self.spec.project
+            labels.get("com.docker.compose.project") != "homelab"
             or labels.get("com.docker.compose.network") != "proxy"
         ):
             raise ReleaseError(
@@ -1771,46 +1467,6 @@ class ComposeReleaseEngine:
                 "complete the documented network ownership transition before deployment"
             )
 
-    def _verify_openclaw_container(
-        self, record: Mapping[str, Any], slot: str, stack: Path
-    ) -> None:
-        container_output = self._checked(
-            self._compose(record, slot, "ps", "--quiet", "gateway"),
-            cwd=stack,
-            action="locate Gateway container",
-        )
-        containers = [line.strip() for line in container_output.splitlines() if line.strip()]
-        if len(containers) != 1 or re.fullmatch(r"[0-9a-f]{12,64}", containers[0]) is None:
-            raise ReleaseError("exactly one valid Gateway container is required")
-        metadata_output = self._checked(
-            [self.docker_command, "inspect", "--format", "{{json .}}", containers[0]],
-            cwd=stack,
-            action="inspect Gateway container",
-        )
-        try:
-            metadata = json.loads(metadata_output)
-        except json.JSONDecodeError as exc:
-            raise ReleaseError("Docker returned invalid Gateway metadata") from exc
-        config = metadata.get("Config") if isinstance(metadata, dict) else None
-        state = metadata.get("State") if isinstance(metadata, dict) else None
-        if not isinstance(config, dict) or not isinstance(state, dict):
-            raise ReleaseError("Gateway metadata is incomplete")
-        if config.get("Image") != record["images"]["gateway"]:
-            raise ReleaseError("active Gateway image differs from the exact release digest")
-        environment = config.get("Env")
-        expected = {
-            "OPENCLAW_CTF_IMAGE": record["images"]["ctf"],
-            "OPENCLAW_CONFIG_COMMIT": record["config_commit"],
-            "OPENCLAW_RELEASE_ID": record["release_id"],
-        }
-        if not isinstance(environment, list):
-            raise ReleaseError("Gateway environment is unavailable")
-        for name, value in expected.items():
-            if [item for item in environment if isinstance(item, str) and item.startswith(f"{name}=")] != [f"{name}={value}"]:
-                raise ReleaseError("active Gateway identity differs from the release")
-        health = state.get("Health")
-        if state.get("Running") is not True or not isinstance(health, dict) or health.get("Status") != "healthy":
-            raise ReleaseError("active Gateway is not healthy")
 
     def _run_smoke(
         self, record: Mapping[str, Any], slot: str, stack: Path
@@ -1821,17 +1477,13 @@ class ComposeReleaseEngine:
         environment = os.environ.copy()
         environment.update(
             {
-                "HOMELAB_TARGET": self.spec.name,
+                "HOMELAB_TARGET": self.target,
                 "HOMELAB_RELEASE_ID": record["release_id"],
                 "HOMELAB_SOURCE_SHA": record["source_sha"],
                 "HOMELAB_RELEASE_ROOT": str(self._slot_path(slot)),
             }
         )
-        if self.spec.name == "openclaw":
-            environment.update(
-                self._openclaw_environment(record, self._slot_path(slot))
-            )
-        self._checked([str(smoke)], cwd=stack, env=environment, action=f"{self.spec.name} smoke")
+        self._checked([str(smoke)], cwd=stack, env=environment, action=f"{self.target} smoke")
 
     def _stop(self, record: Mapping[str, Any], slot: str) -> None:
         root = self._verify_slot(record, slot)
@@ -1888,7 +1540,7 @@ class ComposeReleaseEngine:
             self._remove_slot(candidate_slot)
             restored = {
                 "schema": SCHEMA_VERSION,
-                "target": self.spec.name,
+                "target": self.target,
                 "current": original_current,
                 "previous": pending["original_previous"],
                 "pending": None,
@@ -1899,14 +1551,14 @@ class ComposeReleaseEngine:
             if self._slot_matches(pending["candidate"], candidate_slot):
                 self._stop(pending["candidate"], candidate_slot)
             self._remove_slot(candidate_slot)
-            return self._write_state(empty_state(self.spec.name))
+            return self._write_state(empty_state(self.target))
 
         self._render_slot(original_current, candidate_slot)
         self._activate(original_current, candidate_slot, pull=False)
         self._remove_slot(pending["original_slot"])
         restored = {
             "schema": SCHEMA_VERSION,
-            "target": self.spec.name,
+            "target": self.target,
             "current": original_current,
             "previous": pending["original_previous"],
             "pending": None,
@@ -1955,7 +1607,7 @@ class ComposeReleaseEngine:
 
         committed = {
             "schema": SCHEMA_VERSION,
-            "target": self.spec.name,
+            "target": self.target,
             "current": dict(candidate),
             "previous": None if success_previous is None else dict(success_previous),
             "pending": None,
@@ -1980,7 +1632,7 @@ class ComposeReleaseEngine:
             raise ReleaseError("bundle root must be a regular directory")
         manifest = validate_manifest(
             _load_unique_json(bundle_root / "manifest.json"),
-            expected_target=self.spec.name,
+            expected_target=self.target,
         )
         embedded_engine = bundle_root / manifest["engine"]["path"]
         if (
@@ -2083,16 +1735,9 @@ class ComposeReleaseEngine:
             )
 
 
-def _images_from_args(args: argparse.Namespace) -> dict[str, str]:
-    if args.target == "apps":
-        return {}
-    return {"gateway": args.gateway_ref, "ctf": args.ctf_ref}
-
-
 def _add_engine_roots(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--install-root", type=Path)
     parser.add_argument("--secret-root", type=Path)
-    parser.add_argument("--docker-gid", type=int)
     parser.add_argument("--docker-command", default="docker")
 
 
@@ -2104,11 +1749,7 @@ def build_parser() -> argparse.ArgumentParser:
     bundle.add_argument("--target", choices=tuple(TARGETS), required=True)
     bundle.add_argument("--source-sha", required=True)
     bundle.add_argument("--stack", type=Path, required=True)
-    bundle.add_argument("--config", type=Path)
-    bundle.add_argument("--config-commit")
     bundle.add_argument("--topology", type=Path)
-    bundle.add_argument("--gateway-ref")
-    bundle.add_argument("--ctf-ref")
     bundle.add_argument("--engine", type=Path, default=Path(__file__).resolve())
     bundle.add_argument("--output", type=Path, required=True)
 
@@ -2128,7 +1769,6 @@ def _engine_from_args(args: argparse.Namespace) -> ComposeReleaseEngine:
         args.target,
         install_root=args.install_root,
         secret_root=args.secret_root,
-        docker_gid=args.docker_gid,
         docker_command=args.docker_command,
     )
 
@@ -2141,10 +1781,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 target=args.target,
                 source_sha=args.source_sha,
                 stack_root=args.stack,
-                config_root=args.config,
-                config_commit=args.config_commit,
                 topology_path=args.topology,
-                images=_images_from_args(args),
                 engine_path=args.engine,
                 output=args.output,
             )

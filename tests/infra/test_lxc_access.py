@@ -34,7 +34,7 @@ def test_one_explicit_unit_selects_one_inventory_boundary() -> None:
     clauses = assertion["ansible.builtin.assert"]["that"]
 
     assert "homelab_unit is defined" in clauses
-    assert "homelab_unit in ['pve', 'tailnet', 'apps-host', 'openclaw-host']" in clauses
+    assert "homelab_unit in ['pve', 'tailnet', 'apps-host']" in clauses
     assert selected["gather_facts"] == "{{ homelab_unit != 'pve' }}"
 
     included = [
@@ -44,7 +44,7 @@ def test_one_explicit_unit_selects_one_inventory_boundary() -> None:
     ]
     assert ("pve_lxc_access", APPLY_GATE) in included
     assert ("common_debian", "homelab_unit != 'pve'") in included
-    assert ("release_launcher", "homelab_unit in ['apps-host', 'openclaw-host']") in included
+    assert ("release_launcher", "homelab_unit == 'apps-host'") in included
 
 
 def test_pve_access_reconciles_every_declared_lxc_idempotently() -> None:

@@ -116,13 +116,11 @@ def _read_topology(path: Path) -> dict[str, str]:
             raise PreparationError("topology host groups are invalid")
         pve = pve_hosts.get("pve")
         apps = debian_hosts.get("docker_apps")
-        openclaw = debian_hosts.get("openclaw")
-        if not all(isinstance(host, dict) for host in (pve, apps, openclaw)):
+        if not all(isinstance(host, dict) for host in (pve, apps)):
             raise PreparationError("topology lacks a required application route host")
         values = {
             "PVE_HOST": pve.get("ansible_host"),
             "APPS_HOST": apps.get("ansible_host"),
-            "OPENCLAW_HOST": openclaw.get("ansible_host"),
             "ROUTER_HOST": apps.get("gateway"),
         }
         for name, value in values.items():
@@ -284,7 +282,7 @@ def prepare(secret_bundle: Path, release_root: Path, topology: Path) -> None:
     )
 
     routes_config = _template(release_root, "routes.yml.tmpl")
-    for name in ("PVE_HOST", "OPENCLAW_HOST", "ROUTER_HOST"):
+    for name in ("PVE_HOST", "ROUTER_HOST"):
         routes_config = _replace_exact(
             routes_config, f"@@{name}@@", topology_values[name]
         )

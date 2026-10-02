@@ -7,9 +7,9 @@
       ansible.builtin.assert:
         that:
           - homelab_unit is defined
-          - homelab_unit in ['pve', 'tailnet', 'apps-host', 'openclaw-host']
+          - homelab_unit in ['pve', 'tailnet', 'apps-host']
         fail_msg: >-
-          Pass -e homelab_unit=pve|tailnet|apps-host|openclaw-host. There is no
+          Pass -e homelab_unit=pve|tailnet|apps-host. There is no
           implicit whole-homelab reconciliation.
 
 - name: Reconcile the selected homelab deployment unit
@@ -17,8 +17,7 @@
     {{ {
       'pve': 'pve_hosts',
       'tailnet': 'svc_tailnet',
-      'apps-host': 'svc_docker_apps',
-      'openclaw-host': 'svc_openclaw'
+      'apps-host': 'svc_docker_apps'
     }.get(homelab_unit | default(''), 'localhost') }}
   gather_facts: "{{ homelab_unit != 'pve' }}"
   any_errors_fatal: true
@@ -141,7 +140,7 @@
         - homelab_unit == 'pve'
         - pve_lxc_reconcile_mode | default('apply') == 'apply'
 
-    - name: Reconcile the three PVE LXC definitions
+    - name: Reconcile the two PVE LXC definitions
       ansible.builtin.include_role:
         name: pve_lxc_reconcile
       vars:
@@ -290,12 +289,12 @@
     - name: Install the stable release launcher
       ansible.builtin.include_role:
         name: release_launcher
-      when: homelab_unit in ['apps-host', 'openclaw-host']
+      when: homelab_unit == 'apps-host'
 
     - name: Reconcile the selected Docker host runtime
       ansible.builtin.include_role:
         name: docker_engine
-      when: homelab_unit in ['apps-host', 'openclaw-host']
+      when: homelab_unit == 'apps-host'
 
     - name: Reconcile the Docker application host primitives
       ansible.builtin.include_role:
@@ -317,11 +316,6 @@
         group: root
         mode: "0644"
       when: homelab_unit == 'apps-host'
-
-    - name: Reconcile the OpenClaw host primitives
-      ansible.builtin.include_role:
-        name: openclaw_native
-      when: homelab_unit == 'openclaw-host'
 
     - name: Check whether targeted maintenance requires a reboot
       ansible.builtin.stat:
@@ -346,11 +340,11 @@
           - /usr/local/libexec/homelab-release
           - audit
           - --target
-          - "{{ {'apps-host': 'apps', 'openclaw-host': 'openclaw'}[homelab_unit] }}"
+          - apps
       changed_when: false
       no_log: true
       when:
-        - homelab_unit in ['apps-host', 'openclaw-host']
+        - homelab_unit == 'apps-host'
         - homelab_maintenance_upgrade | default(false) | bool
 
     - name: Read tailnet health after host maintenance

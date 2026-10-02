@@ -158,29 +158,29 @@ def test_deploy_routes_apps_and_uploads_release_and_secrets_once(
     assert not local_stage.exists()
 
 
-def test_secret_sync_routes_openclaw_and_uploads_only_the_bundle_once(
+def test_secret_sync_routes_apps_and_uploads_only_the_bundle_once(
     tmp_path: Path, transport: tuple[dict[str, str], Path, Path]
 ) -> None:
     env, log, local_stage = transport
-    secrets = tmp_path / "openclaw.json"
+    secrets = tmp_path / "apps.json"
     secrets.write_text("{}", encoding="utf-8")
     env.update(
         {
-            "OPENCLAW_HOST": "openclaw.internal",
-            "FAKE_REMOTE_ROOT": "/tmp/homelab-openclaw-sync-secrets.XYZ789",
+            "DOCKER_APPS_HOST": "apps.internal",
+            "FAKE_REMOTE_ROOT": "/tmp/homelab-apps-sync-secrets.XYZ789",
         }
     )
 
-    result = run_wrapper(env, "sync-secrets", "openclaw", shell_path(secrets))
+    result = run_wrapper(env, "sync-secrets", "apps", shell_path(secrets))
 
     assert result.returncode == 0, result.stderr
-    assert "Synchronized openclaw component secrets on root@openclaw.internal" in result.stdout
+    assert "Synchronized apps component secrets on root@apps.internal" in result.stdout
     uploads = calls(log, "scp")
     assert len(uploads) == 1
     assert Path(uploads[0][0]).name == "secrets.json"
     assert len(uploads[0]) == 2
     assert uploads[0][-1] == (
-        "root@openclaw.internal:/tmp/homelab-openclaw-sync-secrets.XYZ789/"
+        "root@apps.internal:/tmp/homelab-apps-sync-secrets.XYZ789/"
     )
     remote = calls(log, "ssh")
     activation = next(
@@ -188,7 +188,7 @@ def test_secret_sync_routes_openclaw_and_uploads_only_the_bundle_once(
         for call in remote
         if "/usr/local/libexec/homelab-release" in call[1]
     )
-    assert "sync-secrets --target 'openclaw'" in activation
+    assert "sync-secrets --target 'apps'" in activation
     assert "--archive" not in activation
     assert "--sha256" not in activation
     assert not local_stage.exists()

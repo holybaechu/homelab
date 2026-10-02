@@ -109,27 +109,13 @@ def lanes() -> dict[str, Workflow]:
         assert capability is not None, f"unclassified workflow: {workflow.path}"
         assert capability not in discovered, f"duplicate workflow capability: {capability}"
         discovered[capability] = workflow
-    assert set(discovered) == {"release:apps", "release:openclaw", "infrastructure", "validation"}
+    assert set(discovered) == {"release:apps", "infrastructure", "validation"}
     return discovered
-
-
-def normalize_needs(job: dict) -> set[str]:
-    needs = job.get("needs", [])
-    return {needs} if isinstance(needs, str) else set(needs)
 
 
 def effective_condition(job: dict, step: dict | None = None) -> str:
     conditions = [job.get("if", ""), step.get("if", "") if step else ""]
     return " && ".join(condition for condition in conditions if condition)
-
-
-def image_build_step(job: dict) -> dict | None:
-    matches = [
-        step
-        for step in job.get("steps", [])
-        if uses_action(step, "docker/build-push-action") and step.get("with", {}).get("push") == "true"
-    ]
-    return sole(matches, "published image build") if matches else None
 
 
 def production_mutation(job: dict) -> bool:
@@ -167,12 +153,6 @@ def normalized_push_scope(workflow: Workflow) -> set[str]:
 def test_workflows_are_discovered_as_complete_coarse_lanes_with_one_mutation_lock() -> None:
     by_capability = lanes()
     assert {"push", "workflow_dispatch"} <= set(by_capability["release:apps"].data["on"])
-    assert {"push", "repository_dispatch", "workflow_dispatch"} <= set(
-        by_capability["release:openclaw"].data["on"]
-    )
-    assert "openclaw-promoted" in by_capability["release:openclaw"].data["on"][
-        "repository_dispatch"
-    ]["types"]
     assert {"schedule", "workflow_dispatch"} <= set(by_capability["infrastructure"].data["on"])
     assert {"pull_request", "merge_group", "workflow_dispatch"} <= set(
         by_capability["validation"].data["on"]
@@ -217,8 +197,6 @@ def test_job_permissions_are_least_privilege_for_discovered_capabilities() -> No
     for workflow in workflows():
         for job in workflow.data["jobs"].values():
             required = {"contents": "read"}
-            if image_build_step(job):
-                required["packages"] = "write"
             if production_mutation(job):
                 required["id-token"] = "write"
             actual = job.get("permissions", workflow.data.get("permissions", {}))
@@ -260,112 +238,8 @@ def test_apps_release_orders_validation_bundle_freshness_and_mutation_by_capabil
     assert "docker build" not in job_commands(job)
 
 
-def test_openclaw_images_build_in_parallel_and_publish_verifiable_attestations() -> None:
-    workflow = lanes()["release:openclaw"]
-    build_jobs = {
-        job_id: (job, build)
-        for job_id, job in workflow.data["jobs"].items()
-        if (build := image_build_step(job)) is not None
-    }
-    assert build_jobs, "OpenClaw has no published image builds"
-    deploy_id, deploy_job = job_with(
-        workflow,
-        lambda job: bundle_target(job_commands(job)) == "openclaw",
-        "OpenClaw descriptor deployment",
-    )
-    assert deploy_id not in build_jobs
-    assert normalize_needs(deploy_job) == set(build_jobs)
-    cache_scopes: set[str] = set()
-    for job_id, (job, build) in build_jobs.items():
-        assert not normalize_needs(job), f"image build {job_id} is serialized"
-        digest = job.get("outputs", {}).get("digest", "")
-        source = re.fullmatch(r"\$\{\{\s*steps\.([^.]+)\.outputs\.digest\s*\}\}", digest)
-        assert source and build.get("id") == source.group(1)
-        values = build["with"]
-        assert values["push"] == "true"
-        assert values["platforms"] == "linux/amd64"
-        assert values["provenance"] == "mode=max"
-        assert values["sbom"] == "true"
-        assert "build-args" not in values
-        assert "${{ github.sha }}" in values["tags"]
-        assert "org.opencontainers.image.revision=${{ github.sha }}" in values["labels"]
-        cache_from = dict(part.split("=", 1) for part in values["cache-from"].split(","))
-        cache_to = dict(part.split("=", 1) for part in values["cache-to"].split(","))
-        assert cache_from["type"] == cache_to["type"] == "gha"
-        assert cache_to["mode"] == "max"
-        assert cache_from["scope"] == cache_to["scope"]
-        assert cache_from["scope"] not in cache_scopes
-        cache_scopes.add(cache_from["scope"])
-
-
-def test_openclaw_descriptor_and_freshness_are_ordered_by_capability() -> None:
-    workflow = lanes()["release:openclaw"]
-    _, job = job_with(
-        workflow,
-        lambda candidate: bundle_target(job_commands(candidate)) == "openclaw",
-        "OpenClaw descriptor deployment",
-    )
-    initial_index, _ = step_with(
-        job,
-        lambda step: uses_action(step, "actions/checkout")
-        and "repository" in step.get("with", {})
-        and step.get("with", {}).get("ref") != "main",
-        "initial private desired state checkout",
-    )
-    bind_index, _ = step_with(
-        job,
-        lambda step: "OPENCLAW_CONFIG_COMMIT" in step.get("run", "")
-        and "rev-parse HEAD" in step.get("run", "")
-        and "GITHUB_ENV" in step.get("run", ""),
-        "private desired state identity binding",
-    )
-    descriptor_index, descriptor = step_with(
-        job,
-        lambda step: bundle_target(step.get("run", "")) == "openclaw",
-        "complete OpenClaw descriptor",
-    )
-    repository_index, repository_gate = step_with(
-        job,
-        lambda step: freshness_scope(step.get("run", "")) is not None,
-        "repository freshness gate",
-    )
-    refresh_index, refresh = step_with(
-        job,
-        lambda step: uses_action(step, "actions/checkout")
-        and "repository" in step.get("with", {})
-        and step.get("with", {}).get("ref") == "main",
-        "private desired state refresh",
-    )
-    private_index, private_gate = step_with(
-        job,
-        lambda step: "OPENCLAW_CONFIG_COMMIT" in step.get("run", "")
-        and "current_commit" in step.get("run", ""),
-        "private desired state freshness gate",
-    )
-    deploy_index, deploy = step_with(
-        job,
-        lambda step: bool(re.search(r"\bdeploy-release-via-ssh\.sh\s+deploy\s+openclaw\b", step.get("run", ""))),
-        "OpenClaw release mutation",
-    )
-    assert initial_index < bind_index < descriptor_index < repository_index < refresh_index < private_index < deploy_index
-    assert freshness_scope(repository_gate["run"]) == normalized_push_scope(workflow)
-    for automatic_gate in (repository_gate, refresh, private_gate):
-        assert "workflow_dispatch" in automatic_gate["if"] and "!=" in automatic_gate["if"]
-    options = cli_options(descriptor["run"])
-    assert {"source-sha", "config-commit", "gateway-ref", "ctf-ref", "output"} <= set(options)
-    assert options["source-sha"] == "$GITHUB_SHA"
-    assert options["config-commit"] == "$OPENCLAW_CONFIG_COMMIT"
-    assert options["output"] in deploy["run"]
-    digest_dependencies = set(
-        re.findall(r"needs\.([^.\s}]+)\.outputs\.digest", yaml.safe_dump(descriptor.get("env", {})))
-    )
-    assert digest_dependencies == normalize_needs(job)
-    assert re.search(r"gateway_ref=.*@\$GATEWAY_DIGEST", descriptor["run"])
-    assert re.search(r"ctf_ref=.*@\$CTF_DIGEST", descriptor["run"])
-
-
 def test_manual_secret_rotation_bypasses_release_artifacts_by_operation() -> None:
-    for target in ("apps", "openclaw"):
+    for target in ("apps",):
         workflow = lanes()[f"release:{target}"]
         operation = workflow.data["on"]["workflow_dispatch"]["inputs"]["operation"]
         assert set(operation["options"]) == {"deploy", "sync-secrets"}
@@ -391,9 +265,6 @@ def test_manual_secret_rotation_bypasses_release_artifacts_by_operation() -> Non
             ):
                 release_condition = effective_condition(job, step)
                 assert "sync-secrets" in release_condition and "!=" in release_condition
-        for job in workflow.data["jobs"].values():
-            if image_build_step(job):
-                assert "sync-secrets" in effective_condition(job) and "!=" in effective_condition(job)
 
 
 def test_infrastructure_and_validation_derive_real_units_and_playbook() -> None:
@@ -401,7 +272,7 @@ def test_infrastructure_and_validation_derive_real_units_and_playbook() -> None:
     infrastructure = by_capability["infrastructure"]
     inputs = infrastructure.data["on"]["workflow_dispatch"]["inputs"]
     units = set(inputs["unit"]["options"])
-    assert units == {"pve", "tailnet", "apps-host", "openclaw-host"}
+    assert units == {"pve", "tailnet", "apps-host"}
     assert set(inputs["pve_mode"]["options"]) == {"plan", "audit", "apply"}
     for approval in ("allow_destructive_vmid", "allow_replacement_vmid"):
         assert inputs[approval]["default"] == "" and inputs[approval]["required"] == "false"
@@ -411,7 +282,7 @@ def test_infrastructure_and_validation_derive_real_units_and_playbook() -> None:
         "infrastructure reconciliation",
     )
     configure_index, configure = step_with(job, lambda step: "configure-ssh.sh" in step.get("run", ""), "SSH setup")
-    materialize_index, materialize = step_with(job, lambda step: "PVE_SECRET_BUNDLE" in str(step.get("env", {})), "PVE bundle")
+    materialize_index, materialize = step_with(job, lambda step: '"component": "pve"' in step.get("run", ""), "PVE bundle")
     bind_index, bind = step_with(job, lambda step: "verify_pve_access_bundle.py" in step.get("run", ""), "PVE key binding")
     reconcile_index, reconcile = step_with(job, lambda step: "ansible-playbook" in step.get("run", ""), "unit reconcile")
     assert configure_index < materialize_index < bind_index < reconcile_index
@@ -419,6 +290,11 @@ def test_infrastructure_and_validation_derive_real_units_and_playbook() -> None:
     assert materialize["if"] == bind["if"]
     assert all(term in bind["if"] for term in ("matrix.unit", "pve", "pve_mode", "apply"))
     assert "--private-key" in bind["run"] and "--bundle" in bind["run"]
+    assert '"ssh-keygen", "-y"' in materialize["run"]
+    assert ".ssh/id_ed25519" in materialize["run"]
+    _, tailnet = step_with(job, lambda step: '"component": "tailnet"' in step.get("run", ""), "tailnet bundle")
+    assert tailnet["env"]["TAILNET_AUTH_KEY"] == "${{ secrets.TAILSCALE_AUTH_KEY }}"
+    assert 'destination.chmod(0o600)' in materialize["run"] and 'destination.chmod(0o600)' in tailnet["run"]
     assert 'homelab_unit=$UNIT' in reconcile["run"]
     playbook = sole((REPO_ROOT / "infra" / "ansible" / "playbooks").glob("*.yml"), "Ansible playbook")
     relative_playbook = playbook.relative_to(REPO_ROOT).as_posix()
@@ -439,7 +315,6 @@ def test_runtime_lanes_expose_only_their_component_and_transport_secrets() -> No
     common = {"DEPLOY_SSH_KNOWN_HOSTS", "DEPLOY_SSH_PRIVATE_KEY", "TS_AUDIENCE", "TS_OAUTH_CLIENT_ID"}
     lane_specific = {
         "apps": {"APPS_SECRET_BUNDLE"},
-        "openclaw": {"OPENCLAW_CONFIG_READ_SSH_KEY", "OPENCLAW_SECRET_BUNDLE"},
     }
     for target, expected in lane_specific.items():
         exposed = set(re.findall(r"secrets\.([A-Z0-9_]+)", lanes()[f"release:{target}"].source))

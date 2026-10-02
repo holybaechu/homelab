@@ -15,7 +15,7 @@ activation and every future `release_launcher.py` change, use this order:
 
 1. Keep the change unmerged and check out its exact candidate commit on a
    trusted, tailnet-connected Ansible controller with pinned SSH trust.
-2. From that candidate checkout, reconcile `apps-host` and `openclaw-host`
+2. From that candidate checkout, reconcile `apps-host`
    explicitly. These out-of-band runs install the candidate launcher before any
    automatic runtime trigger:
 
@@ -23,15 +23,12 @@ activation and every future `release_launcher.py` change, use this order:
    export ANSIBLE_CONFIG=infra/ansible/ansible.cfg
    ansible-playbook -i infra/ansible/inventory/prod/topology.json \
      infra/ansible/playbooks/reconcile.yml -e homelab_unit=apps-host
-   ansible-playbook -i infra/ansible/inventory/prod/topology.json \
-     infra/ansible/playbooks/reconcile.yml -e homelab_unit=openclaw-host
    ```
 
 3. Compare each host's `/usr/local/libexec/homelab-release` SHA-256 with the
-   candidate `scripts/ci/release_launcher.py`; do not merge if either differs.
+   candidate `scripts/ci/release_launcher.py`; do not merge if it differs.
 4. Take the documented PVE snapshot and data backup, then merge while holding
-   the apps production-environment approval. The OpenClaw workflow may remain
-   queued behind the shared control-plane lock.
+   the apps production-environment approval.
 5. The previous apps host has an externally created `homelab_proxy` network
    without Compose ownership labels. Run this bounded transition on the apps
    host in the maintenance window:
@@ -56,19 +53,10 @@ activation and every future `release_launcher.py` change, use this order:
    same named network with Compose labels. Until the transition is complete,
    the new engine detects the unowned network before image pull, `up`, or
    `down`, restores its empty pending state, and leaves the previous project
-   running. The normal apps and OpenClaw workflows may then activate the new
-   engine. OpenClaw keeps the
-   whole workflow in the non-cancelling `prod-control-plane` queue, so its two
-   image builds run in parallel within one admitted workflow. GitHub does not
-   guarantee dispatch-order admission to a concurrency group, so each automatic
-   runtime job compares its exact lane input paths with current homelab `main`
-   immediately before mutation. Unrelated newer documentation or test commits
-   do not suppress a deployment, while a newer package, topology, transport, or
-   workflow change makes the older run fail without touching the host. An
-   automatic OpenClaw run also checks out private-config `main` again directly
-   before the deploy command and rejects a promotion whose bound commit no
-   longer matches that tip. Manual dispatch remains the explicit rollback path.
-7. After both first deployments and launcher audits succeed, archive the old
+   running. The apps workflow may then activate the new engine. Automatic
+   runs check their exact lane inputs against current `main` before mutation;
+   manual dispatch remains the explicit rollback path.
+7. After the first deployment and launcher audit succeed, archive the old
    control directories and retire old unit/account/executable/individual-secret
    artifacts using the immutable pre-simplification reference in
    `docs/runbooks/recovery.md`. Record that one-time host operation separately;
@@ -85,4 +73,4 @@ unrelated state schema. Its first activation has no recorded previous release.
 Take a PVE snapshot and a separate durable-data/secret backup, use a maintenance
 window, then run one complete target deployment. After its audit passes,
 archive or remove unreferenced older control directories; do not delete
-`/srv/homelab`, `/var/lib/openclaw`, or named Compose volumes.
+`/srv/homelab` or named Compose volumes.

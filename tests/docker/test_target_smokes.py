@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-import threading
-from typing import Iterator
 
 import pytest
 import yaml
@@ -19,7 +15,6 @@ from tests.helpers import REPO_ROOT
 
 APPS_PACKAGE = REPO_ROOT / "apps/compose/homelab"
 TOPOLOGY = REPO_ROOT / "infra/ansible/inventory/prod/topology.json"
-OPENCLAW_SMOKE = REPO_ROOT / "infra/openclaw/runtime/smoke.sh"
 
 
 def posix_shell() -> str:
@@ -184,132 +179,3 @@ def test_apps_smoke_fails_when_a_declared_ingress_is_unreachable(tmp_path: Path)
 
     assert result.returncode == 1
     assert "shared ingress route failed for one.home.example" in result.stderr
-
-
-@contextmanager
-def openclaw_gateway(
-    token: str,
-    *,
-    accept_any_control_token: bool = False,
-) -> Iterator[list[tuple[str, str | None]]]:
-    requests: list[tuple[str, str | None]] = []
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - stdlib callback name
-            authorization = self.headers.get("Authorization")
-            requests.append((self.path, authorization))
-            if self.path == "/readyz":
-                status = 204
-            elif self.path == "/control-ui-config.json" and (
-                accept_any_control_token or authorization == f"Bearer {token}"
-            ):
-                status = 200
-            else:
-                status = 401
-            self.send_response(status)
-            self.end_headers()
-
-        def log_message(self, _format: str, *_args: object) -> None:
-            return
-
-    try:
-        server = ThreadingHTTPServer(("127.0.0.1", 18789), Handler)
-    except OSError as error:
-        pytest.skip(f"OpenClaw smoke port is unavailable: {error}")
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield requests
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-
-
-@pytest.mark.skipif(os.name == "nt", reason="production secret modes require POSIX")
-def test_openclaw_smoke_checks_readiness_and_authenticated_control_surface(
-    tmp_path: Path,
-) -> None:
-    token = "a" * 64
-    secret_root = tmp_path / "secrets"
-    secret_root.mkdir(mode=0o700)
-    token_path = secret_root / "gateway_token"
-    token_path.write_text(token + "\n", encoding="utf-8")
-    token_path.chmod(0o600)
-    env = os.environ.copy()
-    env["OPENCLAW_SECRET_ROOT"] = str(secret_root)
-
-    with openclaw_gateway(token) as requests:
-        result = subprocess.run(
-            [posix_shell(), str(OPENCLAW_SMOKE)],
-            cwd=OPENCLAW_SMOKE.parent,
-            env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert requests == [
-        ("/readyz", None),
-        ("/control-ui-config.json", None),
-        ("/control-ui-config.json", f"Bearer {'0' * 64}"),
-        ("/control-ui-config.json", f"Bearer {token}"),
-    ]
-    assert "authenticated smoke passed" in result.stdout
-
-
-@pytest.mark.skipif(os.name == "nt", reason="production secret modes require POSIX")
-def test_openclaw_smoke_rejects_a_control_surface_without_enforced_authentication(
-    tmp_path: Path,
-) -> None:
-    token = "a" * 64
-    secret_root = tmp_path / "secrets"
-    secret_root.mkdir(mode=0o700)
-    token_path = secret_root / "gateway_token"
-    token_path.write_text(token + "\n", encoding="utf-8")
-    token_path.chmod(0o600)
-    env = os.environ.copy()
-    env["OPENCLAW_SECRET_ROOT"] = str(secret_root)
-
-    with openclaw_gateway(token, accept_any_control_token=True) as requests:
-        result = subprocess.run(
-            [posix_shell(), str(OPENCLAW_SMOKE)],
-            cwd=OPENCLAW_SMOKE.parent,
-            env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-
-    assert result.returncode != 0
-    assert requests == [
-        ("/readyz", None),
-        ("/control-ui-config.json", None),
-    ]
-    assert "expected 401 or 403" in result.stderr
-
-
-@pytest.mark.skipif(os.name == "nt", reason="production secret modes require POSIX")
-def test_openclaw_smoke_rejects_an_invalid_gateway_token_before_network_access(
-    tmp_path: Path,
-) -> None:
-    secret_root = tmp_path / "secrets"
-    secret_root.mkdir(mode=0o700)
-    token_path = secret_root / "gateway_token"
-    token_path.write_text("not-a-token\n", encoding="utf-8")
-    token_path.chmod(0o600)
-    env = os.environ.copy()
-    env["OPENCLAW_SECRET_ROOT"] = str(secret_root)
-
-    result = subprocess.run(
-        [posix_shell(), str(OPENCLAW_SMOKE)],
-        cwd=OPENCLAW_SMOKE.parent,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode != 0
-    assert "Gateway token is not exact lowercase 64-hex" in result.stderr

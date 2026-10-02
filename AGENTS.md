@@ -1,7 +1,7 @@
 # Homelab agent guide
 
-This is a personal homelab repository and the public desired state for three
-production units: `tailnet`, `docker_apps`, and `openclaw`. Optimize for small,
+This is a personal homelab repository and the public desired state for two
+production units: `tailnet` and `docker_apps`. Optimize for small,
 readable changes and straightforward maintenance by one person.
 
 ## Keep changes small
@@ -22,20 +22,16 @@ Read the guides for each area touched by the change:
 
 - **Host topology or primitives:** read `infra/README.md`, then the selected
   role and `infra/ansible/playbooks/reconcile.yml`. Reconciliation targets one
-  of `pve`, `tailnet`, `apps-host`, or `openclaw-host`; select exactly one unit
+  of `pve`, `tailnet`, `apps-host`; select exactly one unit
   per invocation.
 - **Application service:** read `apps/compose/homelab/README.md` and
   `docs/runbooks/compose-release.md`. The complete application release package
   lives under `apps/compose/homelab`; keep service configuration, preparation,
   smoke behavior, and release inputs co-located there.
-- **OpenClaw image or runtime:** read `infra/openclaw/README.md`,
-  `docs/runbooks/openclaw.md`, and, for sandbox boundaries,
-  `docs/runbooks/openclaw-ctf.md`. Private Gateway configuration belongs in
-  the sibling `openclaw-setup` repository.
 - **Deployment workflow:** read `docs/runbooks/github-actions.md` and
   `docs/runbooks/compose-release.md` before editing `.github/workflows/**` or
-  `scripts/ci/**`. The apps and OpenClaw lanes share one release engine and SSH
-  wrapper; preserve that common transaction model.
+  `scripts/ci/**`. The apps lane uses one release engine and SSH wrapper; preserve its
+  transaction model.
 - **Secret schema:** read `secrets/README.md` and the component's adjacent
   validator. Keep schemas beside consumers and commit placeholders or
   structure only.
@@ -88,7 +84,7 @@ available:
 python -m pytest -q
 ./scripts/ci/validate-compose.sh
 export ANSIBLE_CONFIG=infra/ansible/ansible.cfg
-for unit in pve tailnet apps-host openclaw-host; do
+for unit in pve tailnet apps-host; do
   ansible-playbook \
     -i infra/ansible/inventory/prod/topology.json \
     infra/ansible/playbooks/reconcile.yml \

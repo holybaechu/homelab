@@ -9,8 +9,8 @@ fi
 
 target="${1:-all}"
 case "$target" in
-  all|apps|openclaw) ;;
-  *) echo "usage: $0 [all|apps|openclaw]" >&2; exit 2 ;;
+  all|apps) ;;
+  *) echo "usage: $0 [all|apps]" >&2; exit 2 ;;
 esac
 
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/homelab-compose-validate.XXXXXXXX")"
@@ -67,20 +67,6 @@ PY
       -f compose.yml \
       config --no-env-resolution --no-path-resolution >/dev/null
   )
-fi
-
-if [ "$target" = all ] || [ "$target" = openclaw ]; then
-  OPENCLAW_GATEWAY_REF="ghcr.io/holybaechu/homelab-openclaw-gateway@sha256:$(printf '1%.0s' {1..64})" \
-  OPENCLAW_CTF_REF="ghcr.io/holybaechu/homelab-openclaw-ctf@sha256:$(printf '2%.0s' {1..64})" \
-  OPENCLAW_CONFIG_COMMIT="$(printf '3%.0s' {1..40})" \
-  OPENCLAW_RELEASE_ID="$(printf '4%.0s' {1..64})" \
-  OPENCLAW_CONFIG_ROOT="$temporary/openclaw-config" \
-  OPENCLAW_SECRET_ROOT="$temporary/openclaw-secrets" \
-  OPENCLAW_DOCKER_GID=999 \
-    docker compose \
-      --project-directory "$PWD/infra/openclaw/runtime" \
-      -f "$PWD/infra/openclaw/runtime/compose.yml" \
-      config --no-env-resolution --no-path-resolution >/dev/null
 fi
 
 echo "$target Compose package validation passed"
