@@ -7,9 +7,9 @@
       ansible.builtin.assert:
         that:
           - homelab_unit is defined
-          - homelab_unit in ['pve', 'tailnet', 'apps-host', 'openclaw-host']
+          - homelab_unit in ['pve', 'tailnet', 'apps-host']
         fail_msg: >-
-          Pass -e homelab_unit=pve|tailnet|apps-host|openclaw-host. There is no
+          Pass -e homelab_unit=pve|tailnet|apps-host. There is no
           implicit whole-homelab reconciliation.
 
 - name: Reconcile the selected homelab deployment unit
@@ -17,8 +17,7 @@
     {{ {
       'pve': 'pve_hosts',
       'tailnet': 'svc_tailnet',
-      'apps-host': 'svc_docker_apps',
-      'openclaw-host': 'svc_openclaw'
+      'apps-host': 'svc_docker_apps'
     }.get(homelab_unit | default(''), 'localhost') }}
   gather_facts: "{{ homelab_unit != 'pve' }}"
   any_errors_fatal: true
@@ -51,7 +50,7 @@
           - homelab_loaded_secret_bundle.version | type_debug == 'int'
           - homelab_loaded_secret_bundle.version == 1
           - homelab_loaded_secret_bundle.component == homelab_unit
-          - homelab_loaded_secret_bundle.values is mapping
+          - homelab_loaded_secret_bundle['values'] is mapping
           - >-
             homelab_loaded_secret_bundle.keys() | list | sort
             == ['component', 'values', 'version']
@@ -68,23 +67,23 @@
       ansible.builtin.assert:
         that:
           - >-
-            homelab_loaded_secret_bundle.values.keys() | list | sort
+            homelab_loaded_secret_bundle['values'].keys() | list | sort
             == ['deploy_ssh_public_keys']
-          - homelab_loaded_secret_bundle.values.deploy_ssh_public_keys is sequence
-          - homelab_loaded_secret_bundle.values.deploy_ssh_public_keys is not string
-          - homelab_loaded_secret_bundle.values.deploy_ssh_public_keys | length > 0
+          - homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys is sequence
+          - homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys is not string
+          - homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys | length > 0
           - >-
-            homelab_loaded_secret_bundle.values.deploy_ssh_public_keys
+            homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys
             | select('string') | list | length
-            == homelab_loaded_secret_bundle.values.deploy_ssh_public_keys | length
+            == homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys | length
           - >-
-            homelab_loaded_secret_bundle.values.deploy_ssh_public_keys
+            homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys
             | select(
               'match',
                 '^(?:ssh-ed25519|ecdsa-sha2-nistp256|rsa-sha2-512) (?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)\Z'
               )
             | list | length
-            == homelab_loaded_secret_bundle.values.deploy_ssh_public_keys | length
+            == homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys | length
         fail_msg: >-
           The PVE bundle must contain only normalized, single-line deployment
           public keys using an allowed algorithm and base64 key body.
@@ -97,11 +96,11 @@
       ansible.builtin.assert:
         that:
           - >-
-            homelab_loaded_secret_bundle.values.keys() | list | sort
+            homelab_loaded_secret_bundle['values'].keys() | list | sort
             == ['tailscale_auth_key']
-          - homelab_loaded_secret_bundle.values.tailscale_auth_key is string
+          - homelab_loaded_secret_bundle['values'].tailscale_auth_key is string
           - >-
-            homelab_loaded_secret_bundle.values.tailscale_auth_key
+            homelab_loaded_secret_bundle['values'].tailscale_auth_key
             is match('^tskey-auth-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\Z')
         fail_msg: >-
           The tailnet bundle must contain only one normalized, single-line
@@ -112,7 +111,7 @@
     - name: Bind PVE access public keys from the component bundle
       ansible.builtin.set_fact:
         deploy_ssh_public_keys: >-
-          {{ homelab_loaded_secret_bundle.values.deploy_ssh_public_keys }}
+          {{ homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys }}
       when:
         - homelab_unit == 'pve'
         - pve_lxc_reconcile_mode | default('apply') == 'apply'
@@ -120,7 +119,7 @@
 
     - name: Bind the Tailscale auth key from the component bundle
       ansible.builtin.set_fact:
-        tailscale_auth_key: "{{ homelab_loaded_secret_bundle.values.tailscale_auth_key }}"
+        tailscale_auth_key: "{{ homelab_loaded_secret_bundle['values'].tailscale_auth_key }}"
       when: homelab_unit == 'tailnet'
       no_log: true
 
@@ -141,7 +140,7 @@
         - homelab_unit == 'pve'
         - pve_lxc_reconcile_mode | default('apply') == 'apply'
 
-    - name: Reconcile the three PVE LXC definitions
+    - name: Reconcile the two PVE LXC definitions
       ansible.builtin.include_role:
         name: pve_lxc_reconcile
       vars:
@@ -290,12 +289,12 @@
     - name: Install the stable release launcher
       ansible.builtin.include_role:
         name: release_launcher
-      when: homelab_unit in ['apps-host', 'openclaw-host']
+      when: homelab_unit == 'apps-host'
 
     - name: Reconcile the selected Docker host runtime
       ansible.builtin.include_role:
         name: docker_engine
-      when: homelab_unit in ['apps-host', 'openclaw-host']
+      when: homelab_unit == 'apps-host'
 
     - name: Reconcile the Docker application host primitives
       ansible.builtin.include_role:
@@ -317,11 +316,6 @@
         group: root
         mode: "0644"
       when: homelab_unit == 'apps-host'
-
-    - name: Reconcile the OpenClaw host primitives
-      ansible.builtin.include_role:
-        name: openclaw_native
-      when: homelab_unit == 'openclaw-host'
 
     - name: Check whether targeted maintenance requires a reboot
       ansible.builtin.stat:
@@ -346,11 +340,11 @@
           - /usr/local/libexec/homelab-release
           - audit
           - --target
-          - "{{ {'apps-host': 'apps', 'openclaw-host': 'openclaw'}[homelab_unit] }}"
+          - apps
       changed_when: false
       no_log: true
       when:
-        - homelab_unit in ['apps-host', 'openclaw-host']
+        - homelab_unit == 'apps-host'
         - homelab_maintenance_upgrade | default(false) | bool
 
     - name: Read tailnet health after host maintenance

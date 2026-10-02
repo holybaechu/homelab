@@ -32,7 +32,7 @@ space between the filesystem and final LV size before the LV is reduced.
 
 ## LXC Root Disk Changes
 
-- Change `root_disk_gb` for one of the three hosts in
+- Change `root_disk_gb` for one of the two hosts in
   `infra/ansible/inventory/prod/topology.json`.
 - Preview the exact live diff with the `pve` unit and
   `pve_lxc_reconcile_mode=plan`. A root-disk grow is a routine safe-field
@@ -43,9 +43,7 @@ space between the filesystem and final LV size before the LV is reduced.
 
 ## Verification
 
-- The `pve` audit reports no topology drift for VMIDs 110, 111, and 118.
+- The `pve` audit reports no topology drift for VMIDs 110 and 111.
 - `/var/lib/homelab` is mounted on the Proxmox host and exposed only to the
   application LXC at `/srv/homelab`.
-- `/var/lib/homelab/openclaw-ctf` is exposed only to the OpenClaw LXC at
-  `/var/lib/openclaw/workspaces/ctf` with the declared unprivileged UID map.
 - qBittorrent and Copyparty can still write their declared durable paths.

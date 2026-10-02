@@ -10,7 +10,3 @@ It does not depend on Ansible-rendered application files or a repository-level
 environment overlay. Compose owns the shared `homelab_proxy` network, while
 long-lived application data remains in explicitly named volumes and host
 mounts.
-
-OpenClaw uses a separate immutable Compose release in the dedicated
-unprivileged `openclaw` LXC. Its mutable state and credentials stay outside
-this public repository. See `docs/runbooks/openclaw.md`.

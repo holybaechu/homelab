@@ -33,7 +33,6 @@ def test_private_routes_and_headers_preserve_edge_policy():
     assert "192.168.0.0/24" in dynamic
     assert "100.64.0.0/10" in dynamic
     assert "adguard.home.hchu.me" in dynamic
-    assert "rule: Host(`openclaw.home.hchu.me`)" in dynamic
     assert "middlewares: [private-only, secure-headers]" in dynamic
     assert "pve.home.hchu.me" in dynamic
     assert "customFrameOptionsValue: SAMEORIGIN" in dynamic

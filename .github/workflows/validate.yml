@@ -42,7 +42,7 @@ jobs:
         env:
           ANSIBLE_CONFIG: infra/ansible/ansible.cfg
         run: |
-          for unit in pve tailnet apps-host openclaw-host; do
+          for unit in pve tailnet apps-host; do
             ansible-playbook \
               -i infra/ansible/inventory/prod/topology.json \
               infra/ansible/playbooks/reconcile.yml \

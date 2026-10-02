@@ -1,34 +1,19 @@
 # Component secret bundles
 
-Production receives one UTF-8 JSON document per deployment component. GitHub
-stores each complete document as one environment secret; workflows write a
-mode-0600 temporary file without printing it. There is no repository-wide
-field registry or mapping program.
+Production receives one UTF-8 JSON document per deployment component. The apps
+document is stored as one GitHub environment secret. Infrastructure jobs render
+private controller-side documents from the existing connection inputs; there
+is no parallel secret registry or credential-export step.
 
-| Component | GitHub environment secret | Authoritative validator |
+| Component | GitHub input | Authoritative validator |
 | --- | --- | --- |
 | Apps runtime | `APPS_SECRET_BUNDLE` | `apps/compose/homelab/prepare_release.py` |
-| OpenClaw runtime | `OPENCLAW_SECRET_BUNDLE` | `scripts/ci/compose_release_engine.py` |
-| PVE access | `PVE_SECRET_BUNDLE` | `infra/ansible/playbooks/reconcile.yml` |
-| Tailnet | `TAILNET_SECRET_BUNDLE` | `infra/ansible/playbooks/reconcile.yml` |
+| PVE access | public identity derived from `DEPLOY_SSH_PRIVATE_KEY` | `infra/ansible/playbooks/reconcile.yml` |
+| Tailnet | `TAILSCALE_AUTH_KEY` rendered into its versioned bundle | `infra/ansible/playbooks/reconcile.yml` |
 
-Every document has exact `component` and `version: 1` fields. Runtime bundle
-schemas are intentionally defined beside their consumers. OpenClaw accepts:
-
-```json
-{
-  "component": "openclaw",
-  "version": 1,
-  "gateway_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "discord_bot_token": "...",
-  "exa_api_key": "..."
-}
-```
-
-The OpenClaw field set is exact. `gateway_token` is exactly 64 lowercase hex;
-the other two values are nonempty single lines. The apps package documents its
-own exact nested schema in `apps/compose/homelab/README.md` and validates it by
-actually rendering a throwaway release before host installation.
+Every document has exact `component` and `version: 1` fields. The apps package
+documents its nested schema in `apps/compose/homelab/README.md` and validates
+it by rendering an isolated release before installation.
 
 Infrastructure bundles use this envelope:
 
@@ -38,17 +23,19 @@ Infrastructure bundles use this envelope:
 
 The PVE `values` object contains `deploy_ssh_public_keys`; the tailnet `values`
 object contains `tailscale_auth_key`. Unknown or missing fields fail the
-selected reconciliation before mutation.
+selected reconciliation before mutation. Hosted PVE apply derives its public
+key from the same private identity configured for SSH, then verifies that
+identity against the generated bundle. Manual controller invocations still
+supply a private JSON bundle path as documented in bootstrap.
 
-The release SSH wrapper validates and atomically installs an apps or OpenClaw
+The release SSH wrapper validates and atomically installs the apps
 bundle at its fixed root-owned path, then renders only the active runtime slot.
 Bundle values and their hashes never enter the release descriptor, state file,
 command output, or rollback source. A manual run of the owning runtime workflow
 rotates secrets without a repository change; rollback always combines the
 selected code release with the current component bundle.
 
-Tailnet OAuth, the deploy SSH key and known-host set, and the private-config
-read key are CI connection credentials rather than service configuration. They
+Tailnet OAuth, the deploy SSH key and known-host set are CI connection credentials rather than service configuration. They
 remain individually scoped to the jobs that establish those connections.
 
 ## Preparing application password hashes

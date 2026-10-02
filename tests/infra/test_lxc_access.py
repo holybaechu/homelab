@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import re
+import json
+import os
+import shutil
+import subprocess
+
+import pytest
 from typing import Any
 
 from jinja2 import Environment
@@ -34,7 +40,7 @@ def test_one_explicit_unit_selects_one_inventory_boundary() -> None:
     clauses = assertion["ansible.builtin.assert"]["that"]
 
     assert "homelab_unit is defined" in clauses
-    assert "homelab_unit in ['pve', 'tailnet', 'apps-host', 'openclaw-host']" in clauses
+    assert "homelab_unit in ['pve', 'tailnet', 'apps-host']" in clauses
     assert selected["gather_facts"] == "{{ homelab_unit != 'pve' }}"
 
     included = [
@@ -44,7 +50,7 @@ def test_one_explicit_unit_selects_one_inventory_boundary() -> None:
     ]
     assert ("pve_lxc_access", APPLY_GATE) in included
     assert ("common_debian", "homelab_unit != 'pve'") in included
-    assert ("release_launcher", "homelab_unit in ['apps-host', 'openclaw-host']") in included
+    assert ("release_launcher", "homelab_unit == 'apps-host'") in included
 
 
 def test_pve_access_reconciles_every_declared_lxc_idempotently() -> None:
@@ -198,3 +204,26 @@ def test_pve_apply_proves_batchmode_authentication_to_every_managed_lxc() -> Non
     assert names.index("Reconcile managed LXC host keys on the controller") < names.index(
         authentication["name"]
     )
+
+
+@pytest.mark.parametrize("component,values", (
+    ("tailnet", {"tailscale_auth_key": "tskey-auth-fixture-123"}),
+    ("pve", {"deploy_ssh_public_keys": ["ssh-ed25519 " + "AAAA" * 10]}),
+))
+def test_real_controller_accepts_a_valid_component_bundle(tmp_path, component, values):
+    executable = shutil.which("ansible-playbook")
+    if executable is None or os.name == "nt":
+        pytest.skip("Ansible controller requires POSIX")
+    bundle = tmp_path / "component.json"
+    bundle.write_text(json.dumps({"component": component, "version": 1, "values": values}))
+    bundle.chmod(0o600)
+    selected = yaml.safe_load(RECONCILE.read_text(encoding="utf-8"))[1]
+    # Exercise the production preflight as-is, without any host roles or SSH.
+    play = {"hosts": "localhost", "gather_facts": False,
+            "vars": {"homelab_unit": component, "homelab_secret_bundle": str(bundle)},
+            "tasks": selected["pre_tasks"]}
+    probe = tmp_path / "preflight.yml"
+    probe.write_text(yaml.safe_dump([play], sort_keys=False), encoding="utf-8")
+    result = subprocess.run([executable, "-i", "localhost,", "-c", "local", str(probe)],
+                            text=True, capture_output=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr

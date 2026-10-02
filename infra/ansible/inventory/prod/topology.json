@@ -88,43 +88,6 @@
                 "source_mode": "0755"
               }
             }
-          },
-          "openclaw": {
-            "ansible_host": "192.168.0.5",
-            "deployment_unit": "openclaw-host",
-            "vmid": 118,
-            "hostname": "openclaw",
-            "description": "Dedicated immutable OpenClaw Gateway and CTF runtime managed by Ansible",
-            "lxc_tags": [
-              "homelab",
-              "managed-by-ansible",
-              "role-openclaw"
-            ],
-            "template_file_id": "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst",
-            "os_type": "debian",
-            "prefix_length": 24,
-            "mac_address": "02:00:00:BA:EC:05",
-            "gateway": "192.168.0.1",
-            "root_disk_gb": 96,
-            "cores": 8,
-            "memory_mb": 12288,
-            "swap_mb": 3072,
-            "startup_order": 3,
-            "unprivileged": true,
-            "lxc_features": {
-              "nesting": true,
-              "keyctl": true
-            },
-            "lxc_devices": {},
-            "lxc_mounts": {
-              "mp0": {
-                "source": "/var/lib/homelab/openclaw-ctf",
-                "target": "/var/lib/openclaw/workspaces/ctf",
-                "source_owner": 101000,
-                "source_group": 101000,
-                "source_mode": "0700"
-              }
-            }
           }
         }
       },
@@ -136,11 +99,6 @@
       "svc_docker_apps": {
         "hosts": {
           "docker_apps": {}
-        }
-      },
-      "svc_openclaw": {
-        "hosts": {
-          "openclaw": {}
         }
       }
     }

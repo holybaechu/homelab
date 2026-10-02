@@ -8,15 +8,14 @@
       "customType": "regex",
       "description": "Update the annotated Tailscale GitHub Action version",
       "managerFilePatterns": [
-        "/^\\.github\\/workflows\\/(?:apps|infra|openclaw)\\.yml$/"
+        "/^\\.github\\/workflows\\/(?:apps|infra)\\.yml$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=\\^v\\(\\?<version>\\.\\*\\)\\$\\s+version: \\\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\\\""
+        "# renovate: datasource=custom.tailscale-linux depName=tailscale/tailscale versioning=semver\\s+version: \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ],
       "depNameTemplate": "tailscale/tailscale",
-      "datasourceTemplate": "github-releases",
-      "versioningTemplate": "semver",
-      "extractVersionTemplate": "^v(?<version>.*)$"
+      "datasourceTemplate": "custom.tailscale-linux",
+      "versioningTemplate": "semver"
     },
     {
       "customType": "regex",
@@ -49,31 +48,40 @@
     "proxmox-debian-13": {
       "defaultRegistryUrlTemplate": "https://download.proxmox.com/images/system/",
       "format": "html"
+    },
+    "tailscale-linux": {
+      "defaultRegistryUrlTemplate": "https://pkgs.tailscale.com/stable/?mode=json",
+      "format": "json",
+      "transformTemplates": [
+        "{\"releases\":[{\"version\":TarballsVersion}]}"
+      ]
     }
   },
   "packageRules": [
     {
-      "matchDatasources": ["custom.proxmox-debian-13"],
+      "matchDatasources": [
+        "custom.proxmox-debian-13"
+      ],
       "extractVersion": "^debian-13-standard_(?<version>.+)_amd64\\.tar\\.zst$"
     },
     {
       "description": "Order MeTube calendar-versioned Docker tags",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["ghcr.io/alexta69/metube"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/alexta69/metube"
+      ],
       "versioning": "regex:^(?<major>\\d{4})\\.(?<minor>\\d{2})\\.(?<patch>\\d{2})$"
     },
     {
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "matchCurrentVersion": "!/^0/",
       "automerge": true,
       "platformAutomerge": true
-    },
-    {
-      "description": "Require review for OpenClaw",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["ghcr.io/openclaw/openclaw"],
-      "automerge": false,
-      "platformAutomerge": false
     }
   ]
 }

@@ -2,15 +2,6 @@ homelab_lan_cidr: 192.168.0.0/24
 homelab_tailscale_cidr: 100.64.0.0/10
 homelab_timezone: Asia/Seoul
 
-openclaw_ctf_workspace_root: /var/lib/openclaw/workspaces/ctf
-# Gateway and CTF containers deliberately share this numeric identity so the
-# 0700 PVE bind mount stays writable without a world/group-writable directory.
-openclaw_ctf_uid: 1000
-openclaw_ctf_gid: 1000
-openclaw_ctf_docker_network: openclaw-ctf
-openclaw_ctf_docker_network_cidr: 172.30.0.0/24
-openclaw_ctf_docker_bridge: occtfbr0
-
 service_uid: 1000
 service_gid: 1000
 
