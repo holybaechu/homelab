@@ -31,7 +31,7 @@ def render_maintenance_value(value, enabled=None):
 
 @pytest.mark.parametrize(
     "role_name",
-    ("common_debian", "docker_engine", "tailscale_gateway"),
+    ("common_debian", "docker_apps_host", "tailscale_gateway"),
 )
 def test_package_reconciliation_is_stable_until_maintenance(role_name):
     tasks = load_yaml(ROLE_ROOT / role_name / "tasks" / "main.yml")
@@ -66,7 +66,7 @@ def test_package_reconciliation_is_stable_until_maintenance(role_name):
         assert render_maintenance_value(package["cache_valid_time"], True) == 3600
 
 
-@pytest.mark.parametrize("role_name", ("docker_engine", "tailscale_gateway"))
+@pytest.mark.parametrize("role_name", ("docker_apps_host", "tailscale_gateway"))
 def test_new_third_party_repository_refresh_does_not_enable_routine_upgrades(
     role_name,
 ):

@@ -1,5 +1,3 @@
-homelab_lan_cidr: 192.168.0.0/24
-homelab_tailscale_cidr: 100.64.0.0/10
 homelab_timezone: Asia/Seoul
 
 service_uid: 1000

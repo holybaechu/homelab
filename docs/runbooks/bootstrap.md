@@ -17,7 +17,7 @@ archive, then confirm durable storage prerequisites using
 Use Python 3.14 in a local environment and install:
 
 ```sh
-python -m pip install -r requirements-dev.txt -r requirements-deploy.txt
+python -m pip install -r requirements-deploy.txt
 export ANSIBLE_CONFIG=infra/ansible/ansible.cfg
 ```
 
@@ -66,10 +66,11 @@ ansible-playbook -i infra/ansible/inventory/prod/topology.json \
   infra/ansible/playbooks/reconcile.yml -e homelab_unit=apps-host
 ```
 
-These establish networking, OS/Docker policy, durable directories, isolation,
-and the stable release launcher. Application secrets and activation are owned
-by the runtime workflows. Rebuilding an existing host also requires restoring
-its durable data  from independent backups;
+Tailnet reconciliation establishes management networking. Apps-host runs one
+role for Docker/DNS policy, durable directories, the stable launcher and PVE
+certificate trust. Both share the Debian base. Application secrets and
+activation are owned by the runtime workflows. Rebuilding an existing host also requires restoring
+its durable data from independent backups;
 follow [recovery](recovery.md) before starting applications.
 
 ## Activate applications

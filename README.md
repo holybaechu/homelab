@@ -15,7 +15,8 @@ and the shared application host.
 Ansible owns both provisioning and host configuration. For this two-LXC
 homelab, adding Terraform would add state and another ownership handoff without
 replacing an existing tool. Topology remains the single host declaration;
-host-specific Docker policy lives in the matching inventory `group_vars`.
+the `docker_apps_host` role owns Docker, DNS, durable directories, launcher
+installation and upstream trust together.
 
 The shared release engine retains exact source and image identities, semantic
 smoke, automatic rollback and interrupted-operation recovery. Durable data and

@@ -36,7 +36,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: python -m pytest -q
-      - name: Render both Compose packages
+      - name: Render the application package
         run: ./scripts/ci/validate-compose.sh
       - name: Syntax-check every explicit infrastructure unit
         env:

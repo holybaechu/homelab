@@ -59,7 +59,7 @@ jobs:
             tests/repo/test_compose_release_engine.py \
             tests/repo/test_release_launcher.py \
             tests/repo/test_deploy_release_via_ssh.py
-          ./scripts/ci/validate-compose.sh apps
+          ./scripts/ci/validate-compose.sh
       - name: Build the exact-source release bundle
         if: inputs.operation != 'sync-secrets'
         run: |

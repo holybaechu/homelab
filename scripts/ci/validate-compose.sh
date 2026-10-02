@@ -7,11 +7,7 @@ if ! command -v docker >/dev/null 2>&1 \
   exit 1
 fi
 
-target="${1:-all}"
-case "$target" in
-  all|apps) ;;
-  *) echo "usage: $0 [all|apps]" >&2; exit 2 ;;
-esac
+[ "$#" -eq 0 ] || { echo "usage: $0" >&2; exit 2; }
 
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/homelab-compose-validate.XXXXXXXX")"
 cleanup() {
@@ -19,10 +15,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [ "$target" = all ] || [ "$target" = apps ]; then
-  apps="$temporary/apps"
-  cp -R apps/compose/homelab "$apps"
-  python3 - "$temporary/apps-secrets.json" <<'PY'
+apps="$temporary/apps"
+cp -R apps/compose/homelab "$apps"
+python3 - "$temporary/apps-secrets.json" <<'PY'
 from __future__ import annotations
 
 import base64
@@ -56,17 +51,16 @@ path = Path(sys.argv[1])
 path.write_text(json.dumps(payload), encoding="utf-8")
 path.chmod(0o600)
 PY
-  python3 "$apps/prepare_release.py" \
-    --secret-bundle "$temporary/apps-secrets.json" \
-    --release-root "$apps" \
-    --topology infra/ansible/inventory/prod/topology.json
-  (
-    cd "$apps"
-    docker compose \
-      --project-directory "$apps" \
-      -f compose.yml \
-      config --no-env-resolution --no-path-resolution >/dev/null
-  )
-fi
+python3 "$apps/prepare_release.py" \
+  --secret-bundle "$temporary/apps-secrets.json" \
+  --release-root "$apps" \
+  --topology infra/ansible/inventory/prod/topology.json
+(
+  cd "$apps"
+  docker compose \
+    --project-directory "$apps" \
+    -f compose.yml \
+    config --quiet
+)
 
-echo "$target Compose package validation passed"
+echo "apps Compose package validation passed"

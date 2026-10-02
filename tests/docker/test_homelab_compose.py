@@ -1,9 +1,4 @@
-import base64
-import json
 import re
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -13,7 +8,6 @@ from tests.helpers import REPO_ROOT
 
 
 PACKAGE = REPO_ROOT / "apps" / "compose" / "homelab"
-TOPOLOGY = REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "topology.json"
 
 
 def _labels(service: dict) -> dict[str, str]:
@@ -21,30 +15,6 @@ def _labels(service: dict) -> dict[str, str]:
     if isinstance(labels, list):
         return dict(item.split("=", 1) for item in labels if "=" in item)
     return labels
-
-
-def _valid_bundle() -> dict:
-    return {
-        "component": "apps",
-        "version": 1,
-        "cloudflare": {
-            "traefik_dns_api_token": "traefik-token",
-            "ddns_api_token": "ddns-token",
-        },
-        "adguard": {
-            "username": "admin",
-            "password_hash": "$2y$10$" + "." * 53,
-        },
-        "qbittorrent": {
-            "username": "operator",
-            "password_hash": "@ByteArray(%s:%s)"
-            % (
-                base64.b64encode(bytes(16)).decode(),
-                base64.b64encode(bytes(64)).decode(),
-            ),
-        },
-        "copyparty_users": [{"name": "operator", "password": "share-secret"}],
-    }
 
 
 @pytest.fixture
@@ -110,43 +80,3 @@ def test_adguard_can_persist_runtime_normalization_in_the_rebuilt_slot(model):
     mounts = model["services"]["adguard"]["volumes"]
     assert "./generated/adguard:/opt/adguardhome/conf:rw" in mounts
     assert not any("AdGuardHome.yaml" in mount for mount in mounts)
-
-
-def test_real_compose_render_accepts_one_prepared_package(tmp_path):
-    docker = shutil.which("docker")
-    if docker is None:
-        pytest.skip("Docker CLI is unavailable")
-
-    stage = tmp_path / "homelab"
-    shutil.copytree(PACKAGE, stage)
-    shutil.copy2(TOPOLOGY, stage / "topology.json")
-    bundle = tmp_path / "apps.json"
-    bundle.write_text(json.dumps(_valid_bundle()), encoding="utf-8")
-    if sys.platform != "win32":
-        bundle.chmod(0o600)
-
-    prepared = subprocess.run(
-        [
-            sys.executable,
-            str(stage / "prepare_release.py"),
-            "--secret-bundle",
-            str(bundle),
-            "--release-root",
-            str(stage),
-            "--topology",
-            str(stage / "topology.json"),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert prepared.returncode == 0, prepared.stderr
-
-    rendered = subprocess.run(
-        [docker, "compose", "--project-name", "homelab", "-f", "compose.yml", "config", "--quiet"],
-        cwd=stage,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert rendered.returncode == 0, rendered.stderr

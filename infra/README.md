@@ -5,8 +5,10 @@ routing and exit-node access; `docker_apps` runs the `homelab` Compose project.
 
 `ansible/inventory/prod/topology.json` owns host addresses, VMIDs, resources,
 startup order, devices, mounts, and unit selection. Ansible owns provisioning
-and guest configuration. The Docker policy lives beside the apps inventory
-host. Start new installations with [bootstrap](../docs/runbooks/bootstrap.md).
+and guest configuration. The `docker_apps_host` role owns the complete apps-host
+preparation: Docker and DNS policy, durable directories, the stable launcher,
+and PVE certificate trust. Start new installations with
+[bootstrap](../docs/runbooks/bootstrap.md).
 
 ## Targeted reconciliation
 

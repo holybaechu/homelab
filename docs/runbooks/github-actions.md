@@ -8,8 +8,8 @@ queue; validation is independent.
 
 `validate.yml` runs on pull requests, merge queues and manual requests. It
 installs `requirements-dev.txt` and `requirements-deploy.txt`, tests behavior
-and invariants, renders the apps package, and syntax-checks every infrastructure
-unit. It has read-only repository permissions and no production environment.
+and safety contracts, renders the apps package once, and syntax-checks every
+infrastructure unit. It has read-only repository permissions and no production environment.
 
 ## Apps
 

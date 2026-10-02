@@ -286,35 +286,9 @@
         - homelab_unit == 'tailnet'
         - tailscale_restart_scheduled | default(false)
 
-    - name: Install the stable release launcher
-      ansible.builtin.include_role:
-        name: release_launcher
-      when: homelab_unit == 'apps-host'
-
-    - name: Reconcile the selected Docker host runtime
-      ansible.builtin.include_role:
-        name: docker_engine
-      when: homelab_unit == 'apps-host'
-
-    - name: Reconcile the Docker application host primitives
+    - name: Prepare the Docker application host
       ansible.builtin.include_role:
         name: docker_apps_host
-      when: homelab_unit == 'apps-host'
-
-    - name: Read the PVE root CA for the application upstream trust store
-      ansible.builtin.slurp:
-        src: /etc/pve/pve-root-ca.pem
-      delegate_to: pve
-      register: apps_pve_root_ca
-      when: homelab_unit == 'apps-host'
-
-    - name: Install the PVE root CA on the application host
-      ansible.builtin.copy:
-        content: "{{ apps_pve_root_ca.content | b64decode }}"
-        dest: /etc/ssl/certs/homelab-pve-root-ca.pem
-        owner: root
-        group: root
-        mode: "0644"
       when: homelab_unit == 'apps-host'
 
     - name: Check whether targeted maintenance requires a reboot

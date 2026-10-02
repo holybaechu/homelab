@@ -50,7 +50,7 @@ def test_one_explicit_unit_selects_one_inventory_boundary() -> None:
     ]
     assert ("pve_lxc_access", APPLY_GATE) in included
     assert ("common_debian", "homelab_unit != 'pve'") in included
-    assert ("release_launcher", "homelab_unit == 'apps-host'") in included
+    assert ("docker_apps_host", "homelab_unit == 'apps-host'") in included
 
 
 def test_pve_access_reconciles_every_declared_lxc_idempotently() -> None:
