@@ -1,10 +1,44 @@
+import json
 import os
 from pathlib import Path
 import shutil
 
 import pytest
+import yaml
+from jinja2.nativetypes import NativeEnvironment
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_yaml(path: Path):
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def task_with_module(tasks, module, **arguments):
+    matches = [
+        task for task in tasks
+        if module in task
+        and all(task[module].get(key) == value for key, value in arguments.items())
+    ]
+    assert len(matches) == 1, (module, arguments)
+    return matches[0]
+
+
+def render_ansible(value, **variables):
+    environment = NativeEnvironment()
+    environment.filters["bool"] = bool
+    environment.filters["from_json"] = json.loads
+    return environment.from_string(str(value)).render(omit=None, **variables)
+
+
+def task_enabled(task, **variables):
+    conditions = task.get("when", [])
+    if not isinstance(conditions, list):
+        conditions = [conditions]
+    return all(
+        render_ansible("{{ " + str(condition) + " }}", **variables) is True
+        for condition in conditions
+    )
 
 
 def posix_shell() -> str:
