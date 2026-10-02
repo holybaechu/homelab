@@ -1,119 +1,68 @@
-# Homelab agent guide
+# Agent guidance
 
-This is a personal homelab repository and the public desired state for two
-production units: `tailnet` and `docker_apps`. Optimize for small,
-readable changes and straightforward maintenance by one person.
+This is a personal homelab repository for two production LXCs: `tailnet` and
+`docker_apps`. Optimize for simple configuration, readable scripts, and easy
+maintenance by one person.
 
 ## Keep changes small
 
-- Begin with `git status --short` and the diff around the target. Preserve
-  unrelated working-tree artifacts and compare validation failures with the
-  pre-change baseline.
-- Make the smallest change at the layer that owns the behavior. Keep unrelated
-  cleanup separate; prefer existing configuration options and direct code.
-- Keep one-off logic local. Add abstractions, dependencies, portability, or
-  fallback behavior only for a concrete requirement.
-- Reuse the existing reconciliation and release entrypoints. Add tooling or
-  automation only when requested or needed to solve a recurring problem.
+- Begin with `git status --short` and the diff around the target. Preserve unrelated working-tree changes and untracked files.
+- Make the smallest change that fulfills the request at the layer that owns the behavior. Keep unrelated cleanup separate.
+- Prefer existing configuration options and direct code. Keep one-off logic local; introduce abstractions or dependencies only when the current task needs them.
+- Build for the environments this repository actually supports. Add portability, fallback behavior, and configurability only for a concrete requirement.
+- Keep tooling lightweight. Reuse the existing reconciliation and release entrypoints; add automation or process only when requested or needed to solve a recurring problem.
 
-## Context map
+## Homelab boundaries
 
-Read the guides for each area touched by the change:
+- Derive hosts, addresses, VMIDs, resources, mounts, and unit selection from `infra/ansible/inventory/prod/topology.json`, the sole topology source.
+- Keep host provisioning and primitives in Ansible, and application configuration and activation in the immutable Compose package. Reconcile exactly one unit per invocation: `pve`, `tailnet`, or `apps-host`.
+- Keep service configuration, preparation, smoke behavior, and release inputs together under `apps/compose/homelab`.
+- Pin container images by readable tag and exact digest. Pin GitHub Actions by full commit SHA with the readable version comment used by Renovate.
+- Preserve the shared release engine and SSH wrapper, exact-commit descriptors, digest-bound images, inactive-slot activation, semantic smoke checks, and automatic rollback.
+- Keep secrets in private versioned component JSON bundles. Commit schema or placeholders only; keep secret values and hashes out of tracked files, descriptors, state, and logs.
+- Preserve durable mounts and volumes. Treat repository declarations and live destructive storage work as separate stages, following the owning runbook for live operations.
 
-- **Host topology or primitives:** read `infra/README.md`, then the selected
-  role and `infra/ansible/playbooks/reconcile.yml`. Reconciliation targets one
-  of `pve`, `tailnet`, `apps-host`; select exactly one unit
-  per invocation.
-- **Application service:** read `apps/compose/homelab/README.md` and
-  `docs/runbooks/compose-release.md`. The complete application release package
-  lives under `apps/compose/homelab`; keep service configuration, preparation,
-  smoke behavior, and release inputs co-located there.
-- **Deployment workflow:** read `docs/runbooks/github-actions.md` and
-  `docs/runbooks/compose-release.md` before editing `.github/workflows/**` or
-  `scripts/ci/**`. The apps lane uses one release engine and SSH wrapper; preserve its
-  transaction model.
-- **Secret schema:** read `secrets/README.md` and the component's adjacent
-  validator. Keep schemas beside consumers and commit placeholders or
-  structure only.
-- **Storage or disaster recovery:** read
-  `docs/runbooks/homelab-storage-resize.md` or `docs/runbooks/recovery.md`.
-  Repository declarations and live destructive storage work are separate
-  stages.
+## Read the owning guide
 
-## Repository invariants
+Read the relevant guides before changing these areas:
 
-- `infra/ansible/inventory/prod/topology.json` is the sole topology source for
-  hosts, addresses, VMIDs, resources, mounts, and unit selection. Derive these
-  values from it rather than adding independent overrides or copies.
-- Keep application deployment out of Ansible; Ansible owns host primitives,
-  while immutable Compose packages own runtime releases.
-- Pin container images by readable tag and exact digest. Pin GitHub Actions by
-  full commit SHA and retain the readable version comment used by Renovate.
-- Preserve exact-commit descriptors, digest-bound images, inactive-slot
-  activation, semantic smoke checks, and automatic rollback in release paths.
-- Keep secret values and secret hashes out of descriptors, state, logs, and
-  tracked files. Production receives one versioned JSON bundle per component.
-- Preserve durable mounts and volumes. Follow the owning runbook for live
-  storage changes, backups, and recovery.
+| Area | Starting points |
+| --- | --- |
+| Host topology or primitives | [Infrastructure](infra/README.md), then the selected role and [reconciliation playbook](infra/ansible/playbooks/reconcile.yml) |
+| Application services | [Application package](apps/compose/homelab/README.md) and [release operations](docs/runbooks/compose-release.md) |
+| `.github/workflows/**` or `scripts/ci/**` | [Workflow contracts](docs/runbooks/github-actions.md) and [release operations](docs/runbooks/compose-release.md) |
+| Secret schemas | [Secrets](secrets/README.md) and the component's owning validator |
+| Storage or disaster recovery | [Storage resize](docs/runbooks/homelab-storage-resize.md) or [recovery](docs/runbooks/recovery.md) |
 
 ## Documentation
 
-- Keep READMEs short: purpose, setup entrypoint, essential cautions, and links.
-  Put operating procedures and recovery steps in the relevant runbook.
-- Document each fact once in its owning guide. Update links when moving content
-  and update the operator runbook when the operating contract changes.
-- Write actionable instructions: short paragraphs, steps for procedures, and
-  tables for comparisons. Keep prerequisites and recovery instructions beside
-  the affected commands.
-- Keep plans, questionnaires, progress reports, and session notes outside the
-  repository. Retain current usage and maintenance guides.
+- Keep READMEs short: purpose, setup entry point, essential cautions, and links. Put operating procedures and recovery steps in the relevant runbook.
+- Write instructions people can act on. Use short paragraphs, steps for procedures, and tables for comparisons. Cut repetition, obvious explanations, and descriptions of unchanged behavior.
+- Document each fact once. Update its owning guide when the operating contract changes and check links when moving content. Keep prerequisites and recovery instructions with the affected commands.
+- Keep plans, questionnaires, progress reports, research reports, and session notes outside the repo. Retain current usage and maintenance guides.
 
 ## Validation
 
-Co-locate each behavior change with the nearest regression test under the
-matching `tests/` branch. Prefer representative behavior checks and reuse
-existing fixtures; isolate production interactions. Documentation-only changes
-need a diff review and a check of referenced paths, without a new behavior test.
+- Documentation-only edits need a diff review and a check of referenced paths; a new behavior test is unnecessary.
+- Co-locate behavior changes with regression tests under the matching `tests/` branch. Focus on costly failures: release activation and recovery, destructive PVE changes, credential handling, control-path availability, and durable-data isolation.
+- Prefer representative behavior checks over exhaustive combinations or assertions about implementation details. Reuse existing fixtures and keep production interactions mocked or isolated.
+- Run the narrowest affected tests while iterating, then the [local validation gates](README.md#validate-locally) used by [.github/workflows/validate.yml](.github/workflows/validate.yml): pytest, Compose rendering, and Ansible syntax checks for all three explicit units. Use the documented Linux or WSL prerequisites.
+- Compare failures with the pre-change baseline. Report each gate's exit status, or the exact missing prerequisite when it could not run.
+- Before completion, inspect `git diff --check` and `git diff --stat`, review new untracked files separately, and confirm unrelated working-tree state remains intact.
 
-Run the narrowest affected test while iterating, then run the same repository
-gates as CI from the root. Use a shell with Bash, Python and the dependencies in
-`requirements-dev.txt` and `requirements-deploy.txt`, Docker Compose, and Ansible
-available:
+Complete a behavior change when its regression test passes, available gates pass or an environmental or baseline failure is identified precisely, and documentation matches the resulting behavior.
 
-```sh
-python -m pytest -q
-./scripts/ci/validate-compose.sh
-export ANSIBLE_CONFIG=infra/ansible/ansible.cfg
-for unit in pve tailnet apps-host; do
-  ansible-playbook \
-    -i infra/ansible/inventory/prod/topology.json \
-    infra/ansible/playbooks/reconcile.yml \
-    --syntax-check \
-    -e "homelab_unit=$unit" \
-    -e "homelab_secret_bundle=/tmp/not-read-during-syntax-check.json"
-done
-```
+## Commit messages and PR titles
 
-Before completion, inspect `git diff --check` and `git diff --stat`, and review
-new untracked files separately because those commands omit them. Report each
-gate's exit status, or the exact missing prerequisite when it could not run.
-Completion means the affected behavior has a passing regression test, all
-available gates pass or an environmental/baseline failure is identified
-precisely, documentation matches behavior, and unrelated working-tree state
-remains intact.
+Use Conventional Commits: `<type>[optional scope][!]: <description>`.
 
-## Commits and pull requests
+- Use `feat` for new behavior, `fix` for corrections, and `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `style`, `chore`, or `revert` as appropriate.
+- Write a short, imperative description beginning with a lowercase word, without a trailing period. Add a scope only when it clarifies the affected area.
+- Mark breaking changes with `!` and explain the required migration in a `BREAKING CHANGE:` footer.
+- Example: `fix(apps): correct adguard release mount`.
 
-- Use Conventional Commits: `<type>[optional scope][!]: <description>`. Choose
-  `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `style`,
-  `chore`, or `revert` to match the change.
-- Write a short, imperative description beginning with a lowercase word,
-  without a trailing period. Add a scope only when it clarifies the affected
-  area. Example: `fix(apps): correct adguard release mount`.
-- Mark breaking changes with `!` and explain the required migration in a
-  `BREAKING CHANGE:` footer.
-- Use `codex/<short-kebab-case-description>` for new agent work branches unless
-  the user requests a different name.
-- Keep each PR focused on one coherent change. Its title follows the commit
-  format above; its body explains the problem, resulting behavior, validation
-  results, and any operator action.
+## Branches and PR bodies
+
+- Use `codex/<short-kebab-case-description>` for new agent work branches unless the user requests a different name.
+- Keep each PR focused on one coherent change. Its title follows the commit format above.
+- Explain the problem, resulting behavior, validation results, and any operator action in the PR body. Keep small-change descriptions short.
