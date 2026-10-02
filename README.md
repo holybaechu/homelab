@@ -1,48 +1,33 @@
 # Homelab
 
-Public desired state for two unprivileged Proxmox LXCs: management networking
-and the shared application host.
+Configuration and operating guides for two unprivileged Proxmox containers:
+`tailnet` provides management access, and `docker_apps` runs the applications.
 
-## Responsibilities
+Host addresses, VMIDs, resources, and mounts are defined in
+[topology.json](infra/ansible/inventory/prod/topology.json). Ansible prepares the
+hosts; Docker Compose deploys the applications.
 
-| Owner | Responsibility | Starting point |
-| --- | --- | --- |
-| Topology | Host identities, addresses, VMIDs, resources and mounts | [topology.json](infra/ansible/inventory/prod/topology.json) |
-| Ansible | Provision LXCs; configure storage, Debian, access, Docker and Docker policy | [Infrastructure](infra/README.md) |
-| Docker Compose | Run the complete application packages | [Apps](apps/compose/homelab/README.md) |
-| GitHub Actions | Build exact releases and call the shared release engine | [Deployment lanes](docs/runbooks/github-actions.md) |
+## Getting started
 
-Ansible owns both provisioning and host configuration. For this two-LXC
-homelab, adding Terraform would add state and another ownership handoff without
-replacing an existing tool. Topology remains the single host declaration;
-the `docker_apps_host` role owns Docker, DNS, durable directories, launcher
-installation and upstream trust together.
+Follow [setup](docs/setup.md) to set up or rebuild the homelab.
+Prepare credentials using the [secrets guide](secrets/README.md).
 
-The shared release engine retains exact source and image identities, semantic
-smoke, automatic rollback and interrupted-operation recovery. Durable data and
-current private credentials stay outside immutable releases.
+## Common tasks
 
-## Operate
-
-Start a new or rebuilt installation with [bootstrap](docs/runbooks/bootstrap.md).
-
-| Task | Entry point |
+| Task | Guide |
 | --- | --- |
-| Change applications | Edit their package; the owning runtime workflow deploys it |
-| Change host configuration | Edit inventory/roles; dispatch `infra.yml` for exactly one unit |
-| Inspect PVE drift | Dispatch `infra.yml` with `unit=pve`, `pve_mode=plan` or `audit` |
-| Rotate runtime credentials | Dispatch `apps.yml` with `operation=sync-secrets` |
-| Audit or roll back | Use the [host release commands](docs/runbooks/compose-release.md) |
-| Recover infrastructure or data | Follow [recovery](docs/runbooks/recovery.md) or [storage resize](docs/runbooks/homelab-storage-resize.md) |
+| Change a service or its configuration | [Application package](apps/compose/homelab/README.md) |
+| Change or check a host | [Infrastructure](infra/README.md) |
+| Deploy, rotate credentials, audit, or roll back apps | [Operations](docs/operations.md) |
+| Recover a host, restore data, or resize storage | [Recovery and storage](docs/recovery.md) |
 
-Secret schemas and preparation are in [secrets](secrets/README.md).
-Historical hosts use the separate [legacy cutover](docs/runbooks/legacy-cutover.md).
+Keep private bundles and backups outside this repository. Deployments retain
+application data, but they do not replace independent backups.
 
 ## Validate locally
 
-Use a Linux controller or WSL with Bash, Python 3.14, Docker Compose and SSH tools.
-In a local Python environment, install test dependencies from
-`requirements-dev.txt` and Ansible from `requirements-deploy.txt`:
+Run from the repository root on Linux or WSL with Bash, Python 3.14, Docker
+Compose, and SSH tools. Install dependencies in a local Python environment:
 
 ```sh
 python -m pip install -r requirements-dev.txt -r requirements-deploy.txt
@@ -57,7 +42,5 @@ for unit in pve tailnet apps-host; do
 done
 ```
 
-Compose rendering and Ansible syntax checks do not contact production. Tests
-protect release recovery, destructive PVE changes, credential handling and
-isolation; capacity changes are declared once in topology rather than repeated
-as test snapshots.
+These checks run locally and do not contact production. They match
+[validate.yml](.github/workflows/validate.yml).

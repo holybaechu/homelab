@@ -29,10 +29,10 @@ Read the relevant guides before changing these areas:
 | Area | Starting points |
 | --- | --- |
 | Host topology or primitives | [Infrastructure](infra/README.md), then the selected role and [reconciliation playbook](infra/ansible/playbooks/reconcile.yml) |
-| Application services | [Application package](apps/compose/homelab/README.md) and [release operations](docs/runbooks/compose-release.md) |
-| `.github/workflows/**` or `scripts/ci/**` | [Workflow contracts](docs/runbooks/github-actions.md) and [release operations](docs/runbooks/compose-release.md) |
+| Application services | [Application package](apps/compose/homelab/README.md) and [release operations](docs/operations.md) |
+| `.github/workflows/**` or `scripts/ci/**` | [Workflow contracts](docs/operations.md#run-a-workflow) and [release operations](docs/operations.md) |
 | Secret schemas | [Secrets](secrets/README.md) and the component's owning validator |
-| Storage or disaster recovery | [Storage resize](docs/runbooks/homelab-storage-resize.md) or [recovery](docs/runbooks/recovery.md) |
+| Storage or disaster recovery | [Storage resize](docs/recovery.md#storage-maintenance) or [recovery](docs/recovery.md) |
 
 ## Documentation
 

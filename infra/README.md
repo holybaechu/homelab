@@ -1,56 +1,49 @@
-# Two-host infrastructure
+# Infrastructure
 
-Production has two unprivileged Proxmox LXCs: `tailnet` provides management
-routing and exit-node access; `docker_apps` runs the `homelab` Compose project.
+Ansible provisions and configures the two production LXCs. Host identities,
+addresses, VMIDs, resources, devices, and mounts belong in
+[ansible/inventory/prod/topology.json](ansible/inventory/prod/topology.json).
 
-`ansible/inventory/prod/topology.json` owns host addresses, VMIDs, resources,
-startup order, devices, mounts, and unit selection. Ansible owns provisioning
-and guest configuration. The `docker_apps_host` role owns the complete apps-host
-preparation: Docker and DNS policy, durable directories, the stable launcher,
-and PVE certificate trust. Start new installations with
-[bootstrap](../docs/runbooks/bootstrap.md).
+Use [setup](../docs/setup.md) for controller setup, provisioning,
+SSH trust, and the first host configuration.
 
-## Targeted reconciliation
+## Choose one unit
 
-Run `ansible/playbooks/reconcile.yml` with exactly one of `pve`, `tailnet`, or
-`apps-host`. There is no implicit whole-homelab reconcile.
+Each run of [reconcile.yml](ansible/playbooks/reconcile.yml) requires exactly
+one unit.
 
-```sh
-export ANSIBLE_CONFIG=infra/ansible/ansible.cfg
-ansible-playbook -i infra/ansible/inventory/prod/topology.json \
-  infra/ansible/playbooks/reconcile.yml -e homelab_unit=apps-host
-```
+| Unit | What it manages | Component bundle |
+| --- | --- | --- |
+| `pve` | LXC definitions, shared storage, and guest SSH/Python access | PVE bundle for `apply` |
+| `tailnet` | Debian base and Tailscale routing | Tailnet bundle |
+| `apps-host` | Debian base, Docker, DNS policy, data directories, release launcher, and PVE certificate trust | None |
 
-PVE uses `pve_lxc_reconcile_mode=plan|audit|apply`. Plan reports the live diff;
-audit fails on drift; apply exports existing configuration before mutation.
-Missing LXCs may be created, safe changes and disk growth are idempotent, and
-destructive or replacement changes require exact VMID confirmation. The hosted
-lane also rejects changes that would restart or replace its tailnet control
-path. Run those changes from a trusted out-of-band controller.
+For routine hosted runs, select the unit in
+[infra.yml](../.github/workflows/infra.yml). Manual controller commands are in
+[setup](../docs/setup.md#configure-the-hosts). Application
+configuration and deployment belong to the
+[Compose package](../apps/compose/homelab/README.md).
 
-PVE plan/audit need no component secret. Apply receives only the PVE access
-bundle; tailnet receives only its own bundle. The apps host establishes OS,
-Docker, access, durable directories, the PVE trust certificate, and the stable
-release launcher. Application activation belongs to the runtime lane.
+## Check PVE changes
 
-## Runtime and durable state
+| Mode | Result |
+| --- | --- |
+| `plan` | Report differences and root-storage headroom |
+| `audit` | Report differences and fail if managed settings have drifted |
+| `apply` | Export existing LXC configuration and apply approved changes |
 
-`apps/compose/homelab` is the complete application release package. The apps
-workflow sends it and the versioned component bundle through the fixed-purpose
-SSH transport. The embedded engine owns exact image verification, health,
-semantic smoke, atomic state, rollback and interrupted-operation recovery.
+Plan and audit need no component bundle. Review the plan before
+[applying it](../docs/setup.md#provision-the-containers).
 
-Tailnet retains the TUN device. The apps LXC retains the declared
-`/var/lib/homelab` bind mount at `/srv/homelab`. Compose owns its named network
-and stable data volumes. Reconciliation and deployment retain durable data.
+Missing LXCs can be created and root disks can grow. Destructive changes require
+`pve_lxc_reconcile_allow_destructive_vmid`; replacement requires
+`pve_lxc_reconcile_allow_replacement_vmid`. Supply the exact VMID from the plan
+only after arranging backups and a maintenance window.
 
-See [release operations](../docs/runbooks/compose-release.md),
-[workflow contracts](../docs/runbooks/github-actions.md), and
-[recovery](../docs/runbooks/recovery.md).
+Reconciliation protects the tailnet connection used by the controller. A change
+that would restart or replace that connection must run from the
+[PVE console recovery path](../docs/recovery.md#when-tailnet-is-unavailable).
 
-PVE plan/audit/apply report root-storage headroom. An explicit disabled
-`host-managed=0` network option is normalized as unset; enabling host management
-still counts as connectivity-affecting drift and preserves the control-path guard.
-
-Audit compares decoded notes without Proxmox's terminal newline; meaningful
-description changes remain managed drift.
+Use the [recovery and storage guide](../docs/recovery.md#storage-maintenance) for live
+storage changes. Declaring a smaller capacity does not shrink an existing
+filesystem safely.
