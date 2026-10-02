@@ -47,3 +47,8 @@ space between the filesystem and final LV size before the LV is reduced.
 - `/var/lib/homelab` is mounted on the Proxmox host and exposed only to the
   application LXC at `/srv/homelab`.
 - qBittorrent and Copyparty can still write their declared durable paths.
+
+Apps root capacity is declared in topology. Keep sufficient space for images
+and rollback; a release refuses image pulls below 4 GiB free. PVE plan reports
+root-storage headroom. Prefer a reviewed online root-disk grow to deleting
+application data or lowering the release capacity gate.

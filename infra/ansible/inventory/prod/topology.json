@@ -68,7 +68,7 @@
             "prefix_length": 24,
             "mac_address": "02:00:00:BA:EC:03",
             "gateway": "192.168.0.1",
-            "root_disk_gb": 32,
+            "root_disk_gb": 48,
             "cores": 6,
             "memory_mb": 8192,
             "swap_mb": 2048,
