@@ -49,3 +49,6 @@ See [release operations](../docs/runbooks/compose-release.md),
 PVE plan/audit/apply report root-storage headroom. An explicit disabled
 `host-managed=0` network option is normalized as unset; enabling host management
 still counts as connectivity-affecting drift and preserves the control-path guard.
+
+Audit compares decoded notes without Proxmox's terminal newline; meaningful
+description changes remain managed drift.

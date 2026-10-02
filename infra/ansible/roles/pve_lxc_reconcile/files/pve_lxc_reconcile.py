@@ -23,6 +23,7 @@ import stat
 import subprocess
 import sys
 from typing import Any, Callable, Iterable, Mapping, Sequence
+from urllib.parse import unquote
 
 
 class ReconcileError(RuntimeError):
@@ -422,6 +423,9 @@ def plan_container(
         if field == "startup":
             before = parse_options(str(before))
             after = parse_options(str(after))
+        elif field == "description":
+            before = unquote(str(before)).rstrip("\r\n")
+            after = str(after).rstrip("\r\n")
         if before != after:
             changes.append(Change(field, before, after, _risk_for_field(field)))
 

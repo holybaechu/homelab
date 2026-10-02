@@ -531,3 +531,14 @@ def test_apps_disk_growth_keeps_both_hosts_running_and_preserves_the_control_pat
     assert not any(call[:2] in (["pct", "stop"], ["pct", "destroy"], ["pct", "start"])
                    for call in runner.calls)
     assert json.loads(capsys.readouterr().out)["changed"] is True
+
+
+def test_pct_description_encoding_and_terminal_newline_do_not_create_audit_drift(tmp_path, capsys):
+    _, hosts = topology_data()
+    description = hosts["tailnet"]["description"]
+    runner = FakeRunner({111: exact_config("tailnet", description=description + "%0A")})
+    assert invoke(tmp_path, runner, "audit") == 0
+    assert json.loads(capsys.readouterr().out)["changed"] is False
+    changed = FakeRunner({111: exact_config("tailnet", description="different notes%0A")})
+    assert invoke(tmp_path, changed, "audit") == 1
+    assert changed.calls == []
