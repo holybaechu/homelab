@@ -1,4 +1,5 @@
 from configparser import ConfigParser
+import json
 import os
 from pathlib import PurePosixPath
 import re
@@ -17,6 +18,29 @@ GUARD = "/run/homelab-tailscale-restart.in-progress"
 PROOF = "/run/homelab-tailscale-restart.completed"
 REQUEST = "/run/homelab-tailscale-restart.request"
 
+
+def test_gateway_control_server_change_requires_a_console_logout():
+    tasks = role_tasks()
+    guard = next(task for task in tasks if task["name"].startswith("Require a console migration"))
+    desired = "https://headscale.home.hchu.me"
+    expression = guard["ansible.builtin.assert"]["that"][0]
+    for current, logged_out, running, allowed in (
+        ("https://controlplane.tailscale.com", False, True, False),
+        ("https://controlplane.tailscale.com", True, False, True),
+        (desired, False, True, True),
+        ("", False, False, True),
+        ("", False, True, False),
+    ):
+        assert render_ansible("{{ " + expression + " }}", tailscale_login_server=desired,
+                              tailscale_current_preferences={"stdout": json.dumps({
+                                  "ControlURL": current, "LoggedOut": logged_out, "WantRunning": running,
+                              })}) is allowed
+    join = command_task(tasks, ["tailscale", "up"])
+    inventory = load_yaml(REPO_ROOT / "infra/ansible/inventory/prod/group_vars/svc_tailnet.yml")
+    argv = [render_ansible(value, **inventory, tailscale_auth_key="headscale-key",
+                          tailscale_login_server=desired)
+            for value in join["ansible.builtin.command"]["argv"]]
+    assert "--login-server=" + desired in argv
 
 def role_tasks():
     return load_yaml(ROLE / "tasks/main.yml")

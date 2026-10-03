@@ -78,12 +78,13 @@ jobs:
       - name: Connect to the management tailnet
         uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          audience: ${{ secrets.TS_AUDIENCE }}
+          authkey: ${{ secrets.HEADSCALE_CI_AUTH_KEY }}
+          oauth-client-id: ${{ secrets.HEADSCALE_CI_AUTH_KEY == '' && secrets.TS_OAUTH_CLIENT_ID || '' }}
+          audience: ${{ secrets.HEADSCALE_CI_AUTH_KEY == '' && secrets.TS_AUDIENCE || '' }}
           tags: tag:ci
           # renovate: datasource=custom.tailscale-linux depName=tailscale/tailscale versioning=semver
           version: "1.102.4"
-          args: --accept-dns=false
+          args: ${{ secrets.HEADSCALE_CI_AUTH_KEY != '' && '--login-server=https://headscale.home.hchu.me --accept-routes=true --accept-dns=false' || '--accept-dns=false' }}
           ping: ${{ env.HOMELAB_SELECTED_HOST }}
       - name: Configure pinned SSH trust
         env:
@@ -121,14 +122,19 @@ jobs:
         if: matrix.unit == 'tailnet'
         env:
           TAILNET_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          HEADSCALE_GATEWAY_AUTH_KEY: ${{ secrets.HEADSCALE_GATEWAY_AUTH_KEY }}
         run: |
-          test -n "$TAILNET_AUTH_KEY"
+          test -n "$HEADSCALE_GATEWAY_AUTH_KEY" || test -n "$TAILNET_AUTH_KEY"
           umask 077
           python - "$RUNNER_TEMP/tailnet.json" <<'PY'
           import json, os, sys
           from pathlib import Path
           payload = {"component": "tailnet", "version": 1,
                      "values": {"tailscale_auth_key": os.environ["TAILNET_AUTH_KEY"]}}
+          if os.environ["HEADSCALE_GATEWAY_AUTH_KEY"]:
+              payload = {"component": "tailnet", "version": 2,
+                         "values": {"auth_key": os.environ["HEADSCALE_GATEWAY_AUTH_KEY"],
+                                    "login_server": "https://headscale.home.hchu.me"}}
           destination = Path(sys.argv[1])
           destination.write_text(json.dumps(payload), encoding="utf-8")
           destination.chmod(0o600)

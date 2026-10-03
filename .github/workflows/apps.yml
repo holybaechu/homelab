@@ -83,12 +83,13 @@ jobs:
       - name: Connect to the management tailnet
         uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          audience: ${{ secrets.TS_AUDIENCE }}
+          authkey: ${{ secrets.HEADSCALE_CI_AUTH_KEY }}
+          oauth-client-id: ${{ secrets.HEADSCALE_CI_AUTH_KEY == '' && secrets.TS_OAUTH_CLIENT_ID || '' }}
+          audience: ${{ secrets.HEADSCALE_CI_AUTH_KEY == '' && secrets.TS_AUDIENCE || '' }}
           tags: tag:ci
           # renovate: datasource=custom.tailscale-linux depName=tailscale/tailscale versioning=semver
           version: "1.102.4"
-          args: --accept-dns=false
+          args: ${{ secrets.HEADSCALE_CI_AUTH_KEY != '' && '--login-server=https://headscale.home.hchu.me --accept-routes=true --accept-dns=false' || '--accept-dns=false' }}
           ping: ${{ env.DOCKER_APPS_HOST }}
       - name: Configure pinned SSH trust
         env:

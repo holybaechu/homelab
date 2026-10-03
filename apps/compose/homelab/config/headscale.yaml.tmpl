@@ -1,0 +1,41 @@
+server_url: https://headscale.home.hchu.me
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 127.0.0.1:9090
+grpc_listen_addr: 127.0.0.1:50443
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+derp:
+  server:
+    enabled: false
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+  auto_update_enabled: true
+  update_frequency: 3h
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true
+policy:
+  mode: file
+  path: /etc/headscale/policy.hujson
+dns:
+  magic_dns: true
+  base_domain: tailnet.hchu.me
+  override_local_dns: false
+  nameservers:
+    global: []
+    split:
+      home.hchu.me:
+        - @@APPS_HOST@@
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+log:
+  level: warn
+  format: json
+logtail:
+  enabled: false

@@ -15,7 +15,7 @@ one unit.
 | Unit | What it manages | Component bundle |
 | --- | --- | --- |
 | `pve` | LXC definitions, shared storage, and guest SSH/Python access | PVE bundle for `apply` |
-| `tailnet` | Debian base and Tailscale routing | Tailnet bundle |
+| `tailnet` | Debian base and Tailscale-client routing with hosted Tailscale or Headscale | Tailnet bundle |
 | `apps-host` | Debian base, Docker, DNS policy, data directories, release launcher, and PVE certificate trust | None |
 
 Each role completes its own preparation and recovery checks. PVE owns the shared

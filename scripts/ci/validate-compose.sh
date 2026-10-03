@@ -28,7 +28,14 @@ from pathlib import Path
 
 payload = {
     "component": "apps",
-    "version": 1,
+    "version": 2,
+    "authentik": {
+        "secret_key": "validation-key-" * 5,
+        "database_password": "validation-database-password",
+        "bootstrap_email": "admin@example.test",
+        "bootstrap_password": "validation-bootstrap-password",
+    },
+    "headscale": {"oidc_client_secret": "validation-oidc-secret"},
     "cloudflare": {
         "traefik_dns_api_token": "validation-traefik-token",
         "ddns_api_token": "validation-ddns-token",

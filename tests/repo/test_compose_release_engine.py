@@ -44,7 +44,14 @@ def write_json(path: Path, payload: object) -> None:
 def app_secrets(tag: str) -> dict[str, object]:
     return {
         "component": "apps",
-        "version": 1,
+        "version": 2,
+        "authentik": {
+            "secret_key": "k" * 64,
+            "database_password": f"database-{tag}",
+            "bootstrap_email": "admin@example.test",
+            "bootstrap_password": f"bootstrap-{tag}",
+        },
+        "headscale": {"oidc_client_secret": f"oidc-{tag}"},
         "cloudflare": {
             "traefik_dns_api_token": f"traefik-{tag}",
             "ddns_api_token": f"ddns-{tag}",
@@ -61,15 +68,82 @@ def app_secrets(tag: str) -> dict[str, object]:
     }
 
 
+def test_v2_upgrade_requires_a_compatible_rollback_engine_before_secret_install(tmp_path):
+    runner = FakeDockerRunner()
+    engine = engine_for(tmp_path, "apps", runner)
+    legacy, original = make_bundle_root(tmp_path, "1", legacy_secrets=True, compatible=False)
+    payload = app_secrets("old")
+    payload.pop("authentik")
+    payload.pop("headscale")
+    payload["version"] = 1
+    source = tmp_path / "apps.json"
+    write_json(source, payload)
+    engine.deploy_bundle(legacy, source)
+    candidate, _ = make_bundle_root(tmp_path, "2")
+    write_json(source, app_secrets("new"))
+    with pytest.raises(ReleaseError, match="v1 secret-compatibility release"):
+        engine.deploy_bundle(candidate, source)
+    assert state(engine)["current"] == original
+    assert json.loads((engine.secret_root / "apps.json").read_text()) == payload
+
+
+def test_failed_v2_activation_recovers_v1_with_current_credentials_and_can_audit(tmp_path):
+    runner = FakeDockerRunner()
+    engine = engine_for(tmp_path, "apps", runner)
+    legacy, original = make_bundle_root(tmp_path, "1", legacy_secrets=True)
+    payload = app_secrets("old")
+    payload.pop("authentik")
+    payload.pop("headscale")
+    payload["version"] = 1
+    source = tmp_path / "apps.json"
+    write_json(source, payload)
+    engine.deploy_bundle(legacy, source)
+    candidate, _ = make_bundle_root(tmp_path, "2")
+    current_secrets = app_secrets("new")
+    write_json(source, current_secrets)
+    runner.fail_next_up = True
+    with pytest.raises(ReleaseError):
+        engine.deploy_bundle(candidate, source)
+    assert state(engine)["current"] == original
+    assert json.loads((engine.secret_root / "apps.json").read_text()) == current_secrets
+    engine.audit()
+    active = engine.runtime_root / state(engine)["active_slot"]
+    assert "traefik-new" in (active / "stack/.secrets/traefik.env").read_text()
+    assert not list(engine.runtime_root.rglob(".apps-secret-*"))
+    assert b"bootstrap-new" not in public_bytes(engine)
+
+
 
 
 def make_bundle_root(
     tmp_path: Path, source_digit: str, *, apps_traefik_ref: str | None = None,
+    legacy_secrets: bool = False, compatible: bool = True,
 ) -> tuple[Path, dict]:
     root = tmp_path / f"bundle-apps-{source_digit}"
     stack = root / "payload" / "stack"
     shutil.copytree(REPO_ROOT / "apps/compose/homelab", stack)
     shutil.copy2(TOPOLOGY, stack / "topology.json")
+    if legacy_secrets:
+        metadata = json.loads((stack / "release.json").read_text())
+        metadata["secret_bundle"]["version"] = 1
+        if not compatible:
+            metadata["secret_bundle"].pop("compatible_versions")
+        (stack / "release.json").write_text(json.dumps(metadata))
+        (stack / "prepare_release.py").write_text('''import argparse, json
+from pathlib import Path
+p = argparse.ArgumentParser()
+for name in ("secret-bundle", "release-root", "topology"):
+    p.add_argument("--" + name, required=True)
+a = p.parse_args()
+bundle = json.loads(Path(a.secret_bundle).read_text())
+assert set(bundle) == {"component", "version", "cloudflare", "adguard", "qbittorrent", "copyparty_users"}
+assert bundle["version"] == 1
+root = Path(a.release_root) / ".secrets"
+root.mkdir(mode=0o700, exist_ok=True)
+path = root / "traefik.env"
+path.write_text("CF_DNS_API_TOKEN=" + bundle["cloudflare"]["traefik_dns_api_token"] + "\\n")
+path.chmod(0o600)
+''')
     if apps_traefik_ref is not None:
         path = stack / "compose.yml"
         text = path.read_text(encoding="utf-8")

@@ -60,3 +60,25 @@ def test_adguard_static_policy_is_package_owned_and_plain_dns_only():
     assert template["filtering"]["rewrites"] == [
         {"domain": "*.home.hchu.me", "answer": "192.0.2.10", "enabled": True}
     ]
+
+
+def test_identity_protects_metube_without_intercepting_vpn_or_login_protocols():
+    model = yaml.safe_load(read("compose.yml"))
+    services = model["services"]
+    labels = lambda name: dict(item.split("=", 1) for item in services[name].get("labels", []))
+    metube = labels("metube")
+    assert metube["traefik.http.routers.metube.middlewares"] == "authentik@file,secure-headers@file"
+    authentik = labels("authentik-server")
+    assert "PathPrefix(`/outpost.goauthentik.io/`)" in authentik["traefik.http.routers.metube-auth.rule"]
+    assert "authentik@file" not in authentik["traefik.http.routers.metube-auth.middlewares"]
+    assert not any("authentik@file" in value for value in labels("headscale").values())
+    assert "traefik.http.routers.authentik.middlewares" in authentik
+    assert "authentik@file" not in authentik["traefik.http.routers.authentik.middlewares"]
+    for router in ("authentik", "metube-auth"):
+        assert authentik[f"traefik.http.routers.{router}.observability.accesslogs"] == "false"
+    assert labels("headscale")["traefik.http.routers.headscale.observability.accesslogs"] == "false"
+    for name in ("metube", "authentik-server", "authentik-worker", "authentik-db", "headscale"):
+        assert "ports" not in services[name]
+    assert not any("docker.sock" in mount for mount in services["authentik-worker"]["volumes"])
+    for name in ("authentik-server", "authentik-worker", "authentik-db"):
+        assert all(item["format"] == "raw" for item in services[name]["env_file"])

@@ -152,7 +152,7 @@ services:
       - traefik.docker.network=homelab_proxy
       - traefik.http.routers.metube.rule=Host(`metube.home.hchu.me`)
       - traefik.http.routers.metube.entrypoints=websecure
-      - traefik.http.routers.metube.middlewares=private-only@file,secure-headers@file
+      - traefik.http.routers.metube.middlewares=authentik@file,secure-headers@file
       - traefik.http.services.metube.loadbalancer.server.port=8081
       - homelab.smoke.url=https://metube.home.hchu.me/
     healthcheck:
@@ -161,6 +161,141 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  authentik-db:
+    image: postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    restart: unless-stopped
+    env_file:
+      - path: ./.secrets/authentik-db.env
+        format: raw
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+    volumes:
+      - authentik_db:/var/lib/postgresql/data
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "authentik", "-d", "authentik"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.8.3@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    restart: unless-stopped
+    command: server
+    extra_hosts:
+      - auth.home.hchu.me:host-gateway
+    shm_size: 512mb
+    env_file:
+      - path: ./.secrets/authentik.env
+        format: raw
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    volumes:
+      - authentik_data:/data
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.authentik.rule=Host(`auth.home.hchu.me`)
+      - traefik.http.routers.authentik.entrypoints=websecure
+      - traefik.http.routers.authentik.middlewares=secure-headers@file
+      - traefik.http.routers.authentik.service=authentik
+      - traefik.http.routers.authentik.observability.accesslogs=false
+      - traefik.http.routers.metube-auth.rule=Host(`metube.home.hchu.me`) && PathPrefix(`/outpost.goauthentik.io/`)
+      - traefik.http.routers.metube-auth.entrypoints=websecure
+      - traefik.http.routers.metube-auth.priority=100
+      - traefik.http.routers.metube-auth.middlewares=secure-headers@file
+      - traefik.http.routers.metube-auth.service=authentik
+      - traefik.http.routers.metube-auth.observability.accesslogs=false
+      - traefik.http.services.authentik.loadbalancer.server.port=9000
+      - homelab.smoke.url=https://auth.home.hchu.me/-/health/ready/
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.8.3@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    restart: unless-stopped
+    command: worker
+    shm_size: 512mb
+    env_file:
+      - path: ./.secrets/authentik.env
+        format: raw
+      - path: ./.secrets/authentik-bootstrap.env
+        format: raw
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    volumes:
+      - authentik_data:/data
+      - ./config/authentik-blueprint.yaml:/blueprints/homelab.yaml:ro
+    networks:
+      - proxy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          ak healthcheck && python -c "import json, urllib.request;
+          r = urllib.request.Request('http://authentik-server:9000/application/o/headscale/.well-known/openid-configuration',
+          headers={'Host': 'auth.home.hchu.me', 'X-Forwarded-Proto': 'https'});
+          assert json.load(urllib.request.urlopen(r, timeout=3))['issuer'] == 'https://auth.home.hchu.me/application/o/headscale/'"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+  headscale:
+    image: headscale/headscale:0.29.4@sha256:8833f828b414c0907b7e5c71da76473216fe17cce0818a166b536ec552c0903f
+    restart: unless-stopped
+    command: ["serve", "--config", "/etc/headscale/config.yaml"]
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+      authentik-worker:
+        condition: service_healthy
+      traefik:
+        condition: service_healthy
+    extra_hosts:
+      - auth.home.hchu.me:host-gateway
+    volumes:
+      - ./generated/headscale/config.yaml:/etc/headscale/config.yaml:ro
+      - ./generated/headscale/policy.hujson:/etc/headscale/policy.hujson:ro
+      - headscale_data:/var/lib/headscale
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=homelab_proxy
+      - traefik.http.routers.headscale.rule=Host(`headscale.home.hchu.me`)
+      - traefik.http.routers.headscale.entrypoints=websecure
+      - traefik.http.routers.headscale.observability.accesslogs=false
+      - traefik.http.services.headscale.loadbalancer.server.port=8080
+      - homelab.smoke.url=https://headscale.home.hchu.me/health
+    healthcheck:
+      test: ["CMD", "headscale", "health", "--config", "/etc/headscale/config.yaml"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
 
 networks:
   proxy:
@@ -171,3 +306,9 @@ volumes:
     name: platform_traefik_data
   adguard_work:
     name: platform_adguard_work
+  authentik_db:
+    name: platform_authentik_db
+  authentik_data:
+    name: platform_authentik_data
+  headscale_data:
+    name: platform_headscale_data

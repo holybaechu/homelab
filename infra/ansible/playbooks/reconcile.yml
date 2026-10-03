@@ -48,7 +48,9 @@
         that:
           - homelab_secret_bundle is defined
           - homelab_loaded_secret_bundle.version | type_debug == 'int'
-          - homelab_loaded_secret_bundle.version == 1
+          - >-
+            homelab_loaded_secret_bundle.version == 1
+            or (homelab_unit == 'tailnet' and homelab_loaded_secret_bundle.version == 2)
           - homelab_loaded_secret_bundle.component == homelab_unit
           - homelab_loaded_secret_bundle['values'] is mapping
           - >-
@@ -56,7 +58,8 @@
             == ['component', 'values', 'version']
         fail_msg: >-
           The selected unit requires a controller-side JSON bundle with
-          version=1, its exact component name, and a values object.
+          its exact component name and a values object. PVE uses version=1;
+          tailnet uses version=1 for hosted Tailscale or version=2 for Headscale.
       when: >-
         homelab_unit == 'tailnet'
         or (homelab_unit == 'pve'
@@ -105,7 +108,22 @@
         fail_msg: >-
           The tailnet bundle must contain only one normalized, single-line
           tskey-auth-* authentication key.
-      when: homelab_unit == 'tailnet'
+      when: homelab_unit == 'tailnet' and homelab_loaded_secret_bundle.version == 1
+      no_log: true
+
+    - name: Require the exact Headscale gateway component secret fields
+      ansible.builtin.assert:
+        that:
+          - >-
+            homelab_loaded_secret_bundle['values'].keys() | list | sort
+            == ['auth_key', 'login_server']
+          - homelab_loaded_secret_bundle['values'].auth_key is string
+          - >-
+            homelab_loaded_secret_bundle['values'].auth_key
+            is match('^[A-Za-z0-9._-]{16,256}\\Z')
+          - homelab_loaded_secret_bundle['values'].login_server == 'https://headscale.home.hchu.me'
+        fail_msg: The Headscale gateway bundle requires a single-line auth key and its HTTPS login server.
+      when: homelab_unit == 'tailnet' and homelab_loaded_secret_bundle.version == 2
       no_log: true
 
     - name: Bind PVE access public keys from the component bundle
@@ -119,7 +137,14 @@
 
     - name: Bind the Tailscale auth key from the component bundle
       ansible.builtin.set_fact:
-        tailscale_auth_key: "{{ homelab_loaded_secret_bundle['values'].tailscale_auth_key }}"
+        tailscale_auth_key: >-
+          {{ homelab_loaded_secret_bundle['values'].tailscale_auth_key
+             if homelab_loaded_secret_bundle.version == 1
+             else homelab_loaded_secret_bundle['values'].auth_key }}
+        tailscale_login_server: >-
+          {{ 'https://controlplane.tailscale.com'
+             if homelab_loaded_secret_bundle.version == 1
+             else homelab_loaded_secret_bundle['values'].login_server }}
       when: homelab_unit == 'tailnet'
       no_log: true
 

@@ -56,6 +56,20 @@ esac
         r'''
 case "$*" in
   *api.ipify.org*) printf '203.0.113.9\n' ;;
+  *metube.home.hchu.me*)
+    if [ "${FAKE_AUTH_FAILURE:-}" = bypass ]; then
+      printf '200 '
+    else
+      printf '302 https://auth.home.hchu.me/application/o/authorize/'
+    fi
+    ;;
+  *openid-configuration*)
+    if [ "${FAKE_AUTH_FAILURE:-}" = discovery ]; then
+      printf '{"issuer":"https://wrong.example/"}'
+    else
+      printf '{"issuer":"https://auth.home.hchu.me/application/o/headscale/","jwks_uri":"https://auth.home.hchu.me/application/o/headscale/jwks/"}'
+    fi
+    ;;
   *one.home.example*|*two.home.example*)
     [ "${FAKE_INGRESS_FAILURE:-0}" = 0 ] || exit 22
     ;;
@@ -69,6 +83,8 @@ esac
         r'''
 case "$*" in
   *"config --format json"*) cat "$FAKE_COMPOSE_MODEL" ;;
+  *"exec -T authentik-worker ak apply_blueprint"*) [ "${FAKE_AUTH_FAILURE:-}" != blueprint ] ;;
+  *"exec -T headscale headscale health"*) [ "${FAKE_AUTH_FAILURE:-}" != headscale ] ;;
   *"exec -T qbittorrent sh -c"*"api.ipify.org"*) printf '203.0.113.9\n' ;;
   *"exec -T qbittorrent sh -c"*"app/preferences"*) printf '{"listen_port":35435}\n' ;;
   *"ps -q qbittorrent"*) printf 'container-id\n' ;;
@@ -155,6 +171,21 @@ def test_apps_smoke_fails_when_a_declared_ingress_is_unreachable(tmp_path: Path)
 
     assert result.returncode == 1
     assert "shared ingress route failed for one.home.example" in result.stderr
+
+
+@pytest.mark.parametrize("failure,message", (
+    ("blueprint", "identity blueprint application failed"),
+    ("bypass", "MeTube did not require an Authentik login"),
+    ("discovery", "Headscale identity provider discovery is invalid"),
+    ("headscale", "Headscale control server is unhealthy"),
+))
+def test_apps_smoke_rejects_broken_identity_or_unauthenticated_metube(tmp_path, failure, message):
+    stage = app_stage(tmp_path)
+    env = fake_app_environment(tmp_path)
+    env["FAKE_AUTH_FAILURE"] = failure
+    result = run_app_smoke(stage, env)
+    assert result.returncode == 1
+    assert message in result.stderr
 
 
 @pytest.mark.parametrize("failure,message", (

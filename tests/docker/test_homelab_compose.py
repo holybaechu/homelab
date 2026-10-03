@@ -55,7 +55,7 @@ def test_compose_is_one_closed_runtime_boundary(model):
 def test_secret_inputs_and_smoke_endpoints_are_package_local(model):
     services = model["services"]
     env_files = [
-        Path(path)
+        Path(path["path"] if isinstance(path, dict) else path)
         for service in services.values()
         for path in service.get("env_file", [])
     ]

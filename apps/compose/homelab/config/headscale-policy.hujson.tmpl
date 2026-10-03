@@ -1,0 +1,15 @@
+{
+  "groups": {"group:operators": ["akadmin@"]},
+  "tagOwners": {
+    "tag:gateway": ["group:operators"],
+    "tag:ci": ["group:operators"]
+  },
+  "grants": [
+    {"src": ["autogroup:member"], "dst": ["*"], "ip": ["*"]},
+    {"src": ["tag:ci"], "dst": ["@@LAN_SUBNET@@"], "ip": ["tcp:22"]}
+  ],
+  "autoApprovers": {
+    "routes": {"@@LAN_SUBNET@@": ["tag:gateway"]},
+    "exitNode": ["tag:gateway"]
+  }
+}
