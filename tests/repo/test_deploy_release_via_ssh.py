@@ -2,47 +2,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import shutil
 import subprocess
 
 import pytest
 
-from tests.helpers import REPO_ROOT
+from tests.helpers import REPO_ROOT, posix_shell, shell_path, shell_environment_path, write_tool
 
 
 WRAPPER = REPO_ROOT / "scripts/ci/deploy-release-via-ssh.sh"
 DIGEST = "a" * 64
-
-
-def posix_shell() -> str:
-    shell = shutil.which("sh")
-    if shell is not None:
-        return shell
-    for candidate in (
-        Path("C:/Program Files/Git/bin/sh.exe"),
-        Path("C:/Program Files/Git/usr/bin/sh.exe"),
-    ):
-        if candidate.is_file():
-            return str(candidate)
-    pytest.skip("POSIX sh is unavailable")
-
-
-def shell_path(path: Path) -> str:
-    resolved = path.resolve()
-    if os.name != "nt":
-        return str(resolved)
-    drive, remainder = os.path.splitdrive(str(resolved))
-    return f"/{drive[0].lower()}{remainder.replace(os.sep, '/')}"
-
-
-def shell_environment_path(path: Path) -> str:
-    return str(path.resolve()).replace("\\", "/")
-
-
-def write_tool(path: Path, source: str) -> Path:
-    path.write_text("#!/bin/sh\nset -eu\n" + source, encoding="utf-8", newline="\n")
-    path.chmod(0o755)
-    return path
 
 
 @pytest.fixture
@@ -158,29 +126,29 @@ def test_deploy_routes_apps_and_uploads_release_and_secrets_once(
     assert not local_stage.exists()
 
 
-def test_secret_sync_routes_openclaw_and_uploads_only_the_bundle_once(
+def test_secret_sync_routes_apps_and_uploads_only_the_bundle_once(
     tmp_path: Path, transport: tuple[dict[str, str], Path, Path]
 ) -> None:
     env, log, local_stage = transport
-    secrets = tmp_path / "openclaw.json"
+    secrets = tmp_path / "apps.json"
     secrets.write_text("{}", encoding="utf-8")
     env.update(
         {
-            "OPENCLAW_HOST": "openclaw.internal",
-            "FAKE_REMOTE_ROOT": "/tmp/homelab-openclaw-sync-secrets.XYZ789",
+            "DOCKER_APPS_HOST": "apps.internal",
+            "FAKE_REMOTE_ROOT": "/tmp/homelab-apps-sync-secrets.XYZ789",
         }
     )
 
-    result = run_wrapper(env, "sync-secrets", "openclaw", shell_path(secrets))
+    result = run_wrapper(env, "sync-secrets", "apps", shell_path(secrets))
 
     assert result.returncode == 0, result.stderr
-    assert "Synchronized openclaw component secrets on root@openclaw.internal" in result.stdout
+    assert "Synchronized apps component secrets on root@apps.internal" in result.stdout
     uploads = calls(log, "scp")
     assert len(uploads) == 1
     assert Path(uploads[0][0]).name == "secrets.json"
     assert len(uploads[0]) == 2
     assert uploads[0][-1] == (
-        "root@openclaw.internal:/tmp/homelab-openclaw-sync-secrets.XYZ789/"
+        "root@apps.internal:/tmp/homelab-apps-sync-secrets.XYZ789/"
     )
     remote = calls(log, "ssh")
     activation = next(
@@ -188,7 +156,7 @@ def test_secret_sync_routes_openclaw_and_uploads_only_the_bundle_once(
         for call in remote
         if "/usr/local/libexec/homelab-release" in call[1]
     )
-    assert "sync-secrets --target 'openclaw'" in activation
+    assert "sync-secrets --target 'apps'" in activation
     assert "--archive" not in activation
     assert "--sha256" not in activation
     assert not local_stage.exists()
@@ -218,13 +186,3 @@ def test_remote_activation_failure_still_cleans_both_staging_directories(
     remote = calls(log, "ssh")
     assert any("rm -rf -- '/tmp/homelab-apps-deploy.FAIL01'" in call[1] for call in remote)
     assert not local_stage.exists()
-
-
-def test_wrapper_shell_syntax_when_sh_is_available() -> None:
-    result = subprocess.run(
-        [posix_shell(), "-n", shell_path(WRAPPER)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr

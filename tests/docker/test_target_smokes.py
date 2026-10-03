@@ -1,55 +1,20 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-import threading
-from typing import Iterator
 
 import pytest
 import yaml
 
-from tests.helpers import REPO_ROOT
+from tests.helpers import REPO_ROOT, posix_shell, shell_path, shell_environment_path, write_tool
 
 
 APPS_PACKAGE = REPO_ROOT / "apps/compose/homelab"
 TOPOLOGY = REPO_ROOT / "infra/ansible/inventory/prod/topology.json"
-OPENCLAW_SMOKE = REPO_ROOT / "infra/openclaw/runtime/smoke.sh"
-
-
-def posix_shell() -> str:
-    shell = shutil.which("sh")
-    if shell is not None:
-        return shell
-    for candidate in (
-        Path("C:/Program Files/Git/bin/sh.exe"),
-        Path("C:/Program Files/Git/usr/bin/sh.exe"),
-    ):
-        if candidate.is_file():
-            return str(candidate)
-    pytest.skip("POSIX sh is unavailable")
-
-
-def shell_path(path: Path) -> str:
-    resolved = path.resolve()
-    if os.name != "nt":
-        return str(resolved)
-    drive, remainder = os.path.splitdrive(str(resolved))
-    return f"/{drive[0].lower()}{remainder.replace(os.sep, '/')}"
-
-
-def shell_environment_path(path: Path) -> str:
-    return str(path.resolve()).replace("\\", "/")
-
-
-def write_tool(path: Path, source: str) -> None:
-    path.write_text("#!/bin/sh\nset -eu\n" + source, encoding="utf-8", newline="\n")
-    path.chmod(0o755)
 
 
 def fake_app_environment(tmp_path: Path, *, ingress_failure: bool = False) -> dict[str, str]:
@@ -110,10 +75,17 @@ case "$*" in
   *"port container-id 35435/tcp"*|*"port container-id 35435/udp"*)
     printf '0.0.0.0:35435\n'
     ;;
-  *"exec -T qbittorrent test -f /vuetorrent/public/index.html"*) exit 0 ;;
-  *"Connection\\Interface=tun0"*) exit 1 ;;
-  *"exec -T qbittorrent grep -Fx --"*) exit 0 ;;
+  *"exec -T qbittorrent test -f /vuetorrent/public/index.html"*)
+    [ "${FAKE_VUETORRENT_FAILURE:-}" != assets ] ;;
+  *"Connection\\Interface=tun0"*)
+    [ "${FAKE_VUETORRENT_FAILURE:-}" = tun0 ] ;;
+  *"exec -T qbittorrent grep -Fx --"*)
+    [ "${FAKE_VUETORRENT_FAILURE:-}" != config ] ;;
   *"exec -T qbittorrent printenv DOCKER_MODS"*)
+    if [ "${FAKE_VUETORRENT_FAILURE:-}" = environment ]; then
+      printf 'container-secret-must-stay-private\n' >&2
+      exit 77
+    fi
     printf '%s\n' "$FAKE_DOCKER_MOD_REF"
     ;;
   *) printf 'unexpected fake docker command: %s\n' "$*" >&2; exit 97 ;;
@@ -175,7 +147,6 @@ def test_apps_smoke_executes_every_semantic_probe(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "homelab smoke passed" in result.stdout
-    assert "effective DOCKER_MODS=" in result.stdout
 
 
 def test_apps_smoke_fails_when_a_declared_ingress_is_unreachable(tmp_path: Path) -> None:
@@ -186,130 +157,24 @@ def test_apps_smoke_fails_when_a_declared_ingress_is_unreachable(tmp_path: Path)
     assert "shared ingress route failed for one.home.example" in result.stderr
 
 
-@contextmanager
-def openclaw_gateway(
-    token: str,
-    *,
-    accept_any_control_token: bool = False,
-) -> Iterator[list[tuple[str, str | None]]]:
-    requests: list[tuple[str, str | None]] = []
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - stdlib callback name
-            authorization = self.headers.get("Authorization")
-            requests.append((self.path, authorization))
-            if self.path == "/readyz":
-                status = 204
-            elif self.path == "/control-ui-config.json" and (
-                accept_any_control_token or authorization == f"Bearer {token}"
-            ):
-                status = 200
-            else:
-                status = 401
-            self.send_response(status)
-            self.end_headers()
-
-        def log_message(self, _format: str, *_args: object) -> None:
-            return
-
-    try:
-        server = ThreadingHTTPServer(("127.0.0.1", 18789), Handler)
-    except OSError as error:
-        pytest.skip(f"OpenClaw smoke port is unavailable: {error}")
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield requests
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-
-
-@pytest.mark.skipif(os.name == "nt", reason="production secret modes require POSIX")
-def test_openclaw_smoke_checks_readiness_and_authenticated_control_surface(
-    tmp_path: Path,
+@pytest.mark.parametrize("failure,message", (
+    ("assets", "VueTorrent assets are unavailable"),
+    ("config", "qBittorrent VueTorrent configuration is incorrect"),
+    ("tun0", "qBittorrent is unexpectedly bound to tun0"),
+    ("environment", "VueTorrent mod environment is unavailable"),
+    ("unpinned", "VueTorrent mod must use an official version and exact digest"),
+))
+def test_apps_smoke_rejects_a_broken_vuetorrent_without_printing_container_values(
+    tmp_path: Path, failure: str, message: str
 ) -> None:
-    token = "a" * 64
-    secret_root = tmp_path / "secrets"
-    secret_root.mkdir(mode=0o700)
-    token_path = secret_root / "gateway_token"
-    token_path.write_text(token + "\n", encoding="utf-8")
-    token_path.chmod(0o600)
-    env = os.environ.copy()
-    env["OPENCLAW_SECRET_ROOT"] = str(secret_root)
+    stage = app_stage(tmp_path)
+    env = fake_app_environment(tmp_path)
+    env["FAKE_VUETORRENT_FAILURE"] = failure
+    if failure == "unpinned":
+        env["FAKE_DOCKER_MOD_REF"] = "container-secret-must-stay-private"
 
-    with openclaw_gateway(token) as requests:
-        result = subprocess.run(
-            [posix_shell(), str(OPENCLAW_SMOKE)],
-            cwd=OPENCLAW_SMOKE.parent,
-            env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+    result = run_app_smoke(stage, env)
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert requests == [
-        ("/readyz", None),
-        ("/control-ui-config.json", None),
-        ("/control-ui-config.json", f"Bearer {'0' * 64}"),
-        ("/control-ui-config.json", f"Bearer {token}"),
-    ]
-    assert "authenticated smoke passed" in result.stdout
-
-
-@pytest.mark.skipif(os.name == "nt", reason="production secret modes require POSIX")
-def test_openclaw_smoke_rejects_a_control_surface_without_enforced_authentication(
-    tmp_path: Path,
-) -> None:
-    token = "a" * 64
-    secret_root = tmp_path / "secrets"
-    secret_root.mkdir(mode=0o700)
-    token_path = secret_root / "gateway_token"
-    token_path.write_text(token + "\n", encoding="utf-8")
-    token_path.chmod(0o600)
-    env = os.environ.copy()
-    env["OPENCLAW_SECRET_ROOT"] = str(secret_root)
-
-    with openclaw_gateway(token, accept_any_control_token=True) as requests:
-        result = subprocess.run(
-            [posix_shell(), str(OPENCLAW_SMOKE)],
-            cwd=OPENCLAW_SMOKE.parent,
-            env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-
-    assert result.returncode != 0
-    assert requests == [
-        ("/readyz", None),
-        ("/control-ui-config.json", None),
-    ]
-    assert "expected 401 or 403" in result.stderr
-
-
-@pytest.mark.skipif(os.name == "nt", reason="production secret modes require POSIX")
-def test_openclaw_smoke_rejects_an_invalid_gateway_token_before_network_access(
-    tmp_path: Path,
-) -> None:
-    secret_root = tmp_path / "secrets"
-    secret_root.mkdir(mode=0o700)
-    token_path = secret_root / "gateway_token"
-    token_path.write_text("not-a-token\n", encoding="utf-8")
-    token_path.chmod(0o600)
-    env = os.environ.copy()
-    env["OPENCLAW_SECRET_ROOT"] = str(secret_root)
-
-    result = subprocess.run(
-        [posix_shell(), str(OPENCLAW_SMOKE)],
-        cwd=OPENCLAW_SMOKE.parent,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode != 0
-    assert "Gateway token is not exact lowercase 64-hex" in result.stderr
+    assert result.returncode == 1
+    assert message in result.stderr
+    assert "container-secret-must-stay-private" not in result.stdout + result.stderr

@@ -1,4 +1,4 @@
-from tests.helpers import REPO_ROOT
+from tests.helpers import REPO_ROOT, load_yaml, render_ansible, task_with_module
 
 
 HARDENING_LINES = (
@@ -10,13 +10,18 @@ HARDENING_LINES = (
 
 
 def test_common_debian_hardens_sshd_without_disabling_root_key_login():
-    tasks = (REPO_ROOT / "infra" / "ansible" / "roles" / "common_debian" / "tasks" / "main.yml").read_text(encoding="utf-8")
-    handlers = (REPO_ROOT / "infra" / "ansible" / "roles" / "common_debian" / "handlers" / "main.yml").read_text(encoding="utf-8")
+    role = REPO_ROOT / "infra/ansible/roles/common_debian"
+    hardening = task_with_module(load_yaml(role / "tasks/main.yml"),
+                                 "ansible.builtin.lineinfile", path="/etc/ssh/sshd_config")
+    module = hardening["ansible.builtin.lineinfile"]
+    lines = {render_ansible(module["line"], item=item) for item in hardening["loop"]}
+    assert set(HARDENING_LINES) <= lines
+    assert "PermitRootLogin no" not in lines
+    assert module["validate"] == "/usr/sbin/sshd -t -f %s"
 
-    assert "Configure Debian SSH hardening" in tasks
-    assert "/etc/ssh/sshd_config" in tasks
-    for line in HARDENING_LINES:
-        assert line in tasks
-    assert "PermitRootLogin no" not in tasks
-    assert "Restart Debian ssh" in handlers
-    assert "name: ssh" in handlers
+    handler = task_with_module(load_yaml(role / "handlers/main.yml"),
+                               "ansible.builtin.service", name="ssh", state="restarted")
+    notifications = hardening["notify"]
+    if isinstance(notifications, str):
+        notifications = [notifications]
+    assert handler["name"] in notifications

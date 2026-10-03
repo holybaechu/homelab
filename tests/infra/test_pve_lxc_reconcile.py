@@ -300,7 +300,7 @@ def test_missing_bind_sources_are_planned_and_reconciled_without_pct_mutation(
     owner = os.getuid() if hasattr(os, "getuid") else 0
     group = os.getgid() if hasattr(os, "getgid") else 0
     expected_paths: dict[int, Path] = {}
-    for index, name in enumerate(("docker_apps", "openclaw"), start=1):
+    for index, name in enumerate(("docker_apps",), start=1):
         host = hosts[name]
         mount = host["lxc_mounts"]["mp0"]
         source = tmp_path / f"mount-source-{index}"
@@ -391,21 +391,21 @@ def test_unmanaged_or_malformed_manual_confirmation_is_rejected(tmp_path, capsys
     assert runner.calls == []
 
 
-def test_topology_validation_locks_three_units_and_unique_identities():
+def test_topology_validation_locks_two_units_and_unique_identities():
     all_vars, hosts = topology_data()
     assert {host["deployment_unit"] for host in hosts.values()} == {
         "tailnet",
         "apps-host",
-        "openclaw-host",
+
     }
 
     duplicate = json.loads(json.dumps(hosts))
-    duplicate["openclaw"]["vmid"] = duplicate["tailnet"]["vmid"]
+    duplicate["docker_apps"]["vmid"] = duplicate["tailnet"]["vmid"]
     with pytest.raises(reconcile.ReconcileError, match="duplicate vmid"):
         reconcile.validate_topology(all_vars, duplicate)
 
     incomplete = dict(hosts)
-    incomplete.pop("openclaw")
+    incomplete.pop("docker_apps")
     with pytest.raises(reconcile.ReconcileError, match="exactly tailnet"):
         reconcile.validate_topology(all_vars, incomplete)
 
@@ -446,14 +446,10 @@ def test_pve_plan_and_audit_gate_every_non_reconciler_mutation():
     for name in (
         "Reconcile PVE durable storage",
         "Reconcile LXC SSH and Python access through pct",
-        "Read managed LXC SSH host keys through pct",
-        "Create the controller SSH directory",
-        "Reconcile managed LXC host keys on the controller",
-        "Authenticate the configured deploy identity to every managed LXC",
     ):
         assert by_name[name]["when"] == ["homelab_unit == 'pve'", apply_gate]
 
-    reconciler = by_name["Reconcile the three PVE LXC definitions"]
+    reconciler = by_name["Reconcile the two PVE LXC definitions"]
     assert reconciler["when"] == "homelab_unit == 'pve'"
     assert by_name["Preflight the complete PVE LXC apply before any unit mutation"][
         "vars"
@@ -463,7 +459,7 @@ def test_pve_plan_and_audit_gate_every_non_reconciler_mutation():
     assert names.index(
         "Preflight the complete PVE LXC apply before any unit mutation"
     ) < names.index("Reconcile PVE durable storage") < names.index(
-        "Reconcile the three PVE LXC definitions"
+        "Reconcile the two PVE LXC definitions"
     )
 
 
@@ -486,10 +482,9 @@ def test_pve_storage_refuses_unknown_devices_and_wrong_mounts_before_data_ops():
     verify_existing_mount = shell.index("Refusing data operations:")
     copy_data = shell.index('rsync -a "${mount_path}/" "${tmp_mount}/"')
     verify_final_mount = shell.index("Mounted source verification failed")
-    manage_data = shell.index('managed_paths="')
     assert create < format_new < refuse_unknown < require_ext4
     assert verify_existing_mount < copy_data
-    assert copy_data < verify_final_mount < manage_data
+    assert copy_data < verify_final_mount
 
     canonical_fstab = 'expected_fstab="UUID=${uuid} ${mount_path} ext4 defaults,noatime 0 2"'
     assert canonical_fstab in shell
@@ -498,3 +493,88 @@ def test_pve_storage_refuses_unknown_devices_and_wrong_mounts_before_data_ops():
     assert shell.index('printf \'%s\\n\' "${expected_fstab}"') < shell.index(
         'mv -f -- "${fstab_tmp}" /etc/fstab'
     ) < copy_data
+
+
+@pytest.mark.skipif(os.name == "nt", reason="PVE bind sources use POSIX absolute paths")
+def test_bind_source_ownership_handoff_preserves_data_and_running_lxcs(
+    tmp_path, monkeypatch, capsys
+):
+    document = json.loads(TOPOLOGY.read_text(encoding="utf-8"))
+    hosts = document["all"]["children"]["debian"]["hosts"]
+    mount = hosts["docker_apps"]["lxc_mounts"]["mp0"]
+    source = tmp_path / "data"
+    source.mkdir(mode=0o755)
+    restored = source / "restored.txt"
+    restored.write_text("durable data", encoding="utf-8")
+    restored.chmod(0o600)
+    before = restored.stat()
+    mount["source"] = str(source)
+    topology = tmp_path / "topology.json"
+    topology.write_text(json.dumps(document), encoding="utf-8")
+    all_vars, declared = reconcile.load_topology(topology)
+    runner = FakeRunner(
+        {host["vmid"]: exact_config_for(all_vars, host) for host in declared.values()},
+        running=(110, 111),
+    )
+    ownership_changes = []
+    monkeypatch.setattr(reconcile.os, "chown", lambda *args: ownership_changes.append(args))
+
+    assert invoke(tmp_path, runner, "plan", topology=topology,
+                  mount_inspector=reconcile.inspect_mount_sources) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert ownership_changes == []
+    change = next(item for item in plan["containers"] if item["name"] == "docker_apps")["changes"]
+    assert len(change) == 1 and change[0]["risk"] == "safe"
+    assert change[0]["after"] == {"owner": 100000, "group": 100000, "mode": "0755"}
+
+    assert invoke(tmp_path, runner, "apply", topology=topology,
+                  mount_inspector=reconcile.inspect_mount_sources) == 0
+    assert ownership_changes == [(source, 100000, 100000)]
+    assert runner.calls == []
+    assert restored.read_text(encoding="utf-8") == "durable data"
+    after = restored.stat()
+    assert (after.st_uid, after.st_gid, after.st_mode) == (before.st_uid, before.st_gid, before.st_mode)
+
+
+def test_explicit_disabled_host_network_management_does_not_restart_the_control_path(tmp_path, capsys):
+    all_vars, hosts = topology_data()
+    network = reconcile._format_options(reconcile.desired_config(all_vars, hosts["tailnet"])["net0"])
+    runner = FakeRunner({111: exact_config("tailnet", net0=network + ",host-managed=0")}, running=(111,))
+    assert invoke(tmp_path, runner, "apply", "--protect-control-vmid", "111") == 0
+    assert json.loads(capsys.readouterr().out)["changed"] is False
+    assert runner.calls == []
+    enabled = FakeRunner({111: exact_config("tailnet", net0=network + ",host-managed=1")}, running=(111,))
+    assert invoke(tmp_path, enabled, "apply", "--protect-control-vmid", "111") == 2
+    assert enabled.calls == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="PVE bind sources use POSIX absolute paths")
+def test_apps_disk_growth_keeps_both_hosts_running_and_preserves_the_control_path(tmp_path, capsys):
+    document = json.loads(TOPOLOGY.read_text(encoding="utf-8"))
+    host = document["all"]["children"]["debian"]["hosts"]["docker_apps"]
+    source = tmp_path / "apps-data"
+    source.mkdir(mode=0o700)
+    host["lxc_mounts"]["mp0"].update(source=str(source), source_owner=os.getuid(),
+                                    source_group=os.getgid(), source_mode="0700")
+    custom = tmp_path / "topology.json"
+    custom.write_text(json.dumps(document), encoding="utf-8")
+    all_vars, hosts = reconcile.load_topology(custom)
+    vmid, target = host["vmid"], host["root_disk_gb"]
+    runner = FakeRunner({vmid: exact_config_for(all_vars, hosts["docker_apps"],
+                        rootfs=f"local-lvm:vm-{vmid}-disk-0,size={target - 16}G")}, running=(110, 111))
+    assert invoke(tmp_path, runner, "apply", "--protect-control-vmid", "111", topology=custom) == 0
+    assert ["pct", "resize", str(vmid), "rootfs", f"{target}G"] in runner.calls
+    assert not any(call[:2] in (["pct", "stop"], ["pct", "destroy"], ["pct", "start"])
+                   for call in runner.calls)
+    assert json.loads(capsys.readouterr().out)["changed"] is True
+
+
+def test_pct_description_encoding_and_terminal_newline_do_not_create_audit_drift(tmp_path, capsys):
+    _, hosts = topology_data()
+    description = hosts["tailnet"]["description"]
+    runner = FakeRunner({111: exact_config("tailnet", description=description + "%0A")})
+    assert invoke(tmp_path, runner, "audit") == 0
+    assert json.loads(capsys.readouterr().out)["changed"] is False
+    changed = FakeRunner({111: exact_config("tailnet", description="different notes%0A")})
+    assert invoke(tmp_path, changed, "audit") == 1
+    assert changed.calls == []

@@ -30,7 +30,7 @@ valid_sha256() {
 case "${1:-}" in
   deploy)
     [ "$#" -eq 4 ] \
-      || die "usage: $0 deploy apps|openclaw BUNDLE.tar SECRET_BUNDLE.json"
+      || die "usage: $0 deploy apps BUNDLE.tar SECRET_BUNDLE.json"
     operation=deploy
     target=$2
     bundle=$3
@@ -38,7 +38,7 @@ case "${1:-}" in
     ;;
   sync-secrets)
     [ "$#" -eq 3 ] \
-      || die "usage: $0 sync-secrets apps|openclaw SECRET_BUNDLE.json"
+      || die "usage: $0 sync-secrets apps SECRET_BUNDLE.json"
     operation=sync-secrets
     target=$2
     bundle=
@@ -49,8 +49,7 @@ esac
 
 case "$target" in
   apps) host=${DOCKER_APPS_HOST:-} ;;
-  openclaw) host=${OPENCLAW_HOST:-} ;;
-  *) die "target must be apps or openclaw" ;;
+  *) die "target must be apps" ;;
 esac
 valid_host "$host" || die "target host is missing or invalid"
 if [ "$operation" = deploy ]; then

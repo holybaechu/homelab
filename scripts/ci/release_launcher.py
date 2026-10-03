@@ -26,7 +26,7 @@ SHA256_RE = re.compile(r"[0-9a-f]{64}")
 RELEASE_ID_RE = SHA256_RE
 MAX_FILES = 10_000
 MAX_BYTES = 512 * 1024 * 1024
-DEFAULT_ROOTS = {"apps": Path("/opt/homelab"), "openclaw": Path("/opt/openclaw")}
+DEFAULT_ROOTS = {"apps": Path("/opt/homelab")}
 
 
 class LauncherError(RuntimeError):
@@ -179,7 +179,6 @@ def _engine_command(
     bundle_root: Path | None = None,
     secret_bundle: Path | None = None,
     secret_root: Path | None = None,
-    docker_gid: int | None = None,
     docker_command: str = "docker",
 ) -> list[str]:
     argv = [
@@ -199,8 +198,6 @@ def _engine_command(
         argv.extend(("--secret-bundle", str(secret_bundle)))
     if secret_root is not None:
         argv.extend(("--secret-root", str(secret_root)))
-    if docker_gid is not None:
-        argv.extend(("--docker-gid", str(docker_gid)))
     return argv
 
 
@@ -219,11 +216,10 @@ def deploy_archive(
     secret_bundle: Path,
     install_root: Path,
     secret_root: Path | None = None,
-    docker_gid: int | None = None,
     docker_command: str = "docker",
 ) -> int:
     if target not in DEFAULT_ROOTS:
-        raise LauncherError("target must be apps or openclaw")
+        raise LauncherError("target must be apps")
     _require_archive(archive, expected_sha256)
     _require_secret_bundle(secret_bundle)
     staging = _prepare_incoming(install_root)
@@ -239,7 +235,6 @@ def deploy_archive(
                 bundle_root=staging,
                 secret_bundle=secret_bundle,
                 secret_root=secret_root,
-                docker_gid=docker_gid,
                 docker_command=docker_command,
             )
         )
@@ -312,7 +307,6 @@ def run_installed(
     install_root: Path,
     secret_bundle: Path | None = None,
     secret_root: Path | None = None,
-    docker_gid: int | None = None,
     docker_command: str = "docker",
 ) -> int:
     if command == "sync-secrets":
@@ -328,7 +322,6 @@ def run_installed(
             install_root=install_root,
             secret_bundle=secret_bundle,
             secret_root=secret_root,
-            docker_gid=docker_gid,
             docker_command=docker_command,
         )
     )
@@ -343,7 +336,6 @@ def build_parser() -> argparse.ArgumentParser:
         item.add_argument("--target", choices=tuple(DEFAULT_ROOTS), required=True)
         item.add_argument("--install-root", type=Path)
         item.add_argument("--secret-root", type=Path)
-        item.add_argument("--docker-gid", type=int)
         item.add_argument("--docker-command", default="docker")
         if command == "deploy":
             item.add_argument("--archive", type=Path, required=True)
@@ -365,7 +357,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 secret_bundle=args.secret_bundle,
                 install_root=install_root,
                 secret_root=args.secret_root,
-                docker_gid=args.docker_gid,
                 docker_command=args.docker_command,
             )
         return run_installed(
@@ -376,7 +367,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.secret_bundle if args.command == "sync-secrets" else None
             ),
             secret_root=args.secret_root,
-            docker_gid=args.docker_gid,
             docker_command=args.docker_command,
         )
     except (OSError, LauncherError, subprocess.SubprocessError) as exc:

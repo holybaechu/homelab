@@ -8,7 +8,6 @@ import sys
 import tarfile
 
 import pytest
-import yaml
 
 from scripts.ci.compose_release_engine import build_bundle, file_sha256
 from scripts.ci import release_launcher as launcher
@@ -17,7 +16,6 @@ from tests.helpers import REPO_ROOT
 
 ENGINE = REPO_ROOT / "scripts" / "ci" / "compose_release_engine.py"
 TOPOLOGY = REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "topology.json"
-HOST_ROLE = REPO_ROOT / "infra" / "ansible" / "roles" / "release_launcher" / "tasks" / "main.yml"
 
 
 def app_archive(tmp_path: Path) -> Path:
@@ -31,34 +29,6 @@ def app_archive(tmp_path: Path) -> Path:
         topology_path=TOPOLOGY,
     )
     return output
-
-
-def test_host_role_is_only_a_stable_launcher_installer() -> None:
-    tasks = yaml.safe_load(HOST_ROLE.read_text(encoding="utf-8"))
-    modules = {
-        key
-        for task in tasks
-        for key in task
-        if key.startswith("ansible.builtin.")
-    }
-    assert modules <= {"ansible.builtin.copy", "ansible.builtin.file"}
-    assert all(
-        "when" not in task
-        and "register" not in task
-        and "block" not in task
-        and "rescue" not in task
-        for task in tasks
-    )
-
-    executable_installs = [
-        task["ansible.builtin.copy"]
-        for task in tasks
-        if task.get("ansible.builtin.copy", {}).get("mode") == "0755"
-        and task["ansible.builtin.copy"].get("dest", "").startswith("/usr/local/")
-    ]
-    assert len(executable_installs) == 1
-    source = executable_installs[0]["src"]
-    assert Path(source).name == Path(launcher.__file__).name
 
 
 def test_launcher_verifies_archive_and_passes_secret_to_shipped_engine(
@@ -144,36 +114,21 @@ def test_installed_commands_use_pending_versioned_engine_for_recovery(tmp_path: 
     }
     state = {
         "schema": 1,
-        "target": "openclaw",
+        "target": "apps",
         "current": None,
         "pending": {"candidate": {"release_id": release_id, "engine": descriptor}},
     }
     state_path = install / "compose-control" / "release-state.json"
     state_path.parent.mkdir(parents=True)
     state_path.write_text(json.dumps(state), encoding="utf-8")
-    assert launcher._installed_engine(install, target="openclaw") == engine
-
-
-def test_sync_secret_cli_is_fixed_to_component_targets() -> None:
-    args = launcher.build_parser().parse_args(
-        [
-            "sync-secrets",
-            "--target",
-            "openclaw",
-            "--secret-bundle",
-            "/tmp/openclaw.json",
-        ]
-    )
-    assert args.command == "sync-secrets"
-    assert args.target == "openclaw"
-    assert args.secret_bundle == Path("/tmp/openclaw.json")
+    assert launcher._installed_engine(install, target="apps") == engine
 
 
 def test_sync_secret_launcher_runs_installed_engine_without_release_archive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    incoming = tmp_path / "openclaw.json"
-    incoming.write_text('{"component":"openclaw","version":1}', encoding="utf-8")
+    incoming = tmp_path / "apps.json"
+    incoming.write_text('{"component":"apps","version":1}', encoding="utf-8")
     captured: list[str] = []
     monkeypatch.setattr(launcher, "_installed_engine", lambda *_args, **_kwargs: ENGINE)
 
@@ -185,12 +140,12 @@ def test_sync_secret_launcher_runs_installed_engine_without_release_archive(
     assert (
         launcher.run_installed(
             command="sync-secrets",
-            target="openclaw",
+            target="apps",
             install_root=tmp_path / "install",
             secret_bundle=incoming,
         )
         == 0
     )
-    assert captured[2:5] == ["sync-secrets", "--target", "openclaw"]
+    assert captured[2:5] == ["sync-secrets", "--target", "apps"]
     assert captured[captured.index("--secret-bundle") + 1] == str(incoming)
     assert "--bundle-root" not in captured
