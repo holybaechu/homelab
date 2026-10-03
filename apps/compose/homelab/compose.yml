@@ -68,10 +68,10 @@ services:
     # so the deployer applies a mandatory host-side liveness/restart gate.
 
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:5.2.3@sha256:212b86dff59e3962b4082b5ef20a577e76c8f8527d2ab505cfa887b4bcecb0b0
+    image: lscr.io/linuxserver/qbittorrent:5.2.4@sha256:b522f9f4b769f8f36d49d22d5eb6a92e9aa18904c6a1830b1439df511ec21983
     restart: unless-stopped
     environment:
-      DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.35.0@sha256:f6445ce1eefc597650d4f469ad7b18e35451ce79fc9588f4276a2a0221ca793e
+      DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.36.1@sha256:2750543ce2f9868e12bca941482431eb59b5517e89c2538cb2229124aa79d2c2
       PGID: "1000"
       PUID: "1000"
       TORRENTING_PORT: "35435"
@@ -136,7 +136,7 @@ services:
       start_period: 30s
 
   metube:
-    image: ghcr.io/alexta69/metube:2026.09.23@sha256:fdc49cbebf04e72e298043b927a0c1e2aa9df1992258e63013eebba58b25b26e
+    image: ghcr.io/alexta69/metube:2026.09.29@sha256:8e2fe9beeefc55a02f6e1d04cad0fc3c22e8f067d309188f016551dc99ec27b3
     restart: unless-stopped
     environment:
       DELETE_FILE_ON_TRASHCAN: "true"

@@ -118,9 +118,6 @@ def test_preparer_materializes_every_private_input_atomically(tmp_path):
         (stage / "generated/traefik/routes.yml").read_text(encoding="utf-8")
     )
     services = routes["http"]["services"]
-    assert services["openclaw"]["loadBalancer"]["servers"] == [
-        {"url": f"http://{debian['openclaw']['ansible_host']}:18789"}
-    ]
     assert services["pve"]["loadBalancer"]["servers"] == [
         {"url": f"https://{pve['ansible_host']}:8006"}
     ]
@@ -147,7 +144,6 @@ def test_managed_route_addresses_exist_only_in_the_bundle_topology_snapshot() ->
         children["pve_hosts"]["hosts"]["pve"]["ansible_host"],
         debian["docker_apps"]["ansible_host"],
         debian["docker_apps"]["gateway"],
-        debian["openclaw"]["ansible_host"],
     }
     package_inputs = "\n".join(
         path.read_text(encoding="utf-8")
@@ -160,7 +156,7 @@ def test_managed_route_addresses_exist_only_in_the_bundle_topology_snapshot() ->
 def test_preparer_rejects_a_topology_snapshot_that_cannot_route_every_service(tmp_path):
     stage, bundle = stage_and_bundle(tmp_path)
     topology = json.loads((stage / "topology.json").read_text(encoding="utf-8"))
-    del topology["all"]["children"]["debian"]["hosts"]["openclaw"]
+    del topology["all"]["children"]["debian"]["hosts"]["docker_apps"]
     (stage / "topology.json").write_text(json.dumps(topology), encoding="utf-8")
 
     result = run_prepare(stage, bundle)
@@ -173,7 +169,7 @@ def test_preparer_rejects_a_topology_snapshot_that_cannot_route_every_service(tm
 @pytest.mark.parametrize(
     "mutation",
     [
-        lambda value: value.update(component="openclaw"),
+        lambda value: value.update(component="retired"),
         lambda value: value.update(version=True),
         lambda value: value.update(unexpected="value"),
         lambda value: value["adguard"].update(password_hash="$2y$99$" + "." * 53),

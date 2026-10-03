@@ -109,3 +109,15 @@
   ansible.builtin.debug:
     var: pve_lxc_reconcile_result.stdout
   changed_when: false
+
+
+- name: Read root-storage headroom
+  ansible.builtin.command:
+    argv: [pvesm, status, --storage, "{{ pve_root_datastore_id }}"]
+  register: pve_root_storage_headroom
+  changed_when: false
+
+- name: Report root-storage headroom
+  ansible.builtin.debug:
+    var: pve_root_storage_headroom.stdout
+  changed_when: false

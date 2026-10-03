@@ -1,71 +1,56 @@
-# Three-host infrastructure
+# Infrastructure
 
-Production has exactly three unprivileged Proxmox LXCs:
+Ansible provisions and configures the two production LXCs. Host identities,
+addresses, VMIDs, resources, devices, and mounts belong in
+[ansible/inventory/prod/topology.json](ansible/inventory/prod/topology.json).
 
-- `tailnet` is the management subnet router and exit node;
-- `docker_apps` runs the single `homelab` Compose project; and
-- `openclaw` runs the isolated Gateway and its session CTF containers.
+Use [setup](../docs/setup.md) for controller setup, provisioning,
+SSH trust, and the first host configuration.
 
-`ansible/inventory/prod/topology.json` is the one topology document. It owns
-the PVE address, VMIDs, host addresses, resources, startup order, features,
-devices, mounts, and the explicit deployment unit for each host. Workflow host
-targets are read from that document and cannot be overridden independently.
+## Choose one unit
 
-## One targeted infrastructure entrypoint
+Each run of [reconcile.yml](ansible/playbooks/reconcile.yml) requires exactly
+one unit.
 
-`ansible/playbooks/reconcile.yml` requires exactly one unit:
+| Unit | What it manages | Component bundle |
+| --- | --- | --- |
+| `pve` | LXC definitions, shared storage, and guest SSH/Python access | PVE bundle for `apply` |
+| `tailnet` | Debian base and Tailscale routing | Tailnet bundle |
+| `apps-host` | Debian base, Docker, DNS policy, data directories, release launcher, and PVE certificate trust | None |
 
-```sh
-ansible-playbook -i infra/ansible/inventory/prod/topology.json \
-  infra/ansible/playbooks/reconcile.yml -e homelab_unit=apps-host
-```
+Each role completes its own preparation and recovery checks. PVE owns the shared
+filesystem and bind mount; `apps-host` creates application directories and
+repairs restored data ownership. The bind-source UID/GID in topology maps to
+root inside the unprivileged guest, so application paths can be created there.
+When adopting this ownership handoff on an existing host, review and apply the
+`pve` plan first, then reconcile `apps-host` using the [setup commands](../docs/setup.md).
 
-The allowed units are `pve`, `tailnet`, `apps-host`, and `openclaw-host`.
-There is no all-host phase. Shared Debian changes are applied by intentionally
-running the affected units; application deployment never invokes Ansible.
+For routine hosted runs, select the unit in
+[infra.yml](../.github/workflows/infra.yml). Manual controller commands are in
+[setup](../docs/setup.md#configure-the-hosts). Application
+configuration and deployment belong to the
+[Compose package](../apps/compose/homelab/README.md).
 
-For `pve`, `pve_lxc_reconcile_mode=plan|audit|apply` runs the small `pct`
-reconciler. Live PVE configuration is runtime state. Plan prints the canonical
-diff, audit exits nonzero on drift, and apply exports each existing `pct
-config` before changing it. Missing LXCs may be created, safe fields and disk
-growth are idempotent, and destructive/replacement changes require the exact
-VMID confirmation. PVE plan/audit need no component secret; apply receives only
-the PVE public-key bundle. The remote workflow marks the tailnet VMID as its
-active control path and rejects any change that would restart or replace it;
-perform such a change from the PVE console or another out-of-band path.
+## Check PVE changes
 
-The other units reconcile only their selected Debian/Docker/firewall/storage
-primitives. Both Docker hosts use the same Docker Engine role with an explicit
-host policy. The stable `/usr/local/libexec/homelab-release` launcher is a host
-primitive and changes only through `apps-host` or `openclaw-host` reconciliation.
+| Mode | Result |
+| --- | --- |
+| `plan` | Report differences and root-storage headroom |
+| `audit` | Report differences and fail if managed settings have drifted |
+| `apply` | Export existing LXC configuration and apply approved changes |
 
-## Runtime releases
+Plan and audit need no component bundle. Review the plan before
+[applying it](../docs/setup.md#provision-the-containers).
 
-The apps and OpenClaw workflows each construct a complete current release and
-call the same fixed-purpose SSH wrapper. The launcher verifies the upload and
-embedded engine; the shipped engine owns Compose validation, exact image
-verification, pull, health waiting, semantic smoke, atomic state, rollback, and
-interrupted-operation recovery. App/runtime changes do not touch PVE, tailnet,
-or host configuration.
+Missing LXCs can be created and root disks can grow. Destructive changes require
+`pve_lxc_reconcile_allow_destructive_vmid`; replacement requires
+`pve_lxc_reconcile_allow_replacement_vmid`. Supply the exact VMID from the plan
+only after arranging backups and a maintenance window.
 
-Apps nonsecret configuration and smoke live in `apps/compose/homelab`.
-OpenClaw runtime policy and smoke live in `infra/openclaw/runtime`; its one
-descriptor binds the homelab commit, private-config commit, and two OCI
-digests. Runtime credentials arrive as one versioned component JSON document
-per target and never enter Git or immutable release state.
+Reconciliation protects the tailnet connection used by the controller. A change
+that would restart or replace that connection must run from the
+[PVE console recovery path](../docs/recovery.md#when-tailnet-is-unavailable).
 
-## Data and recovery
-
-VMID 111 retains only the TUN device needed by tailnet. VMID 110 retains the
-shared `/var/lib/homelab` mount at `/srv/homelab`. VMID 118 retains only the
-private CTF workspace mount with its unprivileged UID mapping and no TUN
-passthrough. OpenClaw remains isolated from both the management and apps hosts.
-
-Compose owns its named network and stable named volumes. Host reconciliation
-and the release engine do not delete durable mounts or volumes. Unknown data
-is reviewed and backed up before manual removal.
-
-The immutable control-plane recovery reference and reconstruction order are in
-`docs/runbooks/recovery.md`. Release details are in
-`docs/runbooks/compose-release.md`, and operator workflow contracts are in
-`docs/runbooks/github-actions.md`.
+Use the [recovery and storage guide](../docs/recovery.md#storage-maintenance) for live
+storage changes. Declaring a smaller capacity does not shrink an existing
+filesystem safely.

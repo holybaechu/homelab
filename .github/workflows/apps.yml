@@ -48,7 +48,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install app-lane test dependencies
         if: inputs.operation != 'sync-secrets'
-        run: python -m pip install pytest==9.1.1 Jinja2==3.1.6 PyYAML==6.0.3
+        run: python -m pip install -r requirements-dev.txt
       - name: Validate the complete app package and release transaction
         if: inputs.operation != 'sync-secrets'
         env:
@@ -59,7 +59,7 @@ jobs:
             tests/repo/test_compose_release_engine.py \
             tests/repo/test_release_launcher.py \
             tests/repo/test_deploy_release_via_ssh.py
-          ./scripts/ci/validate-compose.sh apps
+          ./scripts/ci/validate-compose.sh
       - name: Build the exact-source release bundle
         if: inputs.operation != 'sync-secrets'
         run: |
@@ -68,8 +68,7 @@ jobs:
             --source-sha "$GITHUB_SHA" \
             --stack apps/compose/homelab \
             --topology infra/ansible/inventory/prod/topology.json \
-            --output "$RUNNER_TEMP/apps.tar" \
-            --result "$RUNNER_TEMP/apps-result.json"
+            --output "$RUNNER_TEMP/apps.tar"
       - name: Materialize the one apps component secret bundle
         env:
           COMPONENT_SECRET_BUNDLE: ${{ secrets.APPS_SECRET_BUNDLE }}
@@ -87,7 +86,7 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
-          # renovate: datasource=github-releases depName=tailscale/tailscale versioning=semver extractVersion=^v(?<version>.*)$
+          # renovate: datasource=custom.tailscale-linux depName=tailscale/tailscale versioning=semver
           version: "1.102.4"
           args: --accept-dns=false
           ping: ${{ env.DOCKER_APPS_HOST }}

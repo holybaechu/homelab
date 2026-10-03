@@ -94,6 +94,23 @@ direct_container="$(compose ps -q qbittorrent)"
   && [ -n "$(docker port "${direct_container}" 35435/udp)" ] \
   || fail "qBittorrent peer port is not published for TCP and UDP"
 
-sh ./validate-vuetorrent.sh
+compose exec -T qbittorrent test -f /vuetorrent/public/index.html >/dev/null 2>&1 \
+  || fail "VueTorrent assets are unavailable"
+for setting in 'WebUI\AlternativeUIEnabled=true' 'WebUI\RootFolder=/vuetorrent'; do
+  compose exec -T qbittorrent grep -Fx -- "$setting" \
+    /config/qBittorrent/qBittorrent.conf >/dev/null 2>&1 \
+    || fail "qBittorrent VueTorrent configuration is incorrect"
+done
+if compose exec -T qbittorrent grep -Fx -- 'Connection\Interface=tun0' \
+  /config/qBittorrent/qBittorrent.conf >/dev/null 2>&1; then
+  fail "qBittorrent is unexpectedly bound to tun0"
+fi
+effective_mods="$(compose exec -T qbittorrent printenv DOCKER_MODS 2>/dev/null)" \
+  || fail "VueTorrent mod environment is unavailable"
+printf '%s\n' "$effective_mods" | python3 -c '
+import re, sys
+value = sys.stdin.read().rstrip("\n")
+sys.exit(0 if re.fullmatch(r"ghcr\.io/vuetorrent/vuetorrent-lsio-mod:[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}", value) else 1)
+' || fail "VueTorrent mod must use an official version and exact digest"
 
 printf 'homelab smoke passed\n'

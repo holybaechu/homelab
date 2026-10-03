@@ -27,22 +27,23 @@ jobs:
         with:
           python-version: "3.14"
           cache: pip
-          cache-dependency-path: requirements-dev.txt
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements-deploy.txt
       - name: Install validation dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install -r requirements-dev.txt -r requirements-deploy.txt
       - name: Run behavioral and invariant tests
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: python -m pytest -q
-      - name: Render both Compose packages
+      - name: Render the application package
         run: ./scripts/ci/validate-compose.sh
       - name: Syntax-check every explicit infrastructure unit
         env:
           ANSIBLE_CONFIG: infra/ansible/ansible.cfg
         run: |
-          for unit in pve tailnet apps-host openclaw-host; do
+          for unit in pve tailnet apps-host; do
             ansible-playbook \
-              -i infra/ansible/inventory/prod/topology.json \
               infra/ansible/playbooks/reconcile.yml \
               --syntax-check \
               -e "homelab_unit=$unit" \

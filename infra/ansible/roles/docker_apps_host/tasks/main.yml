@@ -1,9 +1,152 @@
 ---
+- name: Create the local executable library directory
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the stable package release launcher
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../scripts/ci/release_launcher.py"
+    dest: /usr/local/libexec/homelab-release
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install application host DNS prerequisites without routine upgrades
+  ansible.builtin.apt:
+    name: [bind9-dnsutils, systemd-resolved]
+    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
+    cache_valid_time: >-
+      {{ 3600
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else omit }}
+    state: >-
+      {{ 'latest'
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else 'present' }}
+
+- name: Create systemd-resolved configuration directory for the DNS host
+  ansible.builtin.file:
+    path: /etc/systemd/resolved.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Free the local DNS port for the application resolver
+  ansible.builtin.copy:
+    dest: /etc/systemd/resolved.conf.d/adguardhome.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Resolve]
+      DNS=1.1.1.1 1.0.0.1
+      FallbackDNS=8.8.8.8
+      DNSStubListener=no
+  notify: Restart systemd-resolved
+
+- name: Select the upstream resolver file on the DNS host
+  ansible.builtin.file:
+    src: /run/systemd/resolve/resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+    force: true
+  notify: Restart systemd-resolved
+
+- name: Create the Docker apt keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the Docker apt signing key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure the Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+    update_cache: false
+  register: docker_apt_repository
+
+- name: Refresh apt metadata after adding the Docker repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: docker_apt_repository.changed
+
+- name: Install the production Docker runtime and Compose plugin
+  ansible.builtin.apt:
+    name: [containerd.io, docker-ce, docker-ce-cli, docker-compose-plugin]
+    update_cache: "{{ homelab_maintenance_upgrade | default(false) | bool }}"
+    cache_valid_time: >-
+      {{ 3600
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else omit }}
+    state: >-
+      {{ 'latest'
+         if (homelab_maintenance_upgrade | default(false) | bool)
+         else 'present' }}
+  notify: Restart Docker
+
+- name: Install bounded Docker logs and live restore
+  ansible.builtin.copy:
+    content: |
+      {
+          "live-restore": true,
+          "log-driver": "json-file",
+          "log-opts": {
+              "max-file": "3",
+              "max-size": "10m"
+          }
+      }
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Docker
+
+- name: Enable and start the Docker service
+  ansible.builtin.systemd_service:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Apply Docker and resolver changes before preparing application data
+  ansible.builtin.meta: flush_handlers
+
 - name: Require the Proxmox homelab bind mount before writing application data
   ansible.builtin.command: mountpoint -q /srv/homelab
   changed_when: false
 
-- name: Create durable application data directories
+- name: Create durable application roots and repair restored data ownership
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ service_uid }}"
+    group: "{{ service_gid }}"
+    recurse: true
+    follow: false
+  loop:
+    - /srv/homelab/docker-apps/qbittorrent
+    - /srv/homelab/docker-apps/copyparty
+    - /srv/homelab/downloads
+    - /srv/homelab/copyparty
+
+- name: Set durable application directory permissions
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
@@ -27,3 +170,17 @@
     group: root
     mode: "0700"
     follow: false
+
+- name: Read the PVE root CA for the application upstream trust store
+  ansible.builtin.slurp:
+    src: /etc/pve/pve-root-ca.pem
+  delegate_to: pve
+  register: apps_pve_root_ca
+
+- name: Install the PVE root CA on the application host
+  ansible.builtin.copy:
+    content: "{{ apps_pve_root_ca.content | b64decode }}"
+    dest: /etc/ssl/certs/homelab-pve-root-ca.pem
+    owner: root
+    group: root
+    mode: "0644"

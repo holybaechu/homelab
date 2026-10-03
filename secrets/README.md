@@ -1,52 +1,121 @@
-# Component secret bundles
+# Secrets
 
-Production receives one UTF-8 JSON document per deployment component. GitHub
-stores each complete document as one environment secret; workflows write a
-mode-0600 temporary file without printing it. There is no repository-wide
-field registry or mapping program.
+Prepare one UTF-8 JSON bundle per component. Keep bundles, password hashes, and
+backups outside the checkout. The examples below contain placeholders.
 
-| Component | GitHub environment secret | Authoritative validator |
+Use mode `0600` for private controller files. The installed apps bundle must be
+a regular, root-owned file at `/etc/homelab/secrets/apps.json` with mode `0600`.
+
+| Component | Hosted input | Validator |
 | --- | --- | --- |
-| Apps runtime | `APPS_SECRET_BUNDLE` | `apps/compose/homelab/prepare_release.py` |
-| OpenClaw runtime | `OPENCLAW_SECRET_BUNDLE` | `scripts/ci/compose_release_engine.py` |
-| PVE access | `PVE_SECRET_BUNDLE` | `infra/ansible/playbooks/reconcile.yml` |
-| Tailnet | `TAILNET_SECRET_BUNDLE` | `infra/ansible/playbooks/reconcile.yml` |
+| Apps | `APPS_SECRET_BUNDLE` | [prepare_release.py](../apps/compose/homelab/prepare_release.py) |
+| PVE | Public key derived from `DEPLOY_SSH_PRIVATE_KEY` | [reconcile.yml](../infra/ansible/playbooks/reconcile.yml) |
+| Tailnet | `TAILSCALE_AUTH_KEY` | [reconcile.yml](../infra/ansible/playbooks/reconcile.yml) |
 
-Every document has exact `component` and `version: 1` fields. Runtime bundle
-schemas are intentionally defined beside their consumers. OpenClaw accepts:
+Connection credentials and their GitHub environment settings are listed in
+[production environment guide](../docs/operations.md#production-environment).
+
+## Apps bundle
+
+Replace every placeholder before use:
 
 ```json
 {
-  "component": "openclaw",
+  "component": "apps",
   "version": 1,
-  "gateway_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "discord_bot_token": "...",
-  "exa_api_key": "..."
+  "cloudflare": {
+    "traefik_dns_api_token": "...",
+    "ddns_api_token": "..."
+  },
+  "adguard": {
+    "username": "admin",
+    "password_hash": "$2y$..."
+  },
+  "qbittorrent": {
+    "username": "...",
+    "password_hash": "@ByteArray(base64-salt:base64-pbkdf2-digest)"
+  },
+  "copyparty_users": [
+    {"name": "...", "password": "..."}
+  ]
 }
 ```
 
-The OpenClaw field set is exact. `gateway_token` is exactly 64 lowercase hex;
-the other two values are nonempty single lines. The apps package documents its
-own exact nested schema in `apps/compose/homelab/README.md` and validates it by
-actually rendering a throwaway release before host installation.
+The first Copyparty user has write access to the writable shares. All listed
+users can read the shared read-only area.
 
-Infrastructure bundles use this envelope:
+The preparer rejects unknown keys, the wrong component or version, unsafe account
+names, multiline values, malformed hashes, symlinks, and permissions broader
+than `0600`. Generated files go into `.secrets/` and `generated/` with mode `0600`.
+Both directories are ignored by Git.
+
+Check a bundle using the
+[temporary-copy preparation commands](../apps/compose/homelab/README.md#credentials-and-local-preparation).
+
+## Infrastructure bundles
+
+For a manual PVE apply, supply the public identity corresponding to the
+controller's deployment key. Public keys contain only the algorithm and base64
+body, without a trailing comment:
 
 ```json
-{"component":"tailnet","version":1,"values":{"tailscale_auth_key":"..."}}
+{
+  "component": "pve",
+  "version": 1,
+  "values": {
+    "deploy_ssh_public_keys": ["ssh-ed25519 BASE64_PUBLIC_KEY"]
+  }
+}
 ```
 
-The PVE `values` object contains `deploy_ssh_public_keys`; the tailnet `values`
-object contains `tailscale_auth_key`. Unknown or missing fields fail the
-selected reconciliation before mutation.
+The tailnet bundle contains its authentication key:
 
-The release SSH wrapper validates and atomically installs an apps or OpenClaw
-bundle at its fixed root-owned path, then renders only the active runtime slot.
-Bundle values and their hashes never enter the release descriptor, state file,
-command output, or rollback source. A manual run of the owning runtime workflow
-rotates secrets without a repository change; rollback always combines the
-selected code release with the current component bundle.
+```json
+{
+  "component": "tailnet",
+  "version": 1,
+  "values": {
+    "tailscale_auth_key": "tskey-auth-..."
+  }
+}
+```
 
-Tailnet OAuth, the deploy SSH key and known-host set, and the private-config
-read key are CI connection credentials rather than service configuration. They
-remain individually scoped to the jobs that establish those connections.
+Unknown or missing fields stop reconciliation before changes are made. Hosted
+jobs generate these documents from their connection inputs; manual runs pass
+`homelab_secret_bundle` as shown in [setup](../docs/setup.md).
+
+## Generate application password hashes
+
+Compatible hashes can be copied from existing AdGuard and qBittorrent
+configuration. To create replacements, run on a trusted controller and save the
+output only in the private apps bundle.
+
+AdGuard uses bcrypt. With Apache's `htpasswd` installed:
+
+```sh
+htpasswd -nBC 12 '' | tr -d ':\n'
+printf '\n'
+```
+
+qBittorrent uses a salted PBKDF2-SHA512 hash:
+
+```sh
+python3 - <<'PY'
+import base64, getpass, hashlib, secrets
+password = getpass.getpass("qBittorrent password: ").encode()
+salt = secrets.token_bytes(16)
+digest = hashlib.pbkdf2_hmac("sha512", password, salt, 100000)
+print("@ByteArray(%s:%s)" % (
+    base64.b64encode(salt).decode(), base64.b64encode(digest).decode()))
+PY
+```
+
+## Rotate credentials
+
+Update the appropriate GitHub environment secret, then follow
+[credential rotation](../docs/operations.md#rotate-credentials)
+for apps or run `infra.yml` with `unit=tailnet` for a new tailnet key.
+
+The apps SSH wrapper validates and atomically installs the bundle before
+recreating the active release. Rollback uses the current bundle. Secret values
+and their hashes must stay out of release descriptors, state, and logs.

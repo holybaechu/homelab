@@ -91,3 +91,65 @@
   loop: "{{ groups['debian'] }}"
   loop_control:
     label: "{{ item }} ({{ hostvars[item].vmid }})"
+
+- name: Read managed LXC SSH host keys through pct
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ hostvars[item].vmid }}"
+      - --
+      - cat
+      - /etc/ssh/ssh_host_ed25519_key.pub
+  changed_when: false
+  register: pve_lxc_host_key_results
+  loop: "{{ groups['debian'] }}"
+  loop_control:
+    label: "{{ item }} ({{ hostvars[item].vmid }})"
+
+- name: Create the controller SSH directory
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.ssh"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+
+- name: Reconcile managed LXC host keys on the controller
+  ansible.builtin.known_hosts:
+    path: "{{ lookup('env', 'HOME') }}/.ssh/known_hosts"
+    name: "{{ hostvars[item.item].ansible_host }}"
+    key: "{{ hostvars[item.item].ansible_host }} {{ item.stdout }}"
+  delegate_to: localhost
+  loop: "{{ pve_lxc_host_key_results.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Authenticate the configured deploy identity to every managed LXC
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -n
+      - -T
+      - -o
+      - BatchMode=yes
+      - -o
+      - StrictHostKeyChecking=yes
+      - -o
+      - PreferredAuthentications=publickey
+      - -o
+      - IdentitiesOnly=yes
+      - -o
+      - "IdentityFile={{ lookup('env', 'HOME') }}/.ssh/id_ed25519"
+      - -o
+      - ConnectTimeout=10
+      - "root@{{ hostvars[item].ansible_host }}"
+      - "true"
+  register: pve_lxc_batch_authentication
+  changed_when: false
+  retries: 60
+  delay: 10
+  until: pve_lxc_batch_authentication.rc == 0
+  delegate_to: localhost
+  loop: "{{ groups['debian'] }}"
+  loop_control:
+    label: "{{ item }}"
