@@ -9,7 +9,7 @@ the ``apps`` release shape; it is not a plugin framework.
 from __future__ import annotations
 
 import argparse
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 import hashlib
 import json
 import os
@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Iterator, Mapping, Protocol, Sequence
 import uuid
 
 SCHEMA_VERSION = 1
@@ -1037,20 +1037,44 @@ class ComposeReleaseEngine:
     def _prepare_apps(self, slot_root: Path) -> None:
         secret_bundle = self._component_secret_bundle()
         stack = slot_root / "stack"
-        self._checked(
-            [
-                sys.executable,
-                str(stack / "prepare_release.py"),
-                "--secret-bundle",
-                str(secret_bundle),
-                "--release-root",
-                str(stack),
-                "--topology",
-                str(stack / "topology.json"),
-            ],
-            cwd=stack,
-            action="apps release preparation",
-        )
+        with self._apps_secret_for_package(secret_bundle, stack) as compatible_bundle:
+            self._checked(
+                [
+                    sys.executable,
+                    str(stack / "prepare_release.py"),
+                    "--secret-bundle",
+                    str(compatible_bundle),
+                    "--release-root",
+                    str(stack),
+                    "--topology",
+                    str(stack / "topology.json"),
+                ],
+                cwd=stack,
+                action="apps release preparation",
+            )
+
+    @contextmanager
+    def _apps_secret_for_package(self, source: Path, stack: Path) -> Iterator[Path]:
+        """Keep v2 credentials installed when recovering a v1 application package."""
+        payload = _load_unique_json(source)
+        if not isinstance(payload, dict):
+            raise ReleaseError("apps component secret bundle must be an object")
+        metadata = _load_unique_json(stack / "release.json")
+        wanted = metadata.get("secret_bundle", {}).get("version")
+        if wanted == 1 and type(payload.get("version")) is int and payload["version"] == 2:
+            if 2 not in metadata.get("secret_bundle", {}).get("compatible_versions", []):
+                raise ReleaseError("rollback target predates the apps v2 secret-compatibility release")
+            legacy_keys = {"component", "version", "cloudflare", "adguard", "qbittorrent", "copyparty_users"}
+            if set(payload) != legacy_keys | {"authentik", "headscale"}:
+                raise ReleaseError("apps v2 component secret fields are invalid")
+            projected = {key: payload[key] for key in legacy_keys}
+            projected["version"] = 1
+            with tempfile.TemporaryDirectory(prefix=".apps-secret-", dir=stack.parent) as directory:
+                path = Path(directory) / "apps.json"
+                atomic_write_json(path, projected)
+                yield path
+        else:
+            yield source
 
 
     def _validate_apps_secret_bundle(
@@ -1064,25 +1088,38 @@ class ComposeReleaseEngine:
         try:
             stack = temporary / "stack"
             shutil.copytree(package_root, stack)
-            self._checked(
-                [
-                    sys.executable,
-                    str(stack / "prepare_release.py"),
-                    "--secret-bundle",
-                    str(source),
-                    "--release-root",
-                    str(stack),
-                    "--topology",
-                    str(stack / "topology.json"),
-                ],
-                cwd=stack,
-                action="apps component secret validation",
-            )
+            with self._apps_secret_for_package(source, stack) as compatible_bundle:
+                self._checked(
+                    [
+                        sys.executable,
+                        str(stack / "prepare_release.py"),
+                        "--secret-bundle",
+                        str(compatible_bundle),
+                        "--release-root",
+                        str(stack),
+                        "--topology",
+                        str(stack / "topology.json"),
+                    ],
+                    cwd=stack,
+                    action="apps component secret validation",
+                )
         finally:
             shutil.rmtree(temporary, ignore_errors=True)
 
     def _install_secret_bundle(self, source: Path, package_root: Path) -> Path:
         source = self._require_secret_source(source, installed=False)
+        payload = _load_unique_json(source)
+        if not isinstance(payload, dict):
+            raise ReleaseError("apps component secret bundle must be an object")
+        if payload.get("version") == 2:
+            # A v1 engine cannot read the expanded installed bundle after rollback.
+            # Require the compatibility engine in the immediate rollback target.
+            record = self._load_state().get("current")
+            if record is not None:
+                metadata = _load_unique_json(self._release_path(record) / "payload" / "stack" / "release.json")
+                contract = metadata.get("secret_bundle", {})
+                if 2 not in contract.get("compatible_versions", [contract.get("version")]):
+                    raise ReleaseError("deploy the apps v1 secret-compatibility release before installing a v2 bundle")
         self._validate_apps_secret_bundle(source, package_root)
         if self.secret_root is None:
             raise ReleaseError(f"{self.target} secret root is unavailable")
