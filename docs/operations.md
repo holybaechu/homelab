@@ -33,8 +33,9 @@ The operator private key stays in your password manager or SSH agent.
 3. Dispatch `infra.yml` at the revision containing this support with `unit=pve`
    and `pve_mode=plan`. Review the plan before applying; keep the destructive and
    replacement VMID inputs empty.
-4. If the plan contains only intended changes, dispatch the same revision with
-   `unit=pve` and `pve_mode=apply`. The existing Proxmox deployment connection
+4. For a key update, dispatch the same revision with `unit=pve`, `pve_mode=apply`,
+   and **`pve_access_only=true`**. This retains the preflight but skips changes to
+   shared storage and LXC definitions. The existing Proxmox deployment connection
    installs both keys in every managed container and verifies deployment access.
 5. Connect as root over the LAN or management tailnet using the host address
    from [topology](../infra/ansible/inventory/prod/topology.json). A container root

@@ -17,6 +17,11 @@ on:
         default: plan
         type: choice
         options: [plan, audit, apply]
+      pve_access_only:
+        description: PVE apply only; reconcile container SSH access without changing storage or LXC definitions
+        required: true
+        default: false
+        type: boolean
       allow_destructive_vmid:
         description: Exact PVE VMID approved for destructive change; empty rejects it
         required: false
@@ -151,12 +156,19 @@ jobs:
         env:
           UNIT: ${{ matrix.unit }}
           PVE_MODE: ${{ inputs.pve_mode || 'apply' }}
+          PVE_ACCESS_ONLY: ${{ inputs.pve_access_only || false }}
           ALLOW_DESTRUCTIVE_VMID: ${{ inputs.allow_destructive_vmid || '' }}
           ALLOW_REPLACEMENT_VMID: ${{ inputs.allow_replacement_vmid || '' }}
           SCHEDULED_MAINTENANCE: ${{ github.event_name == 'schedule' }}
           ANSIBLE_CONFIG: infra/ansible/ansible.cfg
         run: |
           set -euo pipefail
+          if test "$PVE_ACCESS_ONLY" = true; then
+            test "$UNIT" = pve && test "$PVE_MODE" = apply || {
+              echo 'pve_access_only requires unit=pve and pve_mode=apply' >&2
+              exit 2
+            }
+          fi
           args=(
             ansible-playbook
             infra/ansible/playbooks/reconcile.yml
@@ -169,6 +181,9 @@ jobs:
           fi
           if test "$UNIT" = pve; then
             args+=(-e "pve_lxc_reconcile_mode=$PVE_MODE")
+            if test "$PVE_ACCESS_ONLY" = true; then
+              args+=(-e homelab_pve_access_only=true)
+            fi
             if test -n "$ALLOW_DESTRUCTIVE_VMID"; then
               args+=(-e "pve_lxc_reconcile_allow_destructive_vmid=$ALLOW_DESTRUCTIVE_VMID")
             fi

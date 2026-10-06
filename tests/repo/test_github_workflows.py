@@ -108,6 +108,7 @@ def test_infrastructure_binds_pve_access_before_reconciliation():
     inputs = data["on"]["workflow_dispatch"]["inputs"]
     assert set(inputs["unit"]["options"]) == {"pve", "tailnet", "apps-host"}
     assert set(inputs["pve_mode"]["options"]) == {"plan", "audit", "apply"}
+    assert inputs["pve_access_only"]["default"] == "false"
     for approval in ("allow_destructive_vmid", "allow_replacement_vmid"):
         assert inputs[approval]["default"] == "" and inputs[approval]["required"] == "false"
     job = data["jobs"]["reconcile"]
@@ -125,6 +126,8 @@ def test_infrastructure_binds_pve_access_before_reconciliation():
     assert tailnet["env"]["TAILNET_AUTH_KEY"] == "${{ secrets.TAILSCALE_AUTH_KEY }}"
     assert "destination.chmod(0o600)" in pve["run"] and "destination.chmod(0o600)" in tailnet["run"]
     assert "homelab_unit=$UNIT" in command["run"]
+    assert "pve_access_only requires unit=pve and pve_mode=apply" in command["run"]
+    assert "homelab_pve_access_only=true" in command["run"]
     scheduled, manual = job["strategy"]["matrix"]["unit"].split("||", maxsplit=1)
     assert all('"' + unit + '"' in scheduled for unit in ("tailnet", "apps-host"))
     assert '"pve"' not in scheduled and "inputs.unit" in manual
