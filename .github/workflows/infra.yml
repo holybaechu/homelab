@@ -95,18 +95,31 @@ jobs:
         run: cp -- "$HOME/.ssh/known_hosts" "$RUNNER_TEMP/provided-known-hosts"
       - name: Materialize the PVE component bundle from the configured deploy identity
         if: matrix.unit == 'pve' && inputs.pve_mode == 'apply'
+        env:
+          OPERATOR_SSH_PUBLIC_KEY: ${{ vars.OPERATOR_SSH_PUBLIC_KEY }}
         run: |
           umask 077
           python - "$RUNNER_TEMP/pve.json" <<'PY'
-          import json, subprocess, sys
+          import json, os, subprocess, sys
           from pathlib import Path
+          from scripts.ci.verify_pve_access_bundle import PUBLIC_KEY_RE
           public = subprocess.check_output(
               ["ssh-keygen", "-y", "-f", str(Path.home() / ".ssh/id_ed25519")],
               text=True,
           ).strip()
           public = " ".join(public.split()[:2])
+          keys = [public]
+          operator = os.environ["OPERATOR_SSH_PUBLIC_KEY"].strip()
+          if operator:
+              if any(character in operator for character in ("\0", "\r", "\n")):
+                  raise ValueError("Operator SSH public key must be one line")
+              operator = " ".join(operator.split()[:2])
+              if PUBLIC_KEY_RE.fullmatch(operator) is None:
+                  raise ValueError("Operator SSH public key must be a supported OpenSSH public key")
+              if operator not in keys:
+                  keys.append(operator)
           payload = {"component": "pve", "version": 1,
-                     "values": {"deploy_ssh_public_keys": [public]}}
+                     "values": {"deploy_ssh_public_keys": keys}}
           destination = Path(sys.argv[1])
           destination.write_text(json.dumps(payload), encoding="utf-8")
           destination.chmod(0o600)

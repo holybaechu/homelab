@@ -2,7 +2,11 @@
 
 import re
 import shlex
+import json
+import sys
+from unittest.mock import patch
 
+import pytest
 import yaml
 
 from tests.helpers import REPO_ROOT
@@ -133,3 +137,38 @@ def test_validation_covers_the_application_and_every_explicit_infrastructure_uni
     assert "infra/ansible/playbooks/reconcile.yml" in command
     assert all(unit in command for unit in ("pve", "tailnet", "apps-host"))
     assert "--syntax-check" in command
+
+
+@pytest.mark.parametrize("operator,expected", (
+    ("", ["ssh-ed25519 QUJD"]),
+    ("ssh-ed25519 REVG operator@homelab", ["ssh-ed25519 QUJD", "ssh-ed25519 REVG"]),
+    ("ssh-ed25519 QUJD same-key", ["ssh-ed25519 QUJD"]),
+))
+def test_pve_bundle_keeps_deployment_access_when_adding_an_operator(tmp_path, operator, expected):
+    steps = workflow("infra.yml")["jobs"]["reconcile"]["steps"]
+    _, materialize = step_with(steps, '"component": "pve"')
+    assert materialize["env"]["OPERATOR_SSH_PUBLIC_KEY"] == "${{ vars.OPERATOR_SSH_PUBLIC_KEY }}"
+    program = materialize["run"].split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    destination = tmp_path / "pve.json"
+    with patch.dict("os.environ", {"OPERATOR_SSH_PUBLIC_KEY": operator}), \
+         patch.object(sys, "argv", ["-", str(destination)]), \
+         patch("subprocess.check_output", return_value="ssh-ed25519 QUJD deploy-comment\n"):
+        exec(compile(program, "pve-bundle-workflow", "exec"), {})
+    assert json.loads(destination.read_text())["values"]["deploy_ssh_public_keys"] == expected
+
+
+@pytest.mark.parametrize("operator", (
+    "from=192.0.2.1 ssh-ed25519 REVG",
+    "ssh-ed25519 REVG\nssh-ed25519 QUJD",
+    "ssh-ed25519 not-base64!",
+))
+def test_invalid_operator_key_stops_before_writing_a_pve_bundle(tmp_path, operator):
+    _, materialize = step_with(workflow("infra.yml")["jobs"]["reconcile"]["steps"], '"component": "pve"')
+    program = materialize["run"].split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    destination = tmp_path / "pve.json"
+    with patch.dict("os.environ", {"OPERATOR_SSH_PUBLIC_KEY": operator}), \
+         patch.object(sys, "argv", ["-", str(destination)]), \
+         patch("subprocess.check_output", return_value="ssh-ed25519 QUJD\n"):
+        with pytest.raises(ValueError, match="Operator SSH public key"):
+            exec(compile(program, "pve-bundle-workflow", "exec"), {})
+    assert not destination.exists()
