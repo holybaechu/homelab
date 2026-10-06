@@ -11,6 +11,9 @@
   no_log: true
 
 - name: Install SSH and Python through pct exec
+  vars:
+    # A YAML newline avoids Ansible preserving backslash escapes in Jinja strings.
+    pve_lxc_access_key_separator: "\n"
   ansible.builtin.shell: |
     set -eu
     vmid="{{ hostvars[item].vmid }}"
@@ -23,7 +26,7 @@
     pct exec "${vmid}" -- /usr/bin/env \
       HOMELAB_NAMESERVERS="${nameservers}" \
       HOMELAB_SEARCH_DOMAIN="{{ pve_lxc_searchdomain }}" \
-      HOMELAB_AUTHORIZED_KEYS_B64="{{ deploy_ssh_public_keys | join('\n') | b64encode }}" \
+      HOMELAB_AUTHORIZED_KEYS_B64="{{ deploy_ssh_public_keys | join(pve_lxc_access_key_separator) | b64encode }}" \
       /bin/bash -lc '
       set -eu
       changed=0

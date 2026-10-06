@@ -95,6 +95,26 @@ def test_access_only_cannot_select_another_unit_or_mode(unit, mode, allowed):
                           homelab_pve_access_only=True) is allowed
 
 
+def test_real_controller_renders_multiple_authorized_keys_as_separate_lines(tmp_path):
+    executable = shutil.which("ansible-playbook")
+    if executable is None or os.name == "nt":
+        pytest.skip("Ansible controller requires POSIX")
+    tasks = yaml.safe_load(ROLE_TASKS.read_text(encoding="utf-8"))
+    install = task_with_module(tasks, "ansible.builtin.shell")
+    encoded = re.search(r'HOMELAB_AUTHORIZED_KEYS_B64="([^"]+)"', install["ansible.builtin.shell"]).group(1)
+    variables = dict(install.get("vars", {}))
+    variables["deploy_ssh_public_keys"] = ["ssh-ed25519 QUJD", "ssh-ed25519 REVG"]
+    play = [{"hosts": "localhost", "gather_facts": False, "vars": variables, "tasks": [
+        {"ansible.builtin.set_fact": {"encoded": encoded}},
+        {"ansible.builtin.assert": {"that": ["(encoded | b64decode).splitlines() == deploy_ssh_public_keys"]}},
+    ]}]
+    probe = tmp_path / "authorized-keys.yml"
+    probe.write_text(yaml.safe_dump(play, sort_keys=False), encoding="utf-8")
+    result = subprocess.run([executable, "-i", "localhost,", "-c", "local", str(probe)],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_component_secret_contracts_are_exact_and_never_logged() -> None:
     _, selected = load_reconcile()
     guarded = [
