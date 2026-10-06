@@ -8,9 +8,13 @@
         that:
           - homelab_unit is defined
           - homelab_unit in ['pve', 'tailnet', 'apps-host']
+          - >-
+            not (homelab_pve_access_only | default(false) | bool)
+            or (homelab_unit == 'pve' and pve_lxc_reconcile_mode | default('apply') == 'apply')
         fail_msg: >-
           Pass -e homelab_unit=pve|tailnet|apps-host. There is no
           implicit whole-homelab reconciliation.
+          Access-only reconciliation requires homelab_unit=pve and pve_lxc_reconcile_mode=apply.
 
 - name: Reconcile the selected homelab deployment unit
   hosts: >-
@@ -139,13 +143,16 @@
       when:
         - homelab_unit == 'pve'
         - pve_lxc_reconcile_mode | default('apply') == 'apply'
+        - not (homelab_pve_access_only | default(false) | bool)
 
     - name: Reconcile the two PVE LXC definitions
       ansible.builtin.include_role:
         name: pve_lxc_reconcile
       vars:
         pve_lxc_reconcile_preflight_only: false
-      when: homelab_unit == 'pve'
+      when:
+        - homelab_unit == 'pve'
+        - not (homelab_pve_access_only | default(false) | bool)
 
     - name: Reconcile LXC SSH and Python access through pct
       ansible.builtin.include_role:

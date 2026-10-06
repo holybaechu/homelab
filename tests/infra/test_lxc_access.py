@@ -12,7 +12,7 @@ from typing import Any
 from jinja2 import Environment
 import yaml
 
-from tests.helpers import REPO_ROOT
+from tests.helpers import REPO_ROOT, render_ansible, task_enabled
 
 
 ROLE_TASKS = REPO_ROOT / "infra/ansible/roles/pve_lxc_access/tasks/main.yml"
@@ -65,6 +65,34 @@ def test_pve_access_reconciles_every_declared_lxc_idempotently() -> None:
     assert "HOMELAB_AUTHORIZED_KEYS_B64" in program
     assert "/root/.ssh/authorized_keys" in program
     assert "openssh-server python3" in program
+
+
+def test_access_only_apply_keeps_preflight_and_access_without_touching_storage_or_lxcs():
+    _, selected = load_reconcile()
+    variables = {"homelab_unit": "pve", "pve_lxc_reconcile_mode": "apply", "homelab_pve_access_only": True}
+    enabled = {
+        task["name"] for task in selected["tasks"]
+        if "ansible.builtin.include_role" in task and task_enabled(task, **variables)
+    }
+    assert enabled == {
+        "Preflight the complete PVE LXC apply before any unit mutation",
+        "Reconcile LXC SSH and Python access through pct",
+    }
+    variables["homelab_pve_access_only"] = False
+    full = {
+        task["name"] for task in selected["tasks"]
+        if "ansible.builtin.include_role" in task and task_enabled(task, **variables)
+    }
+    assert "Reconcile PVE durable storage" in full
+    assert "Reconcile the two PVE LXC definitions" in full
+
+
+@pytest.mark.parametrize("unit,mode,allowed", (("pve", "apply", True), ("pve", "plan", False), ("apps-host", "apply", False)))
+def test_access_only_cannot_select_another_unit_or_mode(unit, mode, allowed):
+    validation, _ = load_reconcile()
+    clause = task_with_module(validation, "ansible.builtin.assert")["ansible.builtin.assert"]["that"][-1]
+    assert render_ansible("{{ " + clause + " }}", homelab_unit=unit, pve_lxc_reconcile_mode=mode,
+                          homelab_pve_access_only=True) is allowed
 
 
 def test_component_secret_contracts_are_exact_and_never_logged() -> None:
