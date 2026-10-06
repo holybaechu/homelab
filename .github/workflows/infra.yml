@@ -82,7 +82,7 @@ jobs:
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
           # renovate: datasource=custom.tailscale-linux depName=tailscale/tailscale versioning=semver
-          version: "1.102.4"
+          version: "1.102.5"
           args: --accept-dns=false
           ping: ${{ env.HOMELAB_SELECTED_HOST }}
       - name: Configure pinned SSH trust
