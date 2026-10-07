@@ -96,6 +96,26 @@ body, without a trailing comment:
 }
 ```
 
+For PVE identity-only reconciliation, the controller generates a version-2
+component bundle:
+
+```json
+{
+  "component": "pve",
+  "version": 2,
+  "values": {
+    "deploy_ssh_public_keys": ["ssh-ed25519 BASE64_PUBLIC_KEY"],
+    "proxmox_oidc_client_secret": "..."
+  }
+}
+```
+
+The hosted identity operation derives this client credential from the stable
+Authentik key in the apps bundle. No new apps field is needed. See
+[identity operations](../docs/operations.md#copyparty-and-proxmox-identity).
+The installed PVE identity bundle is private and root-owned at
+`/etc/homelab/secrets/pve-identity.json` with mode `0600`.
+
 The tailnet bundle contains its authentication key:
 
 ```json

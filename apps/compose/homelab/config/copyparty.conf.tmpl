@@ -8,6 +8,10 @@
   usernames
   rproxy: -1
   xff-src: 172.16.0.0/12
+  idp-h-usr: x-authentik-username
+  idp-h-grp: x-authentik-groups
+  idp-gsep: |
+  auth-ord: idp,pw
   name: copyparty.hchu.me
   hist: /config/state
   localtime
@@ -19,16 +23,16 @@
   /srv/public
   accs:
     r: *
-    A: @@COPY_PARTY_OWNER@@
+    A: @@COPY_PARTY_OWNER@@, @copyparty-admins
 
 [/shared-readonly]
   /srv/shared-readonly
   accs:
-    r: @@COPY_PARTY_USER_NAMES@@
-    A: @@COPY_PARTY_OWNER@@
+    r: @@COPY_PARTY_USER_NAMES@@, @copyparty-users, @copyparty-admins
+    A: @@COPY_PARTY_OWNER@@, @copyparty-admins
 
 [/downloads]
   /srv/downloads
   accs:
-    r: @@COPY_PARTY_OWNER@@
-    A: @@COPY_PARTY_OWNER@@
+    r: @@COPY_PARTY_OWNER@@, @copyparty-admins
+    A: @@COPY_PARTY_OWNER@@, @copyparty-admins

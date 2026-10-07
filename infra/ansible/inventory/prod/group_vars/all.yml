@@ -1,5 +1,8 @@
 homelab_timezone: Asia/Seoul
 
+# Add another Authentik username here to grant that identity PVE administration.
+pve_identity_administrators: [akadmin]
+
 service_uid: 1000
 service_gid: 1000
 

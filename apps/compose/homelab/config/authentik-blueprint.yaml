@@ -2,6 +2,26 @@ version: 1
 metadata:
   name: Homelab identity and MeTube access
 entries:
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: System - OAuth2 Provider - Scopes
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Provider authorization flow (implicit consent)
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Provider invalidation flow
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Authentication flow
+      required: true
   - model: authentik_core.group
     identifiers:
       name: homelab-admins
@@ -10,6 +30,14 @@ entries:
     identifiers:
       name: metube-users
     id: metube-users
+  - model: authentik_core.group
+    identifiers:
+      name: copyparty-users
+    id: copyparty-users
+  - model: authentik_core.group
+    identifiers:
+      name: copyparty-admins
+    id: copyparty-admins
   - model: authentik_core.user
     identifiers:
       username: akadmin
@@ -18,6 +46,8 @@ entries:
         - !Find [authentik_core.group, [is_superuser, true]]
         - !KeyOf admins
         - !KeyOf metube-users
+        - !KeyOf copyparty-users
+        - !KeyOf copyparty-admins
   - model: authentik_providers_oauth2.scopemapping
     identifiers:
       name: Homelab groups
@@ -80,11 +110,71 @@ entries:
       target: !KeyOf metube-app
       group: !KeyOf metube-users
       order: 0
+  - model: authentik_providers_proxy.proxyprovider
+    identifiers:
+      name: Copyparty
+    id: copyparty-provider
+    attrs:
+      mode: forward_single
+      external_host: https://copyparty.hchu.me
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+  - model: authentik_core.application
+    identifiers:
+      slug: copyparty
+    id: copyparty-app
+    attrs:
+      name: Copyparty
+      provider: !KeyOf copyparty-provider
+      policy_engine_mode: any
+      meta_launch_url: https://copyparty.hchu.me
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf copyparty-app
+      group: !KeyOf copyparty-users
+      order: 0
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf copyparty-app
+      group: !KeyOf copyparty-admins
+      order: 1
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: Proxmox
+    id: proxmox-provider
+    attrs:
+      client_id: homelab-proxmox
+      client_secret: !Env PROXMOX_OIDC_CLIENT_SECRET
+      client_type: confidential
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      redirect_uris:
+        - matching_mode: strict
+          url: https://pve.home.hchu.me
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+  - model: authentik_core.application
+    identifiers:
+      slug: proxmox
+    id: proxmox-app
+    attrs:
+      name: Proxmox
+      provider: !KeyOf proxmox-provider
+      meta_launch_url: https://pve.home.hchu.me
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf proxmox-app
+      group: !KeyOf admins
+      order: 0
   - model: authentik_outposts.outpost
     identifiers:
       managed: goauthentik.io/outposts/embedded
     attrs:
       providers:
         - !KeyOf metube-provider
+        - !KeyOf copyparty-provider
       config:
         authentik_host: https://auth.home.hchu.me

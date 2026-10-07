@@ -7,6 +7,8 @@ import argparse
 import base64
 import binascii
 import ipaddress
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -234,6 +236,9 @@ def prepare(secret_bundle: Path, release_root: Path, topology: Path) -> None:
     }
     if len(identity_values["secret_key"]) < 50:
         raise PreparationError("authentik.secret_key must contain at least 50 characters")
+    proxmox_secret = hmac.new(
+        identity_values["secret_key"].encode(), b"homelab/proxmox-oidc/v1", hashlib.sha256
+    ).hexdigest()
     headscale = _object(bundle["headscale"], name="headscale", keys={"oidc_client_secret"})
     oidc_secret = _text(headscale["oidc_client_secret"], name="Headscale OIDC client secret")
 
@@ -375,7 +380,8 @@ def prepare(secret_bundle: Path, release_root: Path, topology: Path) -> None:
         release_root / ".secrets" / "authentik.env",
         f"AUTHENTIK_SECRET_KEY={identity_values['secret_key']}\n"
         f"AUTHENTIK_POSTGRESQL__PASSWORD={identity_values['database_password']}\n"
-        f"HEADSCALE_OIDC_CLIENT_SECRET={oidc_secret}\n",
+        f"HEADSCALE_OIDC_CLIENT_SECRET={oidc_secret}\n"
+        f"PROXMOX_OIDC_CLIENT_SECRET={proxmox_secret}\n",
     )
     _atomic_write(
         release_root / ".secrets" / "authentik-bootstrap.env",

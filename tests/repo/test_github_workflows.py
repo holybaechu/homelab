@@ -191,3 +191,23 @@ def test_invalid_operator_key_stops_before_writing_a_pve_bundle(tmp_path, operat
         with pytest.raises(ValueError, match="Operator SSH public key"):
             exec(compile(program, "pve-bundle-workflow", "exec"), {})
     assert not destination.exists()
+
+
+def test_pve_and_authentik_render_the_same_private_oidc_credential(tmp_path):
+    from tests.docker.test_prepare_release import valid_bundle, stage_and_bundle, run_prepare
+    apps = valid_bundle()
+    stage, source = stage_and_bundle(tmp_path / 'apps', apps)
+    assert run_prepare(stage, source).returncode == 0
+    _, materialize = step_with(workflow('infra.yml')['jobs']['reconcile']['steps'], '"component": "pve"')
+    program = materialize['run'].split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+    destination = tmp_path / 'pve.json'
+    with patch.dict('os.environ', {'OPERATOR_SSH_PUBLIC_KEY': '', 'PVE_IDENTITY_ONLY': 'true', 'APPS_SECRET_BUNDLE': json.dumps(apps)}), \
+         patch.object(sys, 'argv', ['-', str(destination)]), \
+         patch('subprocess.check_output', return_value='ssh-ed25519 QUJD\n'):
+        exec(compile(program, 'pve-bundle-workflow', 'exec'), {})
+    pve = json.loads(destination.read_text())
+    assert pve['version'] == 2
+    secret = pve['values']['proxmox_oidc_client_secret']
+    env = dict(line.split('=', 1) for line in (stage / '.secrets/authentik.env').read_text().splitlines())
+    assert secret == env['PROXMOX_OIDC_CLIENT_SECRET']
+    assert secret != apps['authentik']['secret_key'] and secret != apps['headscale']['oidc_client_secret']

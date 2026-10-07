@@ -1,0 +1,43 @@
+---
+- name: Create the private PVE component credential directory
+  ansible.builtin.file:
+    path: /etc/homelab/secrets
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install the private PVE identity component bundle
+  ansible.builtin.copy:
+    content: "{{ homelab_loaded_secret_bundle | to_json }}\n"
+    dest: /etc/homelab/secrets/pve-identity.json
+    owner: root
+    group: root
+    mode: "0600"
+  register: pve_identity_bundle
+  no_log: true
+
+- name: Install the PVE identity reconciler
+  ansible.builtin.copy:
+    src: reconcile_identity.py
+    dest: /usr/local/libexec/pve-identity-reconcile
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Reconcile the additional OIDC realm and its declared administrators
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/pve-identity-reconcile
+      - --secret-bundle
+      - /etc/homelab/secrets/pve-identity.json
+      - --administrators
+      - "{{ pve_identity_administrators | join(',') }}"
+      - "{{ '--refresh-secret' if pve_identity_bundle.changed else '--keep-secret' }}"
+  register: pve_identity_result
+  changed_when: (pve_identity_result.stdout | from_json).changed
+  no_log: true
+
+- name: Report PVE identity reconciliation completion
+  ansible.builtin.debug:
+    msg: Authentik OIDC is configured; Linux PAM and existing local recovery users are unchanged.

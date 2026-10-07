@@ -48,7 +48,7 @@ def test_one_explicit_unit_selects_one_inventory_boundary() -> None:
         for task in selected["tasks"]
         if "ansible.builtin.include_role" in task
     ]
-    assert ("pve_lxc_access", APPLY_GATE) in included
+    assert ("pve_lxc_access", APPLY_GATE + ["not (homelab_pve_identity_only | default(false) | bool)"]) in included
     assert ("common_debian", "homelab_unit != 'pve'") in included
     assert ("docker_apps_host", "homelab_unit == 'apps-host'") in included
 
@@ -90,7 +90,8 @@ def test_access_only_apply_keeps_preflight_and_access_without_touching_storage_o
 @pytest.mark.parametrize("unit,mode,allowed", (("pve", "apply", True), ("pve", "plan", False), ("apps-host", "apply", False)))
 def test_access_only_cannot_select_another_unit_or_mode(unit, mode, allowed):
     validation, _ = load_reconcile()
-    clause = task_with_module(validation, "ansible.builtin.assert")["ansible.builtin.assert"]["that"][-1]
+    clause = next(clause for clause in task_with_module(validation, "ansible.builtin.assert")["ansible.builtin.assert"]["that"]
+                  if "not (homelab_pve_access_only" in str(clause) and "identity" not in str(clause))
     assert render_ansible("{{ " + clause + " }}", homelab_unit=unit, pve_lxc_reconcile_mode=mode,
                           homelab_pve_access_only=True) is allowed
 

@@ -11,6 +11,10 @@
           - >-
             not (homelab_pve_access_only | default(false) | bool)
             or (homelab_unit == 'pve' and pve_lxc_reconcile_mode | default('apply') == 'apply')
+          - >-
+            not (homelab_pve_identity_only | default(false) | bool)
+            or (homelab_unit == 'pve' and pve_lxc_reconcile_mode | default('apply') == 'apply'
+                and not (homelab_pve_access_only | default(false) | bool))
         fail_msg: >-
           Pass -e homelab_unit=pve|tailnet|apps-host. There is no
           implicit whole-homelab reconciliation.
@@ -55,6 +59,7 @@
           - >-
             homelab_loaded_secret_bundle.version == 1
             or (homelab_unit == 'tailnet' and homelab_loaded_secret_bundle.version == 2)
+            or (homelab_unit == 'pve' and homelab_loaded_secret_bundle.version == 2)
           - homelab_loaded_secret_bundle.component == homelab_unit
           - homelab_loaded_secret_bundle['values'] is mapping
           - >-
@@ -62,7 +67,7 @@
             == ['component', 'values', 'version']
         fail_msg: >-
           The selected unit requires a controller-side JSON bundle with
-          its exact component name and a values object. PVE uses version=1;
+          its exact component name and a values object. PVE uses version=1 or 2;
           tailnet uses version=1 for hosted Tailscale or version=2 for Headscale.
       when: >-
         homelab_unit == 'tailnet'
@@ -75,7 +80,8 @@
         that:
           - >-
             homelab_loaded_secret_bundle['values'].keys() | list | sort
-            == ['deploy_ssh_public_keys']
+            == (['deploy_ssh_public_keys'] if homelab_loaded_secret_bundle.version == 1
+                else ['deploy_ssh_public_keys', 'proxmox_oidc_client_secret'])
           - homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys is sequence
           - homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys is not string
           - homelab_loaded_secret_bundle['values'].deploy_ssh_public_keys | length > 0
@@ -97,6 +103,19 @@
       when:
         - homelab_unit == 'pve'
         - pve_lxc_reconcile_mode | default('apply') == 'apply'
+      no_log: true
+
+    - name: Validate the PVE identity component credential before mutation
+      ansible.builtin.assert:
+        that:
+          - homelab_loaded_secret_bundle.version == 2
+          - homelab_loaded_secret_bundle['values'].proxmox_oidc_client_secret is string
+          - homelab_loaded_secret_bundle['values'].proxmox_oidc_client_secret is match('^[a-f0-9]{64}\Z')
+        fail_msg: PVE identity reconciliation requires its version-2 component bundle.
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+        - homelab_pve_identity_only | default(false) | bool
       no_log: true
 
     - name: Require the exact tailnet component secret fields
@@ -161,6 +180,7 @@
       when:
         - homelab_unit == 'pve'
         - pve_lxc_reconcile_mode | default('apply') == 'apply'
+        - not (homelab_pve_identity_only | default(false) | bool)
 
     - name: Reconcile PVE durable storage
       ansible.builtin.include_role:
@@ -169,6 +189,7 @@
         - homelab_unit == 'pve'
         - pve_lxc_reconcile_mode | default('apply') == 'apply'
         - not (homelab_pve_access_only | default(false) | bool)
+        - not (homelab_pve_identity_only | default(false) | bool)
 
     - name: Reconcile the two PVE LXC definitions
       ansible.builtin.include_role:
@@ -178,6 +199,7 @@
       when:
         - homelab_unit == 'pve'
         - not (homelab_pve_access_only | default(false) | bool)
+        - not (homelab_pve_identity_only | default(false) | bool)
 
     - name: Reconcile LXC SSH and Python access through pct
       ansible.builtin.include_role:
@@ -185,6 +207,15 @@
       when:
         - homelab_unit == 'pve'
         - pve_lxc_reconcile_mode | default('apply') == 'apply'
+        - not (homelab_pve_identity_only | default(false) | bool)
+
+    - name: Reconcile PVE identity without replacing local authentication
+      ansible.builtin.include_role:
+        name: pve_identity
+      when:
+        - homelab_unit == 'pve'
+        - pve_lxc_reconcile_mode | default('apply') == 'apply'
+        - homelab_pve_identity_only | default(false) | bool
 
     - name: Reconcile the Debian base
       ansible.builtin.include_role:

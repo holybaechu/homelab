@@ -22,6 +22,11 @@ on:
         required: true
         default: false
         type: boolean
+      pve_identity_only:
+        description: PVE apply only; reconcile Authentik SSO without changing storage, LXCs, or SSH keys
+        required: true
+        default: false
+        type: boolean
       allow_destructive_vmid:
         description: Exact PVE VMID approved for destructive change; empty rejects it
         required: false
@@ -103,6 +108,8 @@ jobs:
         if: matrix.unit == 'pve' && inputs.pve_mode == 'apply'
         env:
           OPERATOR_SSH_PUBLIC_KEY: ${{ vars.OPERATOR_SSH_PUBLIC_KEY }}
+          PVE_IDENTITY_ONLY: ${{ inputs.pve_identity_only || false }}
+          APPS_SECRET_BUNDLE: ${{ inputs.pve_identity_only && secrets.APPS_SECRET_BUNDLE || '' }}
         run: |
           umask 077
           python - "$RUNNER_TEMP/pve.json" <<'PY'
@@ -126,6 +133,18 @@ jobs:
                   keys.append(operator)
           payload = {"component": "pve", "version": 1,
                      "values": {"deploy_ssh_public_keys": keys}}
+          if os.environ.get("PVE_IDENTITY_ONLY", "false") == "true":
+              import hashlib, hmac
+              apps = json.loads(os.environ["APPS_SECRET_BUNDLE"])
+              if apps.get("component") != "apps" or apps.get("version") != 2:
+                  raise ValueError("PVE identity requires the version-2 apps bundle")
+              master = apps["authentik"]["secret_key"]
+              if not isinstance(master, str) or len(master) < 50:
+                  raise ValueError("Invalid identity master credential")
+              payload["version"] = 2
+              payload["values"]["proxmox_oidc_client_secret"] = hmac.new(
+                  master.encode(), b"homelab/proxmox-oidc/v1", hashlib.sha256
+              ).hexdigest()
           destination = Path(sys.argv[1])
           destination.write_text(json.dumps(payload), encoding="utf-8")
           destination.chmod(0o600)
@@ -163,6 +182,7 @@ jobs:
           UNIT: ${{ matrix.unit }}
           PVE_MODE: ${{ inputs.pve_mode || 'apply' }}
           PVE_ACCESS_ONLY: ${{ inputs.pve_access_only || false }}
+          PVE_IDENTITY_ONLY: ${{ inputs.pve_identity_only || false }}
           ALLOW_DESTRUCTIVE_VMID: ${{ inputs.allow_destructive_vmid || '' }}
           ALLOW_REPLACEMENT_VMID: ${{ inputs.allow_replacement_vmid || '' }}
           SCHEDULED_MAINTENANCE: ${{ github.event_name == 'schedule' }}
@@ -172,6 +192,12 @@ jobs:
           if test "$PVE_ACCESS_ONLY" = true; then
             test "$UNIT" = pve && test "$PVE_MODE" = apply || {
               echo 'pve_access_only requires unit=pve and pve_mode=apply' >&2
+              exit 2
+            }
+          fi
+          if test "$PVE_IDENTITY_ONLY" = true; then
+            test "$UNIT" = pve && test "$PVE_MODE" = apply && test "$PVE_ACCESS_ONLY" != true || {
+              echo 'pve_identity_only requires unit=pve, pve_mode=apply, and pve_access_only=false' >&2
               exit 2
             }
           fi
@@ -190,6 +216,9 @@ jobs:
             if test "$PVE_ACCESS_ONLY" = true; then
               args+=(-e homelab_pve_access_only=true)
             fi
+            if test "$PVE_IDENTITY_ONLY" = true; then
+              args+=(-e homelab_pve_identity_only=true)
+            fi
             if test -n "$ALLOW_DESTRUCTIVE_VMID"; then
               args+=(-e "pve_lxc_reconcile_allow_destructive_vmid=$ALLOW_DESTRUCTIVE_VMID")
             fi
@@ -202,7 +231,7 @@ jobs:
           fi
           "${args[@]}"
       - name: Require an exact post-apply LXC trust handoff
-        if: always() && matrix.unit == 'pve' && inputs.pve_mode == 'apply'
+        if: always() && matrix.unit == 'pve' && inputs.pve_mode == 'apply' && !inputs.pve_identity_only
         shell: bash
         run: |
           set -euo pipefail

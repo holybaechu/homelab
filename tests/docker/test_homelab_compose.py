@@ -33,10 +33,10 @@ def test_compose_is_one_closed_runtime_boundary(model):
     )
 
     networks = model["networks"]
-    assert len(networks) == 1
-    network_key, network = next(iter(networks.items()))
-    assert network.get("name")
-    assert not network.get("external", False)
+    assert networks == {
+        "proxy": {"name": "homelab_proxy"},
+        "copyparty_proxy": {"name": "homelab_copyparty_proxy", "internal": True},
+    }
 
     volumes = model["volumes"]
     volume_names = [volume.get("name") for volume in volumes.values()]
@@ -49,7 +49,8 @@ def test_compose_is_one_closed_runtime_boundary(model):
         declared_process_health = _labels(service).get("homelab.health") == "process"
         assert "healthcheck" in service or declared_process_health, name
         if "network_mode" not in service:
-            assert service.get("networks") == [network_key], name
+            expected = ["proxy", "copyparty_proxy"] if name == "traefik" else ["copyparty_proxy"] if name == "copyparty" else ["proxy"]
+            assert service.get("networks") == expected, name
 
 
 def test_secret_inputs_and_smoke_endpoints_are_package_local(model):
