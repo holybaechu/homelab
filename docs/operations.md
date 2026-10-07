@@ -24,6 +24,35 @@ Keep the Headscale secrets unset during bootstrap. The workflows then retain
 their hosted Tailscale connection. Never set the gateway key before migrating
 the gateway from a trusted LAN controller or PVE console.
 
+The optional `OPERATOR_SSH_PUBLIC_KEY` **environment variable** in `prod` adds
+one personal SSH public key alongside the derived deployment key. A trailing
+key comment is removed; multiple lines and SSH options are rejected.
+The operator private key stays in your password manager or SSH agent.
+
+## Add operator SSH access
+
+1. Create a dedicated Ed25519 SSH key in your password manager and enable it in
+   your SSH agent. Copy only its public-key line.
+2. In GitHub, open **Settings → Environments → prod → Environment variables**.
+   Add `OPERATOR_SSH_PUBLIC_KEY` with that public key as its value.
+3. Dispatch `infra.yml` at the revision containing this support with `unit=pve`
+   and `pve_mode=plan`. Review the plan before applying; keep the destructive and
+   replacement VMID inputs empty.
+4. For a key update, dispatch the same revision with `unit=pve`, `pve_mode=apply`,
+   and **`pve_access_only=true`**. This retains the preflight but skips changes to
+   shared storage and LXC definitions. The existing Proxmox deployment connection
+   installs both keys in every managed container and verifies deployment access.
+5. Connect as root over the LAN or management tailnet using the host address
+   from [topology](../infra/ansible/inventory/prod/topology.json). A container root
+   password is not needed for public-key SSH authentication.
+
+Do not replace `DEPLOY_SSH_PRIVATE_KEY` to add personal access: the runner needs
+its current private key to reach Proxmox before it can update container keys.
+`DEPLOY_SSH_PUBLIC_KEYS` is not an input to this workflow. Reconciliation owns
+the containers' entire `authorized_keys` file, so keep the operator variable set
+to retain access. Removing it and applying `pve` revokes the operator key while
+retaining the deployment key.
+
 ## Run a workflow
 
 In GitHub Actions, open the workflow, choose **Run workflow**, and select the

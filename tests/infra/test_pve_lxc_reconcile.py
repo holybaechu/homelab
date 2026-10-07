@@ -8,7 +8,7 @@ import sys
 import pytest
 import yaml
 
-from tests.helpers import REPO_ROOT
+from tests.helpers import REPO_ROOT, task_enabled
 
 
 SCRIPT = (
@@ -442,15 +442,17 @@ def test_pve_plan_and_audit_gate_every_non_reconciler_mutation():
     )
     tasks = plays[1]["tasks"]
     by_name = {task["name"]: task for task in tasks}
-    apply_gate = "pve_lxc_reconcile_mode | default('apply') == 'apply'"
     for name in (
         "Reconcile PVE durable storage",
         "Reconcile LXC SSH and Python access through pct",
     ):
-        assert by_name[name]["when"] == ["homelab_unit == 'pve'", apply_gate]
+        for mode, enabled in (("plan", False), ("audit", False), ("apply", True)):
+            assert task_enabled(by_name[name], homelab_unit="pve", pve_lxc_reconcile_mode=mode,
+                                homelab_pve_access_only=False) is enabled
 
     reconciler = by_name["Reconcile the two PVE LXC definitions"]
-    assert reconciler["when"] == "homelab_unit == 'pve'"
+    assert task_enabled(reconciler, homelab_unit="pve", homelab_pve_access_only=False)
+    assert not task_enabled(reconciler, homelab_unit="pve", homelab_pve_access_only=True)
     assert by_name["Preflight the complete PVE LXC apply before any unit mutation"][
         "vars"
     ] == {"pve_lxc_reconcile_preflight_only": True}

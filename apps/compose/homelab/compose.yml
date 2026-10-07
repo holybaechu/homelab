@@ -2,7 +2,7 @@ name: homelab
 
 services:
   traefik:
-    image: traefik:v3.7.13@sha256:24841fe2de7304c149343d877d2923b4c8800a38ba015dea9174c23b20e344a0
+    image: traefik:v3.7.14@sha256:e849695bc5c317da0cec22bfee4794fd9e15871fe554f864d31b625983e883ff
     restart: unless-stopped
     env_file:
       - ./.secrets/traefik.env
@@ -105,7 +105,7 @@ services:
       start_period: 30s
 
   copyparty:
-    image: copyparty/ac:1.20.24@sha256:0e276e2ca595d1b45df613573f094b789b9a8b41ff87cc55130db1ec9763c164
+    image: copyparty/ac:1.20.25@sha256:3d4f65f68aa68c287d6c29f2059842d49ca6f79dde061fbf6cc8fdb120691daf
     restart: unless-stopped
     command: ["-c", "/config/copyparty.conf"]
     environment:

@@ -2,7 +2,11 @@
 
 import re
 import shlex
+import json
+import sys
+from unittest.mock import patch
 
+import pytest
 import yaml
 
 from tests.helpers import REPO_ROOT
@@ -105,6 +109,7 @@ def test_infrastructure_binds_pve_access_before_reconciliation():
     inputs = data["on"]["workflow_dispatch"]["inputs"]
     assert set(inputs["unit"]["options"]) == {"pve", "tailnet", "apps-host"}
     assert set(inputs["pve_mode"]["options"]) == {"plan", "audit", "apply"}
+    assert inputs["pve_access_only"]["default"] == "false"
     for approval in ("allow_destructive_vmid", "allow_replacement_vmid"):
         assert inputs[approval]["default"] == "" and inputs[approval]["required"] == "false"
     job = data["jobs"]["reconcile"]
@@ -122,6 +127,8 @@ def test_infrastructure_binds_pve_access_before_reconciliation():
     assert tailnet["env"]["TAILNET_AUTH_KEY"] == "${{ secrets.TAILSCALE_AUTH_KEY }}"
     assert "destination.chmod(0o600)" in pve["run"] and "destination.chmod(0o600)" in tailnet["run"]
     assert "homelab_unit=$UNIT" in command["run"]
+    assert "pve_access_only requires unit=pve and pve_mode=apply" in command["run"]
+    assert "homelab_pve_access_only=true" in command["run"]
     scheduled, manual = job["strategy"]["matrix"]["unit"].split("||", maxsplit=1)
     assert all('"' + unit + '"' in scheduled for unit in ("tailnet", "apps-host"))
     assert '"pve"' not in scheduled and "inputs.unit" in manual
@@ -149,3 +156,38 @@ def test_headscale_cutover_preserves_the_hosted_bootstrap_path():
     _, gateway = step_with(workflow("infra.yml")["jobs"]["reconcile"]["steps"], '"component": "tailnet"')
     assert gateway["env"]["HEADSCALE_GATEWAY_AUTH_KEY"] == "${{ secrets.HEADSCALE_GATEWAY_AUTH_KEY }}"
     assert '"version": 2' in gateway["run"]
+
+
+@pytest.mark.parametrize("operator,expected", (
+    ("", ["ssh-ed25519 QUJD"]),
+    ("ssh-ed25519 REVG operator@homelab", ["ssh-ed25519 QUJD", "ssh-ed25519 REVG"]),
+    ("ssh-ed25519 QUJD same-key", ["ssh-ed25519 QUJD"]),
+))
+def test_pve_bundle_keeps_deployment_access_when_adding_an_operator(tmp_path, operator, expected):
+    steps = workflow("infra.yml")["jobs"]["reconcile"]["steps"]
+    _, materialize = step_with(steps, '"component": "pve"')
+    assert materialize["env"]["OPERATOR_SSH_PUBLIC_KEY"] == "${{ vars.OPERATOR_SSH_PUBLIC_KEY }}"
+    program = materialize["run"].split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    destination = tmp_path / "pve.json"
+    with patch.dict("os.environ", {"OPERATOR_SSH_PUBLIC_KEY": operator}), \
+         patch.object(sys, "argv", ["-", str(destination)]), \
+         patch("subprocess.check_output", return_value="ssh-ed25519 QUJD deploy-comment\n"):
+        exec(compile(program, "pve-bundle-workflow", "exec"), {})
+    assert json.loads(destination.read_text())["values"]["deploy_ssh_public_keys"] == expected
+
+
+@pytest.mark.parametrize("operator", (
+    "from=192.0.2.1 ssh-ed25519 REVG",
+    "ssh-ed25519 REVG\nssh-ed25519 QUJD",
+    "ssh-ed25519 not-base64!",
+))
+def test_invalid_operator_key_stops_before_writing_a_pve_bundle(tmp_path, operator):
+    _, materialize = step_with(workflow("infra.yml")["jobs"]["reconcile"]["steps"], '"component": "pve"')
+    program = materialize["run"].split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    destination = tmp_path / "pve.json"
+    with patch.dict("os.environ", {"OPERATOR_SSH_PUBLIC_KEY": operator}), \
+         patch.object(sys, "argv", ["-", str(destination)]), \
+         patch("subprocess.check_output", return_value="ssh-ed25519 QUJD\n"):
+        with pytest.raises(ValueError, match="Operator SSH public key"):
+            exec(compile(program, "pve-bundle-workflow", "exec"), {})
+    assert not destination.exists()
