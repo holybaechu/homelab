@@ -147,11 +147,34 @@
     enabled: true
     state: started
 
+- name: Read the active control server before joining
+  ansible.builtin.command:
+    argv: [tailscale, debug, prefs]
+  register: tailscale_current_preferences
+  changed_when: false
+  no_log: true
+
+- name: Require a console migration before changing the active control server
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((tailscale_current_preferences.stdout | from_json).ControlURL | default('')
+         or 'https://controlplane.tailscale.com')
+        == tailscale_login_server | default('https://controlplane.tailscale.com')
+        or (tailscale_current_preferences.stdout | from_json).LoggedOut | default(false)
+        or (not ((tailscale_current_preferences.stdout | from_json).ControlURL | default(''))
+            and not ((tailscale_current_preferences.stdout | from_json).WantRunning | default(false)))
+    fail_msg: >-
+      Changing the gateway control server can disconnect this controller.
+      Follow docs/operations.md#move-management-access-to-headscale from the LAN
+      or PVE console, log the gateway out there, then reconcile with its new bundle.
+
 - name: Join Tailscale when auth key is supplied
   ansible.builtin.command:
     argv:
       - tailscale
       - up
+      - "--login-server={{ tailscale_login_server | default('https://controlplane.tailscale.com') }}"
       - "--hostname={{ tailscale_hostname }}"
       - "--accept-routes={{ tailscale_accept_routes | lower }}"
       - "--accept-dns={{ tailscale_accept_dns | default(false) | lower }}"

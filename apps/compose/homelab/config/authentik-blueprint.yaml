@@ -1,0 +1,90 @@
+version: 1
+metadata:
+  name: Homelab identity and MeTube access
+entries:
+  - model: authentik_core.group
+    identifiers:
+      name: homelab-admins
+    id: admins
+  - model: authentik_core.group
+    identifiers:
+      name: metube-users
+    id: metube-users
+  - model: authentik_core.user
+    identifiers:
+      username: akadmin
+    attrs:
+      groups:
+        - !Find [authentik_core.group, [is_superuser, true]]
+        - !KeyOf admins
+        - !KeyOf metube-users
+  - model: authentik_providers_oauth2.scopemapping
+    identifiers:
+      name: Homelab groups
+    id: groups-scope
+    attrs:
+      scope_name: groups
+      expression: |
+        return {"groups": [group.name for group in request.user.groups.all()]}
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: Headscale
+    id: headscale-provider
+    attrs:
+      client_id: homelab-headscale
+      client_secret: !Env HEADSCALE_OIDC_CLIENT_SECRET
+      client_type: confidential
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      redirect_uris:
+        - matching_mode: strict
+          url: https://headscale.home.hchu.me/oidc/callback
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+        - !KeyOf groups-scope
+  - model: authentik_core.application
+    identifiers:
+      slug: headscale
+    id: headscale-app
+    attrs:
+      name: Headscale
+      provider: !KeyOf headscale-provider
+      meta_launch_url: https://headscale.home.hchu.me
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf headscale-app
+      group: !KeyOf admins
+      order: 0
+  - model: authentik_providers_proxy.proxyprovider
+    identifiers:
+      name: MeTube
+    id: metube-provider
+    attrs:
+      mode: forward_single
+      external_host: https://metube.home.hchu.me
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+  - model: authentik_core.application
+    identifiers:
+      slug: metube
+    id: metube-app
+    attrs:
+      name: MeTube
+      provider: !KeyOf metube-provider
+      meta_launch_url: https://metube.home.hchu.me
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf metube-app
+      group: !KeyOf metube-users
+      order: 0
+  - model: authentik_outposts.outpost
+    identifiers:
+      managed: goauthentik.io/outposts/embedded
+    attrs:
+      providers:
+        - !KeyOf metube-provider
+      config:
+        authentik_host: https://auth.home.hchu.me

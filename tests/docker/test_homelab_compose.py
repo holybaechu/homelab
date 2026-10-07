@@ -55,7 +55,7 @@ def test_compose_is_one_closed_runtime_boundary(model):
 def test_secret_inputs_and_smoke_endpoints_are_package_local(model):
     services = model["services"]
     env_files = [
-        Path(path)
+        Path(path["path"] if isinstance(path, dict) else path)
         for service in services.values()
         for path in service.get("env_file", [])
     ]
@@ -74,3 +74,10 @@ def test_secret_inputs_and_smoke_endpoints_are_package_local(model):
     }
     assert routed <= smoked
     assert "adguard" in smoked
+
+
+def test_public_identity_endpoints_have_managed_dns(model):
+    settings = model["services"]["cloudflare-ddns"]["environment"]
+    domains = {domain.strip() for domain in settings["DOMAINS"].split(",")}
+    assert {"auth.home.hchu.me", "headscale.home.hchu.me", "metube.home.hchu.me"} <= domains
+    assert settings["PROXIED"] == "false"

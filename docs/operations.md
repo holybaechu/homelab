@@ -13,11 +13,16 @@ Configure these secrets in the GitHub `prod` environment:
 | `TAILSCALE_AUTH_KEY` | Authentication key for the tailnet host |
 | `TS_OAUTH_CLIENT_ID` | Tailscale client ID for the runner connection |
 | `TS_AUDIENCE` | Audience for the runner's Tailscale authentication |
+| `HEADSCALE_CI_AUTH_KEY` | Optional reusable, ephemeral Headscale registration key tagged `tag:ci`; enables the runner cutover |
+| `HEADSCALE_GATEWAY_AUTH_KEY` | Optional Headscale registration key tagged `tag:gateway`; enables gateway reconciliation against Headscale |
 | `DEPLOY_SSH_PRIVATE_KEY` | Deployment private key |
 | `DEPLOY_SSH_KNOWN_HOSTS` | Independently verified PVE and guest SSH host keys |
 
 Infrastructure jobs generate PVE and tailnet bundles on the runner. The PVE
 public identity is derived from the deployment key. Targets come from topology.
+Keep the Headscale secrets unset during bootstrap. The workflows then retain
+their hosted Tailscale connection. Never set the gateway key before migrating
+the gateway from a trusted LAN controller or PVE console.
 
 The optional `OPERATOR_SSH_PUBLIC_KEY` **environment variable** in `prod` adds
 one personal SSH public key alongside the derived deployment key. A trailing
@@ -80,6 +85,114 @@ prepares the inactive runtime slot with current credentials, validates Compose
 and image pins, and activates with `--no-build`. Health and application smoke
 checks must pass before the candidate becomes current.
 
+## Deploy identity services
+
+This package adds Authentik at `auth.home.hchu.me`, Headscale at
+`headscale.home.hchu.me`, and an Authentik login gate at `metube.home.hchu.me`.
+Immich and Minecraft are not included.
+
+For an existing installation, deploy rollback compatibility before adding the
+identity services. Create and deploy a separate exact revision containing only
+the `compose_release_engine.py` secret-compatibility changes and their tests,
+keeping the old Compose package and version-1 preparer. In that revision, retain
+`secret_bundle.version: 1` in `release.json` and add
+`secret_bundle.compatible_versions: [1, 2]`. Deploy it with the existing version-1
+apps bundle, then verify the release. The full identity release refuses to
+replace credentials until the current release declares this compatibility.
+An empty installation can start directly with the version-2 package.
+After installing version-2 credentials, rollback is limited to the compatibility
+release or later revisions; an older package is rejected before activation.
+
+1. Back up existing application data and credentials. Prepare the version-2
+   [apps bundle](../secrets/README.md#apps-bundle), preserving current application
+   credentials. Keep both Headscale environment secrets unset during bootstrap.
+2. The package's Cloudflare DDNS updater creates and maintains DNS-only A records
+   for the three hostnames above and `home.hchu.me`. Keep any existing records
+   DNS-only, including Headscale. Forward TCP 443 to the apps host from topology.
+   Traefik already uses DNS challenges for certificates, so inbound TCP 80 is
+   optional.
+3. Replace `APPS_SECRET_BUNDLE` and deploy the complete identity package using the
+   [apps workflow](#deploy-apps). Its blueprint initializes the Headscale OIDC
+   provider and MeTube proxy provider with the embedded outpost; no Docker socket
+   is exposed to Authentik. Smoke checks require OIDC discovery, Headscale health,
+   and an unauthenticated MeTube redirect to the login flow.
+4. Sign into Authentik as `akadmin` with the bundle's bootstrap password. Configure
+   MFA, create individual users, and grant `metube-users` to people allowed to use
+   MeTube. Add only management users to `homelab-admins`; that group may register
+   VPN devices with access to the LAN. MeTube still has one shared application
+   state and download area.
+5. From a test device outside the LAN, verify MeTube requires login and an
+   authorized user can open it. Verify the authentication callback remains
+   reachable and that a user without `metube-users` is denied. Test from the LAN
+   too; existing AdGuard rewrites route the hostnames directly to the apps host.
+
+The blueprint owns its named providers, applications, bindings, embedded outpost,
+and `akadmin` group membership. Edit the blueprint for those settings; manage
+ordinary users and their group membership in Authentik. Do not attach forward
+auth to Authentik itself or Headscale's control endpoint. Keep PVE, router,
+AdGuard, and qBittorrent on their existing private routes.
+Identity and proxy callback routers omit Traefik access logs so authorization
+codes and login state are not recorded there.
+
+## Move management access to Headscale
+
+Run the cutover from a trusted LAN controller with PVE console access. Hosted
+jobs cannot restore their own route if the new Headscale service is unreachable.
+Headscale and Authentik live on the apps host, so recovery of that host requires
+LAN or PVE console access. The existing hosted Tailscale path remains selected
+until its corresponding Headscale secret is set.
+
+1. Register a test management device using the Tailscale client and
+   `--login-server=https://headscale.home.hchu.me`. Sign in through Authentik with
+   a `homelab-admins` user. Verify registration from outside the LAN. Headscale
+   initially uses the public Tailscale DERP map; no extra relay or UDP port is
+   required for this deployment.
+2. On the apps host, locate the current runtime's stack directory through the
+   recorded active slot in `/opt/homelab/compose-control/release-state.json`.
+   Change into that stack directory, then define a CLI shortcut and create the
+   service users:
+
+   ```sh
+   hs() {
+     docker compose --project-name homelab -f compose.yml exec -T \
+       headscale headscale --config /etc/headscale/config.yaml "$@"
+   }
+   hs users list
+   hs users create gateway
+   hs users create ci
+   ```
+
+   Record the resulting numeric user IDs.
+3. Generate a reusable gateway pre-authentication key tagged `tag:gateway`, and a
+   reusable, ephemeral CI key tagged `tag:ci`, using
+   `hs preauthkeys create --user USER_ID --reusable --tags TAG --expiration 90d` (add `--ephemeral` for
+   CI). Run these only on a trusted console, save their output directly into
+   private bundles/environment secrets, and rotate them before expiry. These
+   are device keys, not API keys.
+4. Prepare a [version-2 tailnet bundle](../secrets/README.md#infrastructure-bundles).
+   On the gateway through the LAN or PVE console, run `tailscale logout`; this
+   interrupts its old management connection. From the LAN controller, reconcile
+   only `tailnet` with the new bundle using the [setup command](setup.md#configure-the-hosts).
+   The role refuses to change an active control server without this logout.
+5. On the test management device, accept the advertised subnet route and verify
+   SSH to all managed hosts from topology. The policy automatically approves the
+   gateway's subnet and exit-node routes. Test exit-node access separately if used.
+6. Set `HEADSCALE_GATEWAY_AUTH_KEY` and `HEADSCALE_CI_AUTH_KEY` in `prod`, then
+   dispatch `infra.yml` for `tailnet` and an apps workflow. Confirm the runners
+   reach their selected hosts through Headscale before migrating remaining devices
+   or retiring hosted Tailscale credentials. Do not resume scheduled jobs until
+   both the gateway and runners use the same network.
+
+Tag ownership belongs to `group:operators` in the package's Headscale policy,
+initially `akadmin@`. Add other management usernames there when granting tag
+ownership. CI is limited to LAN SSH and receives no general application access.
+
+If cutover fails, stop hosted jobs and use the LAN or PVE console. Log the gateway
+out again, reconcile with the original version-1 tailnet bundle, clear both
+Headscale environment secrets, and verify the original runner connection before
+resuming workflows. Restore or redeploy the identity package from the LAN before
+retrying. App rollback does not restore identity databases or their migrations.
+
 ## Rotate credentials
 
 For apps:
@@ -91,8 +204,10 @@ For apps:
 Secret sync installs the bundle atomically and recreates the current release
 without a new archive, image build, or image pull.
 
-For tailnet, update `TAILSCALE_AUTH_KEY` and dispatch `infra.yml` with
-`unit=tailnet`. Bundle formats and password hashes are in the
+For hosted Tailscale, update `TAILSCALE_AUTH_KEY` and dispatch `infra.yml` with
+`unit=tailnet`. After cutover, rotate the Headscale registration keys instead:
+replace `HEADSCALE_CI_AUTH_KEY` for runners and `HEADSCALE_GATEWAY_AUTH_KEY` for
+the gateway, then reconcile `tailnet` against the same control server. Bundle formats and password hashes are in the
 [secrets guide](../secrets/README.md).
 
 ## Reconcile a host

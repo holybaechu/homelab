@@ -8,7 +8,7 @@ as the `homelab` Compose project.
 | [compose.yml](compose.yml) | Services, image pins, routes, networks, and data mounts |
 | [config/](config/) and [traefik.yml](traefik.yml) | Application configuration |
 | [prepare_release.py](prepare_release.py) | Validate credentials and generate private configuration |
-| [smoke.sh](smoke.sh) | Check DNS, ingress, AdGuard policy, and qBittorrent behavior |
+| [smoke.sh](smoke.sh) | Check DNS, ingress, identity, MeTube access, and qBittorrent behavior |
 
 ## Making changes
 
@@ -24,6 +24,12 @@ as the `homelab` Compose project.
 Cloudflare DDNS uses a scratch image without a healthcheck command. Its
 `homelab.health=process` label requires one running container, no restart in
 progress, and zero activation restarts.
+
+Traefik serves Authentik and Headscale from this package. The Authentik blueprint
+creates the Headscale OIDC provider and protects MeTube for `metube-users`.
+Headscale device registration is restricted to `homelab-admins`; its protocol
+endpoint must not have forward auth. Use the
+[identity deployment and migration procedures](../../../docs/operations.md#deploy-identity-services).
 
 ## Credentials and local preparation
 

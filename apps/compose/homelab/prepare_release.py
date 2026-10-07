@@ -79,6 +79,8 @@ def _read_bundle(path: Path) -> dict[str, Any]:
             "adguard",
             "qbittorrent",
             "copyparty_users",
+            "authentik",
+            "headscale",
         },
     )
 
@@ -126,6 +128,10 @@ def _read_topology(path: Path) -> dict[str, str]:
         for name, value in values.items():
             if not isinstance(value, str) or ipaddress.ip_address(value).version != 4:
                 raise PreparationError(f"topology {name} must be an IPv4 address")
+        prefix = apps.get("prefix_length")
+        if type(prefix) is not int or not 0 <= prefix <= 32:
+            raise PreparationError("topology application prefix_length must be an IPv4 prefix")
+        values["LAN_SUBNET"] = str(ipaddress.ip_network(f"{values['APPS_HOST']}/{prefix}", strict=False))
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
         raise PreparationError("host topology is not valid UTF-8 JSON") from error
     return values
@@ -215,8 +221,21 @@ def prepare(secret_bundle: Path, release_root: Path, topology: Path) -> None:
     topology_values = _read_topology(topology)
     if bundle["component"] != "apps":
         raise PreparationError("component secret bundle component must be apps")
-    if type(bundle["version"]) is not int or bundle["version"] != 1:
-        raise PreparationError("component secret bundle version must be 1")
+    if type(bundle["version"]) is not int or bundle["version"] != 2:
+        raise PreparationError("component secret bundle version must be 2")
+
+    authentik = _object(
+        bundle["authentik"], name="authentik",
+        keys={"secret_key", "database_password", "bootstrap_email", "bootstrap_password"},
+    )
+    identity_values = {
+        name: _text(value, name=f"authentik.{name}")
+        for name, value in authentik.items()
+    }
+    if len(identity_values["secret_key"]) < 50:
+        raise PreparationError("authentik.secret_key must contain at least 50 characters")
+    headscale = _object(bundle["headscale"], name="headscale", keys={"oidc_client_secret"})
+    oidc_secret = _text(headscale["oidc_client_secret"], name="Headscale OIDC client secret")
 
     cloudflare = _object(
         bundle["cloudflare"],
@@ -309,6 +328,29 @@ def prepare(secret_bundle: Path, release_root: Path, topology: Path) -> None:
         qbittorrent_hash,
     )
 
+    headscale_config = _replace_exact(
+        _template(release_root, "headscale.yaml.tmpl"),
+        "@@APPS_HOST@@", topology_values["APPS_HOST"],
+    )
+    # JSON strings are YAML-compatible and preserve special characters in secrets.
+    headscale_config += (
+        "oidc:\n"
+        "  only_start_if_oidc_is_available: true\n"
+        "  issuer: https://auth.home.hchu.me/application/o/headscale/\n"
+        "  client_id: homelab-headscale\n"
+        f"  client_secret: {json.dumps(oidc_secret)}\n"
+        "  scope: [openid, profile, email, groups]\n"
+        "  allowed_groups: [homelab-admins]\n"
+        "  email_verified_required: false\n"
+        "  pkce:\n"
+        "    enabled: true\n"
+        "    method: S256\n"
+    )
+    headscale_policy = _replace_exact(
+        _template(release_root, "headscale-policy.hujson.tmpl"),
+        "@@LAN_SUBNET@@", topology_values["LAN_SUBNET"], count=2,
+    )
+
     _atomic_write(release_root / ".secrets" / "traefik.env", f"CF_DNS_API_TOKEN={traefik_token}\n")
     _atomic_write(
         release_root / ".secrets" / "cloudflare-ddns.env",
@@ -325,6 +367,23 @@ def prepare(secret_bundle: Path, release_root: Path, topology: Path) -> None:
         release_root / "generated" / "qbittorrent" / "qBittorrent.conf",
         qbittorrent_config,
     )
+    _atomic_write(
+        release_root / ".secrets" / "authentik-db.env",
+        f"POSTGRES_PASSWORD={identity_values['database_password']}\n",
+    )
+    _atomic_write(
+        release_root / ".secrets" / "authentik.env",
+        f"AUTHENTIK_SECRET_KEY={identity_values['secret_key']}\n"
+        f"AUTHENTIK_POSTGRESQL__PASSWORD={identity_values['database_password']}\n"
+        f"HEADSCALE_OIDC_CLIENT_SECRET={oidc_secret}\n",
+    )
+    _atomic_write(
+        release_root / ".secrets" / "authentik-bootstrap.env",
+        f"AUTHENTIK_BOOTSTRAP_EMAIL={identity_values['bootstrap_email']}\n"
+        f"AUTHENTIK_BOOTSTRAP_PASSWORD={identity_values['bootstrap_password']}\n",
+    )
+    _atomic_write(release_root / "generated" / "headscale" / "config.yaml", headscale_config)
+    _atomic_write(release_root / "generated" / "headscale" / "policy.hujson", headscale_policy)
 
 
 def _parser() -> argparse.ArgumentParser:

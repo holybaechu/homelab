@@ -22,7 +22,16 @@ Replace every placeholder before use:
 ```json
 {
   "component": "apps",
-  "version": 1,
+  "version": 2,
+  "authentik": {
+    "secret_key": "...",
+    "database_password": "...",
+    "bootstrap_email": "...",
+    "bootstrap_password": "..."
+  },
+  "headscale": {
+    "oidc_client_secret": "..."
+  },
   "cloudflare": {
     "traefik_dns_api_token": "...",
     "ddns_api_token": "..."
@@ -48,6 +57,25 @@ The preparer rejects unknown keys, the wrong component or version, unsafe accoun
 names, multiline values, malformed hashes, symlinks, and permissions broader
 than `0600`. Generated files go into `.secrets/` and `generated/` with mode `0600`.
 Both directories are ignored by Git.
+
+The identity stack requires apps bundle version `2`. Generate a random Authentik
+secret key of at least 50 characters, and separate random database, bootstrap,
+and Headscale OIDC secrets. These values are rendered only into private runtime
+files. Identity environment files use Compose's raw format so dollar signs,
+quotes, and backslashes remain literal.
+
+The bootstrap email and password initialize `akadmin` only on the first startup;
+change an existing user's password in Authentik. Keep the Authentik secret key
+stable. Changing the database password in the bundle does not update an existing
+PostgreSQL role: change that role's password privately in the database during
+maintenance before synchronizing the matching bundle. Take an independent
+database backup before either operation.
+
+For existing installations, follow the
+[identity deployment procedure](../docs/operations.md#deploy-identity-services)
+before replacing a version-1 bundle. The compatible release engine retains the
+version-2 bundle and supplies only the old fields when restoring a compatible
+version-1 package.
 
 Check a bundle using the
 [temporary-copy preparation commands](../apps/compose/homelab/README.md#credentials-and-local-preparation).
@@ -79,6 +107,25 @@ The tailnet bundle contains its authentication key:
   }
 }
 ```
+
+After Headscale is running, use a version-2 tailnet bundle for the gateway:
+
+```json
+{
+  "component": "tailnet",
+  "version": 2,
+  "values": {
+    "auth_key": "...",
+    "login_server": "https://headscale.home.hchu.me"
+  }
+}
+```
+
+Use a Headscale pre-authentication key tagged `tag:gateway`. This is a device
+registration key, not a Headscale API key. Follow the
+[management migration](../docs/operations.md#move-management-access-to-headscale)
+before installing the hosted gateway secret. Version-1 hosted Tailscale bundles
+remain supported for bootstrap and recovery.
 
 Unknown or missing fields stop reconciliation before changes are made. Hosted
 jobs generate these documents from their connection inputs; manual runs pass

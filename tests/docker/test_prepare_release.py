@@ -20,7 +20,14 @@ TOPOLOGY = REPO_ROOT / "infra" / "ansible" / "inventory" / "prod" / "topology.js
 def valid_bundle() -> dict:
     return {
         "component": "apps",
-        "version": 1,
+        "version": 2,
+        "authentik": {
+            "secret_key": "k" * 64,
+            "database_password": "database-$#'\\-password",
+            "bootstrap_email": "admin@example.test",
+            "bootstrap_password": "bootstrap-$#'\\-password",
+        },
+        "headscale": {"oidc_client_secret": "oidc-$#'\\-secret"},
         "cloudflare": {
             "traefik_dns_api_token": "traefik-token",
             "ddns_api_token": "ddns-token",
@@ -85,6 +92,11 @@ def test_preparer_materializes_every_private_input_atomically(tmp_path):
     outputs = {
         stage / ".secrets/traefik.env",
         stage / ".secrets/cloudflare-ddns.env",
+        stage / ".secrets/authentik-db.env",
+        stage / ".secrets/authentik.env",
+        stage / ".secrets/authentik-bootstrap.env",
+        stage / "generated/headscale/config.yaml",
+        stage / "generated/headscale/policy.hujson",
         stage / "generated/adguard/AdGuardHome.yaml",
         stage / "generated/traefik/routes.yml",
         stage / "generated/copyparty.conf",
@@ -96,6 +108,18 @@ def test_preparer_materializes_every_private_input_atomically(tmp_path):
 
     assert (stage / ".secrets/traefik.env").read_text() == "CF_DNS_API_TOKEN=traefik-token\n"
     assert (stage / ".secrets/cloudflare-ddns.env").read_text() == "CLOUDFLARE_API_TOKEN=ddns-token\n"
+    assert (stage / ".secrets/authentik-db.env").read_text() == (
+        "POSTGRES_PASSWORD=" + payload["authentik"]["database_password"] + "\n"
+    )
+    headscale = yaml.safe_load((stage / "generated/headscale/config.yaml").read_text())
+    assert headscale["oidc"]["client_secret"] == payload["headscale"]["oidc_client_secret"]
+    assert headscale["oidc"]["allowed_groups"] == ["homelab-admins"]
+    assert headscale["oidc"]["only_start_if_oidc_is_available"] is True
+    policy = json.loads((stage / "generated/headscale/policy.hujson").read_text())
+    assert policy["autoApprovers"]["routes"] == {"192.168.0.0/24": ["tag:gateway"]}
+    assert policy["grants"][1] == {
+        "src": ["tag:ci"], "dst": ["192.168.0.0/24"], "ip": ["tcp:22"]
+    }
 
     adguard = yaml.safe_load((stage / "generated/adguard/AdGuardHome.yaml").read_text())
     assert adguard["users"] == [
@@ -171,6 +195,9 @@ def test_preparer_rejects_a_topology_snapshot_that_cannot_route_every_service(tm
     [
         lambda value: value.update(component="retired"),
         lambda value: value.update(version=True),
+        lambda value: value.update(version=1),
+        lambda value: value["authentik"].update(secret_key="too-short"),
+        lambda value: value["headscale"].update(oidc_client_secret="private\nvalue"),
         lambda value: value.update(unexpected="value"),
         lambda value: value["adguard"].update(password_hash="$2y$99$" + "." * 53),
         lambda value: value["qbittorrent"].update(password="plaintext"),
@@ -188,6 +215,7 @@ def test_preparer_rejects_wrong_component_schema_or_secret_shape(tmp_path, mutat
     assert result.stderr.startswith("homelab release preparation failed:")
     assert not (stage / ".secrets").exists()
     assert not (stage / "generated").exists()
+    assert payload["headscale"]["oidc_client_secret"] not in result.stderr
 
 
 def test_preparer_rejects_duplicate_json_keys(tmp_path):

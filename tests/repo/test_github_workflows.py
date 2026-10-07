@@ -98,6 +98,7 @@ def test_secret_rotation_uses_only_the_component_bundle():
     assert set(re.findall(r"secrets\.([A-Z0-9_]+)", source)) == {
         "APPS_SECRET_BUNDLE", "DEPLOY_SSH_KNOWN_HOSTS", "DEPLOY_SSH_PRIVATE_KEY",
         "TS_AUDIENCE", "TS_OAUTH_CLIENT_ID",
+        "HEADSCALE_CI_AUTH_KEY",
     }
     _, cleanup = step_with(steps, 'rm -f -- "$RUNNER_TEMP/apps.json"')
     assert cleanup["if"] == "always()"
@@ -140,6 +141,21 @@ def test_validation_covers_the_application_and_every_explicit_infrastructure_uni
     assert "infra/ansible/playbooks/reconcile.yml" in command
     assert all(unit in command for unit in ("pve", "tailnet", "apps-host"))
     assert "--syntax-check" in command
+
+
+def test_headscale_cutover_preserves_the_hosted_bootstrap_path():
+    for name in ("apps.yml", "infra.yml"):
+        job = next(iter(workflow(name)["jobs"].values()))
+        connect = next(step for step in job["steps"] if step.get("uses", "").startswith("tailscale/"))
+        inputs = connect["with"]
+        assert inputs["authkey"] == "${{ secrets.HEADSCALE_CI_AUTH_KEY }}"
+        assert "secrets.HEADSCALE_CI_AUTH_KEY == ''" in inputs["oauth-client-id"]
+        assert "--login-server=https://headscale.home.hchu.me" in inputs["args"]
+        assert "--accept-routes=true" in inputs["args"]
+        assert "--accept-dns=false" in inputs["args"]
+    _, gateway = step_with(workflow("infra.yml")["jobs"]["reconcile"]["steps"], '"component": "tailnet"')
+    assert gateway["env"]["HEADSCALE_GATEWAY_AUTH_KEY"] == "${{ secrets.HEADSCALE_GATEWAY_AUTH_KEY }}"
+    assert '"version": 2' in gateway["run"]
 
 
 @pytest.mark.parametrize("operator,expected", (

@@ -12,12 +12,19 @@ Keep independent backups outside the affected host:
 | --- | --- |
 | PVE's `/var/lib/homelab`, mounted in apps as `/srv/homelab` | Application files, downloads, and service state |
 | `platform_traefik_data` and `platform_adguard_work` Docker volumes | Certificate and AdGuard work data |
+| `platform_authentik_db`, `platform_authentik_data`, and `platform_headscale_data` Docker volumes | Identity accounts, providers, uploaded files, registered VPN devices, and control keys |
 | Private component bundles and connection credentials | Host access and application authentication |
 | The intended repository revision | Host declarations and application configuration |
 
 LXC configuration exports under `/var/backups/homelab/pct-config` help review
 changes, but they are not data backups. Immutable releases and rollback records
 also do not restore an earlier copy of application data.
+
+Use a PostgreSQL logical backup for Authentik, or stop its database before copying
+the volume. Stop Headscale before copying its SQLite database and private keys.
+Keep these backups private and restore the database together with its matching
+component credentials. Application rollback preserves these volumes and does not
+undo database migrations.
 
 ## Rebuild a host
 
@@ -67,6 +74,12 @@ permissions. Reconcile `apps-host` after the repair, then resume the rebuild.
 
 Hosted jobs depend on tailnet to reach the LAN. Use a trusted LAN controller or
 the PVE console to restore that connection first.
+
+After the Headscale cutover, the apps host also owns the management control
+server and identity provider. Recover or deploy that host from the LAN or PVE
+console; its normal hosted jobs depend on the services being recovered. The
+[management migration procedure](operations.md#move-management-access-to-headscale)
+includes returning to the original hosted Tailscale connection.
 
 The Ansible PVE reconciler protects the tailnet VMID against changes that would
 break its own connection. For a required restart or replacement, use the installed

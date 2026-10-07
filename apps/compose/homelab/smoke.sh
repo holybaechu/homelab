@@ -41,6 +41,9 @@ probe_ingress() {
   fail "shared ingress route failed for ${hostname}"
 }
 
+compose exec -T authentik-worker ak apply_blueprint /blueprints/homelab.yaml >/dev/null 2>&1 \
+  || fail "identity blueprint application failed"
+
 smoke_urls="$(
   compose config --format json | python3 -c '
 import json, sys
@@ -58,6 +61,31 @@ for service in model.get("services", {}).values():
 printf '%s\n' "${smoke_urls}" | while IFS= read -r url; do
   probe_ingress "${url}"
 done
+
+metube_auth="$(curl --silent --show-error --max-time 8 --output /dev/null \
+  --write-out '%{http_code} %{redirect_url}' \
+  --resolve metube.home.hchu.me:443:127.0.0.1 \
+  https://metube.home.hchu.me/)" || fail "MeTube authentication probe failed"
+case "${metube_auth}" in
+  '302 https://auth.home.hchu.me/'*|'303 https://auth.home.hchu.me/'* \
+  |'302 https://metube.home.hchu.me/outpost.goauthentik.io/'* \
+  |'303 https://metube.home.hchu.me/outpost.goauthentik.io/'*) ;;
+  *) fail "MeTube did not require an Authentik login" ;;
+esac
+
+oidc_config="$(curl --fail --silent --show-error --max-time 8 \
+  --resolve auth.home.hchu.me:443:127.0.0.1 \
+  https://auth.home.hchu.me/application/o/headscale/.well-known/openid-configuration)" \
+  || fail "Headscale identity provider discovery failed"
+printf '%s\n' "${oidc_config}" | python3 -c '
+import json, sys
+config = json.load(sys.stdin)
+expected = "https://auth.home.hchu.me/application/o/headscale/"
+sys.exit(0 if config.get("issuer") == expected and config.get("jwks_uri") else 1)
+' || fail "Headscale identity provider discovery is invalid"
+
+compose exec -T headscale headscale health --config /etc/headscale/config.yaml >/dev/null 2>&1 \
+  || fail "Headscale control server is unhealthy"
 
 safe_search_enabled="$(
   awk '
