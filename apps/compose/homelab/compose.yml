@@ -21,6 +21,7 @@ services:
       - traefik_data:/data
     networks:
       - proxy
+      - copyparty_proxy
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 30s
@@ -119,15 +120,25 @@ services:
       - /srv/homelab/copyparty/shared-readonly:/srv/shared-readonly:ro
       - /srv/homelab/downloads/complete:/srv/downloads:ro
     networks:
-      - proxy
+      - copyparty_proxy
     labels:
       - traefik.enable=true
-      - traefik.docker.network=homelab_proxy
+      - traefik.docker.network=homelab_copyparty_proxy
       - traefik.http.routers.copyparty.rule=Host(`copyparty.hchu.me`)
       - traefik.http.routers.copyparty.entrypoints=websecure
-      - traefik.http.routers.copyparty.middlewares=secure-headers@file
+      - traefik.http.routers.copyparty.middlewares=clear-copyparty-identity@file,authentik@file,secure-headers@file
+      - traefik.http.routers.copyparty-public.rule=Host(`copyparty.hchu.me`) && Method(`GET`,`HEAD`) && (((Path(`/public`) || PathPrefix(`/public/`)) && !HeaderRegexp(`Cookie`, `authentik_proxy_`)) || (PathPrefix(`/.cpr/`) && !PathPrefix(`/.cpr/metrics`) && !PathPrefix(`/.cpr/ssdp`)))
+      - traefik.http.routers.copyparty-public.entrypoints=websecure
+      - traefik.http.routers.copyparty-public.priority=100
+      - traefik.http.routers.copyparty-public.middlewares=clear-copyparty-identity@file,secure-headers@file
+      - traefik.http.routers.copyparty-public.service=copyparty
+      - traefik.http.routers.copyparty-dav.rule=Host(`copyparty-dav.home.hchu.me`)
+      - traefik.http.routers.copyparty-dav.entrypoints=websecure
+      - traefik.http.routers.copyparty-dav.priority=100
+      - traefik.http.routers.copyparty-dav.middlewares=private-only@file,clear-copyparty-identity@file,secure-headers@file
+      - traefik.http.routers.copyparty-dav.service=copyparty
       - traefik.http.services.copyparty.loadbalancer.server.port=3923
-      - homelab.smoke.url=https://copyparty.hchu.me/
+      - homelab.smoke.url=https://copyparty.hchu.me/public/
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q 'http://127.0.0.1:3923/?reset=/._'"]
       interval: 30s
@@ -218,6 +229,12 @@ services:
       - traefik.http.routers.metube-auth.middlewares=secure-headers@file
       - traefik.http.routers.metube-auth.service=authentik
       - traefik.http.routers.metube-auth.observability.accesslogs=false
+      - traefik.http.routers.copyparty-auth.rule=Host(`copyparty.hchu.me`) && PathPrefix(`/outpost.goauthentik.io/`)
+      - traefik.http.routers.copyparty-auth.entrypoints=websecure
+      - traefik.http.routers.copyparty-auth.priority=200
+      - traefik.http.routers.copyparty-auth.middlewares=secure-headers@file
+      - traefik.http.routers.copyparty-auth.service=authentik
+      - traefik.http.routers.copyparty-auth.observability.accesslogs=false
       - traefik.http.services.authentik.loadbalancer.server.port=9000
       - homelab.smoke.url=https://auth.home.hchu.me/-/health/ready/
     healthcheck:
@@ -300,6 +317,9 @@ services:
 networks:
   proxy:
     name: homelab_proxy
+  copyparty_proxy:
+    name: homelab_copyparty_proxy
+    internal: true
 
 volumes:
   traefik_data:

@@ -14,7 +14,7 @@ one unit.
 
 | Unit | What it manages | Component bundle |
 | --- | --- | --- |
-| `pve` | LXC definitions, shared storage, and guest SSH/Python access | PVE bundle for `apply` |
+| `pve` | LXC definitions, shared storage, guest SSH/Python access, or an explicit identity-only operation | PVE bundle for `apply` |
 | `tailnet` | Debian base and Tailscale-client routing with hosted Tailscale or Headscale | Tailnet bundle |
 | `apps-host` | Debian base, Docker, DNS policy, data directories, release launcher, and PVE certificate trust | None |
 
@@ -22,6 +22,10 @@ Each role completes its own preparation and recovery checks. PVE owns the shared
 filesystem and bind mount; `apps-host` creates application directories and
 repairs restored data ownership. The bind-source UID/GID in topology maps to
 root inside the unprivileged guest, so application paths can be created there.
+
+Proxmox OIDC configuration uses the same PVE unit with `pve_identity_only=true`;
+normal host provisioning and access-only runs leave it alone. Deploy apps before
+that operation, following [identity operations](../docs/operations.md#copyparty-and-proxmox-identity).
 When adopting this ownership handoff on an existing host, review and apply the
 `pve` plan first, then reconcile `apps-host` using the [setup commands](../docs/setup.md).
 

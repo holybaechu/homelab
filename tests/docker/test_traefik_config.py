@@ -82,3 +82,38 @@ def test_identity_protects_metube_without_intercepting_vpn_or_login_protocols():
     assert not any("docker.sock" in mount for mount in services["authentik-worker"]["volumes"])
     for name in ("authentik-server", "authentik-worker", "authentik-db"):
         assert all(item["format"] == "raw" for item in services[name]["env_file"])
+
+
+def test_copyparty_identity_cannot_be_spoofed_through_public_or_client_routes():
+    model = yaml.safe_load(read('compose.yml'))
+    service = model['services']['copyparty']
+    labels = dict(item.split('=', 1) for item in service['labels'])
+    assert service['networks'] == ['copyparty_proxy'] and 'ports' not in service
+    assert model['services']['traefik']['networks'] == ['proxy', 'copyparty_proxy']
+    assert labels['traefik.http.routers.copyparty.middlewares'].startswith('clear-copyparty-identity@file,authentik@file,')
+    public = labels['traefik.http.routers.copyparty-public.rule']
+    assert 'Path(`/public`)' in public and 'PathPrefix(`/public/`)' in public
+    assert 'Method(`GET`,`HEAD`)' in public and '!HeaderRegexp' in public
+    assert 'PathPrefix(`/.cpr/`)' in public
+    assert '!PathPrefix(`/.cpr/metrics`)' in public and '!PathPrefix(`/.cpr/ssdp`)' in public
+    assert labels['traefik.http.routers.copyparty-public.middlewares'].startswith('clear-copyparty-identity@file,')
+    assert labels['traefik.http.routers.copyparty-dav.middlewares'].startswith('private-only@file,clear-copyparty-identity@file,')
+    assert '@copyparty-admins' in read('config/copyparty.conf.tmpl')
+    assert '@copyparty-users' in read('config/copyparty.conf.tmpl')
+    assert 'middlewares: [private-only, pve-headers]' in read('config/routes.yml.tmpl')
+
+
+def test_identity_blueprint_seeds_required_defaults_before_resolving_provider_fields():
+    blueprint = yaml.load(read('config/authentik-blueprint.yaml'), Loader=yaml.BaseLoader)
+    dependencies = []
+    for entry in blueprint['entries']:
+        if entry['model'] != 'authentik_blueprints.metaapplyblueprint':
+            break
+        assert entry['attrs']['required'] == 'true'
+        dependencies.append(entry['attrs']['identifiers']['name'])
+    assert set(dependencies) == {
+        'System - OAuth2 Provider - Scopes',
+        'Default - Provider authorization flow (implicit consent)',
+        'Default - Provider invalidation flow',
+        'Default - Authentication flow',
+    }

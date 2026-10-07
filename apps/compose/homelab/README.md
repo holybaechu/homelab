@@ -56,6 +56,11 @@ with the topology snapshot from the selected release commit.
 
 ## Configuration and data
 
+Identity providers and application policies belong to
+`config/authentik-blueprint.yaml`. Copyparty supports browser SSO, anonymous
+public reads, and a private native-client endpoint. Proxmox uses its native OIDC
+realm managed by Ansible. See [identity operations and reproducibility](../../../docs/operations.md#copyparty-and-proxmox-identity).
+
 Change managed settings in this package. Copyparty configuration is mounted
 read-only, AdGuard configuration is regenerated during release preparation, and
 qBittorrent configuration is reapplied on restart. UI preference edits may be

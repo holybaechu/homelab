@@ -56,18 +56,22 @@ esac
         r'''
 case "$*" in
   *api.ipify.org*) printf '203.0.113.9\n' ;;
-  *metube.home.hchu.me*)
-    if [ "${FAKE_AUTH_FAILURE:-}" = bypass ]; then
+  *metube.home.hchu.me*|*copyparty.hchu.me*)
+    if [ "${FAKE_AUTH_FAILURE:-}" = bypass ] || { [ "${FAKE_AUTH_FAILURE:-}" = copyparty-bypass ] && printf '%s' "$*" | grep -q copyparty; }; then
       printf '200 '
     else
       printf '302 https://auth.home.hchu.me/application/o/authorize/'
     fi
     ;;
   *openid-configuration*)
-    if [ "${FAKE_AUTH_FAILURE:-}" = discovery ]; then
+    case "$*" in
+      *application/o/proxmox/*) provider=proxmox ;;
+      *) provider=headscale ;;
+    esac
+    if [ "${FAKE_AUTH_FAILURE:-}" = discovery ] || { [ "${FAKE_AUTH_FAILURE:-}" = proxmox-discovery ] && [ "$provider" = proxmox ]; }; then
       printf '{"issuer":"https://wrong.example/"}'
     else
-      printf '{"issuer":"https://auth.home.hchu.me/application/o/headscale/","jwks_uri":"https://auth.home.hchu.me/application/o/headscale/jwks/"}'
+      printf '{"issuer":"https://auth.home.hchu.me/application/o/%s/","jwks_uri":"https://auth.home.hchu.me/application/o/%s/jwks/"}' "$provider" "$provider"
     fi
     ;;
   *one.home.example*|*two.home.example*)
@@ -175,8 +179,10 @@ def test_apps_smoke_fails_when_a_declared_ingress_is_unreachable(tmp_path: Path)
 
 @pytest.mark.parametrize("failure,message", (
     ("blueprint", "identity blueprint application failed"),
-    ("bypass", "MeTube did not require an Authentik login"),
-    ("discovery", "Headscale identity provider discovery is invalid"),
+    ("bypass", "metube.home.hchu.me did not require an Authentik login"),
+    ("copyparty-bypass", "copyparty.hchu.me did not require an Authentik login"),
+    ("discovery", "headscale identity provider discovery is invalid"),
+    ("proxmox-discovery", "proxmox identity provider discovery is invalid"),
     ("headscale", "Headscale control server is unhealthy"),
 ))
 def test_apps_smoke_rejects_broken_identity_or_unauthenticated_metube(tmp_path, failure, message):

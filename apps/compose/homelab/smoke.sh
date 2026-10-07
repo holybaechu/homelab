@@ -62,27 +62,31 @@ printf '%s\n' "${smoke_urls}" | while IFS= read -r url; do
   probe_ingress "${url}"
 done
 
-metube_auth="$(curl --silent --show-error --max-time 8 --output /dev/null \
+for app_host in metube.home.hchu.me copyparty.hchu.me; do
+app_auth="$(curl --silent --show-error --max-time 8 --output /dev/null \
   --write-out '%{http_code} %{redirect_url}' \
-  --resolve metube.home.hchu.me:443:127.0.0.1 \
-  https://metube.home.hchu.me/)" || fail "MeTube authentication probe failed"
-case "${metube_auth}" in
+  --resolve "${app_host}:443:127.0.0.1" \
+  "https://${app_host}/")" || fail "${app_host} authentication probe failed"
+case "${app_auth}" in
   '302 https://auth.home.hchu.me/'*|'303 https://auth.home.hchu.me/'* \
-  |'302 https://metube.home.hchu.me/outpost.goauthentik.io/'* \
-  |'303 https://metube.home.hchu.me/outpost.goauthentik.io/'*) ;;
-  *) fail "MeTube did not require an Authentik login" ;;
+  |"302 https://${app_host}/outpost.goauthentik.io/"* \
+  |"303 https://${app_host}/outpost.goauthentik.io/"*) ;;
+  *) fail "${app_host} did not require an Authentik login" ;;
 esac
+done
 
+for provider in headscale proxmox; do
 oidc_config="$(curl --fail --silent --show-error --max-time 8 \
   --resolve auth.home.hchu.me:443:127.0.0.1 \
-  https://auth.home.hchu.me/application/o/headscale/.well-known/openid-configuration)" \
-  || fail "Headscale identity provider discovery failed"
+  "https://auth.home.hchu.me/application/o/${provider}/.well-known/openid-configuration")" \
+  || fail "${provider} identity provider discovery failed"
 printf '%s\n' "${oidc_config}" | python3 -c '
 import json, sys
 config = json.load(sys.stdin)
-expected = "https://auth.home.hchu.me/application/o/headscale/"
+expected = "https://auth.home.hchu.me/application/o/" + sys.argv[1] + "/"
 sys.exit(0 if config.get("issuer") == expected and config.get("jwks_uri") else 1)
-' || fail "Headscale identity provider discovery is invalid"
+' "$provider" || fail "${provider} identity provider discovery is invalid"
+done
 
 compose exec -T headscale headscale health --config /etc/headscale/config.yaml >/dev/null 2>&1 \
   || fail "Headscale control server is unhealthy"

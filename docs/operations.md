@@ -134,6 +134,69 @@ AdGuard, and qBittorrent on their existing private routes.
 Identity and proxy callback routers omit Traefik access logs so authorization
 codes and login state are not recorded there.
 
+## Copyparty and Proxmox identity
+
+Deploy the application package first. Its blueprint declares the Copyparty proxy
+provider, Proxmox OIDC provider, access groups, policies, and embedded outpost.
+These settings are reconciled during application smoke checks; edit the blueprint
+instead of changing its managed objects only in the UI.
+
+Copyparty browser login uses Authentik. Grant `copyparty-users` for read access to
+the shared read-only area, or `copyparty-admins` for management and public-share
+write access.
+The read-only downloads and shared mounts remain read-only. Anonymous GET/HEAD
+requests to `/public` stay available; writes require an authorized account.
+Authenticated visitors use the ordinary SSO route, including `/public`.
+Copyparty's existing DNS CNAME points to the DDNS-managed `home.hchu.me`; retain
+that alias at the DNS provider rather than adding a conflicting A record.
+Only Traefik and Copyparty join its private proxy network, and the edge removes
+client-supplied identity headers before authenticating them.
+
+WebDAV/rclone clients use `https://copyparty-dav.home.hchu.me` from the LAN or
+management VPN, with their existing Copyparty credentials. The private route
+removes identity headers and uses native client authentication. It requires no
+public DNS record; AdGuard's existing wildcard resolves it on the LAN.
+
+For Proxmox, dispatch `infra.yml` with **unit=pve**, **pve_mode=apply**, and
+**pve_identity_only=true**. Leave `pve_access_only` false. This reconciles only
+the additional `authentik` OIDC realm and administrator grants; it skips storage,
+LXC definitions, and SSH access. The hosted job generates a private version-2
+PVE bundle from the existing apps bundle and deployment public keys.
+
+The Proxmox client credential is a purpose-specific HMAC-SHA256 derivation from
+the stable Authentik secret key, with context `homelab/proxmox-oidc/v1`. The apps
+preparer and PVE workflow produce the same value without storing it in Git.
+Changing that master key requires both an apps credential sync and another PVE
+identity reconciliation.
+
+Declare allowed Proxmox administrator usernames in `pve_identity_administrators`
+in [group variables](../infra/ansible/inventory/prod/group_vars/all.yml), and grant
+them `homelab-admins` in Authentik. The initial administrator is `akadmin`.
+Removing a declared username revokes its managed root-level `PVEAdmin` grant.
+The realm does not automatically create other users or become the default.
+
+PVE's Linux PAM realm and local `root@pam` account are retained. Test a local
+administrator login and keep its credentials in your password manager. During
+an Authentik outage, select Linux PAM at the login screen. If the apps host is
+also unavailable, open the PVE topology address directly on port 8006 from the
+LAN or a working management VPN.
+
+## What identity IaC reproduces
+
+| Service | Recreated from the repository and matching private bundles | State that needs backups |
+| --- | --- | --- |
+| Authentik | Pinned services, database connection, initial administrator, named groups, providers, application policies, and embedded outpost configuration | Ordinary users, passwords changed after bootstrap, MFA, sessions, signing keys, uploaded data, and UI-only changes |
+| MeTube | Service settings, mounts, routing, and Authentik login policy | Downloads and application data |
+| Headscale | Service, OIDC settings, policy, route approvals, and HTTPS endpoint | Registered users/devices, registration/API keys, SQLite database, and control keys |
+| Copyparty | Services, shares, native client accounts, proxy identity mapping, group permissions, and public/client routes | Files and persistent indexes |
+| Proxmox | Additional OIDC realm, declared SSO administrators, and managed administrator grants | Existing local users, recovery credentials, unrelated permissions, and host/guest data |
+
+Apply the three infrastructure units separately, deploy apps, then apply PVE
+identity after its OIDC discovery endpoint is ready. A fresh deployment initializes
+the declared configuration; restoring existing identities and device registrations
+also requires the [private data backups](recovery.md#what-to-back-up).
+Headscale's root page is minimal because no web dashboard is included.
+
 ## Move management access to Headscale
 
 Run the cutover from a trusted LAN controller with PVE console access. Hosted
