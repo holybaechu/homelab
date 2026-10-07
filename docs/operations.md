@@ -147,6 +147,8 @@ write access.
 The read-only downloads and shared mounts remain read-only. Anonymous GET/HEAD
 requests to `/public` stay available; writes require an authorized account.
 Authenticated visitors use the ordinary SSO route, including `/public`.
+Copyparty's existing DNS CNAME points to the DDNS-managed `home.hchu.me`; retain
+that alias at the DNS provider rather than adding a conflicting A record.
 Only Traefik and Copyparty join its private proxy network, and the edge removes
 client-supplied identity headers before authenticating them.
 
