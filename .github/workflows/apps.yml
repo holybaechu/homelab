@@ -88,7 +88,7 @@ jobs:
           audience: ${{ secrets.HEADSCALE_CI_AUTH_KEY == '' && secrets.TS_AUDIENCE || '' }}
           tags: tag:ci
           # renovate: datasource=custom.tailscale-linux depName=tailscale/tailscale versioning=semver
-          version: "1.102.5"
+          version: "1.104.1"
           args: ${{ secrets.HEADSCALE_CI_AUTH_KEY != '' && '--login-server=https://headscale.home.hchu.me --accept-routes=true --accept-dns=false' || '--accept-dns=false' }}
           ping: ${{ env.DOCKER_APPS_HOST }}
       - name: Configure pinned SSH trust
