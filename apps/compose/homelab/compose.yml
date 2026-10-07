@@ -52,7 +52,7 @@ services:
     env_file:
       - ./.secrets/cloudflare-ddns.env
     environment:
-      DOMAINS: home.hchu.me
+      DOMAINS: home.hchu.me,auth.home.hchu.me,headscale.home.hchu.me,metube.home.hchu.me
       IP6_PROVIDER: none
       PROXIED: "false"
       TZ: Asia/Seoul

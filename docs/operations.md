@@ -106,10 +106,11 @@ release or later revisions; an older package is rejected before activation.
 1. Back up existing application data and credentials. Prepare the version-2
    [apps bundle](../secrets/README.md#apps-bundle), preserving current application
    credentials. Keep both Headscale environment secrets unset during bootstrap.
-2. Ensure the three hostnames above resolve publicly to the home address updated
-   by DDNS. Use DNS-only records, not a Cloudflare HTTP proxy for Headscale. Forward
-   TCP 443 to the apps host from topology. Traefik already uses DNS challenges for
-   certificates, so inbound TCP 80 is optional.
+2. The package's Cloudflare DDNS updater creates and maintains DNS-only A records
+   for the three hostnames above and `home.hchu.me`. Keep any existing records
+   DNS-only, including Headscale. Forward TCP 443 to the apps host from topology.
+   Traefik already uses DNS challenges for certificates, so inbound TCP 80 is
+   optional.
 3. Replace `APPS_SECRET_BUNDLE` and deploy the complete identity package using the
    [apps workflow](#deploy-apps). Its blueprint initializes the Headscale OIDC
    provider and MeTube proxy provider with the embedded outpost; no Docker socket

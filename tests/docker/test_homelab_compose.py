@@ -74,3 +74,10 @@ def test_secret_inputs_and_smoke_endpoints_are_package_local(model):
     }
     assert routed <= smoked
     assert "adguard" in smoked
+
+
+def test_public_identity_endpoints_have_managed_dns(model):
+    settings = model["services"]["cloudflare-ddns"]["environment"]
+    domains = {domain.strip() for domain in settings["DOMAINS"].split(",")}
+    assert {"auth.home.hchu.me", "headscale.home.hchu.me", "metube.home.hchu.me"} <= domains
+    assert settings["PROXIED"] == "false"
