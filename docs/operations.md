@@ -301,7 +301,8 @@ of the installed configuration and component bundle. A repeat deployment replace
 that copy. Save it elsewhere before retries when you need an older recovery point.
 Retained images are not automatically pruned.
 
-Copy previous configuration to a private temporary directory first (deployment
+For backups made by the stable deployment, copy previous configuration to a
+private temporary directory first (deployment
 replaces `compose-previous`), then use the **current** deployer:
 
 ```sh
@@ -311,6 +312,14 @@ python3 /opt/homelab/compose/deploy.py --source "$recovery" \
   --secret-bundle "$recovery/apps.json" --revision recovery
 rm -rf -- "$recovery"
 ```
+
+The first migration's previous copy uses the old mount layout. To return to it,
+read `active_slot` from `/opt/homelab/compose-control/release-state.json`, change
+into `/opt/homelab/compose-runtime/<active_slot>/stack`, and run
+`docker compose --project-name homelab up -d --no-build --pull never --force-recreate --wait`.
+This uses the retained old configuration directly. Hold deployment workflows
+while recovering and remove the stable `.revision` marker before retrying the
+migration. Do not use the retired launcher.
 
 Use this for compatible configuration or stateless image changes. Authentik
 downgrades require restoring a matching database backup; PostgreSQL major changes
