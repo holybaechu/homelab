@@ -12,14 +12,14 @@ def read(name: str) -> str:
 
 def test_traefik_defaults_to_no_container_exposure_and_uses_one_owned_network():
     model = yaml.safe_load(read("compose.yml"))
-    static = read("traefik.yml")
+    static = read("config/traefik.yml")
     service = model["services"]["traefik"]
 
     assert "/var/run/docker.sock:/var/run/docker.sock:ro" in service["volumes"]
     assert "exposedByDefault: false" in static
     assert "certResolver: cloudflare" in static
     assert (
-        "./generated/traefik/routes.yml:/etc/traefik/dynamic/routes.yml:ro"
+        "./generated/traefik:/etc/traefik/dynamic:ro"
         in service["volumes"]
     )
     assert "directory: /etc/traefik/dynamic" in static

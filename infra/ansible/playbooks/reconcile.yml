@@ -249,15 +249,24 @@
         - homelab_maintenance_upgrade | default(false) | bool
         - homelab_unit_reboot_required.stat.exists
 
-    - name: Audit the selected Compose runtime after host maintenance
+    - name: Read application health after host maintenance
       ansible.builtin.command:
-        argv:
-          - /usr/local/libexec/homelab-release
-          - audit
-          - --target
-          - apps
+        argv: [docker, compose, --project-name, homelab, -f, /opt/homelab/compose/compose.yml, ps, --format, json, --all]
+      register: homelab_apps_health
       changed_when: false
-      no_log: true
+      when:
+        - homelab_unit == 'apps-host'
+        - homelab_maintenance_upgrade | default(false) | bool
+
+    - name: Require running healthy application containers
+      ansible.builtin.assert:
+        that:
+          - item.State == 'running'
+          - item.Health | default('') in ['', 'healthy']
+        fail_msg: A homelab container is not healthy after maintenance.
+      loop: "{{ homelab_apps_health.stdout_lines | default([]) | map('from_json') | list }}"
+      loop_control:
+        label: "{{ item.Service }}"
       when:
         - homelab_unit == 'apps-host'
         - homelab_maintenance_upgrade | default(false) | bool

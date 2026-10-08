@@ -7,7 +7,7 @@ services:
     env_file:
       - ./.secrets/traefik.env
     command:
-      - --configFile=/etc/traefik/traefik.yml
+      - --configFile=/etc/traefik/homelab/traefik.yml
     ports:
       - "80:80"
       - "443:443"
@@ -15,8 +15,8 @@ services:
       - host.docker.internal:host-gateway
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./generated/traefik/routes.yml:/etc/traefik/dynamic/routes.yml:ro
+      - ./config:/etc/traefik/homelab:ro
+      - ./generated/traefik:/etc/traefik/dynamic:ro
       - /etc/ssl/certs/homelab-pve-root-ca.pem:/etc/ssl/certs/homelab-pve-root-ca.pem:ro
       - traefik_data:/data
     networks:
@@ -35,7 +35,7 @@ services:
     network_mode: host
     volumes:
       # AdGuard persists normalized runtime fields back into its config file.
-      # The slot is rebuilt from the declarative package on every release/audit.
+      # Preserve it until its template, credentials, or topology changes.
       - ./generated/adguard:/opt/adguardhome/conf:rw
       - adguard_work:/opt/adguardhome/work
     labels:
@@ -66,7 +66,7 @@ services:
     labels:
       - homelab.health=process
     # The upstream scratch image contains only /bin/ddns and CA certificates,
-    # so the deployer applies a mandatory host-side liveness/restart gate.
+    # Compose checks process liveness when waiting for startup.
 
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:5.2.4@sha256:b522f9f4b769f8f36d49d22d5eb6a92e9aa18904c6a1830b1439df511ec21983
@@ -86,8 +86,8 @@ services:
       - /srv/homelab/docker-apps/qbittorrent:/config:rw
       - /srv/homelab/downloads:/downloads:rw
       - /srv/homelab/copyparty/public:/public:rw
-      - ./config/init-qbittorrent.sh:/run/homelab/init-qbittorrent.sh:ro
-      - ./generated/qbittorrent/qBittorrent.conf:/run/homelab/qBittorrent.conf:ro
+      - ./config:/run/homelab:ro
+      - ./generated/qbittorrent:/run/homelab-settings:ro
     networks:
       - proxy
     labels:
@@ -108,13 +108,13 @@ services:
   copyparty:
     image: copyparty/ac:1.20.25@sha256:3d4f65f68aa68c287d6c29f2059842d49ca6f79dde061fbf6cc8fdb120691daf
     restart: unless-stopped
-    command: ["-c", "/config/copyparty.conf"]
+    command: ["-c", "/config/homelab/copyparty.conf"]
     environment:
       PGID: "1000"
       PUID: "1000"
       TZ: Asia/Seoul
     volumes:
-      - ./generated/copyparty.conf:/config/copyparty.conf:ro
+      - ./generated/copyparty:/config/homelab:ro
       - /srv/homelab/docker-apps/copyparty:/config/state:rw
       - /srv/homelab/copyparty/public:/srv/public:rw
       - /srv/homelab/copyparty/shared-readonly:/srv/shared-readonly:ro
@@ -264,7 +264,7 @@ services:
         condition: service_healthy
     volumes:
       - authentik_data:/data
-      - ./config/authentik-blueprint.yaml:/blueprints/homelab.yaml:ro
+      - ./generated/authentik:/blueprints/homelab:ro
     networks:
       - proxy
     healthcheck:
@@ -294,8 +294,7 @@ services:
     extra_hosts:
       - auth.home.hchu.me:host-gateway
     volumes:
-      - ./generated/headscale/config.yaml:/etc/headscale/config.yaml:ro
-      - ./generated/headscale/policy.hujson:/etc/headscale/policy.hujson:ro
+      - ./generated/headscale:/etc/headscale:ro
       - headscale_data:/var/lib/headscale
     networks:
       - proxy

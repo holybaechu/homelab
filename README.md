@@ -42,5 +42,6 @@ for unit in pve tailnet apps-host; do
 done
 ```
 
-These checks run locally and do not contact production. They match
-[validate.yml](.github/workflows/validate.yml).
+Run pytest and Compose rendering for app changes; add Ansible syntax checks for
+infrastructure changes. These checks do not contact production. CI runs the
+retained safety tests once and skips infrastructure syntax checks for app-only PRs.

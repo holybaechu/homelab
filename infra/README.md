@@ -16,7 +16,7 @@ one unit.
 | --- | --- | --- |
 | `pve` | LXC definitions, shared storage, guest SSH/Python access, or an explicit identity-only operation | PVE bundle for `apply` |
 | `tailnet` | Debian base and Tailscale-client routing with hosted Tailscale or Headscale | Tailnet bundle |
-| `apps-host` | Debian base, Docker, DNS policy, data directories, release launcher, and PVE certificate trust | None |
+| `apps-host` | Debian base, Docker, DNS policy, data directories, and PVE certificate trust | None |
 
 Each role completes its own preparation and recovery checks. PVE owns the shared
 filesystem and bind mount; `apps-host` creates application directories and

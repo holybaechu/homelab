@@ -71,12 +71,6 @@ PostgreSQL role: change that role's password privately in the database during
 maintenance before synchronizing the matching bundle. Take an independent
 database backup before either operation.
 
-For existing installations, follow the
-[identity deployment procedure](../docs/operations.md#deploy-identity-services)
-before replacing a version-1 bundle. The compatible release engine retains the
-version-2 bundle and supplies only the old fields when restoring a compatible
-version-1 package.
-
 Check a bundle using the
 [temporary-copy preparation commands](../apps/compose/homelab/README.md#credentials-and-local-preparation).
 
@@ -183,6 +177,6 @@ Update the appropriate GitHub environment secret, then follow
 [credential rotation](../docs/operations.md#rotate-credentials)
 for apps or run `infra.yml` with `unit=tailnet` for a new tailnet key.
 
-The apps SSH wrapper validates and atomically installs the bundle before
-recreating the active release. Rollback uses the current bundle. Secret values
-and their hashes must stay out of release descriptors, state, and logs.
+The apps deployer validates the bundle before atomically installing it. Native
+Compose updates affected services. Private configuration backups include the
+matching bundle; keep secret values and hashes out of tracked files and logs.

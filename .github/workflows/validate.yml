@@ -31,17 +31,28 @@ jobs:
             requirements-dev.txt
             requirements-deploy.txt
       - name: Install validation dependencies
-        run: python -m pip install -r requirements-dev.txt -r requirements-deploy.txt
+        run: python -m pip install -r requirements-dev.txt
       - name: Run behavioral and invariant tests
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: python -m pytest -q
       - name: Render the application package
         run: ./scripts/ci/validate-compose.sh
+      - name: Detect infrastructure changes
+        id: infrastructure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR_NUMBER" ] || gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq ' .[].filename' | grep -qE '^(infra/|requirements-deploy.txt|.github/workflows/infra.yml)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Syntax-check every explicit infrastructure unit
+        if: steps.infrastructure.outputs.changed == 'true'
         env:
           ANSIBLE_CONFIG: infra/ansible/ansible.cfg
         run: |
+          python -m pip install -r requirements-deploy.txt
           for unit in pve tailnet apps-host; do
             ansible-playbook \
               infra/ansible/playbooks/reconcile.yml \
