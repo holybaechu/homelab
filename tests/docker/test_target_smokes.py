@@ -56,6 +56,13 @@ esac
         r'''
 case "$*" in
   *api.ipify.org*) printf '203.0.113.9\n' ;;
+  *copyparty.hchu.me/public/*|*copyparty.hchu.me/.cpr/w/browser.js*)
+    if [ "${FAKE_AUTH_FAILURE:-}" = public-redirect ]; then
+      printf '302'
+    else
+      printf '200'
+    fi
+    ;;
   *metube.home.hchu.me*|*copyparty.hchu.me*)
     if [ "${FAKE_AUTH_FAILURE:-}" = bypass ] || { [ "${FAKE_AUTH_FAILURE:-}" = copyparty-bypass ] && printf '%s' "$*" | grep -q copyparty; }; then
       printf '200 '
@@ -181,6 +188,7 @@ def test_apps_smoke_fails_when_a_declared_ingress_is_unreachable(tmp_path: Path)
     ("blueprint", "identity blueprint application failed"),
     ("bypass", "metube.home.hchu.me did not require an Authentik login"),
     ("copyparty-bypass", "copyparty.hchu.me did not require an Authentik login"),
+    ("public-redirect", "Copyparty public read requires authentication"),
     ("discovery", "headscale identity provider discovery is invalid"),
     ("proxmox-discovery", "proxmox identity provider discovery is invalid"),
     ("headscale", "Headscale control server is unhealthy"),

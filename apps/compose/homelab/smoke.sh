@@ -75,6 +75,13 @@ case "${app_auth}" in
 esac
 done
 
+for public_path in /public/ /.cpr/w/browser.js; do
+  public_status="$(curl --silent --show-error --max-time 8 --output /dev/null \
+    --write-out '%{http_code}' --resolve copyparty.hchu.me:443:127.0.0.1 \
+    "https://copyparty.hchu.me${public_path}")" || fail "Copyparty public read probe failed"
+  [ "$public_status" = 200 ] || fail "Copyparty public read requires authentication"
+done
+
 for provider in headscale proxmox; do
 oidc_config="$(curl --fail --silent --show-error --max-time 8 \
   --resolve auth.home.hchu.me:443:127.0.0.1 \

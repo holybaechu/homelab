@@ -127,7 +127,7 @@ services:
       - traefik.http.routers.copyparty.rule=Host(`copyparty.hchu.me`)
       - traefik.http.routers.copyparty.entrypoints=websecure
       - traefik.http.routers.copyparty.middlewares=clear-copyparty-identity@file,authentik@file,secure-headers@file
-      - traefik.http.routers.copyparty-public.rule=Host(`copyparty.hchu.me`) && Method(`GET`,`HEAD`) && (((Path(`/public`) || PathPrefix(`/public/`)) && !HeaderRegexp(`Cookie`, `authentik_proxy_`)) || (PathPrefix(`/.cpr/`) && !PathPrefix(`/.cpr/metrics`) && !PathPrefix(`/.cpr/ssdp`)))
+      - traefik.http.routers.copyparty-public.rule=Host(`copyparty.hchu.me`) && (Method(`GET`) || Method(`HEAD`)) && (((Path(`/public`) || PathPrefix(`/public/`)) && !HeaderRegexp(`Cookie`, `authentik_proxy_`)) || (PathPrefix(`/.cpr/`) && !PathPrefix(`/.cpr/metrics`) && !PathPrefix(`/.cpr/ssdp`)))
       - traefik.http.routers.copyparty-public.entrypoints=websecure
       - traefik.http.routers.copyparty-public.priority=100
       - traefik.http.routers.copyparty-public.middlewares=clear-copyparty-identity@file,secure-headers@file
