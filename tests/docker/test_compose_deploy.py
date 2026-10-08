@@ -134,3 +134,14 @@ def test_startup_failure_identifies_container_without_echoing_credentials(tmp_pa
     output = capsys.readouterr().out
     assert 'homelab-copyparty-1 unhealthy' in output
     assert 'private-database-password' not in output
+
+
+def test_public_blueprint_is_readable_by_authentiks_non_root_user(environment):
+    apply(environment)
+    _, _, root, _, _ = environment
+    blueprint = root / 'generated/authentik/authentik-blueprint.yaml'
+    assert blueprint.parent.stat().st_mode & 0o005 == 0o005
+    assert blueprint.stat().st_mode & 0o004
+    # The readable blueprint references env vars; private values remain restricted.
+    assert not (root / '.secrets/authentik.env').stat().st_mode & 0o077
+    assert '!Env' in blueprint.read_text()

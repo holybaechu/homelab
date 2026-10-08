@@ -37,14 +37,15 @@ def compose(root, *args, capture=False):
     if result.returncode:
         # Startup diagnostics identify the failing container. Configuration rendering
         # can contain entire environments and is never echoed.
-        if args[0] == 'up':
-            diagnostic = result.stderr
+        if args[0] in ('up', 'exec'):
+            diagnostic = result.stderr + (result.stdout or '')
             for path in (root / '.secrets').glob('*.env'):
                 for line in path.read_text().splitlines():
                     if '=' in line:
                         value = line.split('=', 1)[1]
                         if value:
-                            diagnostic = diagnostic.replace(value, '<REDACTED>')
+                            for variant in (value, json.dumps(value)[1:-1], repr(value)[1:-1]):
+                                diagnostic = diagnostic.replace(variant, '<REDACTED>')
             print(diagnostic[-4000:], flush=True)
         raise RuntimeError('Docker Compose failed: ' + args[0] + ' (exit ' + str(result.returncode) + ')')
     return result.stdout if capture else ''
@@ -64,11 +65,18 @@ def sync(source: Path, destination: Path, *, skip_adguard=False) -> set[str]:
             continue
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # Authentik runs as UID 1000. This is a public template containing !Env
+        # references, mounted separately from all credential-bearing files.
+        public_blueprint = relative.startswith('generated/authentik/')
+        if public_blueprint:
+            target.parent.chmod(0o755)
+            if target.exists():
+                target.chmod(0o644)
         if target.exists() and target.read_bytes() == path.read_bytes():
             continue
         temporary = target.with_name('.' + target.name + '.new')
         shutil.copyfile(path, temporary)
-        temporary.chmod(0o600)
+        temporary.chmod(0o644 if public_blueprint else 0o600)
         temporary.replace(target)
         changed.add(relative)
     # Removed public source files are removed; runtime-generated AdGuard files stay.
