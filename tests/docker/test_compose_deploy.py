@@ -119,3 +119,18 @@ def test_identity_credential_rotation_explicitly_refreshes_providers(environment
     apply(environment)
     assert any(args[:4] == ('exec', '-T', 'authentik-worker', 'ak')
                and 'apply_blueprint' in args for _, args in calls)
+
+
+def test_startup_failure_identifies_container_without_echoing_credentials(tmp_path, monkeypatch, capsys):
+    secrets = tmp_path / '.secrets'
+    secrets.mkdir()
+    (secrets / 'authentik.env').write_text('PASSWORD=private-database-password\n')
+    original = deployment.compose
+    # Use the real wrapper, bypassing only Docker itself.
+    monkeypatch.setattr(deployment.subprocess, 'run', lambda *a, **k: SimpleNamespace(
+        returncode=1, stdout='', stderr='container homelab-copyparty-1 unhealthy; private-database-password'))
+    with pytest.raises(RuntimeError, match='up.*exit 1'):
+        original(tmp_path, 'up', '-d')
+    output = capsys.readouterr().out
+    assert 'homelab-copyparty-1 unhealthy' in output
+    assert 'private-database-password' not in output
