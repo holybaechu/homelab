@@ -1,71 +1,30 @@
 # Homelab Compose package
 
-This directory contains the services and configuration deployed to `docker_apps`
-as the `homelab` Compose project.
+Application configuration for `docker_apps`, deployed as the `homelab` project
+in `/opt/homelab/compose`. Docker stays in the existing unprivileged LXC.
 
-| File | Use |
-| --- | --- |
-| [compose.yml](compose.yml) | Services, image pins, routes, networks, and data mounts |
-| [config/](config/) and [traefik.yml](traefik.yml) | Application configuration |
-| [prepare_release.py](prepare_release.py) | Validate credentials and generate private configuration |
-| [smoke.sh](smoke.sh) | Check DNS, ingress, identity, MeTube access, and qBittorrent behavior |
+Edit [compose.yml](compose.yml) or [config/](config/), then use
+[local validation](../../../README.md#validate-locally) and
+[deployment operations](../../../docs/operations.md#deploy-apps). Images and
+GitHub Actions remain pinned. Deployment is manual; changed services update with
+native Compose, and mounted configuration changes use targeted recreation.
 
-## Making changes
+[prepare_release.py](prepare_release.py) prepares private configuration from the
+version-2 apps bundle and topology. [deploy.py](deploy.py) installs stable
+directory mounts, saves previous configuration, backs up identity data before
+upgrades, and invokes Compose. [smoke.sh](smoke.sh) reads DNS and access behavior
+without changing services. Keep secrets and generated files outside the repo.
 
-1. Edit the service or its configuration here. Keep images and the VueTorrent
-   modification pinned by readable tag and exact digest.
-2. Keep service checks with the package. The release engine checks the running
-   service set and health; `smoke.sh` checks application behavior and reads
-   ingress endpoints from Compose.
-3. Run [local validation](../../../README.md#validate-locally) from the repository
-   root.
-4. Deploy using the [operations guide](../../../docs/operations.md).
+Authentik manages browser access to MeTube and Copyparty, and native OIDC for
+Headscale and Proxmox. Copyparty `/public` stays readable without login. Private
+native clients use the WebDAV endpoint. Both Tailscale and Headscale remain;
+management stays on hosted Tailscale until an explicit cutover. See
+[identity operations](../../../docs/operations.md#copyparty-and-proxmox-identity).
 
-Cloudflare DDNS uses a scratch image without a healthcheck command. Its
-`homelab.health=process` label requires one running container, no restart in
-progress, and zero activation restarts.
+Edit managed settings here. AdGuard's normalized runtime file is preserved until
+its template, credentials, or topology changes. Copyparty configuration is
+read-only, and qBittorrent settings are reapplied on its next restart.
 
-Traefik serves Authentik and Headscale from this package. The Authentik blueprint
-creates the Headscale OIDC provider and protects MeTube for `metube-users`.
-Headscale device registration is restricted to `homelab-admins`; its protocol
-endpoint must not have forward auth. Use the
-[identity deployment and migration procedures](../../../docs/operations.md#deploy-identity-services).
-
-## Credentials and local preparation
-
-The production bundle is `/etc/homelab/secrets/apps.json`. Its schema and
-password-hash instructions are in the [secrets guide](../../../secrets/README.md).
-
-To check a private bundle locally, run this from the repository root on a trusted
-Linux controller. It prepares a temporary copy without starting services:
-
-```sh
-staged="$(mktemp -d)"
-cp -R apps/compose/homelab "$staged/apps"
-python3 "$staged/apps/prepare_release.py" \
-  --secret-bundle /absolute/private/path/apps.json \
-  --release-root "$staged/apps" \
-  --topology infra/ansible/inventory/prod/topology.json
-docker compose --project-name homelab --project-directory "$staged/apps" \
-  -f "$staged/apps/compose.yml" config --quiet
-```
-
-Remove the temporary directory after checking it; it contains private
-`.secrets/` and `generated/` files. The production workflow performs preparation
-with the topology snapshot from the selected release commit.
-
-## Configuration and data
-
-Identity providers and application policies belong to
-`config/authentik-blueprint.yaml`. Copyparty supports browser SSO, anonymous
-public reads, and a private native-client endpoint. Proxmox uses its native OIDC
-realm managed by Ansible. See [identity operations and reproducibility](../../../docs/operations.md#copyparty-and-proxmox-identity).
-
-Change managed settings in this package. Copyparty configuration is mounted
-read-only, AdGuard configuration is regenerated during release preparation, and
-qBittorrent configuration is reapplied on restart. UI preference edits may be
-overwritten.
-
-Data mounts and named volumes are listed in `compose.yml`. Back them up using
-the [recovery guide](../../../docs/recovery.md); rollback restores
-application code and configuration, not an earlier copy of the data.
+Named volumes and durable data mounts are declared in Compose. Back them up
+independently using [recovery](../../../docs/recovery.md). Configuration recovery
+does not undo database migrations or restore user files.

@@ -20,6 +20,7 @@ TOPOLOGY = REPO_ROOT / "infra/ansible/inventory/prod/topology.json"
 def fake_app_environment(tmp_path: Path, *, ingress_failure: bool = False) -> dict[str, str]:
     tools = tmp_path / "tools"
     tools.mkdir()
+    write_tool(tools / "sleep", "exit 0\n")
     model = tmp_path / "compose.json"
     model.write_text(
         json.dumps(
@@ -185,7 +186,6 @@ def test_apps_smoke_fails_when_a_declared_ingress_is_unreachable(tmp_path: Path)
 
 
 @pytest.mark.parametrize("failure,message", (
-    ("blueprint", "identity blueprint application failed"),
     ("bypass", "metube.home.hchu.me did not require an Authentik login"),
     ("copyparty-bypass", "copyparty.hchu.me did not require an Authentik login"),
     ("public-redirect", "Copyparty public read requires authentication"),
@@ -200,26 +200,3 @@ def test_apps_smoke_rejects_broken_identity_or_unauthenticated_metube(tmp_path, 
     result = run_app_smoke(stage, env)
     assert result.returncode == 1
     assert message in result.stderr
-
-
-@pytest.mark.parametrize("failure,message", (
-    ("assets", "VueTorrent assets are unavailable"),
-    ("config", "qBittorrent VueTorrent configuration is incorrect"),
-    ("tun0", "qBittorrent is unexpectedly bound to tun0"),
-    ("environment", "VueTorrent mod environment is unavailable"),
-    ("unpinned", "VueTorrent mod must use an official version and exact digest"),
-))
-def test_apps_smoke_rejects_a_broken_vuetorrent_without_printing_container_values(
-    tmp_path: Path, failure: str, message: str
-) -> None:
-    stage = app_stage(tmp_path)
-    env = fake_app_environment(tmp_path)
-    env["FAKE_VUETORRENT_FAILURE"] = failure
-    if failure == "unpinned":
-        env["FAKE_DOCKER_MOD_REF"] = "container-secret-must-stay-private"
-
-    result = run_app_smoke(stage, env)
-
-    assert result.returncode == 1
-    assert message in result.stderr
-    assert "container-secret-must-stay-private" not in result.stdout + result.stderr

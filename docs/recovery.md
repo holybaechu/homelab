@@ -17,8 +17,7 @@ Keep independent backups outside the affected host:
 | The intended repository revision | Host declarations and application configuration |
 
 LXC configuration exports under `/var/backups/homelab/pct-config` help review
-changes, but they are not data backups. Immutable releases and rollback records
-also do not restore an earlier copy of application data.
+changes, but they are not data backups. Configuration backups do not restore an earlier copy of application data.
 
 Use a PostgreSQL logical backup for Authentik, or stop its database before copying
 the volume. Stop Headscale before copying its SQLite database and private keys.
@@ -44,7 +43,7 @@ undo database migrations.
    this preserves file permissions and leaves other filesystem contents alone.
 6. Dispatch `apps.yml` with `operation=deploy`. The workflow installs the apps
    bundle and activates the complete package.
-7. Run the [release audit](operations.md#audit-and-rollback) and check that
+7. Run the [read-only application health check](operations.md#audit-and-rollback) and check that
    restored files are available and the expected shares are writable.
 
 ## Restore ownership
@@ -121,7 +120,7 @@ Root-disk shrinking is treated as replacement. Back up the guest, review its
 exported configuration, and supply `pve_lxc_reconcile_allow_replacement_vmid`
 only for an intentional rebuild.
 
-The app release engine requires [free space for image pulls](operations.md#release-files-and-capacity).
+Check [space before image pulls](operations.md#release-files-and-capacity).
 Prefer a reviewed root-disk grow when capacity is insufficient.
 
 ### Shrink the shared data LV
@@ -165,4 +164,4 @@ filesystem is repaired or [restored from backup](#rebuild-a-host).
 2. Confirm the declared shared mount is available in `docker_apps` at
    `/srv/homelab` and is exposed only to the intended LXC.
 3. Check qBittorrent and Copyparty can write their declared durable paths.
-4. Run the [app audit](operations.md#audit-and-rollback), then resume jobs.
+4. Run the [read-only application health check](operations.md#audit-and-rollback), then resume jobs.

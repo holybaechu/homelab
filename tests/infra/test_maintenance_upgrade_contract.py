@@ -62,23 +62,8 @@ def test_maintenance_reboots_only_a_selected_guest_that_needs_it():
     assert tasks.index(tailnet) < tasks.index(marker) < tasks.index(reboot)
 
 
-def test_maintenance_checks_the_selected_runtime_after_reboot():
-    tasks = load_yaml(RECONCILE)[1]["tasks"]
-    reboot = task_with_module(tasks, "ansible.builtin.reboot")
-    audit = task_with_module(tasks, "ansible.builtin.command",
-                             argv=["/usr/local/libexec/homelab-release", "audit", "--target", "apps"])
-    status = task_with_module(tasks, "ansible.builtin.command", argv=["tailscale", "status", "--json"])
-    health = task_with_module(tasks, "ansible.builtin.assert")
-    assert audit["no_log"] is True
-    for task, selected in ((audit, "apps-host"), (status, "tailnet"), (health, "tailnet")):
-        assert tasks.index(reboot) < tasks.index(task)
-        for unit, maintenance, expected in (
-            (selected, True, True), (selected, False, False), ("pve", True, False),
-            ("tailnet" if selected == "apps-host" else "apps-host", True, False),
-        ):
-            assert task_enabled(task, homelab_unit=unit, homelab_maintenance_upgrade=maintenance) is expected
-    assert tasks.index(status) < tasks.index(health)
-    for backend, healthy in (("Running", True), ("Stopped", False)):
-        variables = {status["register"]: {"stdout": json.dumps({"BackendState": backend})}}
-        assert all(render_ansible("{{ " + clause + " }}", **variables)
-                   for clause in health["ansible.builtin.assert"]["that"]) is healthy
+def test_application_maintenance_reads_health_without_reactivation():
+    text = (REPO_ROOT / "infra/ansible/playbooks/reconcile.yml").read_text()
+    assert "Read application health after host maintenance" in text
+    assert "homelab-release" not in text
+    assert "--force-recreate" not in text

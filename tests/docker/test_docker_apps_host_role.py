@@ -86,9 +86,6 @@ def test_host_preparation_preserves_dns_and_release_prerequisites():
     assert policy["log-driver"] == "json-file"
     assert policy["log-opts"]["max-size"] and policy["log-opts"]["max-file"]
 
-    launcher = copies["/usr/local/libexec/homelab-release"]
-    assert launcher["mode"] == "0755"
-    assert launcher["src"].endswith("/scripts/ci/release_launcher.py")
     certificate = next(task for task in tasks if "ansible.builtin.slurp" in task)
     assert certificate["delegate_to"] == "pve"
     assert certificate["ansible.builtin.slurp"]["src"] == "/etc/pve/pve-root-ca.pem"

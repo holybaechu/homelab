@@ -1,15 +1,6 @@
 name: Deploy apps desired state
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/compose/homelab/**"
-      - "infra/ansible/inventory/prod/topology.json"
-      - "scripts/ci/compose_release_engine.py"
-      - "scripts/ci/deploy-release-via-ssh.sh"
-      - "scripts/ci/configure-ssh.sh"
-      - ".github/workflows/apps.yml"
   workflow_dispatch:
     inputs:
       operation:
@@ -39,36 +30,6 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Set up fast-path Python
-        if: inputs.operation != 'sync-secrets'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - name: Install app-lane test dependencies
-        if: inputs.operation != 'sync-secrets'
-        run: python -m pip install -r requirements-dev.txt
-      - name: Validate the complete app package and release transaction
-        if: inputs.operation != 'sync-secrets'
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          python -m pytest -q \
-            tests/docker \
-            tests/repo/test_compose_release_engine.py \
-            tests/repo/test_release_launcher.py \
-            tests/repo/test_deploy_release_via_ssh.py
-          ./scripts/ci/validate-compose.sh
-      - name: Build the exact-source release bundle
-        if: inputs.operation != 'sync-secrets'
-        run: |
-          python scripts/ci/compose_release_engine.py bundle \
-            --target apps \
-            --source-sha "$GITHUB_SHA" \
-            --stack apps/compose/homelab \
-            --topology infra/ansible/inventory/prod/topology.json \
-            --output "$RUNNER_TEMP/apps.tar"
       - name: Materialize the one apps component secret bundle
         env:
           COMPONENT_SECRET_BUNDLE: ${{ secrets.APPS_SECRET_BUNDLE }}
@@ -96,34 +57,10 @@ jobs:
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: ./scripts/ci/configure-ssh.sh
-      - name: Reject a superseded automatic desired state
-        if: github.event_name != 'workflow_dispatch'
+      - name: Deploy with native Compose
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh auth setup-git
-          git fetch --no-tags --depth=1 origin refs/heads/main
-          if ! git diff --quiet "$GITHUB_SHA" FETCH_HEAD -- \
-            apps/compose/homelab \
-            infra/ansible/inventory/prod/topology.json \
-            scripts/ci/compose_release_engine.py \
-            scripts/ci/deploy-release-via-ssh.sh \
-            scripts/ci/configure-ssh.sh \
-            .github/workflows/apps.yml; then
-            echo "Refusing superseded apps inputs from $GITHUB_SHA." >&2
-            exit 1
-          fi
-      - name: Deploy complete apps desired state
-        if: inputs.operation != 'sync-secrets'
-        run: >-
-          sh scripts/ci/deploy-release-via-ssh.sh
-          deploy apps "$RUNNER_TEMP/apps.tar" "$RUNNER_TEMP/apps.json"
-      - name: Rotate only the apps component bundle
-        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'sync-secrets'
-        run: >-
-          sh scripts/ci/deploy-release-via-ssh.sh
-          sync-secrets apps "$RUNNER_TEMP/apps.json"
+          OPERATION: ${{ inputs.operation }}
+        run: sh scripts/ci/deploy-compose-via-ssh.sh "$OPERATION" "$RUNNER_TEMP/apps.json"
       - name: Remove the runner secret copy
         if: always()
         run: rm -f -- "$RUNNER_TEMP/apps.json"

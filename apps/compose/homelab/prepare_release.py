@@ -165,6 +165,10 @@ def _atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
         metadata = path.lstat()
         if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
             raise PreparationError(f"release output file is unsafe: {path}")
+        if path.read_text(encoding="utf-8") == content:
+            if os.name == "posix":
+                path.chmod(mode)
+            return
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     try:
         with temporary.open("x", encoding="utf-8", newline="\n") as output:
@@ -367,7 +371,7 @@ def prepare(secret_bundle: Path, release_root: Path, topology: Path) -> None:
     _atomic_write(
         release_root / "generated" / "traefik" / "routes.yml", routes_config
     )
-    _atomic_write(release_root / "generated" / "copyparty.conf", copyparty_config)
+    _atomic_write(release_root / "generated" / "copyparty" / "copyparty.conf", copyparty_config)
     _atomic_write(
         release_root / "generated" / "qbittorrent" / "qBittorrent.conf",
         qbittorrent_config,
@@ -390,6 +394,10 @@ def prepare(secret_bundle: Path, release_root: Path, topology: Path) -> None:
     )
     _atomic_write(release_root / "generated" / "headscale" / "config.yaml", headscale_config)
     _atomic_write(release_root / "generated" / "headscale" / "policy.hujson", headscale_policy)
+    _atomic_write(
+        release_root / "generated" / "authentik" / "authentik-blueprint.yaml",
+        _template(release_root, "authentik-blueprint.yaml"),
+    )
 
 
 def _parser() -> argparse.ArgumentParser:

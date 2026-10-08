@@ -53,7 +53,7 @@ def valid_bundle() -> dict:
 
 def stage_and_bundle(tmp_path: Path, payload: dict | None = None) -> tuple[Path, Path]:
     stage = tmp_path / "homelab"
-    shutil.copytree(PACKAGE, stage)
+    shutil.copytree(PACKAGE, stage, ignore=shutil.ignore_patterns('__pycache__'))
     shutil.copy2(TOPOLOGY, stage / "topology.json")
     bundle = tmp_path / "apps.json"
     bundle.write_text(json.dumps(payload or valid_bundle()), encoding="utf-8")
@@ -99,7 +99,7 @@ def test_preparer_materializes_every_private_input_atomically(tmp_path):
         stage / "generated/headscale/policy.hujson",
         stage / "generated/adguard/AdGuardHome.yaml",
         stage / "generated/traefik/routes.yml",
-        stage / "generated/copyparty.conf",
+        stage / "generated/copyparty/copyparty.conf",
         stage / "generated/qbittorrent/qBittorrent.conf",
     }
     assert all(path.is_file() and not path.is_symlink() for path in outputs)
@@ -152,7 +152,7 @@ def test_preparer_materializes_every_private_input_atomically(tmp_path):
     qbit = (stage / "generated/qbittorrent/qBittorrent.conf").read_text()
     assert payload["qbittorrent"]["password_hash"] in qbit
     assert "password=" not in json.dumps(payload["qbittorrent"])
-    copyparty = (stage / "generated/copyparty.conf").read_text()
+    copyparty = (stage / "generated/copyparty/copyparty.conf").read_text()
     assert "  operator: share-secret" in copyparty
     assert "  reader: read:secret" in copyparty
     assert copyparty.count("A: operator") == 3

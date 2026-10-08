@@ -71,41 +71,29 @@ credentials.
 ## Deploy apps
 
 1. Update and [validate the application package](../apps/compose/homelab/README.md#making-changes).
-2. Merge to `main` to trigger `apps.yml` for its watched paths, or dispatch it
-   with `operation=deploy` at the intended revision.
-3. Check the result. If activation fails, read the reported failure stage before
-   retrying.
+2. Merge to `main`, then manually dispatch `apps.yml` with `operation=deploy`.
+   Merging or accepting a dependency update does not deploy production.
+3. Check the workflow result and application access.
 
-Automatic deployments reject watched inputs superseded by current `main`.
-Manual dispatch allows an intentional older revision.
+The selected commit is copied to `/opt/homelab/compose` and prepared with the
+private version-2 apps bundle. Native Compose pulls pinned images, recreates
+services with changed images or environment, and waits for health. Mounted
+configuration changes recreate only affected services; Traefik watches its
+dynamic directory. Read-only checks cover DNS, HTTPS, public Copyparty reads,
+protected redirects, OIDC discovery, and Headscale. The blueprint is applied
+when identity configuration or its images change.
 
-Each release contains one exact commit, its engine, and a topology snapshot.
-The launcher verifies the archive checksum and engine digest. The engine
-prepares the inactive runtime slot with current credentials, validates Compose
-and image pins, and activates with `--no-build`. Health and application smoke
-checks must pass before the candidate becomes current.
-
-Activation recreates service containers so bind mounts attach to the rebuilt
-slot directories, including during recovery. Named volumes and durable host
-mounts are retained.
+The first deployment migrates the old runtime mounts and recreates all containers
+once. It keeps the project, named volumes, durable mounts, credentials, and
+Tailscale access. It saves previous configuration, an Authentik SQL dump, and an
+offline Headscale volume copy first. If activation fails, it reactivates the
+untouched old installation. No VM migration is involved.
 
 ## Deploy identity services
 
 This package adds Authentik at `auth.home.hchu.me`, Headscale at
 `headscale.home.hchu.me`, and an Authentik login gate at `metube.home.hchu.me`.
 Immich and Minecraft are not included.
-
-For an existing installation, deploy rollback compatibility before adding the
-identity services. Create and deploy a separate exact revision containing only
-the `compose_release_engine.py` secret-compatibility changes and their tests,
-keeping the old Compose package and version-1 preparer. In that revision, retain
-`secret_bundle.version: 1` in `release.json` and add
-`secret_bundle.compatible_versions: [1, 2]`. Deploy it with the existing version-1
-apps bundle, then verify the release. The full identity release refuses to
-replace credentials until the current release declares this compatibility.
-An empty installation can start directly with the version-2 package.
-After installing version-2 credentials, rollback is limited to the compatibility
-release or later revisions; an older package is rejected before activation.
 
 1. Back up existing application data and credentials. Prepare the version-2
    [apps bundle](../secrets/README.md#apps-bundle), preserving current application
@@ -142,7 +130,7 @@ codes and login state are not recorded there.
 
 Deploy the application package first. Its blueprint declares the Copyparty proxy
 provider, Proxmox OIDC provider, access groups, policies, and embedded outpost.
-These settings are reconciled during application smoke checks; edit the blueprint
+These settings are reconciled when identity configuration or images change; edit the blueprint
 instead of changing its managed objects only in the UI.
 
 Copyparty browser login uses Authentik. Grant `copyparty-users` for read access to
@@ -214,10 +202,8 @@ until its corresponding Headscale secret is set.
    a `homelab-admins` user. Verify registration from outside the LAN. Headscale
    initially uses the public Tailscale DERP map; no extra relay or UDP port is
    required for this deployment.
-2. On the apps host, locate the current runtime's stack directory through the
-   recorded active slot in `/opt/homelab/compose-control/release-state.json`.
-   Change into that stack directory, then define a CLI shortcut and create the
-   service users:
+2. On the apps host, change into `/opt/homelab/compose`, then define a CLI
+   shortcut and create the service users:
 
    ```sh
    hs() {
@@ -268,8 +254,11 @@ For apps:
 2. Dispatch `apps.yml` with `operation=sync-secrets`.
 3. Check the result and confirm the affected application's login or connection.
 
-Secret sync installs the bundle atomically and recreates the current release
-without a new archive, image build, or image pull.
+Secret sync validates the bundle before installing it and uses the currently
+installed package. Compose updates affected environments and configuration;
+unchanged services keep running. Bootstrap fields initialize new installations
+only. Database password changes require the private database operation described
+in the [secrets guide](../secrets/README.md).
 
 For hosted Tailscale, update `TAILSCALE_AUTH_KEY` and dispatch `infra.yml` with
 `unit=tailnet`. After cutover, rotate the Headscale registration keys instead:
@@ -291,79 +280,81 @@ After PVE apply, guest keys read through trusted `pct` must match
 its verified public lines before another host reconcile or deployment. Collect
 any missing key through the trusted PVE console after a partial apply.
 
-The daily schedule runs at 03:17 Asia/Seoul. It reconciles `tailnet` and
-`apps-host` sequentially, upgrades packages, and verifies any required reboot.
+The weekly schedule runs Sunday at 03:17 Asia/Seoul. It reconciles `tailnet`
+and `apps-host` sequentially, upgrades host packages, reboots only when required,
+and reads service health. It does not redeploy or recreate applications.
+Renovate groups routine dependency updates weekly; merging and deployment are
+manual. Major upgrades remain separate for reviewing their migration instructions.
 
 ## Audit and rollback
 
-Run as root on `docker_apps`. Audit regenerates configuration and recreates the
-current release, so plan for a service interruption:
+Read health without changing services, as root on `docker_apps`:
 
 ```sh
-/usr/local/libexec/homelab-release audit --target apps
+cd /opt/homelab/compose
+docker compose --project-name homelab ps --all
+sh smoke.sh
 ```
 
-To reactivate the recorded previous release:
+Before each deployment, `/opt/homelab/compose-previous` holds one private copy
+of the installed configuration and component bundle. A repeat deployment replaces
+that copy. Save it elsewhere before retries when you need an older recovery point.
+Retained images are not automatically pruned.
+
+For backups made by the stable deployment, copy previous configuration to a
+private temporary directory first (deployment
+replaces `compose-previous`), then use the **current** deployer:
 
 ```sh
-/usr/local/libexec/homelab-release rollback --target apps
+recovery="$(mktemp -d)"
+cp -a /opt/homelab/compose-previous/. "$recovery/"
+python3 /opt/homelab/compose/deploy.py --source "$recovery" \
+  --secret-bundle "$recovery/apps.json" --revision recovery
+rm -rf -- "$recovery"
 ```
 
-Rollback requires current and previous releases. It restores code and
-configuration using the **current** secret bundle. Application data and old
-credentials are not restored.
+The first migration's previous copy uses the old mount layout. To return to it,
+read `active_slot` from `/opt/homelab/compose-control/release-state.json`, change
+into `/opt/homelab/compose-runtime/<active_slot>/stack`, and run
+`docker compose --project-name homelab up -d --no-build --pull never --force-recreate --wait`.
+This uses the retained old configuration directly. Hold deployment workflows
+while recovering and remove the stable `.revision` marker before retrying the
+migration. Do not use the retired launcher.
+
+Use this for compatible configuration or stateless image changes. Authentik
+downgrades require restoring a matching database backup; PostgreSQL major changes
+need their own migration. Restore Headscale data with its matching version.
+Keep independent backups outside this LXC; local SQL and Headscale copies under
+`/opt/homelab/backups` protect migration and identity image upgrades only.
 
 ## Failed or interrupted operations
 
-Deploy, secret sync, audit, and rollback share one host lock. Each operation
-resolves an interrupted transaction before beginning new work.
+The deployer validates credentials and Compose and pulls images before modifying
+the installed package. Once activation begins, failure leaves the attempted
+configuration in the stable directory. Correct it and redeploy, or follow the
+manual recovery procedure above. Routine deployments do not automatically undo
+application databases or images. The first migration has an old-install fallback.
 
-If activation fails, the engine restores the previously active release. A failed
-first deployment has no previous release: the candidate is stopped and no current
-release is recorded. Correct the reported cause, then rerun deployment.
-
-| Reported problem | What to check |
-| --- | --- |
-| Network ownership | `homelab_proxy` must have Compose ownership for project `homelab` and network `proxy` |
-| Insufficient space | Root-storage headroom; follow [storage maintenance](recovery.md#grow-an-lxc-root-disk) |
-| Compose or image verification | Configuration and image pins at the selected commit |
-| Health or smoke | The service, DNS, ingress, and current credentials |
-
-The CLI reports the failure stage and exit status after attempted recovery.
-Raw captured command output stays private.
+Deployments share a host lock and production workflows share a queue. Inspect
+`docker compose ps --all` and failing service logs from a trusted console. Keep
+logs private; they may contain application credentials or login data. The workflow
+reports the failed operation without printing Compose environments.
 
 ## Release files and capacity
 
 | Host path | Contents |
 | --- | --- |
-| `/opt/homelab/compose-releases` | Immutable source and embedded engines |
-| `/opt/homelab/compose-runtime` | Runtime slots with private generated configuration |
-| `/opt/homelab/compose-control` | Transaction state and release records |
+| `/opt/homelab/compose` | Stable source, topology snapshot, private generated configuration, and `.revision` |
+| `/opt/homelab/compose-previous` | Previous configuration and private apps bundle |
+| `/opt/homelab/backups` | Private identity data backups before migration or identity image changes |
+| `/etc/homelab/secrets/apps.json` | Current private version-2 bundle |
 
-Leave release files, state, and runtime markers intact. The engine keeps source
-and image references needed by `current`, `previous`, and interrupted `pending`
-records. Cleanup considers only managed images and protects images used by other
-containers; failed cleanup is retried later.
-
-Image pulls require at least 4 GiB free on the release filesystem. Deployment
-retains durable mounts and named volumes and never stops Compose with
-`--volumes`. Keep independent [data backups](recovery.md#what-to-back-up).
-
-## Launcher updates
-
-Before merging a change to
-[scripts/ci/release_launcher.py](../scripts/ci/release_launcher.py):
-
-1. Check out the exact candidate commit on a trusted controller with verified
-   SSH access.
-2. Reconcile `apps-host` from that checkout using the
-   [host configuration command](setup.md#configure-the-hosts).
-3. Compare the installed `/usr/local/libexec/homelab-release` SHA-256 with the
-   candidate file. Resolve any mismatch.
-4. Merge after the launcher is installed and verified.
-
-The engine travels inside the app package; changing the engine alone does not
-require a launcher installation.
+Former `compose-releases`, `compose-runtime`, and `compose-control` directories
+are left untouched after migration. Keep them until access is verified and
+independent backups are copied; they contain private files. Their launcher is
+retired. Routine deployment never removes named volumes or durable app files.
+Check disk space before large updates and follow
+[storage maintenance](recovery.md#storage-maintenance) when expanding the LXC.
 
 ## Workflow dependencies
 

@@ -76,7 +76,7 @@ ansible-playbook \
 ```
 
 The first run establishes management networking. The second prepares Docker,
-DNS, persistent directories, the release launcher, and PVE certificate trust.
+DNS, persistent directories, and PVE certificate trust.
 Application credentials are installed by the apps workflow.
 
 For a rebuilt host, restore durable data before starting applications.
@@ -86,8 +86,7 @@ For a rebuilt host, restore durable data before starting applications.
 1. Configure the [GitHub `prod` environment](operations.md#production-environment).
 2. Finish host configuration before allowing the apps job to run.
 3. Dispatch `apps.yml` with `operation=deploy`.
-4. Run the [release audit](operations.md#audit-and-rollback) on `docker_apps`.
+4. Run the [read-only application health check](operations.md#audit-and-rollback) on `docker_apps`.
 
-For later changes, use [release operations](operations.md) or reconcile the
-affected infrastructure unit. Launcher changes require the
-[installation order](operations.md#launcher-updates) documented there.
+For later changes, use [application operations](operations.md) or reconcile the
+affected infrastructure unit.

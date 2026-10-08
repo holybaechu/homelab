@@ -15,11 +15,11 @@ maintenance by one person.
 ## Homelab boundaries
 
 - Derive hosts, addresses, VMIDs, resources, mounts, and unit selection from `infra/ansible/inventory/prod/topology.json`, the sole topology source.
-- Keep host provisioning and primitives in Ansible, and application configuration and activation in the immutable Compose package. Reconcile exactly one unit per invocation: `pve`, `tailnet`, or `apps-host`.
+- Keep host provisioning and primitives in Ansible, and application configuration and activation in the Compose package. Reconcile exactly one unit per invocation: `pve`, `tailnet`, or `apps-host`.
 - Keep service configuration, preparation, smoke behavior, and release inputs together under `apps/compose/homelab`.
 - Pin container images by readable tag and exact digest. Pin GitHub Actions by full commit SHA with the readable version comment used by Renovate.
-- Preserve the shared release engine and SSH wrapper, exact-commit descriptors, digest-bound images, inactive-slot activation, semantic smoke checks, and automatic rollback.
-- Keep secrets in private versioned component JSON bundles. Commit schema or placeholders only; keep secret values and hashes out of tracked files, descriptors, state, and logs.
+- Use native Compose in `/opt/homelab/compose`, with directory mounts and targeted recreation for mounted configuration changes. Retain private configuration backups, identity data backups before upgrades, and focused access checks.
+- Keep secrets in private versioned component JSON bundles. Commit schema or placeholders only; keep secret values and hashes out of tracked files, revision markers, and logs.
 - Preserve durable mounts and volumes. Treat repository declarations and live destructive storage work as separate stages, following the owning runbook for live operations.
 
 ## Read the owning guide
@@ -46,7 +46,7 @@ Read the relevant guides before changing these areas:
 - Documentation-only edits need a diff review and a check of referenced paths; a new behavior test is unnecessary.
 - Co-locate behavior changes with regression tests under the matching `tests/` branch. Focus on costly failures: release activation and recovery, destructive PVE changes, credential handling, control-path availability, and durable-data isolation.
 - Prefer representative behavior checks over exhaustive combinations or assertions about implementation details. Reuse existing fixtures and keep production interactions mocked or isolated.
-- Run the narrowest affected tests while iterating, then the [local validation gates](README.md#validate-locally) used by [.github/workflows/validate.yml](.github/workflows/validate.yml): pytest, Compose rendering, and Ansible syntax checks for all three explicit units. Use the documented Linux or WSL prerequisites.
+- Run affected behavior tests and Compose rendering for app changes. Run Ansible syntax checks for infrastructure changes. CI runs the small retained safety suite once; deployments use Compose health and read-only access checks. Use the documented Linux or WSL prerequisites.
 - Compare failures with the pre-change baseline. Report each gate's exit status, or the exact missing prerequisite when it could not run.
 - Before completion, inspect `git diff --check` and `git diff --stat`, review new untracked files separately, and confirm unrelated working-tree state remains intact.
 

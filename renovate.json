@@ -77,11 +77,18 @@
     {
       "matchUpdateTypes": [
         "minor",
-        "patch"
+        "patch",
+        "digest",
+        "pin"
       ],
-      "matchCurrentVersion": "!/^0/",
-      "automerge": true,
-      "platformAutomerge": true
+      "groupName": "weekly maintenance",
+      "automerge": false
     }
+  ],
+  "automerge": false,
+  "platformAutomerge": false,
+  "timezone": "Asia/Seoul",
+  "schedule": [
+    "* 0-8 * * 0"
   ]
 }
