@@ -107,3 +107,15 @@ def test_invalid_credentials_leave_installed_configuration_untouched(environment
         apply(environment)
     assert (installed.read_bytes(), (root / 'compose.yml').read_bytes()) == before
     assert calls == []
+
+
+def test_identity_credential_rotation_explicitly_refreshes_providers(environment):
+    apply(environment)
+    _, bundle, _, _, calls = environment
+    payload = json.loads(bundle.read_text())
+    payload['headscale']['oidc_client_secret'] = 'rotated-private-client-secret'
+    bundle.write_text(json.dumps(payload))
+    calls.clear()
+    apply(environment)
+    assert any(args[:4] == ('exec', '-T', 'authentik-worker', 'ak')
+               and 'apply_blueprint' in args for _, args in calls)

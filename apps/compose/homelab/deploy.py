@@ -35,8 +35,17 @@ def compose(root, *args, capture=False):
         stdout=subprocess.PIPE if capture else None, stderr=subprocess.PIPE, text=True,
     )
     if result.returncode:
-        # Compose config and environment diagnostics can include credentials.
-        # Report the failed operation, never its private output.
+        # Startup diagnostics identify the failing container. Configuration rendering
+        # can contain entire environments and is never echoed.
+        if args[0] == 'up':
+            diagnostic = result.stderr
+            for path in (root / '.secrets').glob('*.env'):
+                for line in path.read_text().splitlines():
+                    if '=' in line:
+                        value = line.split('=', 1)[1]
+                        if value:
+                            diagnostic = diagnostic.replace(value, '<REDACTED>')
+            print(diagnostic[-4000:], flush=True)
         raise RuntimeError('Docker Compose failed: ' + args[0] + ' (exit ' + str(result.returncode) + ')')
     return result.stdout if capture else ''
 
@@ -167,7 +176,9 @@ def deploy(source: Path, bundle: Path, revision: str, *, root=ROOT, installed_bu
                     compose(root, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never',
                             '--force-recreate', *sorted(forced))
                 compose(root, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '300')
-            identity_changed = migration or not old or bool(forced & {'authentik-worker'}) or bool(images_changed & {'authentik-server', 'authentik-worker'})
+            identity_changed = (migration or not old or 'authentik-worker' in forced
+                                or bool(images_changed & {'authentik-server', 'authentik-worker'})
+                                or '.secrets/authentik.env' in changed)
             if identity_changed:
                 compose(root, 'exec', '-T', 'authentik-worker', 'ak', 'apply_blueprint',
                         '/blueprints/homelab/authentik-blueprint.yaml', capture=True)
