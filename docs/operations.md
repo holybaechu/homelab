@@ -85,6 +85,10 @@ prepares the inactive runtime slot with current credentials, validates Compose
 and image pins, and activates with `--no-build`. Health and application smoke
 checks must pass before the candidate becomes current.
 
+Activation recreates service containers so bind mounts attach to the rebuilt
+slot directories, including during recovery. Named volumes and durable host
+mounts are retained.
+
 ## Deploy identity services
 
 This package adds Authentik at `auth.home.hchu.me`, Headscale at
