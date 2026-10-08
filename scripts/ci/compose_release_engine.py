@@ -1380,6 +1380,9 @@ class ComposeReleaseEngine:
                 "up",
                 "-d",
                 "--wait",
+                # A rebuilt slot can have the same path with a different inode.
+                # Reattach bind mounts even when Compose sees unchanged settings.
+                "--force-recreate",
                 "--remove-orphans",
                 "--no-build",
                 "--pull",

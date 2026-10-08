@@ -247,6 +247,46 @@ def engine_for(tmp_path: Path, target: str, runner: FakeDockerRunner) -> Compose
     )
 
 
+@pytest.mark.skipif(os.name != "posix", reason="directory bind-mount inode behavior requires POSIX")
+def test_failed_activation_recovery_refreshes_a_replaced_bind_mount(tmp_path):
+    class BindMountRunner(FakeDockerRunner):
+        mounted_source = None
+        descriptor = None
+
+        def run(self, argv, *, cwd, env=None):
+            result = super().run(argv, cwd=cwd, env=env)
+            if len(argv) > 1 and argv[1] == 'compose' and 'up' in argv:
+                source = cwd / 'generated/adguard'
+                if self.descriptor is None or self.mounted_source != source or '--force-recreate' in argv:
+                    if self.descriptor is not None:
+                        os.close(self.descriptor)
+                    self.descriptor = os.open(source, os.O_RDONLY | os.O_DIRECTORY)
+                    self.mounted_source = source
+                try:
+                    os.stat('AdGuardHome.yaml', dir_fd=self.descriptor)
+                except FileNotFoundError:
+                    return self._completed(argv, returncode=1)
+            return result
+
+    runner = BindMountRunner()
+    engine = engine_for(tmp_path, 'apps', runner)
+    original, record = make_bundle_root(tmp_path, '1')
+    candidate, _ = make_bundle_root(tmp_path, '2')
+    incoming = tmp_path / 'apps.json'
+    write_json(incoming, app_secrets('current'))
+    try:
+        engine.deploy_bundle(original, incoming)
+        runner.fail_next_up = True
+        with pytest.raises(ReleaseError, match='prior state was restored'):
+            engine.deploy_bundle(candidate, incoming)
+        assert state(engine)['current'] == record
+        assert state(engine)['pending'] is None
+        assert stat.S_ISREG(os.stat('AdGuardHome.yaml', dir_fd=runner.descriptor).st_mode)
+    finally:
+        if runner.descriptor is not None:
+            os.close(runner.descriptor)
+
+
 def state(engine: ComposeReleaseEngine) -> dict:
     return json.loads(engine.state_path.read_text(encoding="utf-8"))
 
@@ -319,11 +359,12 @@ def test_apps_common_path_rotates_secrets_and_rolls_back_source_only(tmp_path: P
     assert any(call[-3:] == ("config", "--format", "json") for call in compose)
     assert any(call[-1:] == ("pull",) for call in compose)
     assert any(
-        call[-7:]
+        call[-8:]
         == (
             "up",
             "-d",
             "--wait",
+            "--force-recreate",
             "--remove-orphans",
             "--no-build",
             "--pull",
