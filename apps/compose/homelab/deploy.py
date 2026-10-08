@@ -35,8 +35,18 @@ def compose(root, *args, capture=False):
         stdout=subprocess.PIPE if capture else None, stderr=subprocess.PIPE, text=True,
     )
     if result.returncode:
-        # Compose config and environment diagnostics can include credentials.
-        # Report the failed operation, never its private output.
+        # Startup diagnostics identify the failing container. Configuration rendering
+        # can contain entire environments and is never echoed.
+        if args[0] in ('up', 'exec'):
+            diagnostic = result.stderr + (result.stdout or '')
+            for path in (root / '.secrets').glob('*.env'):
+                for line in path.read_text().splitlines():
+                    if '=' in line:
+                        value = line.split('=', 1)[1]
+                        if value:
+                            for variant in (value, json.dumps(value)[1:-1], repr(value)[1:-1]):
+                                diagnostic = diagnostic.replace(variant, '<REDACTED>')
+            print(diagnostic[-4000:], flush=True)
         raise RuntimeError('Docker Compose failed: ' + args[0] + ' (exit ' + str(result.returncode) + ')')
     return result.stdout if capture else ''
 
@@ -55,11 +65,18 @@ def sync(source: Path, destination: Path, *, skip_adguard=False) -> set[str]:
             continue
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # Authentik runs as UID 1000. This is a public template containing !Env
+        # references, mounted separately from all credential-bearing files.
+        public_blueprint = relative.startswith('generated/authentik/')
+        if public_blueprint:
+            target.parent.chmod(0o755)
+            if target.exists():
+                target.chmod(0o644)
         if target.exists() and target.read_bytes() == path.read_bytes():
             continue
         temporary = target.with_name('.' + target.name + '.new')
         shutil.copyfile(path, temporary)
-        temporary.chmod(0o600)
+        temporary.chmod(0o644 if public_blueprint else 0o600)
         temporary.replace(target)
         changed.add(relative)
     # Removed public source files are removed; runtime-generated AdGuard files stay.
@@ -167,7 +184,9 @@ def deploy(source: Path, bundle: Path, revision: str, *, root=ROOT, installed_bu
                     compose(root, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never',
                             '--force-recreate', *sorted(forced))
                 compose(root, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '300')
-            identity_changed = migration or not old or bool(forced & {'authentik-worker'}) or bool(images_changed & {'authentik-server', 'authentik-worker'})
+            identity_changed = (migration or not old or 'authentik-worker' in forced
+                                or bool(images_changed & {'authentik-server', 'authentik-worker'})
+                                or '.secrets/authentik.env' in changed)
             if identity_changed:
                 compose(root, 'exec', '-T', 'authentik-worker', 'ak', 'apply_blueprint',
                         '/blueprints/homelab/authentik-blueprint.yaml', capture=True)

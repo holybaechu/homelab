@@ -107,3 +107,41 @@ def test_invalid_credentials_leave_installed_configuration_untouched(environment
         apply(environment)
     assert (installed.read_bytes(), (root / 'compose.yml').read_bytes()) == before
     assert calls == []
+
+
+def test_identity_credential_rotation_explicitly_refreshes_providers(environment):
+    apply(environment)
+    _, bundle, _, _, calls = environment
+    payload = json.loads(bundle.read_text())
+    payload['headscale']['oidc_client_secret'] = 'rotated-private-client-secret'
+    bundle.write_text(json.dumps(payload))
+    calls.clear()
+    apply(environment)
+    assert any(args[:4] == ('exec', '-T', 'authentik-worker', 'ak')
+               and 'apply_blueprint' in args for _, args in calls)
+
+
+def test_startup_failure_identifies_container_without_echoing_credentials(tmp_path, monkeypatch, capsys):
+    secrets = tmp_path / '.secrets'
+    secrets.mkdir()
+    (secrets / 'authentik.env').write_text('PASSWORD=private-database-password\n')
+    original = deployment.compose
+    # Use the real wrapper, bypassing only Docker itself.
+    monkeypatch.setattr(deployment.subprocess, 'run', lambda *a, **k: SimpleNamespace(
+        returncode=1, stdout='', stderr='container homelab-copyparty-1 unhealthy; private-database-password'))
+    with pytest.raises(RuntimeError, match='up.*exit 1'):
+        original(tmp_path, 'up', '-d')
+    output = capsys.readouterr().out
+    assert 'homelab-copyparty-1 unhealthy' in output
+    assert 'private-database-password' not in output
+
+
+def test_public_blueprint_is_readable_by_authentiks_non_root_user(environment):
+    apply(environment)
+    _, _, root, _, _ = environment
+    blueprint = root / 'generated/authentik/authentik-blueprint.yaml'
+    assert blueprint.parent.stat().st_mode & 0o005 == 0o005
+    assert blueprint.stat().st_mode & 0o004
+    # The readable blueprint references env vars; private values remain restricted.
+    assert not (root / '.secrets/authentik.env').stat().st_mode & 0o077
+    assert '!Env' in blueprint.read_text()
