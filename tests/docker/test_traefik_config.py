@@ -93,7 +93,7 @@ def test_copyparty_identity_cannot_be_spoofed_through_public_or_client_routes():
     assert labels['traefik.http.routers.copyparty.middlewares'].startswith('clear-copyparty-identity@file,authentik@file,')
     public = labels['traefik.http.routers.copyparty-public.rule']
     assert 'Path(`/public`)' in public and 'PathPrefix(`/public/`)' in public
-    assert 'Method(`GET`,`HEAD`)' in public and '!HeaderRegexp' in public
+    assert '(Method(`GET`) || Method(`HEAD`))' in public and '!HeaderRegexp' in public
     assert 'PathPrefix(`/.cpr/`)' in public
     assert '!PathPrefix(`/.cpr/metrics`)' in public and '!PathPrefix(`/.cpr/ssdp`)' in public
     assert labels['traefik.http.routers.copyparty-public.middlewares'].startswith('clear-copyparty-identity@file,')

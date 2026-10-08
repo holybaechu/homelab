@@ -207,6 +207,8 @@ def test_pve_and_authentik_render_the_same_private_oidc_credential(tmp_path):
         exec(compile(program, 'pve-bundle-workflow', 'exec'), {})
     pve = json.loads(destination.read_text())
     assert pve['version'] == 2
+    from scripts.ci.verify_pve_access_bundle import require_identity_membership
+    require_identity_membership(destination, 'ssh-ed25519 QUJD')
     secret = pve['values']['proxmox_oidc_client_secret']
     env = dict(line.split('=', 1) for line in (stage / '.secrets/authentik.env').read_text().splitlines())
     assert secret == env['PROXMOX_OIDC_CLIENT_SECRET']

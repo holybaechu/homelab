@@ -9,7 +9,7 @@ a regular, root-owned file at `/etc/homelab/secrets/apps.json` with mode `0600`.
 | Component | Hosted input | Validator |
 | --- | --- | --- |
 | Apps | `APPS_SECRET_BUNDLE` | [prepare_release.py](../apps/compose/homelab/prepare_release.py) |
-| PVE | Public key derived from `DEPLOY_SSH_PRIVATE_KEY` | [reconcile.yml](../infra/ansible/playbooks/reconcile.yml) |
+| PVE | Public key derived from `DEPLOY_SSH_PRIVATE_KEY` | [reconcile.yml](../infra/ansible/playbooks/reconcile.yml) and [deployment-key binding](../scripts/ci/verify_pve_access_bundle.py) |
 | Tailnet | `TAILSCALE_AUTH_KEY` | [reconcile.yml](../infra/ansible/playbooks/reconcile.yml) |
 
 Connection credentials and their GitHub environment settings are listed in

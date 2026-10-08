@@ -28,19 +28,23 @@ verify = load_module()
 
 
 def write_bundle(path: Path, keys: list[str], *, version: object = 1) -> None:
+    values = {"deploy_ssh_public_keys": keys}
+    if version == 2:
+        values["proxmox_oidc_client_secret"] = "a" * 64
     path.write_text(
         json.dumps(
             {
                 "component": "pve",
                 "version": version,
-                "values": {"deploy_ssh_public_keys": keys},
+                "values": values,
             }
         ),
         encoding="utf-8",
     )
 
 
-def test_configured_private_key_must_match_one_exact_bundle_identity(tmp_path, capsys):
+@pytest.mark.parametrize("version", [1, 2])
+def test_configured_private_key_must_match_one_exact_bundle_identity(tmp_path, capsys, version):
     keygen = shutil.which("ssh-keygen")
     if keygen is None:
         pytest.skip("ssh-keygen is unavailable")
@@ -54,11 +58,11 @@ def test_configured_private_key_must_match_one_exact_bundle_identity(tmp_path, c
     assert len(public_key.split()) == 2
 
     bundle = tmp_path / "pve.json"
-    write_bundle(bundle, [public_key])
+    write_bundle(bundle, [public_key], version=version)
     assert verify.main(["--private-key", str(private_key), "--bundle", str(bundle)]) == 0
     assert "matches one authorized bundle key" in capsys.readouterr().out
 
-    write_bundle(bundle, ["ssh-ed25519 QUJD"])
+    write_bundle(bundle, ["ssh-ed25519 QUJD"], version=version)
     assert verify.main(["--private-key", str(private_key), "--bundle", str(bundle)]) == 2
     assert "absent from PVE deploy_ssh_public_keys" in capsys.readouterr().err
 
@@ -79,3 +83,15 @@ def test_bundle_identity_contract_rejects_ambiguous_keys_and_boolean_versions(
     write_bundle(bundle, keys, version=version)
     with pytest.raises(verify.AccessContractError, match=error):
         verify.require_identity_membership(bundle, "ssh-ed25519 AAAA")
+
+
+def test_v2_invalid_private_credential_is_rejected_without_disclosure(tmp_path):
+    bundle = tmp_path / 'pve.json'
+    write_bundle(bundle, ['ssh-ed25519 AAAA'], version=2)
+    payload = json.loads(bundle.read_text())
+    private_value = 'invalid-private-value-must-not-be-logged'
+    payload['values']['proxmox_oidc_client_secret'] = private_value
+    bundle.write_text(json.dumps(payload))
+    with pytest.raises(verify.AccessContractError, match='identity credential') as error:
+        verify.require_identity_membership(bundle, 'ssh-ed25519 AAAA')
+    assert private_value not in str(error.value)

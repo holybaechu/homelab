@@ -83,11 +83,18 @@ def require_identity_membership(bundle_path: Path, public_key: str) -> None:
         raise AccessContractError("PVE component bundle has an invalid field set")
     if bundle.get("component") != "pve" or type(bundle.get("version")) is not int:
         raise AccessContractError("PVE component bundle identity is invalid")
-    if bundle["version"] != 1 or not isinstance(bundle.get("values"), dict):
+    if bundle["version"] not in (1, 2) or not isinstance(bundle.get("values"), dict):
         raise AccessContractError("PVE component bundle contract is invalid")
     values = bundle["values"]
-    if set(values) != {"deploy_ssh_public_keys"}:
+    expected = {"deploy_ssh_public_keys"}
+    if bundle["version"] == 2:
+        expected.add("proxmox_oidc_client_secret")
+    if set(values) != expected:
         raise AccessContractError("PVE component bundle values have an invalid field set")
+    if bundle["version"] == 2:
+        secret = values["proxmox_oidc_client_secret"]
+        if not isinstance(secret, str) or re.fullmatch(r"[a-f0-9]{64}", secret) is None:
+            raise AccessContractError("PVE identity credential is invalid")
     keys = values["deploy_ssh_public_keys"]
     if (
         not isinstance(keys, list)
