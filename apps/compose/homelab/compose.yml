@@ -2,7 +2,7 @@ name: homelab
 
 services:
   traefik:
-    image: traefik:v3.7.14@sha256:e849695bc5c317da0cec22bfee4794fd9e15871fe554f864d31b625983e883ff
+    image: traefik:v3.7.14@sha256:575fa15b135078fe5e50aa847987d96dbddd7b093c172429618404df73f3fa7c
     restart: unless-stopped
     env_file:
       - ./.secrets/traefik.env
@@ -106,7 +106,7 @@ services:
       start_period: 30s
 
   copyparty:
-    image: copyparty/ac:1.20.25@sha256:3d4f65f68aa68c287d6c29f2059842d49ca6f79dde061fbf6cc8fdb120691daf
+    image: copyparty/ac:1.20.25@sha256:cbf8f82c9317ce7c0690b59b0a10f7deb74d73babbf88c3c110e1cbd599d8bad
     restart: unless-stopped
     command: ["-c", "/config/homelab/copyparty.conf"]
     environment:
@@ -147,7 +147,7 @@ services:
       start_period: 30s
 
   metube:
-    image: ghcr.io/alexta69/metube:2026.09.29@sha256:8e2fe9beeefc55a02f6e1d04cad0fc3c22e8f067d309188f016551dc99ec27b3
+    image: ghcr.io/alexta69/metube:2026.10.09@sha256:df929ef2453fd75c1f1cbd8dafb309ee03ff18d8705c7c1e01642b1202d4a650
     restart: unless-stopped
     environment:
       DELETE_FILE_ON_TRASHCAN: "true"
