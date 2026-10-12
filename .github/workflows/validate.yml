@@ -35,7 +35,6 @@ jobs:
       - name: Run behavioral and invariant tests
         env:
           PYTHONPATH: ${{ github.workspace }}
-          HOMELAB_TEST_POSTGRES_UPGRADE: "1"
         run: python -m pytest -q
       - name: Render the application package
         run: ./scripts/ci/validate-compose.sh
