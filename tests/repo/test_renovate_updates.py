@@ -40,3 +40,12 @@ def test_tailscale_action_tracks_published_linux_packages_instead_of_all_git_tag
     for path in (".github/workflows/apps.yml", ".github/workflows/infra.yml"):
         matches = list(re.finditer(expression, read(path)))
         assert len(matches) == 1
+
+
+def test_workflow_python_updates_stay_within_ansible_controller_support():
+    config = json.loads(read("renovate.json"))
+    rules = [rule for rule in config["packageRules"]
+             if "actions/python-versions" in rule.get("matchPackageNames", [])]
+    assert len(rules) == 1
+    assert rules[0]["matchManagers"] == ["github-actions"]
+    assert rules[0]["allowedVersions"] == "<3.15"

@@ -282,7 +282,10 @@ any missing key through the trusted PVE console after a partial apply.
 
 The weekly schedule runs Sunday at 03:17 Asia/Seoul. It reconciles `tailnet`
 and `apps-host` sequentially, upgrades host packages, reboots only when required,
-and reads service health. It does not redeploy or recreate applications.
+and reads service health. Application health polling allows up to five minutes
+after Docker maintenance or a reboot; an empty project, stopped container, or
+persistently unhealthy container fails the run. It does not redeploy or recreate
+applications.
 Renovate groups routine dependency updates weekly; merging and deployment are
 manual. Major upgrades remain separate for reviewing their migration instructions.
 

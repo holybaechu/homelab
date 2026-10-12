@@ -59,6 +59,12 @@
   },
   "packageRules": [
     {
+      "description": "Keep workflow Python within ansible-core 2.21 controller support",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["actions/python-versions"],
+      "allowedVersions": "<3.15"
+    },
+    {
       "matchDatasources": [
         "custom.proxmox-debian-13"
       ],
