@@ -71,6 +71,12 @@
       "extractVersion": "^debian-13-standard_(?<version>.+)_amd64\\.tar\\.zst$"
     },
     {
+      "description": "Keep PostgreSQL within the tested 18 data format",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["postgres"],
+      "allowedVersions": "<19"
+    },
+    {
       "description": "Use canonical qBittorrent application tags instead of legacy OS tags",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["lscr.io/linuxserver/qbittorrent"],

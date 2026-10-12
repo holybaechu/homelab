@@ -145,3 +145,85 @@ def test_public_blueprint_is_readable_by_authentiks_non_root_user(environment):
     # The readable blueprint references env vars; private values remain restricted.
     assert not (root / '.secrets/authentik.env').stat().st_mode & 0o077
     assert '!Env' in blueprint.read_text()
+
+
+def _postgres_models(environment, monkeypatch, old_root=None):
+    from tests.docker.test_postgres_upgrade import _model
+    _, _, root, _, _ = environment
+    original = deployment.compose
+    old_root = old_root or root
+
+    def compose(directory, *args, **kwargs):
+        value = original(directory, *args, **kwargs)
+        if args[0] == "config":
+            model = _model(16 if directory == old_root else 18,
+                           "original" if directory == old_root else "converted")
+            model["services"].update(json.loads(value)["services"])
+            return json.dumps(model)
+        return value
+
+    monkeypatch.setattr(deployment, "compose", compose)
+
+
+def test_postgres_preflight_failure_preserves_installed_configuration(environment, monkeypatch):
+    apply(environment)
+    _, _, root, installed, calls = environment
+    before = (root / "compose.yml").read_bytes(), installed.read_bytes()
+    _postgres_models(environment, monkeypatch)
+    monkeypatch.setattr(deployment.postgres_upgrade, "preflight",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("destination already exists")))
+    calls.clear()
+    with pytest.raises(RuntimeError, match="destination already exists"):
+        apply(environment)
+    assert ((root / "compose.yml").read_bytes(), installed.read_bytes()) == before
+    assert not any(args[0] in ("stop", "up", "pull") for _, args in calls)
+
+
+def test_postgres_conversion_finishes_before_configuration_is_published(environment, monkeypatch):
+    apply(environment)
+    _, _, root, _, calls = environment
+    before = (root / "compose.yml").read_bytes()
+    _postgres_models(environment, monkeypatch)
+    monkeypatch.setattr(deployment.postgres_upgrade, "preflight", lambda *a, **k: None)
+    phases = []
+
+    def convert(old, staged, backup, transition, **kwargs):
+        assert old == root
+        assert (root / "compose.yml").read_bytes() == before
+        assert (kwargs["recovery"] / "compose.yml").read_bytes() == before
+        phases.append("convert")
+
+    original_sync = deployment.sync
+
+    def publish(source, destination, **kwargs):
+        assert phases == ["convert"]
+        phases.append("publish")
+        return original_sync(source, destination, **kwargs)
+
+    monkeypatch.setattr(deployment.postgres_upgrade, "upgrade", convert)
+    monkeypatch.setattr(deployment, "sync", publish)
+    calls.clear()
+    apply(environment)
+    assert phases == ["convert", "publish"]
+    assert any(args[0] == "up" for _, args in calls)
+
+
+def test_legacy_conversion_failure_does_not_restart_all_legacy_services(environment, monkeypatch):
+    source, bundle, root, _, calls = environment
+    legacy = root.parent / "compose-runtime/a/stack"
+    deployment.sync(source, legacy)
+    deployment.prepare(bundle, legacy, legacy / "topology.json")
+    state = root.parent / "compose-control/release-state.json"
+    state.parent.mkdir()
+    state.write_text(json.dumps({"active_slot": "a", "pending": None}))
+    _postgres_models(environment, monkeypatch, old_root=legacy)
+    monkeypatch.setattr(deployment.postgres_upgrade, "preflight", lambda *a, **k: None)
+
+    def failed_conversion(*args, **kwargs):
+        raise RuntimeError("PostgreSQL migration failed; PostgreSQL 16 restored")
+
+    monkeypatch.setattr(deployment.postgres_upgrade, "upgrade", failed_conversion)
+    with pytest.raises(RuntimeError, match="PostgreSQL 16 restored"):
+        apply(environment)
+    assert not any(directory == legacy and args[0] == "up" for directory, args in calls)
+    assert not (root / ".revision").exists()

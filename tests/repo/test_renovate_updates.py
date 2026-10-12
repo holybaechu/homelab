@@ -69,3 +69,11 @@ def test_qbittorrent_updates_accept_application_tags_and_reject_legacy_os_tags()
         ("libtorrentv1", False),
     ):
         assert (re.fullmatch(expression, tag) is not None) is accepted, tag
+
+
+def test_postgresql_updates_stay_within_the_tested_data_format():
+    config = json.loads(read("renovate.json"))
+    rule = next(rule for rule in config["packageRules"]
+                if "postgres" in rule.get("matchPackageNames", []))
+    assert rule["matchDatasources"] == ["docker"]
+    assert rule["allowedVersions"] == "<19"
