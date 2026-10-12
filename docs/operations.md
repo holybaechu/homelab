@@ -70,7 +70,7 @@ credentials.
 
 ## Deploy apps
 
-1. Update and [validate the application package](../apps/compose/homelab/README.md#making-changes).
+1. Update and [validate the application package](../README.md#validate-locally).
 2. Merge to `main`, then manually dispatch `apps.yml` with `operation=deploy`.
    Merging or accepting a dependency update does not deploy production.
 3. Check the workflow result and application access.
@@ -82,12 +82,6 @@ configuration changes recreate only affected services; Traefik watches its
 dynamic directory. Read-only checks cover DNS, HTTPS, public Copyparty reads,
 protected redirects, OIDC discovery, and Headscale. The blueprint is applied
 when identity configuration or its images change.
-
-The first deployment migrates the old runtime mounts and recreates all containers
-once. It keeps the project, named volumes, durable mounts, credentials, and
-Tailscale access. It saves previous configuration, an Authentik SQL dump, and an
-offline Headscale volume copy first. If activation fails, it reactivates the
-untouched old installation. No VM migration is involved.
 
 ## Deploy identity services
 
@@ -304,32 +298,25 @@ of the installed configuration and component bundle. A repeat deployment replace
 that copy. Save it elsewhere before retries when you need an older recovery point.
 Retained images are not automatically pruned.
 
-For backups made by the stable deployment, copy previous configuration to a
-private temporary directory first (deployment
-replaces `compose-previous`), then use the **current** deployer:
+For compatible configuration or stateless image recovery, preserve the private
+previous package before another deployment replaces it. Verify its database
+declaration retains PostgreSQL 18 and `platform_authentik_db_pg18`, then activate
+that configuration directly with native Compose:
 
 ```sh
-recovery="$(mktemp -d)"
-cp -a /opt/homelab/compose-previous/. "$recovery/"
-python3 /opt/homelab/compose/deploy.py --source "$recovery" \
-  --secret-bundle "$recovery/apps.json" --revision recovery
-rm -rf -- "$recovery"
+recovery=/opt/homelab/compose-previous
+docker compose --project-name homelab --project-directory "$recovery" \
+  -f "$recovery/compose.yml" up -d --no-build --pull never --wait --wait-timeout 300
 ```
 
-The first migration's previous copy uses the old mount layout. To return to it,
-read `active_slot` from `/opt/homelab/compose-control/release-state.json`, change
-into `/opt/homelab/compose-runtime/<active_slot>/stack`, and run
-`docker compose --project-name homelab up -d --no-build --pull never --force-recreate --wait`.
-This uses the retained old configuration directly. Hold deployment workflows
-while recovering and remove the stable `.revision` marker before retrying the
-migration. Do not use the retired launcher.
+Use current repository source for the next deployment. Retired migration packages
+are rejected by the deployer. Authentik downgrades require a matching database
+backup. PostgreSQL recovery uses a PostgreSQL 18 backup; returning to the retained
+PostgreSQL 16 volume would discard later writes. Restore Headscale data with its
+matching version. See [private data recovery](recovery.md#what-to-back-up).
 
-Use this for compatible configuration or stateless image changes. Authentik
-downgrades require restoring a matching database backup; PostgreSQL major changes
-follow the [database upgrade and recovery procedure](recovery.md#upgrade-authentik-postgresql).
-Restore Headscale data with its matching version.
 Keep independent backups outside this LXC; local SQL and Headscale copies under
-`/opt/homelab/backups` protect migration and identity image upgrades only.
+`/opt/homelab/backups` protect identity image upgrades.
 
 ## Failed or interrupted operations
 
@@ -337,7 +324,9 @@ The deployer validates credentials and Compose and pulls images before modifying
 the installed package. Once activation begins, failure leaves the attempted
 configuration in the stable directory. Correct it and redeploy, or follow the
 manual recovery procedure above. Routine deployments do not automatically undo
-application databases or images. The first migration has an old-install fallback.
+application databases or images. Deployment supports only the current stable
+directory and verified PostgreSQL 18 volume; retired release slots require
+manual restoration of a current package.
 
 Deployments share a host lock and production workflows share a queue. Inspect
 `docker compose ps --all` and failing service logs from a trusted console. Keep
@@ -350,11 +339,11 @@ reports the failed operation without printing Compose environments.
 | --- | --- |
 | `/opt/homelab/compose` | Stable source, topology snapshot, private generated configuration, and `.revision` |
 | `/opt/homelab/compose-previous` | Previous configuration and private apps bundle |
-| `/opt/homelab/backups` | Private identity data backups before migration or identity image changes |
+| `/opt/homelab/backups` | Private identity data backups before identity image changes |
 | `/etc/homelab/secrets/apps.json` | Current private version-2 bundle |
 
 Former `compose-releases`, `compose-runtime`, and `compose-control` directories
-are left untouched after migration. Keep them until access is verified and
+are retained as private historical backups. Keep them until access is verified and
 independent backups are copied; they contain private files. Their launcher is
 retired. Routine deployment never removes named volumes or durable app files.
 Check disk space before large updates and follow

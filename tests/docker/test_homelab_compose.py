@@ -82,3 +82,12 @@ def test_public_identity_endpoints_have_managed_dns(model):
     domains = {domain.strip() for domain in settings["DOMAINS"].split(",")}
     assert {"auth.home.hchu.me", "headscale.home.hchu.me", "metube.home.hchu.me"} <= domains
     assert settings["PROXIED"] == "false"
+
+
+def test_database_uses_the_verified_postgresql18_volume_and_readiness(model):
+    database = model["services"]["authentik-db"]
+    assert database["image"].startswith("postgres:18.")
+    assert database["volumes"] == ["authentik_db:/var/lib/postgresql"]
+    assert model["volumes"]["authentik_db"]["name"] == "platform_authentik_db_pg18"
+    command = database["healthcheck"]["test"]
+    assert command[command.index("-h") + 1] == "127.0.0.1"
