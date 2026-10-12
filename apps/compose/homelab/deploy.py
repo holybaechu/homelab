@@ -13,7 +13,6 @@ import tempfile
 import time
 
 from prepare_release import prepare
-import postgres_upgrade
 
 ROOT = Path('/opt/homelab/compose')
 BUNDLE = Path('/etc/homelab/secrets/apps.json')
@@ -86,6 +85,9 @@ def sync(source: Path, destination: Path, *, skip_adguard=False) -> set[str]:
         if path.is_file() and not (source / relative).exists():
             if relative.startswith(('config/', '.secrets/')):
                 path.unlink()
+    (destination / 'postgres_upgrade.py').unlink(missing_ok=True)
+    for bytecode in (destination / '__pycache__').glob('postgres_upgrade.*.pyc'):
+        bytecode.unlink()
     return changed
 
 
@@ -100,14 +102,15 @@ def container_ids(root: Path) -> dict[str, str]:
             if line.strip() for row in [json.loads(line)]}
 
 
-def legacy_root(install: Path) -> Path | None:
-    state_path = install / 'compose-control/release-state.json'
-    if not state_path.exists():
-        return None
-    state = json.loads(state_path.read_text())
-    if state.get('pending') is not None or state.get('active_slot') not in ('a', 'b'):
-        raise RuntimeError('Finish or recover the previous release before migrating')
-    return install / 'compose-runtime' / state['active_slot'] / 'stack'
+def require_database_layout(model):
+    """Keep ordinary deployment on the verified PostgreSQL 18 data volume."""
+    database = model['services']['authentik-db']
+    if not database['image'].startswith('postgres:18.'):
+        raise RuntimeError('Only the current PostgreSQL 18 data layout is supported')
+    mounts = [mount for mount in database.get('volumes', [])
+              if mount.get('type') == 'volume' and mount.get('target') == '/var/lib/postgresql']
+    if len(mounts) != 1 or model['volumes'][mounts[0]['source']]['name'] != 'platform_authentik_db_pg18':
+        raise RuntimeError('Deployment must retain the verified PostgreSQL 18 data volume')
 
 
 def data_backup(root: Path, destination: Path, *, headscale=False):
@@ -137,8 +140,11 @@ def data_backup(root: Path, destination: Path, *, headscale=False):
 def deploy(source: Path, bundle: Path, revision: str, *, root=ROOT, installed_bundle=BUNDLE):
     root.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     previous = root.parent / 'compose-previous'
-    old = root if (root / '.revision').exists() else legacy_root(root.parent)
-    migration = old is not None and old != root
+    old = root if (root / '.revision').exists() else None
+    if old is None and (root.parent / 'compose-control/release-state.json').exists():
+        raise RuntimeError('Legacy release slots are unsupported; restore the current Compose package')
+    if (source / 'postgres_upgrade.py').exists():
+        raise RuntimeError('Retired migration packages cannot be deployed; use current source')
     with tempfile.TemporaryDirectory(prefix='homelab-') as temporary:
         staged = Path(temporary) / 'stack'
         shutil.copytree(source, staged, ignore=shutil.ignore_patterns('__pycache__', 'generated', '.secrets'))
@@ -148,9 +154,9 @@ def deploy(source: Path, bundle: Path, revision: str, *, root=ROOT, installed_bu
         old_config = json.loads(compose(old, 'config', '--format', 'json', capture=True)) if old else {}
         new_model = new_config['services']
         old_model = old_config.get('services', {})
-        postgres_transition = postgres_upgrade.plan(old_config, new_config)
-        if postgres_transition:
-            postgres_upgrade.preflight(old, postgres_transition)
+        require_database_layout(new_config)
+        if old:
+            require_database_layout(old_config)
         backup = root.parent / 'backups' / time.strftime('%Y%m%d-%H%M%S')
         # Absolute staged bind paths differ by design; native up compares the final paths.
         images_changed = {name for name, model in new_model.items()
@@ -162,60 +168,48 @@ def deploy(source: Path, bundle: Path, revision: str, *, root=ROOT, installed_bu
             shutil.copytree(old, previous, ignore=shutil.ignore_patterns('__pycache__'))
             if installed_bundle.exists():
                 shutil.copy2(installed_bundle, previous / 'apps.json')
-            if migration or images_changed & {'authentik-db', 'authentik-server', 'authentik-worker', 'headscale'}:
+            if images_changed & {'authentik-db', 'authentik-server', 'authentik-worker', 'headscale'}:
                 data_backup(old, backup,
-                            headscale=migration or 'headscale' in images_changed)
+                            headscale='headscale' in images_changed)
         # AdGuard rewrites its own config. Compare its declarative inputs, not normalized YAML.
         old_bundle = json.loads(installed_bundle.read_text()) if installed_bundle.exists() else {}
         incoming = json.loads(bundle.read_text())
-        keep_adguard = bool(old and not migration and
+        keep_adguard = bool(old and
                             old_bundle.get('adguard') == incoming.get('adguard') and
                             (root / 'config/AdGuardHome.yaml.tmpl').read_bytes() ==
                             (staged / 'config/AdGuardHome.yaml.tmpl').read_bytes() and
                             (root / 'topology.json').read_bytes() == (staged / 'topology.json').read_bytes())
-        try:
-            if postgres_transition:
-                postgres_upgrade.upgrade(old, staged, backup / 'postgres18', postgres_transition,
-                                         recovery=previous)
-            if old and not keep_adguard:
-                compose(old, 'stop', 'adguard')
-            changed = sync(staged, root, skip_adguard=keep_adguard)
-            installed_bundle.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            secret_temporary = installed_bundle.with_suffix('.new')
-            shutil.copyfile(bundle, secret_temporary)
-            secret_temporary.chmod(0o600)
-            secret_temporary.replace(installed_bundle)
-            forced = affected_configs(changed)
-            # A single recreation attaches the new stable mounts during initial migration.
-            if migration or not old:
-                compose(root, 'up', '-d', '--no-build', '--pull', 'never', '--force-recreate', '--wait', '--wait-timeout', '300')
-            else:
-                if forced:
-                    compose(root, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never',
-                            '--force-recreate', *sorted(forced))
-                compose(root, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '300')
-            identity_changed = (migration or not old or 'authentik-worker' in forced
-                                or bool(images_changed & {'authentik-server', 'authentik-worker'})
-                                or '.secrets/authentik.env' in changed)
-            if identity_changed:
-                compose(root, 'exec', '-T', 'authentik-worker', 'ak', 'apply_blueprint',
-                        '/blueprints/homelab/authentik-blueprint.yaml', capture=True)
-            for attempt in range(10):
-                result = subprocess.run(['sh', 'smoke.sh'], cwd=root, capture_output=True, text=True)
-                if result.returncode == 0:
-                    print('DNS, public reads, protected redirects, OIDC, and Headscale verified.', flush=True)
-                    break
-                if attempt == 9:
-                    raise RuntimeError('Access smoke check failed; run sh smoke.sh from the stable directory')
-                time.sleep(2)
-        except Exception:
-            if migration and not postgres_transition:
-                # One-time migration fallback, using the untouched old mounts and volumes.
-                compose(old, 'up', '-d', '--no-build', '--pull', 'never', '--force-recreate', '--wait', '--wait-timeout', '300')
-                if (previous / 'apps.json').exists():
-                    shutil.copy2(previous / 'apps.json', installed_bundle)
-                print('Migration failed; previous Compose installation restored.', flush=True)
-            raise
+        if old and not keep_adguard:
+            compose(old, 'stop', 'adguard')
+        changed = sync(staged, root, skip_adguard=keep_adguard)
+        installed_bundle.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        secret_temporary = installed_bundle.with_suffix('.new')
+        shutil.copyfile(bundle, secret_temporary)
+        secret_temporary.chmod(0o600)
+        secret_temporary.replace(installed_bundle)
+        forced = affected_configs(changed)
+        # A fresh installation attaches the stable mounts once.
+        if not old:
+            compose(root, 'up', '-d', '--no-build', '--pull', 'never', '--force-recreate', '--wait', '--wait-timeout', '300')
+        else:
+            if forced:
+                compose(root, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never',
+                        '--force-recreate', *sorted(forced))
+            compose(root, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '300')
+        identity_changed = (not old or 'authentik-worker' in forced
+                            or bool(images_changed & {'authentik-server', 'authentik-worker'})
+                            or '.secrets/authentik.env' in changed)
+        if identity_changed:
+            compose(root, 'exec', '-T', 'authentik-worker', 'ak', 'apply_blueprint',
+                    '/blueprints/homelab/authentik-blueprint.yaml', capture=True)
+        for attempt in range(10):
+            result = subprocess.run(['sh', 'smoke.sh'], cwd=root, capture_output=True, text=True)
+            if result.returncode == 0:
+                print('DNS, public reads, protected redirects, OIDC, and Headscale verified.', flush=True)
+                break
+            if attempt == 9:
+                raise RuntimeError('Access smoke check failed; run sh smoke.sh from the stable directory')
+            time.sleep(2)
         (root / '.revision').write_text(revision + '\n')
         if root == ROOT:
             Path('/usr/local/libexec/homelab-release').unlink(missing_ok=True)
