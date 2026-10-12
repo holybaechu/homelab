@@ -49,3 +49,23 @@ def test_workflow_python_updates_stay_within_ansible_controller_support():
     assert len(rules) == 1
     assert rules[0]["matchManagers"] == ["github-actions"]
     assert rules[0]["allowedVersions"] == "<3.15"
+
+
+def test_qbittorrent_updates_accept_application_tags_and_reject_legacy_os_tags():
+    config = json.loads(read("renovate.json"))
+    rule = next(rule for rule in config["packageRules"]
+                if "lscr.io/linuxserver/qbittorrent" in rule.get("matchPackageNames", []))
+    assert rule["matchDatasources"] == ["docker"]
+    assert rule["versioning"].startswith("regex:")
+    expression = re.sub(r"\(\?<([A-Za-z][A-Za-z0-9_]*)>", r"(?P<\1>",
+                        rule["versioning"].removeprefix("regex:"))
+    for tag, accepted in (
+        ("5.2.4", True),
+        ("5.3.0", True),
+        ("6.0.0", True),
+        ("20.04.1", False),
+        ("14.3.9.99202110311443-7435-01519b5e7ubuntu20.04.1-ls166", False),
+        ("5.2.4_v2.0.15-ls479", False),
+        ("libtorrentv1", False),
+    ):
+        assert (re.fullmatch(expression, tag) is not None) is accepted, tag

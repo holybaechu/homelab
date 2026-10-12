@@ -71,6 +71,12 @@
       "extractVersion": "^debian-13-standard_(?<version>.+)_amd64\\.tar\\.zst$"
     },
     {
+      "description": "Use canonical qBittorrent application tags instead of legacy OS tags",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["lscr.io/linuxserver/qbittorrent"],
+      "versioning": "regex:^(?<major>0|[1-9]\\d*)\\.(?<minor>0|[1-9]\\d*)\\.(?<patch>0|[1-9]\\d*)$"
+    },
+    {
       "description": "Order MeTube calendar-versioned Docker tags",
       "matchDatasources": [
         "docker"
