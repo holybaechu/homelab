@@ -67,3 +67,65 @@ def test_application_maintenance_reads_health_without_reactivation():
     assert "Read application health after host maintenance" in text
     assert "homelab-release" not in text
     assert "--force-recreate" not in text
+
+
+@pytest.mark.parametrize("frames,passes", (
+    (
+        [
+            [{"Service": "traefik", "State": "running", "Health": "starting"},
+             {"Service": "cloudflare-ddns", "State": "running", "Health": ""}],
+            [{"Service": "traefik", "State": "running", "Health": "healthy"},
+             {"Service": "cloudflare-ddns", "State": "running", "Health": ""}],
+        ],
+        True,
+    ),
+    ([[{"Service": "traefik", "State": "running", "Health": "unhealthy"}]], False),
+    ([[{"Service": "traefik", "State": "exited", "Health": ""}]], False),
+    ([[]], False),
+))
+def test_real_maintenance_waits_for_health_and_rejects_failed_or_empty_projects(tmp_path, frames, passes):
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    import yaml
+
+    executable = shutil.which("ansible-playbook")
+    if executable is None or os.name == "nt":
+        pytest.skip("Ansible controller requires POSIX")
+    tasks = load_yaml(RECONCILE)[1]["tasks"]
+    read = next(task for task in tasks if task.get("register") == "homelab_apps_health")
+    require = next(task for task in tasks
+                   if task["name"] == "Require running healthy application containers")
+    counter = tmp_path / "calls"
+    docker = tmp_path / "docker"
+    docker.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"assert sys.argv[1:] == {read['ansible.builtin.command']['argv'][1:]!r}\n"
+        f"counter = Path({str(counter)!r})\n"
+        "calls = int(counter.read_text()) if counter.exists() else 0\n"
+        "counter.write_text(str(calls + 1))\n"
+        f"frames = {frames!r}\n"
+        "for container in frames[min(calls, len(frames) - 1)]:\n"
+        "    print(json.dumps(container))\n",
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+    read["ansible.builtin.command"]["argv"][0] = str(docker)
+    if "until" in read:
+        assert 0 < read["retries"] * read["delay"] <= 300
+        read.update(retries=2, delay=0)
+    play = [{"hosts": "localhost", "gather_facts": False,
+             "vars": {"homelab_unit": "apps-host", "homelab_maintenance_upgrade": True},
+             "tasks": [read, require]}]
+    probe = tmp_path / "maintenance.yml"
+    probe.write_text(yaml.safe_dump(play, sort_keys=False), encoding="utf-8")
+    result = subprocess.run(
+        [executable, "-i", "localhost,", "-c", "local", str(probe)],
+        capture_output=True, text=True, check=False,
+    )
+    assert (result.returncode == 0) is passes, result.stdout + result.stderr
+    assert int(counter.read_text()) == (2 if passes else 3)

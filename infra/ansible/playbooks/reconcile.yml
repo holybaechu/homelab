@@ -254,6 +254,18 @@
         argv: [docker, compose, --project-name, homelab, -f, /opt/homelab/compose/compose.yml, ps, --format, json, --all]
       register: homelab_apps_health
       changed_when: false
+      retries: 60
+      delay: 5
+      until:
+        - homelab_apps_health.rc == 0
+        - homelab_apps_health.stdout_lines | length > 0
+        - >-
+          homelab_apps_health.stdout_lines | map('from_json')
+          | rejectattr('State', 'equalto', 'running') | list | length == 0
+        - >-
+          homelab_apps_health.stdout_lines | map('from_json')
+          | selectattr('Health', 'defined')
+          | rejectattr('Health', 'in', ['', 'healthy']) | list | length == 0
       when:
         - homelab_unit == 'apps-host'
         - homelab_maintenance_upgrade | default(false) | bool

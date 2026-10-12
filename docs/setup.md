@@ -16,7 +16,9 @@ Hosted workflows need tailnet to reach the hosts.
 
 ## Prepare the controller
 
-Use Python 3.14 and a local Python environment:
+Use Python 3.14 and a local Python environment. The pinned Ansible controller
+does not support Python 3.15; raise the Renovate Python limit only after upgrading
+Ansible and verifying controller support:
 
 ```sh
 python -m pip install -r requirements-deploy.txt

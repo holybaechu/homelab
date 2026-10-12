@@ -99,3 +99,11 @@ def test_pve_and_authentik_render_the_same_private_oidc_credential(tmp_path):
     env = dict(line.split('=', 1) for line in (stage / '.secrets/authentik.env').read_text().splitlines())
     assert secret == env['PROXMOX_OIDC_CLIENT_SECRET']
     assert secret != apps['authentik']['secret_key'] and secret != apps['headscale']['oidc_client_secret']
+
+
+def test_validation_installs_ansible_before_running_controller_regressions():
+    steps = workflow("validate.yml")["jobs"]["validate"]["steps"]
+    install_index, install = step_with(steps, "pip install")
+    tests_index, _ = step_with(steps, "python -m pytest")
+    assert shlex.split(install["run"])[-2:] == ["-r", "requirements-deploy.txt"]
+    assert install_index < tests_index
