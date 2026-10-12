@@ -25,63 +25,11 @@ Keep these backups private and restore the database together with its matching
 component credentials. Application rollback preserves these volumes and does not
 undo database migrations.
 
-## Upgrade Authentik PostgreSQL
-
-The package supports the PostgreSQL 16-to-18 transition. It restores into
-`platform_authentik_db_pg18`, mounted at `/var/lib/postgresql`, and retains
-the original `platform_authentik_db` volume. Other major transitions are rejected.
-
-1. Arrange a maintenance window with trusted LAN or PVE console access, hold
-   other production workflows, and make an independent private database backup.
-   Authentik login is unavailable while its server and worker are stopped.
-2. Confirm the installed database is PostgreSQL 16 and the destination volume
-   `platform_authentik_db_pg18` does not exist. An existing destination requires
-   the recovery steps below; it is never overwritten automatically.
-3. Dispatch `apps.yml` with `operation=deploy` at the migration revision.
-   The deployer checks the running source version and volume, stops Authentik's
-   writers, saves a private custom-format dump, starts only PostgreSQL 18,
-   restores atomically, and compares every user table's row count. It then
-   activates the complete package and verifies application access.
-4. Verify PostgreSQL 18 and Authentik login, users, providers, and applications.
-   Keep the original volume, `compose-previous`, and the private migration dump
-   under `/opt/homelab/backups/<timestamp>/postgres18` until independent backups
-   and recovery are verified. Routine deployment replaces `compose-previous`;
-   copy it to private storage before another deployment.
-
-A conversion failure restores PostgreSQL 16 and only the writers that were
-running before migration. The failed destination and dump remain for inspection.
-If recovery also fails, the deployer reports the retained recovery configuration
-path.
-
-### Recover an interrupted conversion
-
-Hold workflows and preserve both volumes, the private dump, and
-`/opt/homelab/compose-previous` before retrying. Inspect the running database
-and determine whether Authentik has used PostgreSQL 18.
-
-Before any writer has used PostgreSQL 18, restore the retained PostgreSQL 16
-configuration from a trusted console:
-
-```sh
-recovery=/opt/homelab/compose-previous
-docker compose --project-name homelab --project-directory "$recovery" \
-  -f "$recovery/compose.yml" up -d --no-deps --no-build --pull never \
-  --force-recreate --wait --wait-timeout 300 authentik-db
-docker compose --project-name homelab --project-directory "$recovery" \
-  -f "$recovery/compose.yml" up -d --no-deps --no-build --pull never \
-  --wait --wait-timeout 300 authentik-server authentik-worker
-```
-
-Verify PostgreSQL 16, Authentik access, and the original data. Inspect the unused
-PG18 volume and preserve anything needed before explicitly removing only the
-failed destination with `docker volume rm platform_authentik_db_pg18`.
-Never remove `platform_authentik_db`. Retry the fixed deployment after the
-destination is absent.
-
-Once Authentik has used PostgreSQL 18, retain and recover that database.
-Automatic PostgreSQL 16 restoration stops at successful conversion, before
-package activation. Returning to the old volume after new writes would discard
-those writes and requires a separate deliberate database recovery.
+The current database uses PostgreSQL 18 in `platform_authentik_db_pg18`, mounted
+at `/var/lib/postgresql`. Retained PostgreSQL 16 data is a pre-upgrade snapshot,
+not a recovery point for subsequent PostgreSQL 18 writes. Recover from a matching
+PostgreSQL 18 backup. One-off database and release-slot conversion helpers are
+retired.
 
 ## Rebuild a host
 
