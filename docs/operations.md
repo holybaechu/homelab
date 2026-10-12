@@ -326,7 +326,8 @@ migration. Do not use the retired launcher.
 
 Use this for compatible configuration or stateless image changes. Authentik
 downgrades require restoring a matching database backup; PostgreSQL major changes
-need their own migration. Restore Headscale data with its matching version.
+follow the [database upgrade and recovery procedure](recovery.md#upgrade-authentik-postgresql).
+Restore Headscale data with its matching version.
 Keep independent backups outside this LXC; local SQL and Headscale copies under
 `/opt/homelab/backups` protect migration and identity image upgrades only.
 

@@ -183,11 +183,11 @@ services:
       POSTGRES_DB: authentik
       POSTGRES_USER: authentik
     volumes:
-      - authentik_db:/var/lib/postgresql/data
+      - authentik_db:/var/lib/postgresql
     networks:
       - proxy
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "authentik", "-d", "authentik"]
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "authentik", "-d", "authentik"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -326,7 +326,7 @@ volumes:
   adguard_work:
     name: platform_adguard_work
   authentik_db:
-    name: platform_authentik_db
+    name: platform_authentik_db_pg18
   authentik_data:
     name: platform_authentik_data
   headscale_data:

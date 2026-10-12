@@ -13,6 +13,7 @@ import tempfile
 import time
 
 from prepare_release import prepare
+import postgres_upgrade
 
 ROOT = Path('/opt/homelab/compose')
 BUNDLE = Path('/etc/homelab/secrets/apps.json')
@@ -143,8 +144,14 @@ def deploy(source: Path, bundle: Path, revision: str, *, root=ROOT, installed_bu
         shutil.copytree(source, staged, ignore=shutil.ignore_patterns('__pycache__', 'generated', '.secrets'))
         prepare(bundle, staged, staged / 'topology.json')
         before = container_ids(old) if old else {}
-        new_model = json.loads(compose(staged, 'config', '--format', 'json', capture=True))['services']
-        old_model = json.loads(compose(old, 'config', '--format', 'json', capture=True))['services'] if old else {}
+        new_config = json.loads(compose(staged, 'config', '--format', 'json', capture=True))
+        old_config = json.loads(compose(old, 'config', '--format', 'json', capture=True)) if old else {}
+        new_model = new_config['services']
+        old_model = old_config.get('services', {})
+        postgres_transition = postgres_upgrade.plan(old_config, new_config)
+        if postgres_transition:
+            postgres_upgrade.preflight(old, postgres_transition)
+        backup = root.parent / 'backups' / time.strftime('%Y%m%d-%H%M%S')
         # Absolute staged bind paths differ by design; native up compares the final paths.
         images_changed = {name for name, model in new_model.items()
                           if old_model.get(name, {}).get('image') != model.get('image')}
@@ -156,7 +163,7 @@ def deploy(source: Path, bundle: Path, revision: str, *, root=ROOT, installed_bu
             if installed_bundle.exists():
                 shutil.copy2(installed_bundle, previous / 'apps.json')
             if migration or images_changed & {'authentik-db', 'authentik-server', 'authentik-worker', 'headscale'}:
-                data_backup(old, root.parent / 'backups' / time.strftime('%Y%m%d-%H%M%S'),
+                data_backup(old, backup,
                             headscale=migration or 'headscale' in images_changed)
         # AdGuard rewrites its own config. Compare its declarative inputs, not normalized YAML.
         old_bundle = json.loads(installed_bundle.read_text()) if installed_bundle.exists() else {}
@@ -167,6 +174,9 @@ def deploy(source: Path, bundle: Path, revision: str, *, root=ROOT, installed_bu
                             (staged / 'config/AdGuardHome.yaml.tmpl').read_bytes() and
                             (root / 'topology.json').read_bytes() == (staged / 'topology.json').read_bytes())
         try:
+            if postgres_transition:
+                postgres_upgrade.upgrade(old, staged, backup / 'postgres18', postgres_transition,
+                                         recovery=previous)
             if old and not keep_adguard:
                 compose(old, 'stop', 'adguard')
             changed = sync(staged, root, skip_adguard=keep_adguard)
@@ -199,7 +209,7 @@ def deploy(source: Path, bundle: Path, revision: str, *, root=ROOT, installed_bu
                     raise RuntimeError('Access smoke check failed; run sh smoke.sh from the stable directory')
                 time.sleep(2)
         except Exception:
-            if migration:
+            if migration and not postgres_transition:
                 # One-time migration fallback, using the untouched old mounts and volumes.
                 compose(old, 'up', '-d', '--no-build', '--pull', 'never', '--force-recreate', '--wait', '--wait-timeout', '300')
                 if (previous / 'apps.json').exists():
