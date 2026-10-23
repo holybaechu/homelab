@@ -55,6 +55,17 @@ class IngressServices(unittest.TestCase):
             checked += 1
         self.assertGreater(checked, 0)
 
+    def test_private_ingress_preserves_vpn_sources_without_exposing_management_ports(self):
+        deployment = next(item for item in self.resources if item["kind"] == "Deployment" and item["metadata"]["name"] == "traefik")
+        pod = deployment["spec"]["template"]["spec"]
+        self.assertTrue(pod.get("hostNetwork"), "Host-port DNAT and gateway masquerading hide VPN clients behind the CNI address")
+        arguments = pod["containers"][0]["args"]
+        for name, address in {"web": ":80/tcp", "websecure": ":443/tcp", "traefik": "127.0.0.1:8080/tcp", "metrics": "127.0.0.1:9100/tcp"}.items():
+            self.assertIn(f"--entryPoints.{name}.address={address}", arguments)
+        self.assertFalse(any("forwardedHeaders.insecure" in argument for argument in arguments))
+        middleware = next(item for item in self.resources if item["kind"] == "Middleware" and item["metadata"]["name"] == "private-only")
+        self.assertEqual(set(middleware["spec"]["ipAllowList"]["sourceRange"]), {"192.168.0.0/24", "100.64.0.0/10", "fd7a:115c:a1e0::/48"})
+
 
 if __name__ == "__main__":
     unittest.main()

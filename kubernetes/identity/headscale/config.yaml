@@ -3,7 +3,7 @@ listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 127.0.0.1:9090
 grpc_listen_addr: 127.0.0.1:50443
 trusted_proxies:
-- ${POD_CIDR}
+- ${NODE_IP}/32
 noise:
   private_key_path: /var/lib/headscale/noise_private.key
 prefixes:
@@ -28,12 +28,10 @@ policy:
 dns:
   magic_dns: true
   base_domain: tailnet.${DOMAIN}
-  override_local_dns: false
+  override_local_dns: true
   nameservers:
-    global: []
-    split:
-      ${DOMAIN}:
-      - ${NODE_IP}
+    global:
+    - ${NODE_IP}
 oidc:
   only_start_if_oidc_is_available: true
   issuer: https://auth.${DOMAIN}/application/o/headscale/

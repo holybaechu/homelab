@@ -32,7 +32,10 @@ spec:
     spec:
       automountServiceAccountToken: false
       hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+        - ${NODE_IP}
       hostAliases:
       - ip: ${NODE_IP}
         hostnames:

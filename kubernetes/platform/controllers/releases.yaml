@@ -72,6 +72,18 @@ spec:
       kind: Deployment
       replicas: 1
       revisionHistoryLimit: 2
+      dnsPolicy: ClusterFirstWithHostNet
+    hostNetwork: true
+    securityContext:
+      capabilities:
+        drop:
+        - ALL
+        add:
+        - NET_BIND_SERVICE
+    podSecurityContext:
+      runAsUser: 0
+      runAsGroup: 0
+      runAsNonRoot: false
     updateStrategy:
       type: RollingUpdate
       rollingUpdate:
@@ -84,8 +96,12 @@ spec:
       kubernetesIngress:
         enabled: false
     ports:
+      traefik:
+        hostIP: 127.0.0.1
+      metrics:
+        hostIP: 127.0.0.1
       web:
-        hostPort: 80
+        port: 80
         forwardedHeaders:
           trustedIPs: []
           insecure: false
@@ -96,7 +112,7 @@ spec:
               scheme: https
               permanent: true
       websecure:
-        hostPort: 443
+        port: 443
         forwardedHeaders:
           trustedIPs: []
           insecure: false
