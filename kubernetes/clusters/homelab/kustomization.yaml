@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - namespaces.yaml
   - settings.yaml
+  - sources.yaml
   - reconciliation.yaml
