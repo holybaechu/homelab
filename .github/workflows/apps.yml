@@ -42,14 +42,14 @@ jobs:
           host="$(python -c 'import json; print(json.load(open("infra/ansible/inventory/prod/topology.json"))["all"]["children"]["debian"]["hosts"]["docker_apps"]["ansible_host"])')"
           printf 'DOCKER_APPS_HOST=%s\n' "$host" >> "$GITHUB_ENV"
       - name: Connect to the management tailnet
-        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
+        uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4
         with:
           authkey: ${{ secrets.HEADSCALE_CI_AUTH_KEY }}
           oauth-client-id: ${{ secrets.HEADSCALE_CI_AUTH_KEY == '' && secrets.TS_OAUTH_CLIENT_ID || '' }}
           audience: ${{ secrets.HEADSCALE_CI_AUTH_KEY == '' && secrets.TS_AUDIENCE || '' }}
           tags: tag:ci
           # renovate: datasource=custom.tailscale-linux depName=tailscale/tailscale versioning=semver
-          version: "1.104.1"
+          version: "1.104.2"
           args: ${{ secrets.HEADSCALE_CI_AUTH_KEY != '' && '--login-server=https://headscale.home.hchu.me --accept-routes=true --accept-dns=false' || '--accept-dns=false' }}
           ping: ${{ env.DOCKER_APPS_HOST }}
       - name: Configure pinned SSH trust

@@ -2,7 +2,7 @@ name: homelab
 
 services:
   traefik:
-    image: traefik:v3.7.14@sha256:575fa15b135078fe5e50aa847987d96dbddd7b093c172429618404df73f3fa7c
+    image: traefik:v3.7.16@sha256:c8a121e4bb1347e8fd52657fab12f2cb70b68f8a018895e2068f92c9e519b9c2
     restart: unless-stopped
     env_file:
       - ./.secrets/traefik.env
@@ -69,7 +69,7 @@ services:
     # Compose checks process liveness when waiting for startup.
 
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:5.2.4@sha256:97333cc1ccf903e0bbcd8eb67e3332e4970e9c1ecabe145e499e9c0847ebcaed
+    image: lscr.io/linuxserver/qbittorrent:5.3.0@sha256:e887804fa9de4c60f5f0fb1f3a7e4febe40a8f69fe736f70c4e8589b1f868dab
     restart: unless-stopped
     environment:
       DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.36.1@sha256:2750543ce2f9868e12bca941482431eb59b5517e89c2538cb2229124aa79d2c2
@@ -106,7 +106,7 @@ services:
       start_period: 30s
 
   copyparty:
-    image: copyparty/ac:1.20.25@sha256:cbf8f82c9317ce7c0690b59b0a10f7deb74d73babbf88c3c110e1cbd599d8bad
+    image: copyparty/ac:1.20.26@sha256:b2054d65e05daa8982ca17c26b12b74315c0ce586a03ff9018a59c80731b9e19
     restart: unless-stopped
     command: ["-c", "/config/homelab/copyparty.conf"]
     environment:
@@ -147,7 +147,7 @@ services:
       start_period: 30s
 
   metube:
-    image: ghcr.io/alexta69/metube:2026.10.09@sha256:df929ef2453fd75c1f1cbd8dafb309ee03ff18d8705c7c1e01642b1202d4a650
+    image: ghcr.io/alexta69/metube:2026.10.23@sha256:367d9d1b5122f2e88263a689998f8b11c4e9a188c9cbdace0ace8bd197935ad8
     restart: unless-stopped
     environment:
       DELETE_FILE_ON_TRASHCAN: "true"
@@ -174,7 +174,7 @@ services:
       start_period: 30s
 
   authentik-db:
-    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    image: postgres:18.6-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
     restart: unless-stopped
     env_file:
       - path: ./.secrets/authentik-db.env
@@ -194,7 +194,7 @@ services:
       start_period: 20s
 
   authentik-server:
-    image: ghcr.io/goauthentik/server:2026.8.3@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
     restart: unless-stopped
     command: server
     extra_hosts:
@@ -245,7 +245,7 @@ services:
       start_period: 120s
 
   authentik-worker:
-    image: ghcr.io/goauthentik/server:2026.8.3@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+    image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
     restart: unless-stopped
     command: worker
     shm_size: 512mb
@@ -281,7 +281,7 @@ services:
       start_period: 120s
 
   headscale:
-    image: headscale/headscale:0.29.4@sha256:8833f828b414c0907b7e5c71da76473216fe17cce0818a166b536ec552c0903f
+    image: headscale/headscale:v0.29.5@sha256:780ed2f9e85719a2211277433f2c8afb45105d0d25031949a6848a485f9e216d
     restart: unless-stopped
     command: ["serve", "--config", "/etc/headscale/config.yaml"]
     depends_on:
