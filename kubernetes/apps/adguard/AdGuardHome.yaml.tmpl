@@ -44,7 +44,7 @@ dns:
   cache_optimistic_answer_ttl: 30s
   cache_optimistic_max_age: 12h
   trusted_proxies:
-  - ${POD_CIDR}
+  - ${NODE_IP}/32
   hostsfile_enabled: false
 filtering:
   protection_enabled: true

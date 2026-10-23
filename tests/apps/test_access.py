@@ -74,6 +74,27 @@ class ApplicationAccess(unittest.TestCase):
         environment = {item["name"]: item.get("value") for item in pod["containers"][0]["env"]}
         self.assertIn(environment.get("TS_DEBUG_FIREWALL_MODE", "iptables"), {"auto", "nftables"})
 
+    def test_vpn_and_exit_node_share_the_adguard_resolver(self):
+        configuration = self.resource("ConfigMap", "headscale-config", "identity")["data"]["config.yaml"]
+        dns = yaml.safe_load(configuration)["dns"]
+        self.assertTrue(dns["override_local_dns"])
+        self.assertEqual(dns["nameservers"]["global"], ["192.168.0.2"])
+        gateway = self.resource("Deployment", "headscale-gateway", "networking")["spec"]["template"]["spec"]
+        self.assertEqual(gateway["dnsPolicy"], "None")
+        self.assertEqual(gateway["dnsConfig"]["nameservers"], dns["nameservers"]["global"])
+
+    def test_applications_trust_the_host_network_ingress_address(self):
+        trusted = "192.168.0.2/32"
+        headscale = yaml.safe_load(self.resource("ConfigMap", "headscale-config", "identity")["data"]["config.yaml"])
+        self.assertEqual(headscale["trusted_proxies"], [trusted])
+        configurations = {key: value for item in self.resources if item["kind"] == "ConfigMap" for key, value in item.get("data", {}).items()}
+        self.assertIn(f"  xff-src: {trusted}\n", configurations["copyparty.conf"])
+        adguard = configurations["AdGuardHome.yaml"].replace("@@USERNAME@@", "test").replace("@@PASSWORD_HASH@@", "test")
+        self.assertEqual(yaml.safe_load(adguard)["dns"]["trusted_proxies"], [trusted])
+        server = self.resource("Deployment", "authentik-server", "identity")["spec"]["template"]["spec"]
+        environment = {item["name"]: item.get("value") for item in server["containers"][0]["env"]}
+        self.assertEqual(set(environment["AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS"].split(",")), {trusted, "10.244.0.0/16"})
+
     def test_durable_storage_does_not_reclaim_data_with_a_claim(self):
         classes = [item for item in self.resources if item["kind"] == "StorageClass" and item["metadata"]["name"] == "local-path"]
         self.assertEqual(len(classes), 1)
