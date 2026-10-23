@@ -88,7 +88,8 @@ def main():
         if tools[tool] != settings[setting].removeprefix("v"):
             raise RuntimeError(f"mise.toml {tool} must match {setting}")
     kubernetes_version = settings["KUBERNETES_VERSION"].removeprefix("v")
-    environment = {"PATH": os.environ["PATH"], **{key: str(value) for key, value in settings.items()}}
+    references = yaml.safe_load((ROOT / "kubernetes/clusters/homelab/onepassword.yaml").read_text())["data"]
+    environment = {"PATH": os.environ["PATH"], **{key: str(value) for key, value in {**settings, **references}.items()}}
     resources = []
     paths = ["bootstrap", "clusters/homelab", "platform/controllers", "platform/config", "identity", "apps", "access"]
     for path in paths:

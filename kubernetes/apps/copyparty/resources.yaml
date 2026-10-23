@@ -12,10 +12,10 @@ spec:
   data:
     - secretKey: COPYPARTY_USERNAME
       remoteRef:
-        key: homelab/copyparty_username
+        key: ${COPYPARTY_USERNAME_REF}
     - secretKey: COPYPARTY_PASSWORD
       remoteRef:
-        key: homelab/copyparty_password
+        key: ${COPYPARTY_PASSWORD_REF}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

@@ -18,6 +18,8 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: cluster-settings
+      - kind: ConfigMap
+        name: onepassword-references
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -41,6 +43,8 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: cluster-settings
+      - kind: ConfigMap
+        name: onepassword-references
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -64,6 +68,8 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: cluster-settings
+      - kind: ConfigMap
+        name: onepassword-references
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -87,6 +93,8 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: cluster-settings
+      - kind: ConfigMap
+        name: onepassword-references
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -110,3 +118,5 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: cluster-settings
+      - kind: ConfigMap
+        name: onepassword-references

@@ -12,10 +12,10 @@ spec:
   data:
     - secretKey: ADGUARD_USERNAME
       remoteRef:
-        key: homelab/adguard_username
+        key: ${ADGUARD_USERNAME_REF}
     - secretKey: ADGUARD_PASSWORD_HASH
       remoteRef:
-        key: homelab/adguard_password_hash
+        key: ${ADGUARD_PASSWORD_HASH_REF}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate

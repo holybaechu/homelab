@@ -3,5 +3,6 @@ kind: Kustomization
 resources:
   - namespaces.yaml
   - settings.yaml
+  - onepassword.yaml
   - sources.yaml
   - reconciliation.yaml

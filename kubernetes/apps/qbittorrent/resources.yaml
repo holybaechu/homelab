@@ -12,10 +12,10 @@ spec:
   data:
     - secretKey: QBITTORRENT_USERNAME
       remoteRef:
-        key: homelab/qbittorrent_username
+        key: ${QBITTORRENT_USERNAME_REF}
     - secretKey: QBITTORRENT_PASSWORD_HASH
       remoteRef:
-        key: homelab/qbittorrent_password_hash
+        key: ${QBITTORRENT_PASSWORD_HASH_REF}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
