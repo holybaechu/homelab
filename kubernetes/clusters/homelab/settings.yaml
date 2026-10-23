@@ -19,3 +19,4 @@ data:
   DOMAIN: hchu.me
   DATA_PATH: /var/mnt/homelab
   ONEPASSWORD_VAULT: Homelab
+  QBT_NODE_PORT: "31435"

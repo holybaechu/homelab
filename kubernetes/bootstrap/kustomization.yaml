@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: flux-system
+resources:
+  - https://github.com/fluxcd/flux2/manifests/bases/source-controller?ref=v2.9.6
+  - https://github.com/fluxcd/flux2/manifests/bases/kustomize-controller?ref=v2.9.6
+  - https://github.com/fluxcd/flux2/manifests/bases/helm-controller?ref=v2.9.6
+  - https://github.com/fluxcd/flux2/manifests/bases/notification-controller?ref=v2.9.6
+  - https://github.com/fluxcd/flux2/manifests/rbac?ref=v2.9.6
+  - https://github.com/fluxcd/flux2/manifests/policies?ref=v2.9.6
+images:
+  - name: fluxcd/source-controller
+    newName: ghcr.io/fluxcd/source-controller
+  - name: fluxcd/kustomize-controller
+    newName: ghcr.io/fluxcd/kustomize-controller
+  - name: fluxcd/helm-controller
+    newName: ghcr.io/fluxcd/helm-controller
+  - name: fluxcd/notification-controller
+    newName: ghcr.io/fluxcd/notification-controller
+patches:
+  - target:
+      kind: Deployment
+      name: kustomize-controller
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --feature-gates=StrictPostBuildSubstitutions=true
