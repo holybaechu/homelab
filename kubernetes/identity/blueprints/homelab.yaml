@@ -5,6 +5,11 @@ entries:
   - model: authentik_blueprints.metaapplyblueprint
     attrs:
       identifiers:
+        name: authentik Bootstrap
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
         name: System - OAuth2 Provider - Scopes
       required: true
   - model: authentik_blueprints.metaapplyblueprint
