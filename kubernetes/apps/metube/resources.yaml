@@ -123,7 +123,7 @@ spec:
       services:
         - name: authentik-server
           namespace: identity
-          port: 9000
+          port: http
     - match: Host(`metube.${DOMAIN}`)
       kind: Rule
       priority: 100

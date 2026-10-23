@@ -178,7 +178,7 @@ spec:
       services:
         - name: authentik-server
           namespace: identity
-          port: 9000
+          port: http
     - match: Host(`copyparty.${DOMAIN}`) && (Method(`GET`) || Method(`HEAD`)) && (((Path(`/public`) || PathPrefix(`/public/`)) && !HeaderRegexp(`Cookie`, `authentik_proxy_`)) || (PathPrefix(`/.cpr/`) && !PathPrefix(`/.cpr/metrics`) && !PathPrefix(`/.cpr/ssdp`)))
       kind: Rule
       priority: 200

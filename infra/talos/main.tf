@@ -30,8 +30,8 @@ locals {
   ]
   pod_sources = concat(local.private_sources, [{ subnet = local.settings.POD_CIDR }])
   firewall_rules = [
-    { name = "dns-tcp", ports = [53], protocol = "tcp", sources = local.private_sources },
-    { name = "dns-udp", ports = [53], protocol = "udp", sources = local.private_sources },
+    { name = "dns-tcp", ports = [53], protocol = "tcp", sources = local.pod_sources },
+    { name = "dns-udp", ports = [53], protocol = "udp", sources = local.pod_sources },
     { name = "talos-api", ports = [50000], protocol = "tcp", sources = local.private_sources },
     { name = "kubernetes-api", ports = [6443], protocol = "tcp", sources = local.pod_sources },
     { name = "adguard-http", ports = [3000], protocol = "tcp", sources = local.pod_sources },

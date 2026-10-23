@@ -2,6 +2,8 @@
 import json
 import os
 from pathlib import Path
+import secrets
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,12 +15,70 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def check(command, *, data=None, env=None):
+def check(command, *, data=None, env=None, private=False):
     result = subprocess.run(command, cwd=ROOT, input=data, text=True, capture_output=True, env=env)
     if result.returncode:
-        print(result.stderr or result.stdout, file=sys.stderr)
+        if not private:
+            print(result.stderr or result.stdout, file=sys.stderr)
         raise RuntimeError(f"{' '.join(command)}: exit {result.returncode}")
     return result.stdout
+
+
+def render_talos_network(temporary):
+    fixture = temporary / "talos-render"
+    module = fixture / "infra/talos"
+    module.mkdir(parents=True)
+    for source in [*(ROOT / "infra/talos").glob("*.tf"), ROOT / "infra/talos/.terraform.lock.hcl"]:
+        shutil.copy2(source, module / source.name)
+    settings = fixture / "kubernetes/clusters/homelab/settings.yaml"
+    settings.parent.mkdir(parents=True)
+    shutil.copy2(ROOT / "kubernetes/clusters/homelab/settings.yaml", settings)
+    inherited = ("PATH", "HOME", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR", "TF_PLUGIN_CACHE_DIR")
+    env = {name: os.environ[name] for name in inherited if name in os.environ}
+    env.update({
+        "TF_DATA_DIR": str(fixture / "providers"),
+        "TF_IN_AUTOMATION": "1",
+        "TF_INPUT": "0",
+        "TF_ENCRYPTION": f'''key_provider "pbkdf2" "validation" {{
+  passphrase = "{secrets.token_urlsafe(32)}"
+}}
+method "aes_gcm" "validation" {{
+  keys = key_provider.pbkdf2.validation
+}}
+state {{
+  method = method.aes_gcm.validation
+  enforced = true
+}}
+plan {{
+  method = method.aes_gcm.validation
+  enforced = true
+}}
+''',
+    })
+    tofu = ["tofu", f"-chdir={module}"]
+    state = fixture / "render.tfstate"
+    plan = fixture / "render.tfplan"
+    check([*tofu, "fmt", "-check"], env=env)
+    check([*tofu, "init", "-input=false", "-lockfile=readonly", f"-backend-config=path={state}"], env=env, private=True)
+    check([*tofu, "validate"], env=env)
+    check([*tofu, "plan", "-input=false", "-refresh=false", "-var=bootstrap=false", "-target=data.talos_machine_configuration.node", f"-out={plan}"], env=env, private=True)
+    planned = json.loads(check([*tofu, "show", "-json", str(plan)], env=env, private=True))
+    allowed = {
+        "talos_machine_secrets.cluster": ("managed", ["create"]),
+        "data.talos_machine_configuration.node": ("data", ["read"]),
+    }
+    for resource in planned.get("resource_changes", []):
+        if allowed.get(resource["address"]) != (resource["mode"], resource["change"]["actions"]):
+            raise RuntimeError("Talos validation plan includes an operation beyond local secrets/config generation")
+    check([*tofu, "apply", "-input=false", "-auto-approve", str(plan)], env=env, private=True)
+    if "encrypted_data" not in json.loads(state.read_text()):
+        raise RuntimeError("Temporary Talos validation state is not encrypted")
+    configuration = check([*tofu, "output", "-raw", "machine_configuration"], env=env, private=True)
+    network = [document for document in yaml.safe_load_all(configuration) if document and document.get("kind") in ("NetworkDefaultActionConfig", "NetworkRuleConfig")]
+    artifact = temporary / "talos-network.json"
+    artifact.write_text(json.dumps(network))
+    print("OpenTofu format/init/validate and isolated native Talos config render: exit 0")
+    return artifact
 
 
 def main():
@@ -75,15 +135,11 @@ def main():
         ], data=yaml.safe_dump_all(validated))
         print(output, end="")
         artifact = temporary / "resources.json"
-        artifact.write_text(json.dumps(resources))
-        env = dict(os.environ, HOMELAB_RENDERED=str(artifact))
+        artifact.write_text(json.dumps(all_resources))
+        network = render_talos_network(temporary)
+        env = dict(os.environ, HOMELAB_RENDERED=str(artifact), HOMELAB_TALOS_NETWORK_CONFIG=str(network))
         check([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], env=env)
         print("Regression suite: exit 0")
-        tf_env = dict(os.environ, TF_DATA_DIR=str(temporary / "tofu"), TF_IN_AUTOMATION="1")
-        check(["tofu", "-chdir=infra/talos", "fmt", "-check"])
-        check(["tofu", "-chdir=infra/talos", "init", "-backend=false", "-input=false"], env=tf_env)
-        check(["tofu", "-chdir=infra/talos", "validate"], env=tf_env)
-        print("OpenTofu format/init/validate: exit 0")
     check(["git", "diff", "--check"])
     print("Diff whitespace: exit 0")
 
