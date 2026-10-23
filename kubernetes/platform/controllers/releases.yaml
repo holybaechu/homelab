@@ -1,0 +1,208 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-secrets
+  namespace: external-secrets
+spec:
+  interval: 1h
+  releaseName: external-secrets
+  chart:
+    spec:
+      chart: external-secrets
+      version: 2.13.0
+      sourceRef:
+        kind: HelmRepository
+        name: external-secrets
+        namespace: flux-system
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    installCRDs: true
+    image:
+      tag: v2.13.0
+    webhook:
+      image:
+        tag: v2.13.0
+    certController:
+      image:
+        tag: v2.13.0
+    resources:
+      requests:
+        cpu: 20m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: traefik
+  namespace: traefik
+spec:
+  interval: 1h
+  releaseName: traefik
+  chart:
+    spec:
+      chart: traefik
+      version: 42.1.3
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+        namespace: flux-system
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    image:
+      registry: docker.io
+      repository: library/traefik
+      tag: v3.7.16
+    deployment:
+      kind: Deployment
+      replicas: 1
+      revisionHistoryLimit: 2
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+    providers:
+      kubernetesCRD:
+        enabled: true
+        allowCrossNamespace: true
+      kubernetesIngress:
+        enabled: false
+    ports:
+      web:
+        hostPort: 80
+        forwardedHeaders:
+          trustedIPs: []
+          insecure: false
+        http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true
+      websecure:
+        hostPort: 443
+        forwardedHeaders:
+          trustedIPs: []
+          insecure: false
+        http:
+          tls:
+            enabled: true
+          encodedCharacters:
+            allowEncodedSlash: true
+            allowEncodedPercent: true
+    service:
+      type: ClusterIP
+    ingressRoute:
+      dashboard:
+        enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+    log:
+      level: WARN
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  interval: 1h
+  releaseName: cert-manager
+  chart:
+    spec:
+      chart: cert-manager
+      version: v1.21.2
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+        namespace: flux-system
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    crds:
+      enabled: true
+    resources:
+      requests:
+        cpu: 20m
+        memory: 128Mi
+      limits:
+        memory: 384Mi
+    image:
+      repository: quay.io/jetstack/cert-manager-controller
+      tag: v1.21.2
+    webhook:
+      image:
+        repository: quay.io/jetstack/cert-manager-webhook
+        tag: v1.21.2
+    cainjector:
+      image:
+        repository: quay.io/jetstack/cert-manager-cainjector
+        tag: v1.21.2
+    acmesolver:
+      image:
+        repository: quay.io/jetstack/cert-manager-acmesolver
+        tag: v1.21.2
+    startupapicheck:
+      image:
+        repository: quay.io/jetstack/cert-manager-startupapicheck
+        tag: v1.21.2
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: reloader
+  namespace: external-secrets
+spec:
+  interval: 1h
+  releaseName: reloader
+  chart:
+    spec:
+      chart: reloader
+      version: 2.2.18
+      sourceRef:
+        kind: HelmRepository
+        name: stakater
+        namespace: flux-system
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    image:
+      repository: ghcr.io/stakater/reloader
+      tag: v1.4.22
+    reloader:
+      autoReloadAll: false
+      reloadStrategy: annotations
+      ignoreJobs: true
+      ignoreCronJobs: true

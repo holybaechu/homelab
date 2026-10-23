@@ -1,0 +1,59 @@
+server_url: https://headscale.${DOMAIN}
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 127.0.0.1:9090
+grpc_listen_addr: 127.0.0.1:50443
+trusted_proxies:
+- ${POD_CIDR}
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+derp:
+  server:
+    enabled: false
+  urls:
+  - https://controlplane.tailscale.com/derpmap/default
+  auto_update_enabled: true
+  update_frequency: 3h
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true
+policy:
+  mode: file
+  path: /etc/headscale/policy.hujson
+dns:
+  magic_dns: true
+  base_domain: tailnet.${DOMAIN}
+  override_local_dns: false
+  nameservers:
+    global: []
+    split:
+      ${DOMAIN}:
+      - ${NODE_IP}
+oidc:
+  only_start_if_oidc_is_available: true
+  issuer: https://auth.${DOMAIN}/application/o/headscale/
+  client_id: homelab-headscale
+  client_secret_path: /var/run/secrets/headscale/client-secret
+  scope:
+  - openid
+  - profile
+  - email
+  - groups
+  allowed_groups:
+  - homelab-admins
+  email_verified_required: false
+  pkce:
+    enabled: true
+    method: S256
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: '0770'
+log:
+  level: warn
+  format: json
+logtail:
+  enabled: false
