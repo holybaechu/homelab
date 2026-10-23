@@ -69,6 +69,11 @@ class ApplicationAccess(unittest.TestCase):
         provider = next(entry for entry in blueprint["entries"] if entry["model"] == "authentik_providers_oauth2.oauth2provider" and entry["identifiers"]["name"] == "Headscale")
         self.assertIn("authorization_code", provider["attrs"].get("grant_types", []))
 
+    def test_gateway_firewall_does_not_require_legacy_iptables_on_talos(self):
+        pod = self.resource("Deployment", "headscale-gateway", "networking")["spec"]["template"]["spec"]
+        environment = {item["name"]: item.get("value") for item in pod["containers"][0]["env"]}
+        self.assertIn(environment.get("TS_DEBUG_FIREWALL_MODE", "iptables"), {"auto", "nftables"})
+
     def test_durable_storage_does_not_reclaim_data_with_a_claim(self):
         classes = [item for item in self.resources if item["kind"] == "StorageClass" and item["metadata"]["name"] == "local-path"]
         self.assertEqual(len(classes), 1)

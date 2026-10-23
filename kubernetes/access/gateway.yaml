@@ -54,6 +54,8 @@ spec:
           value: ''
         - name: TS_USERSPACE
           value: 'false'
+        - name: TS_DEBUG_FIREWALL_MODE
+          value: nftables
         - name: TS_ACCEPT_DNS
           value: 'false'
         - name: TS_HOSTNAME
