@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 import unittest
 
+import yaml
+
 
 class ApplicationAccess(unittest.TestCase):
     @classmethod
@@ -60,6 +62,12 @@ class ApplicationAccess(unittest.TestCase):
             for route in item["spec"]["routes"]:
                 if any(f"Host(`{host}.hchu.me`)" in route["match"] for host in ("auth", "headscale")):
                     self.assertNotIn("authentik", [middleware["name"] for middleware in route.get("middlewares", [])])
+
+    def test_headscale_can_request_an_oidc_authorization_code(self):
+        configuration = self.resource("ConfigMap", "authentik-blueprints", "identity")["data"]["homelab.yaml"]
+        blueprint = yaml.load(configuration, Loader=yaml.BaseLoader)
+        provider = next(entry for entry in blueprint["entries"] if entry["model"] == "authentik_providers_oauth2.oauth2provider" and entry["identifiers"]["name"] == "Headscale")
+        self.assertIn("authorization_code", provider["attrs"].get("grant_types", []))
 
     def test_durable_storage_does_not_reclaim_data_with_a_claim(self):
         classes = [item for item in self.resources if item["kind"] == "StorageClass" and item["metadata"]["name"] == "local-path"]
