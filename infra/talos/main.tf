@@ -20,9 +20,9 @@ variable "bootstrap" {
 
 locals {
   settings           = yamldecode(file("${path.module}/../../kubernetes/clusters/homelab/settings.yaml")).data
-  talos_version      = "v1.14.4"
-  kubernetes_version = "v1.37.1"
-  installer_image    = "factory.talos.dev/metal-installer/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba:v1.14.4"
+  talos_version      = local.settings.TALOS_VERSION
+  kubernetes_version = local.settings.KUBERNETES_VERSION
+  installer_image    = "factory.talos.dev/metal-installer/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba:${local.talos_version}"
   disk_match         = "'${local.settings.INSTALL_DISK_ID}' in disk.symlinks && disk.transport == 'sata'"
   private_sources = [
     { subnet = local.settings.LAN_CIDR },

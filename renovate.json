@@ -3,6 +3,13 @@
   "extends": ["config:recommended"],
   "automerge": false,
   "pinDigests": false,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^kubernetes/clusters/homelab/settings\\.yaml$/"],
+      "matchStrings": ["# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+\\w+: (?<currentValue>\\S+)"]
+    }
+  ],
   "flux": {
     "managerFilePatterns": ["/kubernetes/.*\\.yaml$/"]
   },
@@ -10,6 +17,14 @@
     "managerFilePatterns": ["/kubernetes/.*\\.yaml$/"]
   },
   "packageRules": [
+    {
+      "matchPackageNames": ["siderolabs/talos", "talosctl"],
+      "groupName": "Talos"
+    },
+    {
+      "matchPackageNames": ["kubernetes/kubernetes", "kubectl"],
+      "groupName": "Kubernetes"
+    },
     {
       "description": "Review application and cluster upgrades before Flux applies them",
       "matchUpdateTypes": ["major", "minor", "patch"],

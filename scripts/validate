@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import tomllib
 
 import yaml
 
@@ -22,6 +23,11 @@ def check(command, *, data=None, env=None):
 
 def main():
     settings = yaml.safe_load((ROOT / "kubernetes/clusters/homelab/settings.yaml").read_text())["data"]
+    tools = tomllib.loads((ROOT / "mise.toml").read_text())["tools"]
+    for tool, setting in [("talosctl", "TALOS_VERSION"), ("kubectl", "KUBERNETES_VERSION")]:
+        if tools[tool] != settings[setting].removeprefix("v"):
+            raise RuntimeError(f"mise.toml {tool} must match {setting}")
+    kubernetes_version = settings["KUBERNETES_VERSION"].removeprefix("v")
     environment = {"PATH": os.environ["PATH"], **{key: str(value) for key, value in settings.items()}}
     resources = []
     paths = ["bootstrap", "clusters/homelab", "platform/controllers", "platform/config", "identity", "apps", "access"]
@@ -42,7 +48,7 @@ def main():
         result = check([
             "helm", "template", spec.get("releaseName", item["metadata"]["name"]), chart["chart"],
             "--repo", repositories[chart["sourceRef"]["name"]], "--version", str(chart["version"]),
-            "--namespace", item["metadata"]["namespace"], "--kube-version", "1.37.1", "--include-crds", "-f", "-",
+            "--namespace", item["metadata"]["namespace"], "--kube-version", kubernetes_version, "--include-crds", "-f", "-",
         ], data=yaml.safe_dump(spec.get("values", {})))
         rendered.extend(doc for doc in yaml.safe_load_all(result) if doc)
         print(f"Helm {item['metadata']['name']}: exit 0")
@@ -64,7 +70,7 @@ def main():
         # The Helm chart CRDs and Flux CRDs supply all custom resource schemas.
         validated = [item for item in all_resources if item["kind"] != "CustomResourceDefinition"]
         output = check([
-            "kubeconform", "-strict", "-summary", "-kubernetes-version", "1.37.1",
+            "kubeconform", "-strict", "-summary", "-kubernetes-version", kubernetes_version,
             "-schema-location", "default", "-schema-location", str(temporary / "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"),
         ], data=yaml.safe_dump_all(validated))
         print(output, end="")

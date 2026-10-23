@@ -1,5 +1,7 @@
 import importlib.machinery
 import importlib.util
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -46,6 +48,16 @@ class ProvisionSafetyTests(unittest.TestCase):
         with self.assertRaises(talos.SafetyError):
             talos.validate_disks(self.inventory(self.internal), self.data)
         self.assertEqual(talos.validate_disks(self.inventory(self.internal), self.data, require_usb=False)["protected_usb"], "absent")
+
+    def test_preflight_uses_declared_version_and_rejects_mismatched_node(self):
+        data = {**self.data, "NODE_IP": "192.0.2.2", "TALOS_VERSION": "v1.99.1"}
+        disks = "\n".join(json.dumps(record) for record in self.inventory(self.internal, self.usb))
+        with patch.object(talos, "executable", return_value="talosctl"), patch.object(talos, "run", side_effect=["Tag: v1.99.1\nTag: v1.99.1", disks]), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(talos.preflight(data)["install"], "/dev/sdz")
+        with patch.object(talos, "executable", return_value="talosctl"), patch.object(talos, "run", return_value="Tag: v1.99.1\nTag: v1.98.0") as run:
+            with self.assertRaisesRegex(talos.SafetyError, "v1.99.1"):
+                talos.preflight(data)
+            self.assertEqual(run.call_count, 1)
 
     def test_saved_plan_cannot_reset_replace_or_introduce_other_resources(self):
         for address, actions in [

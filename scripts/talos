@@ -20,7 +20,6 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "infra/talos"
 SETTINGS = ROOT / "kubernetes/clusters/homelab/settings.yaml"
-TALOS_VERSION = "v1.14.4"
 MANAGED = {
     "talos_machine_secrets.cluster",
     "talos_machine_configuration_apply.node",
@@ -138,8 +137,8 @@ def preflight(data, runtime=None, installed=False):
     else:
         flags += ["--talosconfig", "/dev/null", "--insecure"]
     versions = run([talosctl, "version", *flags], timeout=10)
-    if re.findall(r"Tag:\s+(v\S+)", versions) != [TALOS_VERSION, TALOS_VERSION]:
-        raise SafetyError(f"Client and node must both run {TALOS_VERSION}")
+    if re.findall(r"Tag:\s+(v\S+)", versions) != [data["TALOS_VERSION"], data["TALOS_VERSION"]]:
+        raise SafetyError(f"Client and node must both run {data['TALOS_VERSION']}")
     disks = json_stream(run([talosctl, "get", "disks", "-o", "json", *flags], timeout=10))
     result = validate_disks(disks, data, require_usb=not installed)
     print(f"Verified {data['NODE_IP']}: internal {result['install']} serial {data['INSTALL_DISK_SERIAL']}; protected USB {result['protected_usb']}")
