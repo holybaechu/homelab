@@ -1,0 +1,10 @@
+[tools]
+python = "3.15.1"
+opentofu = "1.13.2"
+talosctl = "1.14.4"
+kubectl = "1.37.1"
+flux2 = "2.9.6"
+helm = "4.3.1"
+kustomize = "5.8.3"
+kubeconform = "0.8.0"
+"aqua:1password/cli" = "2.41.1"

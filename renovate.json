@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "automerge": false,
+  "pinDigests": false,
+  "flux": {
+    "managerFilePatterns": ["/kubernetes/.*\\.yaml$/"]
+  },
+  "kubernetes": {
+    "managerFilePatterns": ["/kubernetes/.*\\.yaml$/"]
+  },
+  "packageRules": [
+    {
+      "description": "Review application and cluster upgrades before Flux applies them",
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "automerge": false
+    }
+  ]
+}
