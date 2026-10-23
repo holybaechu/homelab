@@ -1,0 +1,56 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: private-only
+  namespace: traefik
+spec:
+  ipAllowList:
+    sourceRange:
+    - ${LAN_CIDR}
+    - 100.64.0.0/10
+    - fd7a:115c:a1e0::/48
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: clear-copyparty-identity
+  namespace: traefik
+spec:
+  headers:
+    customRequestHeaders:
+      X-authentik-username: ''
+      X-authentik-groups: ''
+      X-authentik-email: ''
+      X-authentik-name: ''
+      X-authentik-uid: ''
+      X-authentik-jwt: ''
+      X-authentik-meta-jwks: ''
+      X-authentik-meta-outpost: ''
+      X-authentik-meta-provider: ''
+      X-authentik-meta-app: ''
+      X-authentik-meta-version: ''
+      X-Remote-User: ''
+      X-Remote-Groups: ''
+      Remote-User: ''
+      Remote-Groups: ''
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: authentik
+  namespace: traefik
+spec:
+  forwardAuth:
+    address: http://authentik-server.identity.svc.cluster.local/outpost.goauthentik.io/auth/traefik
+    trustForwardHeader: false
+    authResponseHeadersRegex: (?i)^X-authentik-
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-headers
+  namespace: traefik
+spec:
+  headers:
+    contentTypeNosniff: true
+    referrerPolicy: same-origin

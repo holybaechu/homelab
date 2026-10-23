@@ -1,0 +1,104 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: authentik
+  namespace: identity
+spec:
+  interval: 1h
+  releaseName: authentik
+  chart:
+    spec:
+      chart: authentik
+      version: 2026.8.5
+      sourceRef:
+        kind: HelmRepository
+        name: authentik
+        namespace: flux-system
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    global:
+      image:
+        repository: ghcr.io/goauthentik/server
+        tag: 2026.8.5
+      deploymentAnnotations:
+        secret.reloader.stakater.com/reload: authentik-env
+      deploymentStrategy:
+        type: Recreate
+      envFrom:
+      - secretRef:
+          name: authentik-env
+      env:
+      - name: AUTHENTIK_POSTGRESQL__HOST
+        value: authentik-postgresql
+      - name: AUTHENTIK_POSTGRESQL__USER
+        value: authentik
+      - name: AUTHENTIK_POSTGRESQL__NAME
+        value: authentik
+      - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
+        value: ${POD_CIDR}
+      - name: AUTHENTIK_DISABLE_UPDATE_CHECK
+        value: 'true'
+      - name: AUTHENTIK_STORAGE__FILE__PATH
+        value: /data
+      volumes:
+      - name: media
+        persistentVolumeClaim:
+          claimName: authentik-media
+      volumeMounts:
+      - name: media
+        mountPath: /data
+      securityContext:
+        fsGroup: 1000
+      hostAliases:
+      - ip: ${NODE_IP}
+        hostnames:
+        - auth.${DOMAIN}
+    authentik:
+      enabled: false
+    blueprints:
+      configMaps:
+      - authentik-blueprints
+    server:
+      replicas: 1
+      service:
+        type: ClusterIP
+      resources:
+        requests:
+          cpu: 200m
+          memory: 768Mi
+        limits:
+          memory: 2Gi
+    worker:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          memory: 1536Mi
+      deploymentAnnotations:
+        configmap.reloader.stakater.com/reload: authentik-blueprints
+    postgresql:
+      enabled: false
+    serviceAccount:
+      create: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: authentik-media
+  namespace: identity
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi

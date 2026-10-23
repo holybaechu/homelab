@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""Keep destructive Talos operations behind a reviewed plan and disk preflight."""
+
+import argparse
+import base64
+import hashlib
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+import sys
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+MODULE = ROOT / "infra/talos"
+SETTINGS = ROOT / "kubernetes/clusters/homelab/settings.yaml"
+MANAGED = {
+    "talos_machine_secrets.cluster",
+    "talos_machine_configuration_apply.node",
+    "talos_machine_bootstrap.cluster[0]",
+    "talos_cluster_kubeconfig.cluster[0]",
+}
+BOOTSTRAP = {"talos_machine_bootstrap.cluster[0]", "talos_cluster_kubeconfig.cluster[0]"}
+
+
+class SafetyError(Exception):
+    pass
+
+
+def settings():
+    data = yaml.safe_load(SETTINGS.read_text())["data"]
+    node = ipaddress.ip_interface(data["NODE_CIDR"])
+    lan = ipaddress.ip_network(data["LAN_CIDR"])
+    networks = [lan, ipaddress.ip_network(data["POD_CIDR"]), ipaddress.ip_network(data["SERVICE_CIDR"])]
+    if str(node.ip) != data["NODE_IP"] or node.ip not in lan or ipaddress.ip_address(data["GATEWAY_IP"]) not in lan:
+        raise SafetyError("Node address and gateway must belong to the declared LAN")
+    if any(a.overlaps(b) for i, a in enumerate(networks) for b in networks[i + 1:]):
+        raise SafetyError("LAN, Pod and Service networks must not overlap")
+    if not re.fullmatch(r"[A-Za-z0-9]+", data["INSTALL_DISK_SERIAL"]):
+        raise SafetyError("Installation serial must be an exact serial, without wildcards")
+    if not data["INSTALL_DISK_ID"].startswith("/dev/disk/by-id/ata-") or not data["INSTALL_DISK_ID"].endswith("_" + data["INSTALL_DISK_SERIAL"]):
+        raise SafetyError("Installation by-id must identify the exact internal SATA serial")
+    if not data["PROTECTED_USB_ID"].startswith("/dev/disk/by-id/usb-"):
+        raise SafetyError("Protected USB must have an explicit USB by-id identity")
+    if data["DATA_PATH"] != "/var/mnt/homelab":
+        raise SafetyError("DATA_PATH must match the homelab Talos user volume")
+    if not re.fullmatch(r"[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}", data["NODE_MAC"]):
+        raise SafetyError("NODE_MAC is invalid")
+    return data
+
+
+def json_stream(text):
+    decoder = json.JSONDecoder()
+    records = []
+    while text.strip():
+        record, end = decoder.raw_decode(text.lstrip())
+        records.append(record)
+        text = text.lstrip()[end:]
+    return records
+
+
+def validate_disks(records, data, require_usb=True):
+    disks = [record["spec"] for record in records]
+    targets = [disk for disk in disks if data["INSTALL_DISK_ID"] in disk.get("symlinks", [])]
+    serial_matches = [disk for disk in disks if any(link.endswith("_" + data["INSTALL_DISK_SERIAL"]) for link in disk.get("symlinks", []))]
+    protected = [disk for disk in disks if data["PROTECTED_USB_ID"] in disk.get("symlinks", [])]
+    if len(targets) != 1 or len(serial_matches) != 1:
+        raise SafetyError("Expected exactly one disk with the declared installation identity and serial")
+    target = targets[0]
+    if target.get("transport") != "sata" or target.get("readonly") is not False or target.get("cdrom"):
+        raise SafetyError("Installation target must be a writable internal SATA disk")
+    if data["PROTECTED_USB_ID"] in target.get("symlinks", []):
+        raise SafetyError("Installation target is the protected USB")
+    if require_usb and len(protected) != 1:
+        raise SafetyError("The protected boot/backup USB must be uniquely identified before installation")
+    if len(protected) > 1 or any(disk.get("transport") != "usb" or disk["dev_path"] == target["dev_path"] for disk in protected):
+        raise SafetyError("Protected USB identity conflicts with the installation disk")
+    return {"install": target["dev_path"], "protected_usb": protected[0]["dev_path"] if protected else "absent"}
+
+
+def private_directory(path):
+    path = Path(path).expanduser()
+    if not path.is_absolute() or path.is_symlink():
+        raise SafetyError("HOMELAB_STATE_DIR must be an absolute, non-symlink directory outside Git")
+    resolved = path.resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SafetyError("Private state must be outside the repository")
+    ancestor = resolved
+    while not ancestor.exists():
+        ancestor = ancestor.parent
+    inside = subprocess.run(["git", "-C", str(ancestor), "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
+    if inside.returncode == 0 and inside.stdout.strip() == "true":
+        raise SafetyError("Private state must be outside every Git working tree")
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = path.stat()
+    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
+        raise SafetyError("Private state directory must be owned by this user with mode 0700")
+    return resolved
+
+
+def run(command, *, env=None, timeout=300, log=None):
+    try:
+        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise SafetyError(f"{Path(command[0]).name} timed out; no automatic retry") from exc
+    if log:
+        with log.open("a") as stream:
+            stream.write(result.stdout + result.stderr)
+        log.chmod(0o600)
+    if result.returncode:
+        detail = f"; private diagnostic: {log}" if log else ""
+        raise SafetyError(f"{Path(command[0]).name} exited {result.returncode}{detail}")
+    return result.stdout
+
+
+def executable(name):
+    path = shutil.which(name)
+    if not path:
+        raise SafetyError(f"Missing prerequisite: {name}")
+    return path
+
+
+def preflight(data, runtime=None, installed=False):
+    talosctl = executable("talosctl")
+    flags = ["--nodes", data["NODE_IP"], "--endpoints", data["NODE_IP"]]
+    credentials = runtime / "talosconfig" if runtime else None
+    if installed:
+        if not credentials or not credentials.is_file() or credentials.stat().st_mode & 0o077:
+            raise SafetyError("Installed-node preflight requires private external talosconfig; run export")
+        flags += ["--talosconfig", str(credentials)]
+    else:
+        flags += ["--talosconfig", "/dev/null", "--insecure"]
+    versions = run([talosctl, "version", *flags], timeout=10)
+    if re.findall(r"Tag:\s+(v\S+)", versions) != [data["TALOS_VERSION"], data["TALOS_VERSION"]]:
+        raise SafetyError(f"Client and node must both run {data['TALOS_VERSION']}")
+    disks = json_stream(run([talosctl, "get", "disks", "-o", "json", *flags], timeout=10))
+    result = validate_disks(disks, data, require_usb=not installed)
+    print(f"Verified {data['NODE_IP']}: internal {result['install']} serial {data['INSTALL_DISK_SERIAL']}; protected USB {result['protected_usb']}")
+    return result
+
+
+def tofu_environment(runtime):
+    key = os.environ.get("HOMELAB_STATE_PASSPHRASE", "")
+    if len(key) < 16:
+        raise SafetyError("HOMELAB_STATE_PASSPHRASE must contain at least 16 characters; retain it in 1Password")
+    if any(name.startswith("TF_LOG") or name.startswith("TF_CLI_ARGS") for name in os.environ):
+        raise SafetyError("Unset TF_LOG* and TF_CLI_ARGS* to avoid secret logging or hidden arguments")
+    env = {name: value for name, value in os.environ.items() if not name.startswith("TF_VAR_")}
+    encoded = base64.b64encode(key.encode()).decode()
+    env["TF_ENCRYPTION"] = f'''key_provider "pbkdf2" "homelab" {{
+  passphrase = base64decode("{encoded}")
+}}
+method "aes_gcm" "homelab" {{
+  keys = key_provider.pbkdf2.homelab
+}}
+state {{
+  method = method.aes_gcm.homelab
+  enforced = true
+}}
+plan {{
+  method = method.aes_gcm.homelab
+  enforced = true
+}}
+'''
+    env["TF_DATA_DIR"] = str(runtime / "providers")
+    env["TF_IN_AUTOMATION"] = "1"
+    env["TF_INPUT"] = "0"
+    return env
+
+
+def source_fingerprint():
+    files = [SETTINGS, Path(__file__).resolve(), *sorted(MODULE.glob("*.tf")), MODULE / ".terraform.lock.hcl"]
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(str(path.relative_to(ROOT)).encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def inspect_plan(plan, bootstrap):
+    actions = []
+    for change in plan.get("resource_changes", []):
+        action = change["change"]["actions"]
+        if change["mode"] == "data" or action == ["no-op"]:
+            continue
+        address = change["address"]
+        if address not in MANAGED or "delete" in action or any(step not in ["create", "update"] for step in action):
+            raise SafetyError(f"Refusing unexpected/destructive plan action for {address}")
+        if bootstrap and address not in BOOTSTRAP:
+            raise SafetyError("Bootstrap plan also changes installation/configuration; apply that separately first")
+        if not bootstrap and address in BOOTSTRAP:
+            raise SafetyError("Installation plan unexpectedly bootstraps the cluster")
+        actions.append(f"{address}: {','.join(action)}")
+    return actions
+
+
+def write_private(path, content):
+    if path.is_symlink():
+        raise SafetyError(f"Refusing private output symlink: {path}")
+    temporary = path.with_name(path.name + ".tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            stream.write(content)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def main():
+    os.umask(0o077)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=["preflight", "plan", "apply", "bootstrap", "export"])
+    parser.add_argument("--bootstrap", action="store_true", help="plan the separate cluster bootstrap stage")
+    parser.add_argument("--confirm-disk", help="acknowledge replacement of this installation disk serial")
+    parser.add_argument("--confirm-cluster", help="acknowledge bootstrap of this cluster")
+    args = parser.parse_args()
+    data = settings()
+    location = os.environ.get("HOMELAB_STATE_DIR")
+    runtime = private_directory(location) if location else None
+    if args.command == "preflight" and not (runtime and (runtime / "terraform.tfstate").exists()):
+        return preflight(data)
+    if runtime is None:
+        raise SafetyError("Set HOMELAB_STATE_DIR to an external private directory")
+    env = tofu_environment(runtime)
+    tofu = [executable("tofu"), f"-chdir={MODULE}"]
+    log = runtime / "tofu.log"
+
+    def tf(*arguments):
+        return run([*tofu, *arguments], env=env, log=log)
+
+    tf("init", "-input=false", "-lockfile=readonly", f"-backend-config=path={runtime / 'terraform.tfstate'}")
+    resources = set(tf("state", "list").splitlines()) if (runtime / "terraform.tfstate").exists() else set()
+    installed = "talos_machine_configuration_apply.node" in resources
+    bootstrapped = "talos_machine_bootstrap.cluster[0]" in resources
+    if args.command == "preflight":
+        return preflight(data, runtime, installed)
+    stage = "bootstrap" if args.command == "bootstrap" or args.bootstrap else "install"
+    plan_path = runtime / f"{stage}.tfplan"
+    review_path = runtime / f"{stage}.review.json"
+
+    if args.command == "plan":
+        if args.bootstrap and not installed:
+            raise SafetyError("Apply the installation plan before planning bootstrap")
+        preflight(data, runtime, installed)
+        if "talos_machine_secrets.cluster" not in resources:
+            # Only this local crypto resource is applied, so the first real plan
+            # contains a concrete, reviewable machine config before any node write.
+            print("Preparing local cluster credentials in encrypted state; no node operation")
+            tf("apply", "-input=false", "-auto-approve", "-target=talos_machine_secrets.cluster")
+        tf("plan", "-input=false", f"-var=bootstrap={str(args.bootstrap or bootstrapped).lower()}", f"-out={plan_path}")
+        # JSON output contains credentials; keep it in memory and never in logs.
+        document = json.loads(run([*tofu, "show", "-json", str(plan_path)], env=env))
+        actions = inspect_plan(document, args.bootstrap)
+        outputs = document["planned_values"]["outputs"]
+        validation_path = runtime / "machine-validation.yaml"
+        write_private(validation_path, outputs["machine_configuration"]["value"])
+        try:
+            run([executable("talosctl"), "validate", "--config", str(validation_path), "--mode", "metal", "--strict"], log=log)
+        finally:
+            validation_path.unlink()
+        write_private(runtime / "talosconfig", outputs["talosconfig"]["value"])
+        write_private(review_path, json.dumps({"source": source_fingerprint(), "stage": stage, "actions": actions, "plan_sha256": hashlib.sha256(plan_path.read_bytes()).hexdigest()}, indent=2))
+        print("Reviewed actions:\n" + ("\n".join(actions) or "No changes"))
+        print(f"Encrypted plan: {plan_path}")
+        return
+
+    if args.command in ["apply", "bootstrap"]:
+        if args.command == "apply" and args.confirm_disk != data["INSTALL_DISK_SERIAL"]:
+            raise SafetyError("Apply requires --confirm-disk with the exact internal serial; existing Proxmox data will be replaced")
+        if args.command == "bootstrap" and (not installed or args.confirm_cluster != data["CLUSTER_NAME"]):
+            raise SafetyError("Bootstrap requires an installed node and --confirm-cluster with the cluster name")
+        if not plan_path.is_file() or not review_path.is_file():
+            raise SafetyError(f"Create and review the {stage} plan first")
+        review = json.loads(review_path.read_text())
+        if review["source"] != source_fingerprint() or review["plan_sha256"] != hashlib.sha256(plan_path.read_bytes()).hexdigest() or review["stage"] != stage:
+            raise SafetyError("Configuration or encrypted plan changed; create and review a new plan")
+        document = json.loads(run([*tofu, "show", "-json", str(plan_path)], env=env))
+        inspect_plan(document, args.command == "bootstrap")
+        preflight(data, runtime, installed)
+        tf("apply", "-input=false", str(plan_path))
+        plan_path.unlink()
+        review_path.unlink()
+        print(f"{stage.capitalize()} applied; exporting private controller credentials")
+
+    outputs = json.loads(run([*tofu, "output", "-json"], env=env))
+    for name in ["talosconfig", "kubeconfig"]:
+        value = outputs.get(name, {}).get("value", "")
+        if value:
+            write_private(runtime / name, value)
+            print(f"Private {name}: {runtime / name}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (SafetyError, OSError, ValueError, KeyError, yaml.YAMLError) as error:
+        print(f"talos: {error}", file=sys.stderr)
+        sys.exit(1)

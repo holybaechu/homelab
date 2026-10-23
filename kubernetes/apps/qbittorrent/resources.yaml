@@ -1,0 +1,198 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: qbittorrent-credentials
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: onepassword
+  target:
+    name: qbittorrent-credentials
+  data:
+    - secretKey: QBITTORRENT_USERNAME
+      remoteRef:
+        key: ${QBITTORRENT_USERNAME_REF}
+    - secretKey: QBITTORRENT_PASSWORD_HASH
+      remoteRef:
+        key: ${QBITTORRENT_PASSWORD_HASH_REF}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qbittorrent-state
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: qbittorrent
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: render-config
+          image: python:3.15.1-alpine3.23
+          command: [python3, /templates/render.py]
+          envFrom:
+            - secretRef:
+                name: qbittorrent-credentials
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: templates
+              mountPath: /templates
+              readOnly: true
+            - name: state
+              mountPath: /config
+            - name: downloads
+              mountPath: /downloads
+      containers:
+        - name: qbittorrent
+          image: lscr.io/linuxserver/qbittorrent:5.3.0
+          env:
+            - name: DOCKER_MODS
+              value: ghcr.io/vuetorrent/vuetorrent-lsio-mod:2.36.1
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: TORRENTING_PORT
+              value: "35435"
+            - name: WEBUI_PORT
+              value: "8080"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: torrent-tcp
+              containerPort: 35435
+              protocol: TCP
+            - name: torrent-udp
+              containerPort: 35435
+              protocol: UDP
+          startupProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: state
+              mountPath: /config
+            - name: downloads
+              mountPath: /downloads
+            - name: public
+              mountPath: /public
+      volumes:
+        - name: templates
+          configMap:
+            name: qbittorrent-config
+        - name: state
+          persistentVolumeClaim:
+            claimName: qbittorrent-state
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: downloads
+        - name: public
+          persistentVolumeClaim:
+            claimName: copyparty-public
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+spec:
+  selector:
+    app: qbittorrent
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent-peers
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  selector:
+    app: qbittorrent
+  ports:
+    - name: torrent-tcp
+      port: 35435
+      targetPort: torrent-tcp
+      nodePort: ${QBT_NODE_PORT}
+      protocol: TCP
+    - name: torrent-udp
+      port: 35435
+      targetPort: torrent-udp
+      nodePort: ${QBT_NODE_PORT}
+      protocol: UDP
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: qbittorrent
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`qbt.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: private-only
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: qbittorrent
+          port: 8080
+  tls: {}

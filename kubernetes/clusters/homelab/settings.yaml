@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-settings
+  namespace: flux-system
+data:
+  CLUSTER_NAME: homelab
+  # renovate: datasource=github-releases depName=siderolabs/talos
+  TALOS_VERSION: v1.14.4
+  # renovate: datasource=github-releases depName=kubernetes/kubernetes
+  KUBERNETES_VERSION: v1.37.1
+  NODE_IP: 192.168.0.2
+  NODE_CIDR: 192.168.0.2/24
+  LAN_CIDR: 192.168.0.0/24
+  GATEWAY_IP: 192.168.0.1
+  NODE_MAC: 10:ff:e0:35:7e:45
+  INSTALL_DISK_SERIAL: S750NS0WB00740T
+  INSTALL_DISK_ID: /dev/disk/by-id/ata-Samsung_SSD_870_EVO_2TB_S750NS0WB00740T
+  PROTECTED_USB_ID: /dev/disk/by-id/usb-ASMT_ASM246X_AAAABBBB31B8-0:0
+  POD_CIDR: 10.244.0.0/16
+  SERVICE_CIDR: 10.96.0.0/12
+  TIME_ZONE: Asia/Seoul
+  DOMAIN: hchu.me
+  DATA_PATH: /var/mnt/homelab
+  ONEPASSWORD_VAULT: Homelab
+  QBT_NODE_PORT: "31435"

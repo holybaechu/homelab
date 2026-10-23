@@ -1,0 +1,199 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: adguard-credentials
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: onepassword
+  target:
+    name: adguard-credentials
+  data:
+    - secretKey: ADGUARD_USERNAME
+      remoteRef:
+        key: ${ADGUARD_USERNAME_REF}
+    - secretKey: ADGUARD_PASSWORD_HASH
+      remoteRef:
+        key: ${ADGUARD_PASSWORD_HASH_REF}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: adguard-tls
+spec:
+  secretName: adguard-tls
+  dnsNames:
+    - dns.${DOMAIN}
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: adguard-state
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adguard
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: adguard
+  template:
+    metadata:
+      labels:
+        app: adguard
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: render-config
+          image: python:3.15.1-alpine3.23
+          command: [python3, /templates/render.py]
+          envFrom:
+            - secretRef:
+                name: adguard-credentials
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: templates
+              mountPath: /templates
+              readOnly: true
+            - name: state
+              mountPath: /state
+      containers:
+        - name: adguard
+          image: adguard/adguardhome:v0.107.79
+          args: [-c, /opt/adguardhome/conf/AdGuardHome.yaml, -w, /opt/adguardhome/work, --no-check-update]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [NET_BIND_SERVICE]
+          ports:
+            - name: http
+              containerPort: 3000
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: dns-udp
+              containerPort: 53
+              protocol: UDP
+            - name: dot
+              containerPort: 853
+          startupProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: state
+              mountPath: /opt/adguardhome/conf
+              subPath: conf
+            - name: state
+              mountPath: /opt/adguardhome/work
+              subPath: work
+            - name: certificate
+              mountPath: /certs
+              readOnly: true
+      volumes:
+        - name: templates
+          configMap:
+            name: adguard-config
+        - name: state
+          persistentVolumeClaim:
+            claimName: adguard-state
+        - name: certificate
+          secret:
+            secretName: adguard-tls
+            defaultMode: 0440
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adguard
+spec:
+  selector:
+    app: adguard
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dns-client-ip
+spec:
+  headers:
+    customRequestHeaders:
+      CF-Connecting-IP: ""
+      True-Client-IP: ""
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: adguard
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`dns.${DOMAIN}`) && Path(`/dns-query`) && (Method(`GET`) || Method(`POST`))
+      kind: Rule
+      middlewares:
+        - name: dns-client-ip
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: adguard
+          port: 3000
+    - match: Host(`adguard.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: private-only
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: adguard
+          port: 3000
+  tls: {}

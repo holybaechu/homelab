@@ -1,0 +1,140 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: metube-state
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metube
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: metube
+  template:
+    metadata:
+      labels:
+        app: metube
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: metube
+          image: ghcr.io/alexta69/metube:2026.10.22
+          env:
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: DELETE_FILE_ON_TRASHCAN
+              value: "true"
+            - name: DOWNLOAD_DIR
+              value: /downloads/complete
+            - name: STATE_DIR
+              value: /state
+            - name: TEMP_DIR
+              value: /downloads/incomplete
+            - name: CHOWN_DIRS
+              value: "false"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 8081
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: downloads
+              mountPath: /downloads
+            - name: state
+              mountPath: /state
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: downloads
+        - name: state
+          persistentVolumeClaim:
+            claimName: metube-state
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metube
+spec:
+  selector:
+    app: metube
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: metube
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`metube.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io/`)
+      kind: Rule
+      priority: 300
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: authentik-server
+          namespace: identity
+          port: http
+    - match: Host(`metube.${DOMAIN}`)
+      kind: Rule
+      priority: 100
+      middlewares:
+        - name: clear-copyparty-identity
+          namespace: traefik
+        - name: authentik
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: metube
+          port: 8081
+  tls: {}

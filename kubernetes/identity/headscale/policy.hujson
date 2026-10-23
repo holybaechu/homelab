@@ -1,0 +1,16 @@
+{
+  "tagOwners": {
+    "tag:gateway": []
+  },
+  "grants": [
+    {
+      "src": ["autogroup:member"],
+      "dst": ["${LAN_CIDR}", "tag:gateway", "autogroup:internet"],
+      "ip": ["*"]
+    }
+  ],
+  "autoApprovers": {
+    "routes": {"${LAN_CIDR}": ["tag:gateway"]},
+    "exitNode": ["tag:gateway"]
+  }
+}

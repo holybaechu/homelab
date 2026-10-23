@@ -1,112 +1,34 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
+  "extends": ["config:recommended"],
+  "automerge": false,
+  "pinDigests": false,
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Update the annotated Tailscale GitHub Action version",
-      "managerFilePatterns": [
-        "/^\\.github\\/workflows\\/(?:apps|infra)\\.yml$/"
-      ],
-      "matchStrings": [
-        "# renovate: datasource=custom.tailscale-linux depName=tailscale/tailscale versioning=semver\\s+version: \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
-      ],
-      "depNameTemplate": "tailscale/tailscale",
-      "datasourceTemplate": "custom.tailscale-linux",
-      "versioningTemplate": "semver"
-    },
-    {
-      "customType": "regex",
-      "description": "Update the VueTorrent LinuxServer Docker mod",
-      "managerFilePatterns": [
-        "/^apps\\/compose\\/homelab\\/compose\\.yml$/"
-      ],
-      "matchStrings": [
-        "DOCKER_MODS: ghcr.io/vuetorrent/vuetorrent-lsio-mod:(?<currentValue>\\d+\\.\\d+\\.\\d+)@(?<currentDigest>sha256:[0-9a-f]{64})"
-      ],
-      "depNameTemplate": "ghcr.io/vuetorrent/vuetorrent-lsio-mod",
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "semver"
-    },
-    {
-      "customType": "regex",
-      "description": "Update Debian 13 Proxmox LXC template versions in the production topology",
-      "managerFilePatterns": [
-        "/^infra\\/ansible\\/inventory\\/prod\\/topology\\.json$/"
-      ],
-      "matchStrings": [
-        "\\\"template_file_id\\\"\\s*:\\s*\\\"local:vztmpl/debian-13-standard_(?<currentValue>[^_]+)_amd64\\.tar\\.zst\\\""
-      ],
-      "depNameTemplate": "proxmox-debian-13",
-      "datasourceTemplate": "custom.proxmox-debian-13",
-      "versioningTemplate": "loose"
+      "managerFilePatterns": ["/^kubernetes/clusters/homelab/settings\\.yaml$/"],
+      "matchStrings": ["# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+\\w+: (?<currentValue>\\S+)"]
     }
   ],
-  "customDatasources": {
-    "proxmox-debian-13": {
-      "defaultRegistryUrlTemplate": "https://download.proxmox.com/images/system/",
-      "format": "html"
-    },
-    "tailscale-linux": {
-      "defaultRegistryUrlTemplate": "https://pkgs.tailscale.com/stable/?mode=json",
-      "format": "json",
-      "transformTemplates": [
-        "{\"releases\":[{\"version\":TarballsVersion}]}"
-      ]
-    }
+  "flux": {
+    "managerFilePatterns": ["/kubernetes/.*\\.yaml$/"]
+  },
+  "kubernetes": {
+    "managerFilePatterns": ["/kubernetes/.*\\.yaml$/"]
   },
   "packageRules": [
     {
-      "description": "Keep workflow Python within ansible-core 2.21 controller support",
-      "matchManagers": ["github-actions"],
-      "matchPackageNames": ["actions/python-versions"],
-      "allowedVersions": "<3.15"
+      "matchPackageNames": ["siderolabs/talos", "talosctl"],
+      "groupName": "Talos"
     },
     {
-      "matchDatasources": [
-        "custom.proxmox-debian-13"
-      ],
-      "extractVersion": "^debian-13-standard_(?<version>.+)_amd64\\.tar\\.zst$"
+      "matchPackageNames": ["kubernetes/kubernetes", "kubectl"],
+      "groupName": "Kubernetes"
     },
     {
-      "description": "Keep PostgreSQL within the tested 18 data format",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["postgres"],
-      "allowedVersions": "<19"
-    },
-    {
-      "description": "Use canonical qBittorrent application tags instead of legacy OS tags",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["lscr.io/linuxserver/qbittorrent"],
-      "versioning": "regex:^(?<major>0|[1-9]\\d*)\\.(?<minor>0|[1-9]\\d*)\\.(?<patch>0|[1-9]\\d*)$"
-    },
-    {
-      "description": "Order MeTube calendar-versioned Docker tags",
-      "matchDatasources": [
-        "docker"
-      ],
-      "matchPackageNames": [
-        "ghcr.io/alexta69/metube"
-      ],
-      "versioning": "regex:^(?<major>\\d{4})\\.(?<minor>\\d{2})\\.(?<patch>\\d{2})$"
-    },
-    {
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "digest",
-        "pin"
-      ],
-      "groupName": "weekly maintenance",
+      "description": "Review application and cluster upgrades before Flux applies them",
+      "matchUpdateTypes": ["major", "minor", "patch"],
       "automerge": false
     }
-  ],
-  "automerge": false,
-  "platformAutomerge": false,
-  "timezone": "Asia/Seoul",
-  "schedule": [
-    "* 0-8 * * 0"
   ]
 }

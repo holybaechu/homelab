@@ -1,0 +1,218 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: copyparty-credentials
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: onepassword
+  target:
+    name: copyparty-credentials
+  data:
+    - secretKey: COPYPARTY_USERNAME
+      remoteRef:
+        key: ${COPYPARTY_USERNAME_REF}
+    - secretKey: COPYPARTY_PASSWORD
+      remoteRef:
+        key: ${COPYPARTY_PASSWORD_REF}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: copyparty-state
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: copyparty
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: copyparty
+  template:
+    metadata:
+      labels:
+        app: copyparty
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: render-config
+          image: python:3.15.1-alpine3.23
+          command: [python3, /templates/render.py]
+          envFrom:
+            - secretRef:
+                name: copyparty-credentials
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: templates
+              mountPath: /templates
+              readOnly: true
+            - name: generated
+              mountPath: /generated
+            - name: downloads
+              mountPath: /downloads
+      containers:
+        - name: copyparty
+          image: copyparty/ac:1.20.26
+          args: [-c, /generated/copyparty.conf]
+          env:
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: XDG_CONFIG_HOME
+              value: /config/state
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 3923
+          startupProbe:
+            httpGet:
+              path: /public/
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /public/
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: generated
+              mountPath: /generated
+              readOnly: true
+            - name: state
+              mountPath: /config/state
+            - name: public
+              mountPath: /srv/public
+            - name: shared-readonly
+              mountPath: /srv/shared-readonly
+              readOnly: true
+            - name: downloads
+              mountPath: /srv/downloads
+              subPath: complete
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: templates
+          configMap:
+            name: copyparty-config
+        - name: generated
+          emptyDir: {}
+        - name: state
+          persistentVolumeClaim:
+            claimName: copyparty-state
+        - name: public
+          persistentVolumeClaim:
+            claimName: copyparty-public
+        - name: shared-readonly
+          persistentVolumeClaim:
+            claimName: copyparty-shared-readonly
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: downloads
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: copyparty
+spec:
+  selector:
+    app: copyparty
+  ports:
+    - name: http
+      port: 3923
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: copyparty
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`copyparty.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io/`)
+      kind: Rule
+      priority: 300
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: authentik-server
+          namespace: identity
+          port: http
+    - match: Host(`copyparty.${DOMAIN}`) && (Method(`GET`) || Method(`HEAD`)) && (Path(`/`) || Path(`/public`) || PathPrefix(`/public/`) || (PathPrefix(`/.cpr/`) && !PathPrefix(`/.cpr/metrics`) && !PathPrefix(`/.cpr/ssdp`)))
+      kind: Rule
+      priority: 200
+      middlewares:
+        - name: clear-copyparty-identity
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: copyparty
+          port: 3923
+    - match: Host(`copyparty.${DOMAIN}`)
+      kind: Rule
+      priority: 100
+      middlewares:
+        - name: clear-copyparty-identity
+          namespace: traefik
+        - name: authentik
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: copyparty
+          port: 3923
+    - match: Host(`copyparty-dav.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: private-only
+          namespace: traefik
+        - name: clear-copyparty-identity
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: copyparty
+          port: 3923
+  tls: {}

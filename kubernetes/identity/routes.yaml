@@ -1,0 +1,37 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: authentik-server
+  namespace: identity
+spec:
+  entryPoints:
+  - websecure
+  routes:
+  - kind: Rule
+    match: Host(`auth.${DOMAIN}`)
+    middlewares:
+    - name: secure-headers
+      namespace: traefik
+    services:
+    - name: authentik-server
+      port: http
+  tls: {}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: headscale
+  namespace: identity
+spec:
+  entryPoints:
+  - websecure
+  routes:
+  - kind: Rule
+    match: Host(`headscale.${DOMAIN}`)
+    middlewares:
+    - name: secure-headers
+      namespace: traefik
+    services:
+    - name: headscale
+      port: 8080
+  tls: {}

@@ -1,0 +1,92 @@
+schema_version: 34
+users:
+- name: @@USERNAME@@
+  password: @@PASSWORD_HASH@@
+auth_attempts: 5
+block_auth_min: 15
+http:
+  address: 0.0.0.0:3000
+  doh:
+    routes:
+    - GET /dns-query
+    - POST /dns-query
+    insecure_enabled: true
+  pprof:
+    enabled: false
+    port: 6060
+  session_ttl: 720h
+language: en
+theme: auto
+clients:
+  runtime_sources:
+    whois: false
+    arp: false
+    rdns: false
+    dhcp: false
+    hosts: false
+  persistent: []
+dns:
+  bind_hosts:
+  - ${NODE_IP}
+  port: 53
+  anonymize_client_ip: true
+  ratelimit: 20
+  upstream_dns:
+  - tls://1.1.1.1
+  - tls://1.0.0.1
+  bootstrap_dns:
+  - 1.1.1.1
+  - 1.0.0.1
+  fallback_dns:
+  - 1.1.1.1
+  - 1.0.0.1
+  upstream_mode: load_balance
+  cache_optimistic_answer_ttl: 30s
+  cache_optimistic_max_age: 12h
+  trusted_proxies:
+  - ${POD_CIDR}
+  hostsfile_enabled: false
+filtering:
+  protection_enabled: true
+  rewrites_enabled: true
+  rewrites: []
+  blocked_services:
+    schedule:
+      time_zone: ${TIME_ZONE}
+  safe_fs_patterns:
+  - /opt/adguardhome/work/data/userfilters/*
+querylog:
+  enabled: false
+  file_enabled: false
+  interval: 24h
+  size_memory: 1000
+statistics:
+  enabled: true
+  interval: 1d
+tls:
+  enabled: true
+  server_name: dns.${DOMAIN}
+  force_https: false
+  port_https: 0
+  port_dns_over_tls: 853
+  port_dns_over_quic: 0
+  certificate_path: /certs/tls.crt
+  private_key_path: /certs/tls.key
+filters:
+- enabled: true
+  url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_48.txt
+  name: HaGeZi's Pro Blocklist
+  id: 48
+user_rules:
+- '|dns.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
+- '|auth.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
+- '|headscale.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
+- '|copyparty.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
+- '|metube.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
+- '|adguard.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
+- '|qbt.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
+- '|copyparty-dav.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
+os:
+  group: ''
+  user: ''
+  rlimit_nofile: 0

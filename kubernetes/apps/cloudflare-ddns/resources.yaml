@@ -1,0 +1,67 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cloudflare-ddns
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: onepassword
+  target:
+    name: cloudflare-ddns
+  data:
+    - secretKey: CLOUDFLARE_API_TOKEN
+      remoteRef:
+        key: ${CLOUDFLARE_TOKEN_REF}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflare-ddns
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflare-ddns
+  template:
+    metadata:
+      labels:
+        app: cloudflare-ddns
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cloudflare-ddns
+          image: favonia/cloudflare-ddns:1.17.1
+          envFrom:
+            - secretRef:
+                name: cloudflare-ddns
+          env:
+            - name: DOMAINS
+              value: dns.${DOMAIN},auth.${DOMAIN},headscale.${DOMAIN},metube.${DOMAIN}
+            - name: IP6_PROVIDER
+              value: none
+            - name: PROXIED
+              value: "false"
+            - name: DELETE_ON_STOP
+              value: "false"
+            - name: TZ
+              value: ${TIME_ZONE}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
