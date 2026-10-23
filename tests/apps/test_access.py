@@ -37,6 +37,8 @@ class ApplicationAccess(unittest.TestCase):
         anonymous = next(route for route in routes if "Path(`/public`)" in route["match"])
         self.assertIn("Method(`GET`)", anonymous["match"])
         self.assertIn("Method(`HEAD`)", anonymous["match"])
+        self.assertIn("Path(`/`)", anonymous["match"])
+        self.assertNotIn("Cookie", anonymous["match"])
         self.assertNotIn("authentik", [middleware["name"] for middleware in anonymous["middlewares"]])
         self.assertIn("clear-copyparty-identity", [middleware["name"] for middleware in anonymous["middlewares"]])
         dav = next(route for route in routes if "copyparty-dav.hchu.me" in route["match"])
