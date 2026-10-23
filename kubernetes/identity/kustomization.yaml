@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- secrets.yaml
+- authentik.yaml
+- postgresql.yaml
+- headscale.yaml
+- routes.yaml
+configMapGenerator:
+- name: authentik-blueprints
+  namespace: identity
+  files:
+  - homelab.yaml=blueprints/homelab.yaml
+- name: headscale-config
+  namespace: identity
+  files:
+  - config.yaml=headscale/config.yaml
+  - policy.hujson=headscale/policy.hujson
+generatorOptions:
+  disableNameSuffixHash: true
