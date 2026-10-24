@@ -18,6 +18,20 @@
   },
   "packageRules": [
     {
+      "description": "Track the OpenTofu version constraint with the installed OpenTofu toolchain",
+      "matchManagers": ["terraform"],
+      "matchDepTypes": ["required_version"],
+      "matchPackageNames": ["hashicorp/terraform"],
+      "overridePackageName": "opentofu/opentofu",
+      "overrideDepName": "opentofu/opentofu",
+      "groupName": "OpenTofu"
+    },
+    {
+      "matchManagers": ["mise"],
+      "matchPackageNames": ["opentofu/opentofu"],
+      "groupName": "OpenTofu"
+    },
+    {
       "matchPackageNames": ["siderolabs/talos", "talosctl"],
       "groupName": "Talos"
     },

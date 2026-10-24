@@ -24,3 +24,6 @@ data:
   DATA_PATH: /var/mnt/homelab
   ONEPASSWORD_VAULT: Homelab
   QBT_NODE_PORT: "31435"
+  # Paths of the migrated Spaces inside the opencloud-data claim.
+  OPENCLOUD_PUBLIC_SUBPATH: storage/users/projects/0f1266bd-8113-4beb-8f1b-02affee9adda/public
+  OPENCLOUD_DOWNLOADS_SUBPATH: storage/users/projects/08e2f368-aa51-478b-bee3-bdef1398b18c/downloads

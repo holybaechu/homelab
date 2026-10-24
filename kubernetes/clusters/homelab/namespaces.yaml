@@ -40,6 +40,13 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: collabora
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: networking
   labels:
     pod-security.kubernetes.io/enforce: privileged

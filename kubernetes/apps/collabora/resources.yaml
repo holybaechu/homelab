@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: collabora-proof-key
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collabora
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: collabora
+  template:
+    metadata:
+      labels:
+        app: collabora
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: proof-key
+          image: alpine/openssl:3.5.9
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              umask 077
+              if [ ! -s /proof/proof_key ]; then
+                openssl genrsa -traditional -out /proof/proof_key.tmp 4096
+                chmod 400 /proof/proof_key.tmp
+                mv /proof/proof_key.tmp /proof/proof_key
+              fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: proof-key
+              mountPath: /proof
+      containers:
+        - name: collabora
+          image: collabora/code:26.04.5.1.1
+          env:
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: aliasgroup1
+              value: https://wopi.${DOMAIN}:443
+            - name: server_name
+              value: collabora.${DOMAIN}
+            - name: DONT_GEN_SSL_CERT
+              value: "true"
+            - name: extra_params
+              value: >-
+                --o:ssl.enable=false
+                --o:ssl.termination=true
+                --o:ssl.ssl_verification=true
+                --o:welcome.enable=false
+                --o:net.frame_ancestors=https://opencloud.${DOMAIN}
+                --o:net.lok_allow.host[14]=wopi.${DOMAIN}
+                --o:admin_console.enable=false
+          # Collabora uses these capabilities and unconfined profiles to isolate
+          # document workers in mount namespaces and chroot jails.
+          securityContext:
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, FOWNER, MKNOD, SYS_CHROOT, SYS_ADMIN]
+            seccompProfile:
+              type: Unconfined
+            appArmorProfile:
+              type: Unconfined
+          ports:
+            - name: http
+              containerPort: 9980
+          startupProbe:
+            httpGet:
+              path: /hosting/discovery
+              port: http
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /hosting/discovery
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /hosting/discovery
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 4Gi
+          volumeMounts:
+            - name: proof-key
+              mountPath: /etc/coolwsd/proof_key
+              subPath: proof_key
+              readOnly: true
+      volumes:
+        - name: proof-key
+          persistentVolumeClaim:
+            claimName: collabora-proof-key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: collabora
+spec:
+  selector:
+    app: collabora
+  ports:
+    - name: http
+      port: 9980
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: collabora
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`collabora.${DOMAIN}`) && (PathPrefix(`/browser/`) || PathPrefix(`/cool/`) || PathPrefix(`/hosting/`) || Path(`/favicon.ico`))
+      kind: Rule
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: collabora
+          port: 9980
+  tls: {}
