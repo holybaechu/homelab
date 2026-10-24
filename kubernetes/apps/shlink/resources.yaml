@@ -52,7 +52,7 @@ spec:
             - name: TASK_WORKER_NUM
               value: "1"
             - name: SKIP_INITIAL_GEOLITE_DOWNLOAD
-              value: "true"
+              value: "false"
             - name: CORS_ALLOW_ORIGIN
               value: https://shlink.${DOMAIN}
             - name: TRUSTED_PROXIES
