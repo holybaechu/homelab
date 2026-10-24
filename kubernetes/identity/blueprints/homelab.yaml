@@ -227,11 +227,34 @@ entries:
       target: !KeyOf zipline-app
       user: !Find [authentik_core.user, [username, akadmin]]
       order: 0
+  - model: authentik_providers_proxy.proxyprovider
+    identifiers:
+      name: Shlink
+    id: shlink-provider
+    attrs:
+      mode: forward_single
+      external_host: https://shlink.${DOMAIN}
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+  - model: authentik_core.application
+    identifiers:
+      slug: shlink
+    id: shlink-app
+    attrs:
+      name: Shlink
+      provider: !KeyOf shlink-provider
+      meta_launch_url: https://shlink.${DOMAIN}
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf shlink-app
+      user: !Find [authentik_core.user, [username, akadmin]]
+      order: 0
   - model: authentik_outposts.outpost
     identifiers:
       managed: goauthentik.io/outposts/embedded
     attrs:
       providers:
         - !KeyOf metube-provider
+        - !KeyOf shlink-provider
       config:
         authentik_host: https://auth.${DOMAIN}

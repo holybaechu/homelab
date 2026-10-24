@@ -113,6 +113,14 @@ jobs:
                   and .priority > 100 and private) and
                 any(.[]; .match == ("Host(`i." + $domain + "`)") and .priority == 100
                   and all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
+              (resource("IngressRoute"; "shlink").spec.routes | length == 1 and all(.[];
+                .match == ("Host(`l." + $domain + "`)") and
+                all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
+              (resource("IngressRoute"; "shlink-web-client").spec.routes | length == 2 and all(.[];
+                if (.match | contains("PathPrefix(`/outpost.goauthentik.io/`)")) then
+                  all(.services[]; .name == "authentik-server" and .namespace == "identity")
+                else .match == ("Host(`shlink." + $domain + "`)") and
+                  any(.middlewares[]; .name == "authentik" and .namespace == "traefik") end)),
               (resource("Middleware"; "clear-proxy-identity").spec.headers.customRequestHeaders["X-authentik-username"] == ""),
               (resource("Deployment"; "traefik").spec.template.spec
                 | .hostNetwork == true and (.containers[0].args

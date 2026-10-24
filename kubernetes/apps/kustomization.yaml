@@ -11,3 +11,4 @@ resources:
   - metube
   - cloudflare-ddns
   - zipline
+  - shlink
