@@ -75,7 +75,7 @@ spec:
             - auth.${DOMAIN}
       containers:
         - name: zipline
-          image: ghcr.io/diced/zipline:4.8.0
+          image: ghcr.io/diced/zipline:4.8.1
           envFrom:
             - secretRef:
                 name: zipline-env
