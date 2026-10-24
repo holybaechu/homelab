@@ -75,7 +75,7 @@ spec:
             - auth.${DOMAIN}
       containers:
         - name: zipline
-          image: ghcr.io/diced/zipline:4.8.0
+          image: ghcr.io/diced/zipline:4.8.1
           envFrom:
             - secretRef:
                 name: zipline-env
@@ -130,6 +130,8 @@ spec:
               value: "9007199254740991"
             - name: FILES_DEFAULT_EXPIRATION
               value: ""
+            - name: FILES_REMOVE_GPS_METADATA
+              value: "true"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
