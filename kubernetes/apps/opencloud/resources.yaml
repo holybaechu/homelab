@@ -1,0 +1,253 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opencloud-config
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opencloud-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 256Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencloud
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: opencloud
+  template:
+    metadata:
+      labels:
+        app: opencloud
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: initialize
+          image: opencloudeu/opencloud:7.2.4
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              umask 077
+              if [ ! -s /etc/opencloud/opencloud.yaml ]; then
+                opencloud init --config-path /etc/opencloud --insecure=false --quiet
+              fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/opencloud
+            - name: temporary
+              mountPath: /tmp
+      containers:
+        - name: opencloud
+          image: opencloudeu/opencloud:7.2.4
+          args: [server]
+          env:
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: OC_URL
+              value: https://opencloud.${DOMAIN}
+            - name: OC_CONFIG_DIR
+              value: /etc/opencloud
+            - name: OC_BASE_DATA_PATH
+              value: /var/lib/opencloud
+            - name: OC_LOG_LEVEL
+              value: info
+            - name: OC_INSECURE
+              value: "false"
+            - name: PROXY_TLS
+              value: "false"
+            - name: PROXY_HTTP_ADDR
+              value: 0.0.0.0:9200
+            - name: PROXY_DEBUG_ADDR
+              value: 0.0.0.0:9205
+            - name: PROXY_CSP_CONFIG_FILE_LOCATION
+              value: /config/csp.yaml
+            - name: OC_EXCLUDE_RUN_SERVICES
+              value: idp
+            - name: OC_ADD_RUN_SERVICES
+              value: auth-app,collaboration
+            - name: COLLABORATION_HTTP_ADDR
+              value: 0.0.0.0:9300
+            - name: COLLABORATION_WOPI_SRC
+              value: https://wopi.${DOMAIN}
+            - name: COLLABORATION_APP_NAME
+              value: CollaboraOnline
+            - name: COLLABORATION_APP_PRODUCT
+              value: Collabora
+            - name: COLLABORATION_APP_ADDR
+              value: https://collabora.${DOMAIN}
+            - name: COLLABORATION_APP_ICON
+              value: https://collabora.${DOMAIN}/favicon.ico
+            - name: FRONTEND_APP_HANDLER_SECURE_VIEW_APP_ADDR
+              value: eu.opencloud.api.collaboration
+            - name: OC_OIDC_ISSUER
+              value: https://auth.${DOMAIN}/application/o/opencloud/
+            - name: WEB_OIDC_CLIENT_ID
+              value: homelab-opencloud
+            - name: WEB_OIDC_SCOPE
+              value: openid profile email groups opencloud_roles offline_access
+            - name: PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD
+              value: jwt
+            - name: PROXY_OIDC_REWRITE_WELLKNOWN
+              value: "true"
+            - name: PROXY_AUTOPROVISION_ACCOUNTS
+              value: "true"
+            - name: PROXY_USER_OIDC_CLAIM
+              value: sub
+            - name: PROXY_USER_CS3_CLAIM
+              value: username
+            - name: PROXY_AUTOPROVISION_CLAIM_USERNAME
+              value: sub
+            - name: GRAPH_USERNAME_MATCH
+              value: none
+            - name: GRAPH_ASSIGN_DEFAULT_USER_ROLE
+              value: "false"
+            - name: PROXY_ROLE_ASSIGNMENT_DRIVER
+              value: oidc
+            - name: PROXY_ENABLE_BASIC_AUTH
+              value: "false"
+            - name: PROXY_ENABLE_APP_AUTH
+              value: "true"
+            - name: OC_SHARING_PUBLIC_SHARE_MUST_HAVE_PASSWORD
+              value: "false"
+            - name: OC_SHARING_PUBLIC_WRITEABLE_SHARE_MUST_HAVE_PASSWORD
+              value: "true"
+            - name: OC_DEFAULT_QUOTA
+              value: "214748364800"
+            - name: STORAGE_USERS_POSIX_WATCH_FS
+              value: "true"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 9200
+            - name: health
+              containerPort: 9205
+            - name: wopi
+              containerPort: 9300
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            failureThreshold: 120
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 4Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/opencloud
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/opencloud
+            - name: csp
+              mountPath: /config
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: opencloud-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: opencloud-data
+        - name: csp
+          configMap:
+            name: opencloud-csp
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opencloud
+spec:
+  selector:
+    app: opencloud
+  ports:
+    - name: http
+      port: 9200
+      targetPort: http
+    - name: wopi
+      port: 9300
+      targetPort: wopi
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: opencloud
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`opencloud.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: opencloud
+          port: 9200
+  tls: {}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: opencloud-wopi
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`wopi.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: opencloud
+          port: 9300
+  tls: {}

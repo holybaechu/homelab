@@ -82,9 +82,18 @@ jobs:
             [
               (resource("StorageClass"; "local-path").reclaimPolicy == "Retain"),
               (all(.[] | select(.kind == "PersistentVolumeClaim"); .spec.storageClassName == "local-path")),
-              (resource("Deployment"; "copyparty").spec.template.spec.containers[0].volumeMounts
-                | map(select(.mountPath == "/srv/shared-readonly" or .mountPath == "/srv/downloads"))
-                | length == 2 and all(.[]; .readOnly == true)),
+              (resource("Deployment"; "opencloud").spec.template.spec.containers[0].volumeMounts
+                | all(.[]; (.name == "public" or .name == "shared-readonly" or .name == "downloads") | not)),
+              (resource("Deployment"; "opencloud").spec.template.spec.containers[0].env
+                | any(.[]; .name == "PROXY_ENABLE_BASIC_AUTH" and .value == "false")
+                  and any(.[]; .name == "PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD" and .value == "jwt")),
+              (resource("Deployment"; "opencloud").spec.template.spec.containers[0].env
+                | any(.[]; .name == "STORAGE_USERS_POSIX_WATCH_FS" and .value == "true")),
+              (resource("Deployment"; "qbittorrent").spec.template.spec.containers[0].volumeMounts
+                | any(.[]; .mountPath == "/public" and .name == "opencloud" and (.subPath | startswith("storage/users/projects/")))
+                  and any(.[]; .mountPath == "/downloads/complete" and .name == "opencloud")),
+              (resource("Deployment"; "metube").spec.template.spec.containers[0].volumeMounts
+                | any(.[]; .mountPath == "/downloads/complete" and .name == "opencloud")),
               (resource("Middleware"; "private-only").spec.ipAllowList.sourceRange
                 | length > 0 and all(.[]; . == $lan or . == "100.64.0.0/10" or . == "fd7a:115c:a1e0::/48")),
               (resource("IngressRoute"; "adguard").spec.routes | length > 0 and all(.[];
@@ -92,12 +101,27 @@ jobs:
                   (.match | contains("Path(`/dns-query`)") and contains("Method(`GET`)") and contains("Method(`POST`)") and (contains("PathPrefix") | not))
                 else private end)),
               (resource("IngressRoute"; "qbittorrent").spec.routes | length > 0 and all(.[]; private)),
-              (resource("IngressRoute"; "copyparty").spec.routes
-                | any(.[]; (.match | contains("Host(`copyparty-dav." + $domain + "`)")) and private)),
-              (resource("IngressRoute"; "copyparty").spec.routes
-                | any(.[]; .match == ("Host(`copyparty." + $domain + "`)") and
-                  (.middlewares | map(.name) | index("clear-copyparty-identity") != null and index("authentik") != null and index("clear-copyparty-identity") < index("authentik")))),
-              (resource("Middleware"; "clear-copyparty-identity").spec.headers.customRequestHeaders["X-authentik-username"] == ""),
+              (resource("IngressRoute"; "opencloud").spec.routes | length == 1 and all(.[];
+                .match == ("Host(`opencloud." + $domain + "`)") and
+                all(.middlewares[]; .name != "authentik"))),
+              (resource("Deployment"; "collabora").spec.template.spec.containers[0].env
+                | any(.[]; .name == "aliasgroup1" and .value == ("https://wopi." + $domain + ":443"))),
+              (resource("IngressRoute"; "opencloud-wopi").spec.routes | length == 1 and all(.[];
+                .match == ("Host(`wopi." + $domain + "`)") and all(.services[]; .port == 9300))),
+              (resource("IngressRoute"; "zipline").spec.routes | length == 2 and
+                any(.[]; .match == ("Host(`i." + $domain + "`) && (PathPrefix(`/api/setup`) || PathPrefix(`/api/auth/login`))")
+                  and .priority > 100 and private) and
+                any(.[]; .match == ("Host(`i." + $domain + "`)") and .priority == 100
+                  and all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
+              (resource("IngressRoute"; "shlink").spec.routes | length == 1 and all(.[];
+                .match == ("Host(`l." + $domain + "`)") and
+                all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
+              (resource("IngressRoute"; "shlink-web-client").spec.routes | length == 2 and all(.[];
+                if (.match | contains("PathPrefix(`/outpost.goauthentik.io/`)")) then
+                  all(.services[]; .name == "authentik-server" and .namespace == "identity")
+                else .match == ("Host(`shlink." + $domain + "`)") and
+                  any(.middlewares[]; .name == "authentik" and .namespace == "traefik") end)),
+              (resource("Middleware"; "clear-proxy-identity").spec.headers.customRequestHeaders["X-authentik-username"] == ""),
               (resource("Deployment"; "traefik").spec.template.spec
                 | .hostNetwork == true and (.containers[0].args
                   | any(.[]; startswith("--entryPoints.traefik.address=127.0.0.1:"))
