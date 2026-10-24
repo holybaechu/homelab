@@ -1,5 +1,11 @@
 name: validate
 on:
+  workflow_dispatch:
+    inputs:
+      talos:
+        description: Also render and validate Talos configuration in isolated temporary state
+        type: boolean
+        default: false
   pull_request:
   push:
     branches: [main]
@@ -8,8 +14,141 @@ permissions:
 jobs:
   configuration:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      TF_IN_AUTOMATION: "1"
+      TF_INPUT: "0"
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: jdx/mise-action@v5.2.2
-      - run: python -m pip install -r requirements.txt
-      - run: ./scripts/validate
+        with:
+          install_args: opentofu flux2 helm kustomize kubeconform jq yq ${{ inputs.talos && 'talosctl' || '' }}
+      - name: Validate OpenTofu configuration
+        env:
+          TF_DATA_DIR: ${{ runner.temp }}/tofu-providers
+        run: |
+          export TF_VAR_state_passphrase=$(openssl rand -hex 32)
+          printf 'TF_VAR_state_passphrase=%s\n' "$TF_VAR_state_passphrase" >> "$GITHUB_ENV"
+          tofu -chdir=infra/talos fmt -check
+          tofu -chdir=infra/talos init -backend=false -lockfile=readonly
+          tofu -chdir=infra/talos validate
+      - name: Render Kubernetes configuration and Helm charts
+        run: |
+          while IFS=$'\t' read -r key value; do
+            export "$key=$value"
+          done < <(yq -N -r '.data | to_entries | .[] | [.key, .value] | @tsv' kubernetes/clusters/homelab/{settings,onepassword}.yaml)
+          mkdir -p "$RUNNER_TEMP/rendered"
+          for path in bootstrap clusters/homelab platform/controllers platform/config identity apps access; do
+            if [[ "$path" == bootstrap || "$path" == clusters/homelab ]]; then
+              kustomize build "kubernetes/$path" >> "$RUNNER_TEMP/rendered/authored.yaml"
+            else
+              kustomize build "kubernetes/$path" | flux envsubst --strict >> "$RUNNER_TEMP/rendered/authored.yaml"
+            fi
+            printf '\n---\n' >> "$RUNNER_TEMP/rendered/authored.yaml"
+          done
+          yq ea -N -o=json -I=0 '.' "$RUNNER_TEMP/rendered/authored.yaml" | jq -s 'map(select(. != null))' > "$RUNNER_TEMP/resources.json"
+          while IFS= read -r release; do
+            repository=$(jq -r '.spec.chart.spec.sourceRef.name' <<< "$release")
+            url=$(jq -r --arg name "$repository" '.[] | select(.kind == "HelmRepository" and .metadata.name == $name) | .spec.url' "$RUNNER_TEMP/resources.json")
+            name=$(jq -r '.spec.releaseName // .metadata.name' <<< "$release")
+            namespace=$(jq -r '.metadata.namespace' <<< "$release")
+            helm template "$name" "$(jq -r '.spec.chart.spec.chart' <<< "$release")" \
+              --repo "$url" --version "$(jq -r '.spec.chart.spec.version' <<< "$release")" \
+              --namespace "$namespace" --kube-version "${KUBERNETES_VERSION#v}" --include-crds \
+              --values <(jq '.spec.values // {}' <<< "$release") > "$RUNNER_TEMP/rendered/$namespace-$name.yaml"
+          done < <(jq -c '.[] | select(.kind == "HelmRelease")' "$RUNNER_TEMP/resources.json")
+          yq ea -N -o=json -I=0 '.' "$RUNNER_TEMP"/rendered/*.yaml | jq -s 'map(select(. != null))' > "$RUNNER_TEMP/resources.json"
+      - name: Validate Kubernetes schemas
+        run: |
+          mkdir -p "$RUNNER_TEMP/schemas"
+          while IFS= read -r schema; do
+            path="$RUNNER_TEMP/schemas/$(jq -r '.path' <<< "$schema")"
+            mkdir -p "$(dirname "$path")"
+            jq '.schema' <<< "$schema" > "$path"
+          done < <(jq -c '.[] | select(.kind == "CustomResourceDefinition") | .spec as $crd | $crd.versions[] | select(.schema.openAPIV3Schema != null) | {path: ($crd.group + "/" + ($crd.names.kind | ascii_downcase) + "_" + .name + ".json"), schema: .schema.openAPIV3Schema}' "$RUNNER_TEMP/resources.json")
+          yq -p=json -oy '.[] | select(.kind != "CustomResourceDefinition") | split_doc' "$RUNNER_TEMP/resources.json" | \
+            kubeconform -strict -summary -kubernetes-version "$(yq -r '.data.KUBERNETES_VERSION | sub("^v", "")' kubernetes/clusters/homelab/settings.yaml)" \
+              -schema-location default -schema-location "$RUNNER_TEMP/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+      - name: Check data and public access safeguards
+        run: |
+          jq -e --arg domain "$(yq -r '.data.DOMAIN' kubernetes/clusters/homelab/settings.yaml)" \
+            --arg lan "$(yq -r '.data.LAN_CIDR' kubernetes/clusters/homelab/settings.yaml)" '
+            def resource($kind; $name):
+              [.[] | select(.kind == $kind and .metadata.name == $name)]
+              | if length == 1 then .[0] else error("Missing or ambiguous " + $kind + "/" + $name) end;
+            def private: any(.middlewares[]?; .name == "private-only" and .namespace == "traefik");
+            [
+              (resource("StorageClass"; "local-path").reclaimPolicy == "Retain"),
+              (all(.[] | select(.kind == "PersistentVolumeClaim"); .spec.storageClassName == "local-path")),
+              (resource("Deployment"; "opencloud").spec.template.spec.containers[0].volumeMounts
+                | all(.[]; (.name == "public" or .name == "shared-readonly" or .name == "downloads") | not)),
+              (resource("Deployment"; "opencloud").spec.template.spec.containers[0].env
+                | any(.[]; .name == "PROXY_ENABLE_BASIC_AUTH" and .value == "false")
+                  and any(.[]; .name == "PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD" and .value == "jwt")),
+              (resource("Deployment"; "opencloud").spec.template.spec.containers[0].env
+                | any(.[]; .name == "STORAGE_USERS_POSIX_WATCH_FS" and .value == "true")),
+              (resource("Deployment"; "qbittorrent").spec.template.spec.containers[0].volumeMounts
+                | any(.[]; .mountPath == "/public" and .name == "opencloud" and (.subPath | startswith("storage/users/projects/")))
+                  and any(.[]; .mountPath == "/downloads/complete" and .name == "opencloud")),
+              (resource("Deployment"; "metube").spec.template.spec.containers[0].volumeMounts
+                | any(.[]; .mountPath == "/downloads/complete" and .name == "opencloud")),
+              (resource("Middleware"; "private-only").spec.ipAllowList.sourceRange
+                | length > 0 and all(.[]; . == $lan or . == "100.64.0.0/10" or . == "fd7a:115c:a1e0::/48")),
+              (resource("IngressRoute"; "adguard").spec.routes | length > 0 and all(.[];
+                if (.match | contains("Host(`dns." + $domain + "`)")) then
+                  (.match | contains("Path(`/dns-query`)") and contains("Method(`GET`)") and contains("Method(`POST`)") and (contains("PathPrefix") | not))
+                else private end)),
+              (resource("IngressRoute"; "qbittorrent").spec.routes | length > 0 and all(.[]; private)),
+              (resource("IngressRoute"; "opencloud").spec.routes | length == 1 and all(.[];
+                .match == ("Host(`opencloud." + $domain + "`)") and
+                all(.middlewares[]; .name != "authentik"))),
+              (resource("Deployment"; "collabora").spec.template.spec.containers[0].env
+                | any(.[]; .name == "aliasgroup1" and .value == ("https://wopi." + $domain + ":443"))),
+              (resource("IngressRoute"; "opencloud-wopi").spec.routes | length == 1 and all(.[];
+                .match == ("Host(`wopi." + $domain + "`)") and all(.services[]; .port == 9300))),
+              (resource("IngressRoute"; "zipline").spec.routes | length == 2 and
+                any(.[]; .match == ("Host(`i." + $domain + "`) && (PathPrefix(`/api/setup`) || PathPrefix(`/api/auth/login`))")
+                  and .priority > 100 and private) and
+                any(.[]; .match == ("Host(`i." + $domain + "`)") and .priority == 100
+                  and all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
+              (resource("IngressRoute"; "shlink").spec.routes | length == 1 and all(.[];
+                .match == ("Host(`l." + $domain + "`)") and
+                all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
+              (resource("IngressRoute"; "shlink-web-client").spec.routes | length == 2 and all(.[];
+                if (.match | contains("PathPrefix(`/outpost.goauthentik.io/`)")) then
+                  all(.services[]; .name == "authentik-server" and .namespace == "identity")
+                else .match == ("Host(`shlink." + $domain + "`)") and
+                  any(.middlewares[]; .name == "authentik" and .namespace == "traefik") end)),
+              (resource("Middleware"; "clear-proxy-identity").spec.headers.customRequestHeaders["X-authentik-username"] == ""),
+              (resource("Deployment"; "traefik").spec.template.spec
+                | .hostNetwork == true and (.containers[0].args
+                  | any(.[]; startswith("--entryPoints.traefik.address=127.0.0.1:"))
+                    and any(.[]; startswith("--entryPoints.metrics.address=127.0.0.1:"))
+                    and all(.[]; contains("forwardedHeaders.insecure") | not)))
+            ] | all
+          ' "$RUNNER_TEMP/resources.json"
+      - name: Render and validate isolated Talos configuration
+        if: ${{ inputs.talos }}
+        run: |
+          umask 077
+          fixture="$RUNNER_TEMP/talos"
+          module="$fixture/infra/talos"
+          mkdir -p "$module" "$fixture/kubernetes/clusters/homelab"
+          trap 'rm -rf "$fixture"' EXIT
+          cp infra/talos/*.tf infra/talos/.terraform.lock.hcl "$module/"
+          cp kubernetes/clusters/homelab/settings.yaml "$fixture/kubernetes/clusters/homelab/"
+          export TF_DATA_DIR="$fixture/providers"
+          tofu -chdir="$module" init -lockfile=readonly -backend-config="path=$fixture/render.tfstate"
+          tofu -chdir="$module" plan -refresh=false -target=data.talos_machine_configuration.node -out="$fixture/render.tfplan" > /dev/null
+          tofu -chdir="$module" show -json "$fixture/render.tfplan" | jq -e '
+            all(.resource_changes[];
+              (.address == "talos_machine_secrets.cluster" and .change.actions == ["create"]) or
+              (.address == "data.talos_machine_configuration.node" and .change.actions == ["read"]))
+          ' > /dev/null
+          tofu -chdir="$module" apply "$fixture/render.tfplan" > /dev/null
+          jq -e 'has("encrypted_data")' "$fixture/render.tfstate" > /dev/null
+          tofu -chdir="$module" output -raw machine_configuration > "$fixture/machine.yaml"
+          talosctl validate --config "$fixture/machine.yaml" --mode metal --strict
+      - run: git diff --check

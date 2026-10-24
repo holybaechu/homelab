@@ -9,11 +9,18 @@ spec:
     name: onepassword
   target:
     name: qbittorrent-credentials
+    template:
+      engineVersion: v2
+      templateFrom:
+        - configMap:
+            name: qbittorrent-config
+            items:
+              - key: managed.conf
   data:
-    - secretKey: QBITTORRENT_USERNAME
+    - secretKey: username
       remoteRef:
         key: ${QBITTORRENT_USERNAME_REF}
-    - secretKey: QBITTORRENT_PASSWORD_HASH
+    - secretKey: password_hash
       remoteRef:
         key: ${QBITTORRENT_PASSWORD_HASH_REF}
 ---
@@ -53,12 +60,9 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        - name: render-config
+        - name: merge-config
           image: python:3.15.1-alpine3.23
-          command: [python3, /templates/render.py]
-          envFrom:
-            - secretRef:
-                name: qbittorrent-credentials
+          command: [python3, /templates/merge.py]
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
@@ -71,10 +75,16 @@ spec:
             - name: templates
               mountPath: /templates
               readOnly: true
+            - name: credentials
+              mountPath: /credentials
+              readOnly: true
             - name: state
               mountPath: /config
             - name: downloads
               mountPath: /downloads
+            - name: opencloud
+              mountPath: /downloads/complete
+              subPath: ${OPENCLOUD_DOWNLOADS_SUBPATH}
       containers:
         - name: qbittorrent
           image: lscr.io/linuxserver/qbittorrent:5.3.0
@@ -129,21 +139,29 @@ spec:
               mountPath: /config
             - name: downloads
               mountPath: /downloads
-            - name: public
+            - name: opencloud
+              mountPath: /downloads/complete
+              subPath: ${OPENCLOUD_DOWNLOADS_SUBPATH}
+            - name: opencloud
               mountPath: /public
+              subPath: ${OPENCLOUD_PUBLIC_SUBPATH}
       volumes:
         - name: templates
           configMap:
             name: qbittorrent-config
+        - name: credentials
+          secret:
+            secretName: qbittorrent-credentials
+            defaultMode: 0440
         - name: state
           persistentVolumeClaim:
             claimName: qbittorrent-state
         - name: downloads
           persistentVolumeClaim:
             claimName: downloads
-        - name: public
+        - name: opencloud
           persistentVolumeClaim:
-            claimName: copyparty-public
+            claimName: opencloud-data
 ---
 apiVersion: v1
 kind: Service

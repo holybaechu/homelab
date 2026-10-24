@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+settings=$(yq -o=json '.data' "$root/kubernetes/clusters/homelab/settings.yaml")
+node=$(jq -r '.NODE_IP' <<< "$settings")
+flags=(--nodes "$node" --endpoints "$node")
+require_usb=false
+case "${1-}" in
+  --insecure) flags+=(--insecure --talosconfig /dev/null); require_usb=true ;;
+  "") ;;
+  *) echo "Usage: $0 [--insecure] (otherwise uses TALOSCONFIG)" >&2; exit 2 ;;
+esac
+if (( $# > 1 )); then exit 2; fi
+
+talosctl get disks -o json "${flags[@]}" | jq -ers --argjson settings "$settings" --argjson require_usb "$require_usb" '
+  map(.spec) as $disks
+  | [$disks[] | select((.symlinks // []) | index($settings.INSTALL_DISK_ID))] as $targets
+  | [$disks[] | select(any(.symlinks[]?; endswith("_" + $settings.INSTALL_DISK_SERIAL)))] as $serials
+  | [$disks[] | select((.symlinks // []) | index($settings.PROTECTED_USB_ID))] as $usb
+  | if ($targets | length) == 1 and ($serials | length) == 1
+      and $targets[0].transport == "sata" and $targets[0].readonly == false
+      and ($targets[0].cdrom != true)
+      and (($targets[0].symlinks | index($settings.PROTECTED_USB_ID)) == null)
+      and ($usb | length) <= 1 and ($require_usb == false or ($usb | length) == 1)
+      and all($usb[]; .transport == "usb" and .dev_path != $targets[0].dev_path)
+    then "Verified internal \($targets[0].dev_path), serial \($settings.INSTALL_DISK_SERIAL); protected USB \($usb[0].dev_path // "absent")"
+    else error("Disk preflight failed: require one writable internal SATA disk with the exact identity and serial, separate from the protected USB")
+    end
+  '
