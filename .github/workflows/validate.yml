@@ -18,7 +18,6 @@ jobs:
       run:
         shell: bash
     env:
-      TF_DATA_DIR: ${{ runner.temp }}/tofu-providers
       TF_IN_AUTOMATION: "1"
       TF_INPUT: "0"
     steps:
@@ -27,6 +26,8 @@ jobs:
         with:
           install_args: opentofu flux2 helm kustomize kubeconform jq yq ${{ inputs.talos && 'talosctl' || '' }}
       - name: Validate OpenTofu configuration
+        env:
+          TF_DATA_DIR: ${{ runner.temp }}/tofu-providers
         run: |
           export TF_VAR_state_passphrase=$(openssl rand -hex 32)
           printf 'TF_VAR_state_passphrase=%s\n' "$TF_VAR_state_passphrase" >> "$GITHUB_ENV"
