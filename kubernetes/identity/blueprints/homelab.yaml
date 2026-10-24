@@ -27,21 +27,57 @@ entries:
       identifiers:
         name: Default - Authentication flow
       required: true
+  # Rename existing objects in place before reconciling their new names.
+  - model: authentik_core.group
+    conditions:
+      - !Find [authentik_core.group, [name, homelab-admins]]
+    identifiers:
+      pk: !Find [authentik_core.group, [name, homelab-admins]]
+    attrs:
+      name: Headscale Users
+  - model: authentik_core.group
+    conditions:
+      - !Find [authentik_core.group, [name, metube-users]]
+    identifiers:
+      pk: !Find [authentik_core.group, [name, metube-users]]
+    attrs:
+      name: MeTube Users
+  - model: authentik_core.group
+    conditions:
+      - !Find [authentik_core.group, [name, copyparty-users]]
+    identifiers:
+      pk: !Find [authentik_core.group, [name, copyparty-users]]
+    attrs:
+      name: copyparty Users
+  - model: authentik_core.group
+    conditions:
+      - !Find [authentik_core.group, [name, copyparty-admins]]
+    identifiers:
+      pk: !Find [authentik_core.group, [name, copyparty-admins]]
+    attrs:
+      name: copyparty Admins
+  - model: authentik_providers_proxy.proxyprovider
+    conditions:
+      - !Find [authentik_providers_proxy.proxyprovider, [name, Copyparty]]
+    identifiers:
+      pk: !Find [authentik_providers_proxy.proxyprovider, [name, Copyparty]]
+    attrs:
+      name: copyparty
   - model: authentik_core.group
     identifiers:
-      name: homelab-admins
-    id: admins
+      name: Headscale Users
+    id: headscale-users
   - model: authentik_core.group
     identifiers:
-      name: metube-users
+      name: MeTube Users
     id: metube-users
   - model: authentik_core.group
     identifiers:
-      name: copyparty-users
+      name: copyparty Users
     id: copyparty-users
   - model: authentik_core.group
     identifiers:
-      name: copyparty-admins
+      name: copyparty Admins
     id: copyparty-admins
   - model: authentik_core.user
     identifiers:
@@ -49,7 +85,7 @@ entries:
     attrs:
       groups:
         - !Find [authentik_core.group, [is_superuser, true]]
-        - !KeyOf admins
+        - !KeyOf headscale-users
         - !KeyOf metube-users
         - !KeyOf copyparty-users
         - !KeyOf copyparty-admins
@@ -93,7 +129,7 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf headscale-app
-      group: !KeyOf admins
+      group: !KeyOf headscale-users
       order: 0
   - model: authentik_providers_proxy.proxyprovider
     identifiers:
@@ -119,7 +155,7 @@ entries:
       order: 0
   - model: authentik_providers_proxy.proxyprovider
     identifiers:
-      name: Copyparty
+      name: copyparty
     id: copyparty-provider
     attrs:
       mode: forward_single
@@ -131,7 +167,7 @@ entries:
       slug: copyparty
     id: copyparty-app
     attrs:
-      name: Copyparty
+      name: copyparty
       provider: !KeyOf copyparty-provider
       policy_engine_mode: any
       meta_launch_url: https://copyparty.${DOMAIN}
