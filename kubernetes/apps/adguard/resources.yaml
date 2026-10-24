@@ -9,11 +9,18 @@ spec:
     name: onepassword
   target:
     name: adguard-credentials
+    template:
+      engineVersion: v2
+      templateFrom:
+        - configMap:
+            name: adguard-config
+            items:
+              - key: AdGuardHome.yaml
   data:
-    - secretKey: ADGUARD_USERNAME
+    - secretKey: username
       remoteRef:
         key: ${ADGUARD_USERNAME_REF}
-    - secretKey: ADGUARD_PASSWORD_HASH
+    - secretKey: password_hash
       remoteRef:
         key: ${ADGUARD_PASSWORD_HASH_REF}
 ---
@@ -70,20 +77,30 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        - name: render-config
-          image: python:3.15.1-alpine3.23
-          command: [python3, /templates/render.py]
-          envFrom:
-            - secretRef:
-                name: adguard-credentials
+        - name: initialize-config
+          image: docker.io/library/busybox:1.38.0
+          command: [sh, -ec]
+          args:
+            - |
+              umask 077
+              mkdir -p /state/conf /state/work
+              # Keep UI edits while the declared configuration is unchanged.
+              if [ ! -f /state/conf/AdGuardHome.yaml ] || ! cmp -s /desired/AdGuardHome.yaml /state/conf/.declared.yaml; then
+                cp /desired/AdGuardHome.yaml /state/conf/AdGuardHome.tmp
+                chmod 600 /state/conf/AdGuardHome.tmp
+                mv /state/conf/AdGuardHome.tmp /state/conf/AdGuardHome.yaml
+                cp /desired/AdGuardHome.yaml /state/conf/.declared.tmp
+                chmod 600 /state/conf/.declared.tmp
+                mv /state/conf/.declared.tmp /state/conf/.declared.yaml
+              fi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           volumeMounts:
-            - name: templates
-              mountPath: /templates
+            - name: desired
+              mountPath: /desired
               readOnly: true
             - name: state
               mountPath: /state
@@ -137,9 +154,10 @@ spec:
               mountPath: /certs
               readOnly: true
       volumes:
-        - name: templates
-          configMap:
-            name: adguard-config
+        - name: desired
+          secret:
+            secretName: adguard-credentials
+            defaultMode: 0440
         - name: state
           persistentVolumeClaim:
             claimName: adguard-state

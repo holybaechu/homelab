@@ -1,0 +1,219 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: zipline-env
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: onepassword
+  target:
+    name: zipline-env
+    creationPolicy: Owner
+  data:
+    - secretKey: CORE_SECRET
+      remoteRef:
+        key: ${ZIPLINE_CORE_SECRET_REF}
+    - secretKey: OAUTH_OIDC_CLIENT_SECRET
+      remoteRef:
+        key: ${ZIPLINE_OIDC_SECRET_REF}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zipline-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      # Required PVC bookkeeping; local-path grows with writes and enforces no quota.
+      storage: 1Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zipline-uploads
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      # Required PVC bookkeeping; local-path grows with writes and enforces no quota.
+      storage: 1Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zipline
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: zipline
+  template:
+    metadata:
+      labels:
+        app: zipline
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      hostAliases:
+        - ip: ${NODE_IP}
+          hostnames:
+            - auth.${DOMAIN}
+      containers:
+        - name: zipline
+          image: ghcr.io/diced/zipline:4.8.1
+          envFrom:
+            - secretRef:
+                name: zipline-env
+          env:
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: DATABASE_URL
+              value: pglite:///zipline/data/database
+            - name: CORE_HOSTNAME
+              value: 0.0.0.0
+            - name: CORE_PORT
+              value: "3000"
+            - name: CORE_DEFAULT_DOMAIN
+              value: i.${DOMAIN}
+            - name: CORE_RETURN_HTTPS_URLS
+              value: "true"
+            - name: CORE_TRUST_PROXY
+              value: "true"
+            - name: CORE_TRUSTED_PROXIES
+              value: ${NODE_IP}/32
+            - name: CORE_TEMP_DIRECTORY
+              value: /zipline/uploads/.tmp
+            - name: DATASOURCE_TYPE
+              value: local
+            - name: DATASOURCE_LOCAL_DIRECTORY
+              value: /zipline/uploads
+            - name: FEATURES_HEALTHCHECK
+              value: "true"
+            - name: FEATURES_USER_REGISTRATION
+              value: "false"
+            # This enables the provider; LOGIN_ONLY separately disables account creation.
+            - name: FEATURES_OAUTH_REGISTRATION
+              value: "true"
+            - name: INVITES_ENABLED
+              value: "false"
+            - name: OAUTH_LOGIN_ONLY
+              value: "true"
+            - name: OAUTH_BYPASS_LOCAL_LOGIN
+              value: "true"
+            - name: OAUTH_OIDC_CLIENT_ID
+              value: homelab-zipline
+            - name: OAUTH_OIDC_AUTHORIZE_URL
+              value: https://auth.${DOMAIN}/application/o/authorize/
+            - name: OAUTH_OIDC_TOKEN_URL
+              value: https://auth.${DOMAIN}/application/o/token/
+            - name: OAUTH_OIDC_USERINFO_URL
+              value: https://auth.${DOMAIN}/application/o/userinfo/
+            - name: OAUTH_OIDC_REDIRECT_URI
+              value: https://i.${DOMAIN}/api/auth/oauth/oidc
+            - name: FILES_MAX_FILE_SIZE
+              # Zipline has no unlimited sentinel; use its largest safe integer.
+              value: "9007199254740991"
+            - name: FILES_DEFAULT_EXPIRATION
+              value: ""
+            - name: FILES_REMOVE_GPS_METADATA
+              value: "true"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 3000
+          startupProbe:
+            httpGet:
+              path: /api/healthcheck
+              port: http
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/healthcheck
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /zipline/data
+            - name: uploads
+              mountPath: /zipline/uploads
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: zipline-data
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: zipline-uploads
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zipline
+spec:
+  selector:
+    app: zipline
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: zipline
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`i.${DOMAIN}`) && (PathPrefix(`/api/setup`) || PathPrefix(`/api/auth/login`))
+      kind: Rule
+      priority: 200
+      middlewares:
+        - name: private-only
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: zipline
+          port: 3000
+    - match: Host(`i.${DOMAIN}`)
+      kind: Rule
+      priority: 100
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: zipline
+          port: 3000
+  tls: {}

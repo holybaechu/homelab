@@ -7,4 +7,3 @@ configMapGenerator:
   - name: adguard-config
     files:
       - AdGuardHome.yaml=AdGuardHome.yaml.tmpl
-      - render.py
