@@ -1,0 +1,17 @@
+{{- /* Invalid input intentionally fails ESO's missing-key check. */ -}}
+{{- if not (regexMatch `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$` .username) -}}
+{{- .invalid_qbittorrent_username -}}
+{{- end -}}
+{{- if not (regexMatch `^@ByteArray\([A-Za-z0-9+/]{22}==:[A-Za-z0-9+/]{86}==\)$` .password_hash) -}}
+{{- .invalid_qbittorrent_password_hash -}}
+{{- end -}}
+[Preferences]
+WebUI\Address=0.0.0.0
+WebUI\Port=8080
+WebUI\Username={{ .username }}
+WebUI\Password_PBKDF2={{ .password_hash | toJson }}
+WebUI\LocalHostAuth=true
+WebUI\AuthSubnetWhitelistEnabled=false
+WebUI\AlternativeUIEnabled=true
+WebUI\RootFolder=/vuetorrent
+Connection\PortRangeMin=35435

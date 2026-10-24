@@ -7,4 +7,3 @@ configMapGenerator:
   - name: copyparty-config
     files:
       - copyparty.conf
-      - render.py

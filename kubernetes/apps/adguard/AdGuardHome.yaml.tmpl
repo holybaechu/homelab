@@ -1,7 +1,14 @@
+{{- /* Invalid input intentionally fails ESO's missing-key check. */ -}}
+{{- if not (regexMatch `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$` .username) -}}
+{{- .invalid_adguard_username -}}
+{{- end -}}
+{{- if not (regexMatch `^\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$` .password_hash) -}}
+{{- .invalid_adguard_bcrypt_hash -}}
+{{- end -}}
 schema_version: 34
 users:
-- name: @@USERNAME@@
-  password: @@PASSWORD_HASH@@
+- name: {{ .username | toJson }}
+  password: {{ .password_hash | toJson }}
 auth_attempts: 5
 block_auth_min: 15
 http:

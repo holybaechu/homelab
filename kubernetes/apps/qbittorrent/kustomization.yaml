@@ -6,4 +6,6 @@ resources:
 configMapGenerator:
   - name: qbittorrent-config
     files:
-      - render.py
+      - defaults.conf
+      - managed.conf=managed.conf.tmpl
+      - merge.py
