@@ -81,6 +81,9 @@ spec:
           volumeMounts:
             - name: downloads
               mountPath: /downloads
+            - name: opencloud
+              mountPath: /downloads/complete
+              subPath: ${OPENCLOUD_DOWNLOADS_SUBPATH}
             - name: state
               mountPath: /state
             - name: temporary
@@ -89,6 +92,9 @@ spec:
         - name: downloads
           persistentVolumeClaim:
             claimName: downloads
+        - name: opencloud
+          persistentVolumeClaim:
+            claimName: opencloud-data
         - name: state
           persistentVolumeClaim:
             claimName: metube-state
@@ -128,7 +134,7 @@ spec:
       kind: Rule
       priority: 100
       middlewares:
-        - name: clear-copyparty-identity
+        - name: clear-proxy-identity
           namespace: traefik
         - name: authentik
           namespace: traefik

@@ -24,14 +24,7 @@ spec:
       retries: 3
   values:
     installCRDs: true
-    image:
-      tag: v2.13.0
-    webhook:
-      image:
-        tag: v2.13.0
-    certController:
-      image:
-        tag: v2.13.0
+    # Use chart appVersion for the controller, webhook and cert-controller images.
     resources:
       requests:
         cpu: 20m
@@ -113,6 +106,10 @@ spec:
               permanent: true
       websecure:
         port: 443
+        transport:
+          respondingTimeouts:
+            # WebDAV uploads can take longer than the default one minute.
+            readTimeout: 3600s
         forwardedHeaders:
           trustedIPs: []
           insecure: false
@@ -169,25 +166,6 @@ spec:
         memory: 128Mi
       limits:
         memory: 384Mi
-    image:
-      repository: quay.io/jetstack/cert-manager-controller
-      tag: v1.21.2
-    webhook:
-      image:
-        repository: quay.io/jetstack/cert-manager-webhook
-        tag: v1.21.2
-    cainjector:
-      image:
-        repository: quay.io/jetstack/cert-manager-cainjector
-        tag: v1.21.2
-    acmesolver:
-      image:
-        repository: quay.io/jetstack/cert-manager-acmesolver
-        tag: v1.21.2
-    startupapicheck:
-      image:
-        repository: quay.io/jetstack/cert-manager-startupapicheck
-        tag: v1.21.2
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

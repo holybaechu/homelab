@@ -3,8 +3,3 @@ kind: Kustomization
 namespace: homelab
 resources:
   - resources.yaml
-configMapGenerator:
-  - name: copyparty-config
-    files:
-      - copyparty.conf
-      - render.py
