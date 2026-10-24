@@ -1,0 +1,195 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: kutt-env
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: onepassword
+  target:
+    name: kutt-env
+    creationPolicy: Owner
+  data:
+    - secretKey: JWT_SECRET
+      remoteRef:
+        key: ${KUTT_JWT_SECRET_REF}
+    - secretKey: OIDC_CLIENT_SECRET
+      remoteRef:
+        key: ${KUTT_OIDC_SECRET_REF}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kutt-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      # Required PVC bookkeeping; local-path grows with writes and enforces no quota.
+      storage: 1Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kutt
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kutt
+  template:
+    metadata:
+      labels:
+        app: kutt
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      hostAliases:
+        - ip: ${NODE_IP}
+          hostnames:
+            - auth.${DOMAIN}
+      containers:
+        - name: kutt
+          image: docker.io/kutt/kutt:v3.2.6
+          envFrom:
+            - secretRef:
+                name: kutt-env
+          env:
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: HOME
+              value: /tmp
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: SITE_NAME
+              value: Homelab Kutt
+            - name: DEFAULT_DOMAIN
+              value: l.${DOMAIN}
+            - name: DB_CLIENT
+              value: better-sqlite3
+            - name: DB_FILENAME
+              value: /var/lib/kutt/data.sqlite
+            - name: REDIS_ENABLED
+              value: "false"
+            - name: TRUST_PROXY
+              value: "true"
+            - name: DISALLOW_REGISTRATION
+              value: "true"
+            - name: DISALLOW_LOGIN_FORM
+              value: "true"
+            - name: DISALLOW_ANONYMOUS_LINKS
+              value: "true"
+            - name: MAIL_ENABLED
+              value: "false"
+            - name: ENABLE_RATE_LIMIT
+              value: "true"
+            - name: CUSTOM_DOMAIN_USE_HTTPS
+              value: "true"
+            - name: OIDC_ENABLED
+              value: "true"
+            - name: OIDC_ISSUER
+              value: https://auth.${DOMAIN}/application/o/kutt/
+            - name: OIDC_CLIENT_ID
+              value: homelab-kutt
+            - name: OIDC_SCOPE
+              value: openid profile email
+            - name: OIDC_EMAIL_CLAIM
+              value: email
+            - name: OIDC_BUTTON_TEXT
+              value: Sign in with Authentik
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 3000
+          startupProbe:
+            httpGet:
+              path: /api/v2/health
+              port: http
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/v2/health
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kutt
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: kutt-data
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kutt
+spec:
+  selector:
+    app: kutt
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: kutt
+spec:
+  entryPoints: [websecure]
+  routes:
+    # Express routes are case-insensitive, so protect every casing of admin setup.
+    - match: Host(`l.${DOMAIN}`) && PathRegexp(`(?i)^/(create-admin|api(/v2)?/auth/create-admin)(/|$)`)
+      kind: Rule
+      priority: 200
+      middlewares:
+        - name: private-only
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: kutt
+          port: 3000
+    - match: Host(`l.${DOMAIN}`)
+      kind: Rule
+      priority: 100
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: kutt
+          port: 3000
+  tls: {}
