@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: external-secrets
-      version: 2.13.0
+      version: 2.14.0
       sourceRef:
         kind: HelmRepository
         name: external-secrets
@@ -24,14 +24,7 @@ spec:
       retries: 3
   values:
     installCRDs: true
-    image:
-      tag: v2.13.0
-    webhook:
-      image:
-        tag: v2.13.0
-    certController:
-      image:
-        tag: v2.13.0
+    # Use chart appVersion for the controller, webhook and cert-controller images.
     resources:
       requests:
         cpu: 20m
