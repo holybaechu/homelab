@@ -10,3 +10,5 @@ resources:
   - qbittorrent
   - metube
   - cloudflare-ddns
+  - zipline
+  - shlink
