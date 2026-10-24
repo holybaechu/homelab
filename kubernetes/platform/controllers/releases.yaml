@@ -113,6 +113,10 @@ spec:
               permanent: true
       websecure:
         port: 443
+        transport:
+          respondingTimeouts:
+            # WebDAV uploads can take longer than the default one minute.
+            readTimeout: 3600s
         forwardedHeaders:
           trustedIPs: []
           insecure: false

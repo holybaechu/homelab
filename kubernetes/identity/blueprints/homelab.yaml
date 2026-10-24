@@ -43,27 +43,6 @@ entries:
     attrs:
       name: MeTube Users
   - model: authentik_core.group
-    conditions:
-      - !Find [authentik_core.group, [name, copyparty-users]]
-    identifiers:
-      pk: !Find [authentik_core.group, [name, copyparty-users]]
-    attrs:
-      name: copyparty Users
-  - model: authentik_core.group
-    conditions:
-      - !Find [authentik_core.group, [name, copyparty-admins]]
-    identifiers:
-      pk: !Find [authentik_core.group, [name, copyparty-admins]]
-    attrs:
-      name: copyparty Admins
-  - model: authentik_providers_proxy.proxyprovider
-    conditions:
-      - !Find [authentik_providers_proxy.proxyprovider, [name, Copyparty]]
-    identifiers:
-      pk: !Find [authentik_providers_proxy.proxyprovider, [name, Copyparty]]
-    attrs:
-      name: copyparty
-  - model: authentik_core.group
     identifiers:
       name: Headscale Users
     id: headscale-users
@@ -73,12 +52,12 @@ entries:
     id: metube-users
   - model: authentik_core.group
     identifiers:
-      name: copyparty Users
-    id: copyparty-users
+      name: OpenCloud Users
+    id: opencloud-users
   - model: authentik_core.group
     identifiers:
-      name: copyparty Admins
-    id: copyparty-admins
+      name: OpenCloud Admins
+    id: opencloud-admins
   - model: authentik_core.user
     identifiers:
       username: akadmin
@@ -87,8 +66,8 @@ entries:
         - !Find [authentik_core.group, [is_superuser, true]]
         - !KeyOf headscale-users
         - !KeyOf metube-users
-        - !KeyOf copyparty-users
-        - !KeyOf copyparty-admins
+        - !KeyOf opencloud-users
+        - !KeyOf opencloud-admins
   - model: authentik_providers_oauth2.scopemapping
     identifiers:
       name: Homelab groups
@@ -153,33 +132,64 @@ entries:
       target: !KeyOf metube-app
       group: !KeyOf metube-users
       order: 0
-  - model: authentik_providers_proxy.proxyprovider
+  - model: authentik_providers_oauth2.scopemapping
     identifiers:
-      name: copyparty
-    id: copyparty-provider
+      name: OpenCloud roles
+    id: opencloud-roles-scope
     attrs:
-      mode: forward_single
-      external_host: https://copyparty.${DOMAIN}
+      scope_name: opencloud_roles
+      expression: |
+        if ak_is_group_member(request.user, name="OpenCloud Admins"):
+            return {"roles": ["opencloudAdmin"]}
+        if ak_is_group_member(request.user, name="OpenCloud Users"):
+            return {"roles": ["opencloudUser"]}
+        return {"roles": []}
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: OpenCloud
+    id: opencloud-provider
+    attrs:
+      client_id: homelab-opencloud
+      client_type: public
+      sub_mode: user_uuid
+      grant_types:
+        - authorization_code
+        - refresh_token
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      redirect_uris:
+        - matching_mode: strict
+          url: https://opencloud.${DOMAIN}/oidc-callback.html
+        - matching_mode: strict
+          url: https://opencloud.${DOMAIN}/oidc-silent-redirect.html
+        - matching_mode: strict
+          url: https://opencloud.${DOMAIN}/
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+        - !KeyOf groups-scope
+        - !KeyOf opencloud-roles-scope
   - model: authentik_core.application
     identifiers:
-      slug: copyparty
-    id: copyparty-app
+      slug: opencloud
+    id: opencloud-app
     attrs:
-      name: copyparty
-      provider: !KeyOf copyparty-provider
+      name: OpenCloud
+      provider: !KeyOf opencloud-provider
       policy_engine_mode: any
-      meta_launch_url: https://copyparty.${DOMAIN}
+      meta_launch_url: https://opencloud.${DOMAIN}
   - model: authentik_policies.policybinding
     identifiers:
-      target: !KeyOf copyparty-app
-      group: !KeyOf copyparty-users
+      target: !KeyOf opencloud-app
+      group: !KeyOf opencloud-users
       order: 0
   - model: authentik_policies.policybinding
     identifiers:
-      target: !KeyOf copyparty-app
-      group: !KeyOf copyparty-admins
+      target: !KeyOf opencloud-app
+      group: !KeyOf opencloud-admins
       order: 1
   - model: authentik_outposts.outpost
     identifiers:
@@ -187,6 +197,5 @@ entries:
     attrs:
       providers:
         - !KeyOf metube-provider
-        - !KeyOf copyparty-provider
       config:
         authentik_host: https://auth.${DOMAIN}

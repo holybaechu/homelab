@@ -4,6 +4,6 @@ namespace: homelab
 resources:
   - resources.yaml
 configMapGenerator:
-  - name: copyparty-config
+  - name: opencloud-csp
     files:
-      - copyparty.conf
+      - csp.yaml

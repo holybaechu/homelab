@@ -5,7 +5,8 @@ configurations:
 resources:
   - storage
   - adguard
-  - copyparty
+  - opencloud
+  - collabora
   - qbittorrent
   - metube
   - cloudflare-ddns
