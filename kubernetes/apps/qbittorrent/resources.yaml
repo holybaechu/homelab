@@ -82,6 +82,9 @@ spec:
               mountPath: /config
             - name: downloads
               mountPath: /downloads
+            - name: opencloud
+              mountPath: /downloads/complete
+              subPath: ${OPENCLOUD_DOWNLOADS_SUBPATH}
       containers:
         - name: qbittorrent
           image: lscr.io/linuxserver/qbittorrent:5.3.0
@@ -136,8 +139,12 @@ spec:
               mountPath: /config
             - name: downloads
               mountPath: /downloads
-            - name: public
+            - name: opencloud
+              mountPath: /downloads/complete
+              subPath: ${OPENCLOUD_DOWNLOADS_SUBPATH}
+            - name: opencloud
               mountPath: /public
+              subPath: ${OPENCLOUD_PUBLIC_SUBPATH}
       volumes:
         - name: templates
           configMap:
@@ -152,9 +159,9 @@ spec:
         - name: downloads
           persistentVolumeClaim:
             claimName: downloads
-        - name: public
+        - name: opencloud
           persistentVolumeClaim:
-            claimName: copyparty-public
+            claimName: opencloud-data
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shlink
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: shlink
+  template:
+    metadata:
+      labels:
+        app: shlink
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: shlink
+          image: ghcr.io/shlinkio/shlink:5.1.8
+          envFrom:
+            - secretRef:
+                name: shlink-env
+          env:
+            - name: TIMEZONE
+              value: ${TIME_ZONE}
+            - name: DEFAULT_DOMAIN
+              value: l.${DOMAIN}
+            - name: IS_HTTPS_ENABLED
+              value: "true"
+            - name: DEFAULT_BASE_URL_REDIRECT
+              value: https://shlink.${DOMAIN}
+            - name: DB_DRIVER
+              value: postgres
+            - name: DB_HOST
+              value: shlink-postgresql
+            - name: DB_NAME
+              value: shlink
+            - name: DB_USER
+              value: shlink
+            - name: WEB_WORKER_NUM
+              value: "2"
+            - name: TASK_WORKER_NUM
+              value: "1"
+            - name: SKIP_INITIAL_GEOLITE_DOWNLOAD
+              value: "false"
+            - name: CORS_ALLOW_ORIGIN
+              value: https://shlink.${DOMAIN}
+            - name: TRUSTED_PROXIES
+              # Host-networked Traefik reaches pods through the node's CNI gateway.
+              value: ${NODE_IP}/32,10.244.0.1/32
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /rest/health
+              port: http
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /rest/health
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /etc/shlink/data
+            - name: parameters
+              mountPath: /etc/shlink/config/params
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: parameters
+          emptyDir: {}
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shlink
+spec:
+  selector:
+    app: shlink
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: shlink
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`l.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: shlink
+          port: 8080
+  tls: {}

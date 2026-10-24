@@ -43,7 +43,7 @@ oidc:
   - email
   - groups
   allowed_groups:
-  - homelab-admins
+  - Headscale Users
   email_verified_required: false
   pkce:
     enabled: true

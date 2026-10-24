@@ -13,7 +13,7 @@ spec:
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: clear-copyparty-identity
+  name: clear-proxy-identity
   namespace: traefik
 spec:
   headers:
