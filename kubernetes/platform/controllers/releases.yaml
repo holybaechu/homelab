@@ -187,7 +187,7 @@ spec:
     startupapicheck:
       image:
         repository: quay.io/jetstack/cert-manager-startupapicheck
-        tag: v1.21.2
+        tag: v1.21.3
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
