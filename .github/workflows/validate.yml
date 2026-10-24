@@ -22,7 +22,7 @@ jobs:
       TF_INPUT: "0"
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: jdx/mise-action@v5.2.2
+      - uses: jdx/mise-action@v5.2.3
         with:
           install_args: opentofu flux2 helm kustomize kubeconform jq yq ${{ inputs.talos && 'talosctl' || '' }}
       - name: Validate OpenTofu configuration
