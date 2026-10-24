@@ -108,6 +108,11 @@ jobs:
                 | any(.[]; .name == "aliasgroup1" and .value == ("https://wopi." + $domain + ":443"))),
               (resource("IngressRoute"; "opencloud-wopi").spec.routes | length == 1 and all(.[];
                 .match == ("Host(`wopi." + $domain + "`)") and all(.services[]; .port == 9300))),
+              (resource("IngressRoute"; "zipline").spec.routes | length == 2 and
+                any(.[]; .match == ("Host(`i." + $domain + "`) && (PathPrefix(`/api/setup`) || PathPrefix(`/api/auth/login`))")
+                  and .priority > 100 and private) and
+                any(.[]; .match == ("Host(`i." + $domain + "`)") and .priority == 100
+                  and all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
               (resource("Middleware"; "clear-proxy-identity").spec.headers.customRequestHeaders["X-authentik-username"] == ""),
               (resource("Deployment"; "traefik").spec.template.spec
                 | .hostNetwork == true and (.containers[0].args

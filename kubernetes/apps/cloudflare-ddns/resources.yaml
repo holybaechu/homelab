@@ -45,7 +45,7 @@ spec:
                 name: cloudflare-ddns
           env:
             - name: DOMAINS
-              value: dns.${DOMAIN},auth.${DOMAIN},headscale.${DOMAIN},metube.${DOMAIN},opencloud.${DOMAIN},collabora.${DOMAIN},wopi.${DOMAIN}
+              value: dns.${DOMAIN},auth.${DOMAIN},headscale.${DOMAIN},metube.${DOMAIN},opencloud.${DOMAIN},collabora.${DOMAIN},wopi.${DOMAIN},i.${DOMAIN}
             - name: IP6_PROVIDER
               value: none
             - name: PROXIED
