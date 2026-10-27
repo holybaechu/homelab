@@ -126,7 +126,17 @@ jobs:
                 | .hostNetwork == true and (.containers[0].args
                   | any(.[]; startswith("--entryPoints.traefik.address=127.0.0.1:"))
                     and any(.[]; startswith("--entryPoints.metrics.address=127.0.0.1:"))
-                    and all(.[]; contains("forwardedHeaders.insecure") | not)))
+                    and any(.[]; . == "--entryPoints.websecure.address=:443/tcp")
+                    and any(.[]; . == "--entryPoints.websecure.http.tls=true")
+                    and any(.[]; . == "--entryPoints.websecure.http3")
+                    and any(.[]; . == "--entryPoints.websecure.http3.advertisedPort=443")
+                    and all(.[]; contains("forwardedHeaders.insecure") | not))
+                  and (.containers[0].ports
+                    | any(.[]; .name == "websecure" and .containerPort == 443 and .protocol == "TCP")
+                      and any(.[]; .name == "websecure-http3" and .containerPort == 443 and .protocol == "UDP"))),
+              (resource("Service"; "traefik").spec.ports
+                | any(.[]; .port == 443 and .protocol == "TCP" and .targetPort == "websecure")
+                  and any(.[]; .port == 443 and .protocol == "UDP" and .targetPort == "websecure-http3"))
             ] | all
           ' "$RUNNER_TEMP/resources.json"
       - name: Render and validate isolated Talos configuration

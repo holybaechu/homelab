@@ -106,6 +106,10 @@ spec:
               permanent: true
       websecure:
         port: 443
+        # Forward WAN UDP/443 to NODE_IP:443 alongside the existing TCP/443 rule.
+        http3:
+          enabled: true
+          advertisedPort: 443
         transport:
           respondingTimeouts:
             # WebDAV uploads can take longer than the default one minute.
