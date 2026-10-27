@@ -61,7 +61,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: merge-config
-          image: python:3.15.1-alpine3.23
+          image: python:3.15.2-alpine3.23
           command: [python3, /templates/merge.py]
           securityContext:
             runAsUser: 1000
