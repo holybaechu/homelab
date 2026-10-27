@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
 - secrets.yaml
 - gateway.yaml
-- talos-recovery.yaml

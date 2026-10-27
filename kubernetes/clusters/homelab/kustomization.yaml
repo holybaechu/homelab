@@ -6,3 +6,4 @@ resources:
   - onepassword.yaml
   - sources.yaml
   - reconciliation.yaml
+  - talos-recovery.yaml
