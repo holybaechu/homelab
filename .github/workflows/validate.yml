@@ -96,6 +96,8 @@ jobs:
                 | any(.[]; .mountPath == "/downloads/complete" and .name == "opencloud")),
               (resource("Middleware"; "private-only").spec.ipAllowList.sourceRange
                 | length > 0 and all(.[]; . == $lan or . == "100.64.0.0/10" or . == "fd7a:115c:a1e0::/48")),
+              (resource("Deployment"; "headscale-gateway").spec.template.spec.containers[0].env
+                | any(.[]; .name == "TS_DEBUG_MTU" and .value == "1350")),
               (resource("IngressRoute"; "adguard").spec.routes | length > 0 and all(.[];
                 if (.match | contains("Host(`dns." + $domain + "`)")) then
                   (.match | contains("Path(`/dns-query`)") and contains("Method(`GET`)") and contains("Method(`POST`)") and (contains("PathPrefix") | not))

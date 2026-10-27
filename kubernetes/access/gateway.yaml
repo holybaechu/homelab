@@ -59,6 +59,9 @@ spec:
           value: 'false'
         - name: TS_DEBUG_FIREWALL_MODE
           value: nftables
+        # Traefik's QUIC handshakes exceed the default 1280-byte tunnel MTU.
+        - name: TS_DEBUG_MTU
+          value: '1350'
         - name: TS_ACCEPT_DNS
           value: 'false'
         - name: TS_HOSTNAME
