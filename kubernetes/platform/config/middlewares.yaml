@@ -54,3 +54,6 @@ spec:
   headers:
     contentTypeNosniff: true
     referrerPolicy: same-origin
+    customResponseHeaders:
+      # Clear cached QUIC upgrades so browsers prefer HTTP/2 on remote paths.
+      Alt-Svc: clear

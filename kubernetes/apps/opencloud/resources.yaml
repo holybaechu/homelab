@@ -219,16 +219,6 @@ spec:
       targetPort: wopi
 ---
 apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: opencloud-http2
-spec:
-  headers:
-    customResponseHeaders:
-      # Clear cached HTTP/3 advertisements so bulk downloads use TCP with host BBR.
-      Alt-Svc: clear
----
-apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: opencloud
@@ -240,7 +230,6 @@ spec:
       middlewares:
         - name: secure-headers
           namespace: traefik
-        - name: opencloud-http2
       services:
         - name: opencloud
           port: 9200

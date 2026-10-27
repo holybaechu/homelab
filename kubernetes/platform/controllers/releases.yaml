@@ -120,6 +120,8 @@ spec:
         http:
           tls:
             enabled: true
+          middlewares:
+          - traefik-secure-headers@kubernetescrd
           encodedCharacters:
             allowEncodedSlash: true
             allowEncodedPercent: true
