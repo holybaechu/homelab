@@ -85,6 +85,16 @@ locals {
     }),
     yamlencode({
       apiVersion = "v1alpha1"
+      kind       = "EthernetConfig"
+      # EthernetConfig requires the physical name, not the Talos link alias.
+      name = local.settings.NODE_INTERFACE
+      features = {
+        "rx-udp-gro-forwarding" = true
+        "rx-gro-list"           = false
+      }
+    }),
+    yamlencode({
+      apiVersion = "v1alpha1"
       kind       = "LinkConfig"
       name       = "lan"
       addresses  = [{ address = local.settings.NODE_CIDR }]
@@ -109,8 +119,10 @@ locals {
       apiVersion = "v1alpha1"
       kind       = "SysctlConfig"
       params = {
-        "net.ipv4.ip_forward"          = "1"
-        "net.ipv6.conf.all.forwarding" = "1"
+        # Improve downloads over remote paths with variable latency or loss.
+        "net.ipv4.tcp_congestion_control" = "bbr"
+        "net.ipv4.ip_forward"             = "1"
+        "net.ipv6.conf.all.forwarding"    = "1"
       }
     }),
     yamlencode({
@@ -205,9 +217,10 @@ data "talos_machine_configuration" "node" {
     precondition {
       condition = (
         local.settings.DATA_PATH == "/var/mnt/homelab" &&
+        can(regex("^[A-Za-z0-9_.-]{1,15}$", local.settings.NODE_INTERFACE)) &&
         can(regex("^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$", local.settings.NODE_MAC))
       )
-      error_message = "Keep the Talos homelab volume path and specify an exact node MAC address."
+      error_message = "Keep the Talos homelab volume path and specify the physical interface name and exact node MAC address."
     }
   }
 }

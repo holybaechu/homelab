@@ -163,4 +163,10 @@ jobs:
           jq -e 'has("encrypted_data")' "$fixture/render.tfstate" > /dev/null
           tofu -chdir="$module" output -raw machine_configuration > "$fixture/machine.yaml"
           talosctl validate --config "$fixture/machine.yaml" --mode metal --strict
+          yq ea -N -o=json -I=0 '.' "$fixture/machine.yaml" | jq -se \
+            --arg interface "$(yq -r '.data.NODE_INTERFACE' kubernetes/clusters/homelab/settings.yaml)" '
+            any(.[]; .kind == "SysctlConfig" and .params["net.ipv4.tcp_congestion_control"] == "bbr") and
+            any(.[]; .kind == "EthernetConfig" and .name == $interface and
+              .features["rx-udp-gro-forwarding"] == true and .features["rx-gro-list"] == false)
+          ' > /dev/null
       - run: git diff --check
