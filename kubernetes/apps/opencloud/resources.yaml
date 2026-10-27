@@ -39,6 +39,11 @@ spec:
         app: opencloud
     spec:
       automountServiceAccountToken: false
+      # Keep internal HTTPS downloads off the router's NAT loopback path.
+      hostAliases:
+        - ip: ${NODE_IP}
+          hostnames:
+            - opencloud.${DOMAIN}
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
