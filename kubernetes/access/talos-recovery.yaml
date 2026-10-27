@@ -36,7 +36,7 @@ data:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: talos-access-recovery
+  name: talos-access-recovery-export
   namespace: networking
   labels:
     app: talos-access-recovery
@@ -64,26 +64,40 @@ spec:
       image: alpine:3.23@sha256:ff7f0c727dd796aa36787bfcd9a64bf35a6ce72a73451b3359fde849b6703d63
       command:
         - /bin/sh
-        - -ec
+        - -c
         - |
-          umask 077
-          apk add --no-cache openssl >/dev/null
           mkdir -p /mnt/state
-          trap 'umount /mnt/state 2>/dev/null || true' EXIT
-          if [ -s /host-state/config.yaml ]; then
-            ln -s /host-state/config.yaml /tmp/source-config.yaml
+          printf "Starting recovery\n" > /encrypted/status.txt
+          if /bin/sh -ec '
+            umask 077
+            printf "Installing encryption tool\n" > /encrypted/status.txt
+            apk add --no-cache openssl >/dev/null 2>&1
+            trap "umount /mnt/state 2>/dev/null || true" EXIT
+            printf "Reading saved configuration\n" > /encrypted/status.txt
+            if [ -s /host-state/config.yaml ]; then
+              ln -s /host-state/config.yaml /tmp/source-config.yaml
+            elif [ -b /dev/talos-state ]; then
+              mount -t xfs -o ro,norecovery,nouuid /dev/talos-state /mnt/state
+              ln -s /mnt/state/config.yaml /tmp/source-config.yaml
+            else
+              exit 1
+            fi
+            test -s /tmp/source-config.yaml
+            printf "Encrypting configuration\n" > /encrypted/status.txt
+            openssl cms -encrypt -binary -aes-256-gcm \
+              -in /tmp/source-config.yaml -outform DER \
+              -out /encrypted/config.p7m.partial -recip /public/recovery.crt \
+              -keyopt rsa_padding_mode:oaep -keyopt rsa_oaep_md:sha256
+            test -s /encrypted/config.p7m.partial
+            chmod 0444 /encrypted/config.p7m.partial
+            mv /encrypted/config.p7m.partial /encrypted/config.p7m
+          '; then
+            printf "Encrypted export ready\n" > /encrypted/status.txt
           else
-            mount -t xfs -o ro,norecovery,nouuid /dev/talos-state /mnt/state
-            ln -s /mnt/state/config.yaml /tmp/source-config.yaml
+            printf "Recovery failed; status.txt identifies the last attempted phase.\n" > /encrypted/failure.txt
+            chmod 0444 /encrypted/failure.txt
           fi
-          test -s /tmp/source-config.yaml
-          openssl cms -encrypt -binary -aes-256-gcm \
-            -in /tmp/source-config.yaml -outform DER \
-            -out /encrypted/config.p7m -recip /public/recovery.crt \
-            -keyopt rsa_padding_mode:oaep -keyopt rsa_oaep_md:sha256
-          test -s /encrypted/config.p7m
-          chmod 0444 /encrypted/config.p7m
-          echo 'Encrypted recovery export is ready.'
+          chmod 0444 /encrypted/status.txt
       securityContext:
         privileged: true
         runAsUser: 0
@@ -121,7 +135,7 @@ spec:
           drop: ["ALL"]
       readinessProbe:
         httpGet:
-          path: /config.p7m
+          path: /status.txt
           port: http
         periodSeconds: 5
       resources:
@@ -167,3 +181,21 @@ spec:
       port: 8080
       targetPort: http
       nodePort: 30443
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: talos-access-recovery
+  namespace: networking
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`talos-recovery.hchu.me`)
+      kind: Rule
+      middlewares:
+        - name: private-only
+          namespace: traefik
+      services:
+        - name: talos-access-recovery
+          port: 8080
+  tls: {}
