@@ -6,7 +6,7 @@ metadata:
 data:
   CLUSTER_NAME: homelab
   # renovate: datasource=github-releases depName=siderolabs/talos
-  TALOS_VERSION: v1.14.4
+  TALOS_VERSION: v1.14.5
   # renovate: datasource=github-releases depName=kubernetes/kubernetes
   KUBERNETES_VERSION: v1.37.1
   NODE_IP: 192.168.0.2
