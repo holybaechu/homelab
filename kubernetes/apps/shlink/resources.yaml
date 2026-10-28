@@ -37,8 +37,6 @@ spec:
               value: l.${DOMAIN}
             - name: IS_HTTPS_ENABLED
               value: "true"
-            - name: DEFAULT_BASE_URL_REDIRECT
-              value: https://shlink.${DOMAIN}
             - name: DB_DRIVER
               value: postgres
             - name: DB_HOST
@@ -54,7 +52,7 @@ spec:
             - name: SKIP_INITIAL_GEOLITE_DOWNLOAD
               value: "false"
             - name: CORS_ALLOW_ORIGIN
-              value: https://shlink.${DOMAIN}
+              value: https://l.${DOMAIN}
             - name: TRUSTED_PROXIES
               # Host-networked Traefik reaches pods through the node's CNI gateway.
               value: ${NODE_IP}/32,10.244.0.1/32
@@ -122,6 +120,8 @@ spec:
   routes:
     - match: Host(`l.${DOMAIN}`)
       kind: Rule
+      # The protected dashboard and Authentik callback routes take precedence.
+      priority: 100
       middlewares:
         - name: secure-headers
           namespace: traefik

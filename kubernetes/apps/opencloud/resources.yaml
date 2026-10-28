@@ -43,7 +43,7 @@ spec:
       hostAliases:
         - ip: ${NODE_IP}
           hostnames:
-            - opencloud.${DOMAIN}
+            - cloud.${DOMAIN}
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
@@ -80,7 +80,7 @@ spec:
             - name: TZ
               value: ${TIME_ZONE}
             - name: OC_URL
-              value: https://opencloud.${DOMAIN}
+              value: https://cloud.${DOMAIN}
             - name: OC_CONFIG_DIR
               value: /etc/opencloud
             - name: OC_BASE_DATA_PATH
@@ -110,9 +110,9 @@ spec:
             - name: COLLABORATION_APP_PRODUCT
               value: Collabora
             - name: COLLABORATION_APP_ADDR
-              value: https://collabora.${DOMAIN}
+              value: https://office.${DOMAIN}
             - name: COLLABORATION_APP_ICON
-              value: https://collabora.${DOMAIN}/favicon.ico
+              value: https://office.${DOMAIN}/favicon.ico
             - name: FRONTEND_APP_HANDLER_SECURE_VIEW_APP_ADDR
               value: eu.opencloud.api.collaboration
             - name: OC_OIDC_ISSUER
@@ -230,7 +230,7 @@ metadata:
 spec:
   entryPoints: [websecure]
   routes:
-    - match: Host(`opencloud.${DOMAIN}`)
+    - match: Host(`cloud.${DOMAIN}`)
       kind: Rule
       middlewares:
         - name: secure-headers

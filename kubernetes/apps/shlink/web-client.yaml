@@ -76,30 +76,53 @@ spec:
       targetPort: http
 ---
 apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: shlink-no-service-worker
+spec:
+  headers:
+    # A root-scoped dashboard service worker would intercept public short links.
+    contentSecurityPolicy: "worker-src 'none'"
+---
+apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: shlink-web-client
 spec:
   entryPoints: [websecure]
   routes:
-    - match: Host(`shlink.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io/`)
+    - match: Host(`l.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io/`)
       kind: Rule
       priority: 300
       middlewares:
+        - name: tailnet-only
+          namespace: traefik
         - name: secure-headers
           namespace: traefik
       services:
         - name: authentik-server
           namespace: identity
           port: http
-    - match: Host(`shlink.${DOMAIN}`)
+    # Reserve the stock web client's routes and assets; all other paths go to Shlink.
+    # Routes: https://github.com/shlinkio/shlink-web-client/blob/v4.8.1/src/app/App.tsx
+    - match: >-
+        Host(`l.${DOMAIN}`) && (Path(`/`) || Path(`/index.html`) || Path(`/manage-servers`) ||
+        Path(`/settings`) || PathPrefix(`/settings/`) ||
+        Path(`/server`) || PathPrefix(`/server/`) ||
+        Path(`/servers.json`) || PathPrefix(`/conf.d/`) ||
+        PathPrefix(`/assets/`) || PathPrefix(`/icons/`) ||
+        Path(`/manifest.json`) || Path(`/service-worker.js`) ||
+        PathRegexp(`^/favicon\.(ico|svg|png|gif)$`))
       kind: Rule
-      priority: 100
+      priority: 200
       middlewares:
+        - name: tailnet-only
+          namespace: traefik
         - name: clear-proxy-identity
           namespace: traefik
         - name: authentik
           namespace: traefik
+        - name: shlink-no-service-worker
         - name: secure-headers
           namespace: traefik
       services:

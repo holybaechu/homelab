@@ -197,6 +197,7 @@ spec:
   routes:
     - match: Host(`dns.${DOMAIN}`) && Path(`/dns-query`) && (Method(`GET`) || Method(`POST`))
       kind: Rule
+      priority: 200
       middlewares:
         - name: dns-client-ip
         - name: secure-headers
@@ -204,10 +205,11 @@ spec:
       services:
         - name: adguard
           port: 3000
-    - match: Host(`adguard.${DOMAIN}`)
+    - match: Host(`dns.${DOMAIN}`)
       kind: Rule
+      priority: 100
       middlewares:
-        - name: private-only
+        - name: tailnet-only
           namespace: traefik
         - name: secure-headers
           namespace: traefik

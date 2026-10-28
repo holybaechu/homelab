@@ -64,7 +64,8 @@ locals {
     { name = "dns-udp", ports = [53], protocol = "udp", sources = local.pod_sources },
     { name = "talos-api", ports = [50000], protocol = "tcp", sources = local.private_sources },
     { name = "kubernetes-api", ports = [6443], protocol = "tcp", sources = local.pod_sources },
-    { name = "adguard-http", ports = [3000], protocol = "tcp", sources = local.pod_sources },
+    # Only the node's reverse proxy and cluster pods may reach the HTTP backend directly.
+    { name = "adguard-http", ports = [3000], protocol = "tcp", sources = [{ subnet = "${local.settings.NODE_IP}/32" }, { subnet = local.settings.POD_CIDR }] },
     { name = "kubelet", ports = [10250], protocol = "tcp", sources = local.pod_sources },
   ]
   config_patches = concat([

@@ -39,7 +39,7 @@ spec:
       hostAliases:
       - ip: ${NODE_IP}
         hostnames:
-        - headscale.${DOMAIN}
+        - vpn.${DOMAIN}
       containers:
       - name: tailscale
         image: ghcr.io/tailscale/tailscale:v1.104.2
@@ -69,7 +69,7 @@ spec:
         - name: TS_ROUTES
           value: ${LAN_CIDR}
         - name: TS_EXTRA_ARGS
-          value: --login-server=https://headscale.${DOMAIN} --advertise-exit-node --accept-routes=false
+          value: --login-server=https://vpn.${DOMAIN} --advertise-exit-node --accept-routes=false
         - name: TS_TAILSCALED_EXTRA_ARGS
           value: --port=41641
         - name: TS_ENABLE_HEALTH_CHECK

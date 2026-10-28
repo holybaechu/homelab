@@ -203,7 +203,7 @@ metadata:
 spec:
   entryPoints: [websecure]
   routes:
-    - match: Host(`qbt.${DOMAIN}`)
+    - match: Host(`torrents.${DOMAIN}`)
       kind: Rule
       middlewares:
         - name: private-only

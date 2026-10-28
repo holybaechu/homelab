@@ -27,7 +27,7 @@ spec:
   - websecure
   routes:
   - kind: Rule
-    match: Host(`headscale.${DOMAIN}`)
+    match: Host(`vpn.${DOMAIN}`)
     middlewares:
     - name: secure-headers
       namespace: traefik

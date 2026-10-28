@@ -4,8 +4,8 @@ directives:
     - "'self'"
     - "blob:"
     - "https://auth.${DOMAIN}/"
-    - "https://collabora.${DOMAIN}/"
-    - "wss://collabora.${DOMAIN}/"
+    - "https://office.${DOMAIN}/"
+    - "wss://office.${DOMAIN}/"
     - "https://raw.githubusercontent.com/opencloud-eu/awesome-apps/"
     - "https://update.opencloud.eu/"
   default-src: ["'none'"]
@@ -16,13 +16,13 @@ directives:
     - "blob:"
     - "https://auth.${DOMAIN}/"
     - "https://embed.diagrams.net/"
-    - "https://collabora.${DOMAIN}/"
+    - "https://office.${DOMAIN}/"
   img-src:
     - "'self'"
     - "data:"
     - "blob:"
     - "https://raw.githubusercontent.com/opencloud-eu/awesome-apps/"
-    - "https://collabora.${DOMAIN}/"
+    - "https://office.${DOMAIN}/"
   manifest-src: ["'self'"]
   media-src: ["'self'"]
   object-src: ["'self'", "blob:"]

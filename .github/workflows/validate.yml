@@ -74,11 +74,13 @@ jobs:
       - name: Check data and public access safeguards
         run: |
           jq -e --arg domain "$(yq -r '.data.DOMAIN' kubernetes/clusters/homelab/settings.yaml)" \
-            --arg lan "$(yq -r '.data.LAN_CIDR' kubernetes/clusters/homelab/settings.yaml)" '
+            --arg lan "$(yq -r '.data.LAN_CIDR' kubernetes/clusters/homelab/settings.yaml)" \
+            --arg noWorker "worker-src 'none'" '
             def resource($kind; $name):
               [.[] | select(.kind == $kind and .metadata.name == $name)]
               | if length == 1 then .[0] else error("Missing or ambiguous " + $kind + "/" + $name) end;
             def private: any(.middlewares[]?; .name == "private-only" and .namespace == "traefik");
+            def tailnet: any(.middlewares[]?; .name == "tailnet-only" and .namespace == "traefik");
             [
               (resource("StorageClass"; "local-path").reclaimPolicy == "Retain"),
               (all(.[] | select(.kind == "PersistentVolumeClaim"); .spec.storageClassName == "local-path")),
@@ -96,15 +98,19 @@ jobs:
                 | any(.[]; .mountPath == "/downloads/complete" and .name == "opencloud")),
               (resource("Middleware"; "private-only").spec.ipAllowList.sourceRange
                 | length > 0 and all(.[]; . == $lan or . == "100.64.0.0/10" or . == "fd7a:115c:a1e0::/48")),
+              (resource("Middleware"; "tailnet-only").spec.ipAllowList.sourceRange
+                | sort == (["100.64.0.0/10", "fd7a:115c:a1e0::/48"] | sort)),
               (resource("Deployment"; "headscale-gateway").spec.template.spec.containers[0].env
                 | any(.[]; .name == "TS_DEBUG_MTU" and .value == "1350")),
-              (resource("IngressRoute"; "adguard").spec.routes | length > 0 and all(.[];
-                if (.match | contains("Host(`dns." + $domain + "`)")) then
-                  (.match | contains("Path(`/dns-query`)") and contains("Method(`GET`)") and contains("Method(`POST`)") and (contains("PathPrefix") | not))
-                else private end)),
-              (resource("IngressRoute"; "qbittorrent").spec.routes | length > 0 and all(.[]; private)),
+              (resource("IngressRoute"; "adguard").spec.routes | length == 2 and
+                any(.[]; .match == ("Host(`dns." + $domain + "`) && Path(`/dns-query`) && (Method(`GET`) || Method(`POST`))")
+                  and .priority == 200 and (private | not) and (tailnet | not)
+                  and all(.middlewares[]; .name != "authentik")) and
+                any(.[]; .match == ("Host(`dns." + $domain + "`)") and .priority == 100 and tailnet)),
+              (resource("IngressRoute"; "qbittorrent").spec.routes | length > 0 and all(.[];
+                .match == ("Host(`torrents." + $domain + "`)") and private)),
               (resource("IngressRoute"; "opencloud").spec.routes | length == 1 and all(.[];
-                .match == ("Host(`opencloud." + $domain + "`)") and
+                .match == ("Host(`cloud." + $domain + "`)") and
                 all(.middlewares[]; .name != "authentik"))),
               (resource("Deployment"; "collabora").spec.template.spec.containers[0].env
                 | any(.[]; .name == "aliasgroup1" and .value == ("https://wopi." + $domain + ":443"))),
@@ -116,13 +122,23 @@ jobs:
                 any(.[]; .match == ("Host(`i." + $domain + "`)") and .priority == 100
                   and all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
               (resource("IngressRoute"; "shlink").spec.routes | length == 1 and all(.[];
-                .match == ("Host(`l." + $domain + "`)") and
-                all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
+                .match == ("Host(`l." + $domain + "`)") and .priority == 100 and
+                all(.middlewares[]; .name != "authentik" and .name != "private-only" and .name != "tailnet-only"))),
+              (resource("Deployment"; "shlink").spec.template.spec.containers[0].env
+                | all(.[]; .name != "DEFAULT_BASE_URL_REDIRECT")
+                  and any(.[]; .name == "CORS_ALLOW_ORIGIN" and .value == ("https://l." + $domain))),
               (resource("IngressRoute"; "shlink-web-client").spec.routes | length == 2 and all(.[];
-                if (.match | contains("PathPrefix(`/outpost.goauthentik.io/`)")) then
-                  all(.services[]; .name == "authentik-server" and .namespace == "identity")
-                else .match == ("Host(`shlink." + $domain + "`)") and
-                  any(.middlewares[]; .name == "authentik" and .namespace == "traefik") end)),
+                tailnet and if (.match | contains("PathPrefix(`/outpost.goauthentik.io/`)")) then
+                  .match == ("Host(`l." + $domain + "`) && PathPrefix(`/outpost.goauthentik.io/`)")
+                  and .priority == 300
+                  and all(.services[]; .name == "authentik-server" and .namespace == "identity")
+                else .priority == 200 and
+                  (.match | contains("Host(`l." + $domain + "`)") and contains("Path(`/`)")
+                    and contains("Path(`/servers.json`)") and contains("PathPrefix(`/conf.d/`)")
+                    and contains("PathPrefix(`/server/`)") and contains("Path(`/settings`)")) and
+                  any(.middlewares[]; .name == "authentik" and .namespace == "traefik") and
+                  any(.middlewares[]; .name == "shlink-no-service-worker") end)),
+              (resource("Middleware"; "shlink-no-service-worker").spec.headers.contentSecurityPolicy == $noWorker),
               (resource("Middleware"; "clear-proxy-identity").spec.headers.customRequestHeaders["X-authentik-username"] == ""),
               (resource("Deployment"; "traefik").spec.template.spec
                 | .hostNetwork == true and (.containers[0].args
@@ -164,9 +180,14 @@ jobs:
           tofu -chdir="$module" output -raw machine_configuration > "$fixture/machine.yaml"
           talosctl validate --config "$fixture/machine.yaml" --mode metal --strict
           yq ea -N -o=json -I=0 '.' "$fixture/machine.yaml" | jq -se \
-            --arg interface "$(yq -r '.data.NODE_INTERFACE' kubernetes/clusters/homelab/settings.yaml)" '
+            --arg interface "$(yq -r '.data.NODE_INTERFACE' kubernetes/clusters/homelab/settings.yaml)" \
+            --arg node "$(yq -r '.data.NODE_IP' kubernetes/clusters/homelab/settings.yaml)/32" \
+            --arg pods "$(yq -r '.data.POD_CIDR' kubernetes/clusters/homelab/settings.yaml)" '
             any(.[]; .kind == "SysctlConfig" and .params["net.ipv4.tcp_congestion_control"] == "bbr") and
             any(.[]; .kind == "EthernetConfig" and .name == $interface and
-              .features["rx-udp-gro-forwarding"] == true and .features["rx-gro-list"] == false)
+              .features["rx-udp-gro-forwarding"] == true and .features["rx-gro-list"] == false) and
+            any(.[]; .kind == "NetworkRuleConfig" and .name == "adguard-http" and
+              .portSelector.ports == [3000] and .portSelector.protocol == "tcp" and
+              ([.ingress[].subnet] | sort) == ([$node, $pods] | sort))
           ' > /dev/null
       - run: git diff --check

@@ -63,7 +63,7 @@ spec:
             - name: aliasgroup1
               value: https://wopi.${DOMAIN}:443
             - name: server_name
-              value: collabora.${DOMAIN}
+              value: office.${DOMAIN}
             - name: DONT_GEN_SSL_CERT
               value: "true"
             - name: extra_params
@@ -72,7 +72,7 @@ spec:
                 --o:ssl.termination=true
                 --o:ssl.ssl_verification=true
                 --o:welcome.enable=false
-                --o:net.frame_ancestors=https://opencloud.${DOMAIN}
+                --o:net.frame_ancestors=https://cloud.${DOMAIN}
                 --o:net.lok_allow.host[14]=wopi.${DOMAIN}
                 --o:admin_console.enable=false
           # Collabora uses these capabilities and unconfined profiles to isolate
@@ -138,7 +138,7 @@ metadata:
 spec:
   entryPoints: [websecure]
   routes:
-    - match: Host(`collabora.${DOMAIN}`) && (PathPrefix(`/browser/`) || PathPrefix(`/cool/`) || PathPrefix(`/hosting/`) || Path(`/favicon.ico`))
+    - match: Host(`office.${DOMAIN}`) && (PathPrefix(`/browser/`) || PathPrefix(`/cool/`) || PathPrefix(`/hosting/`) || Path(`/favicon.ico`))
       kind: Rule
       middlewares:
         - name: secure-headers
