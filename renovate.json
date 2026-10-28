@@ -18,6 +18,11 @@
   },
   "packageRules": [
     {
+      "description": "Keep the Immich server and machine-learning service on the same release",
+      "matchPackageNames": ["ghcr.io/immich-app/immich-server", "ghcr.io/immich-app/immich-machine-learning"],
+      "groupName": "Immich"
+    },
+    {
       "description": "Track the OpenTofu version constraint with the installed OpenTofu toolchain",
       "matchManagers": ["terraform"],
       "matchDepTypes": ["required_version"],
