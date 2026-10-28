@@ -27,45 +27,19 @@ entries:
       identifiers:
         name: Default - Authentication flow
       required: true
-  # Rename existing objects in place before reconciling their new names.
   - model: authentik_core.group
-    conditions:
-      - !Find [authentik_core.group, [name, homelab-admins]]
     identifiers:
-      pk: !Find [authentik_core.group, [name, homelab-admins]]
+      name: Personal
+    id: personal
     attrs:
-      name: Headscale Users
-  - model: authentik_core.group
-    conditions:
-      - !Find [authentik_core.group, [name, metube-users]]
+      is_superuser: false
+  # Resolve the existing account by primary key; do not create a replacement user.
+  - model: authentik_core.user
     identifiers:
-      pk: !Find [authentik_core.group, [name, metube-users]]
+      pk: !Find [authentik_core.user, [username, holybaechu]]
     attrs:
-      name: MeTube Users
-  - model: authentik_core.group
-    identifiers:
-      name: Headscale Users
-    id: headscale-users
-  - model: authentik_core.group
-    identifiers:
-      name: MeTube Users
-    id: metube-users
-  - model: authentik_core.group
-    identifiers:
-      name: OpenCloud Users
-    id: opencloud-users
-  - model: authentik_core.group
-    identifiers:
-      name: OpenCloud Admins
-    id: opencloud-admins
-  - model: authentik_core.group
-    identifiers:
-      name: Zipline Users
-    id: zipline-users
-  - model: authentik_core.group
-    identifiers:
-      name: Shlink Users
-    id: shlink-users
+      groups:
+        - !KeyOf personal
   - model: authentik_core.user
     identifiers:
       username: akadmin
@@ -127,8 +101,11 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf headscale-user-entitlement
-      group: !KeyOf headscale-users
       order: 0
+    attrs:
+      group: !KeyOf personal
+      policy: null
+      user: null
   # Match application/order to replace the existing group binding in place.
   - model: authentik_policies.policybinding
     identifiers:
@@ -163,8 +140,11 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf metube-user-entitlement
-      group: !KeyOf metube-users
       order: 0
+    attrs:
+      group: !KeyOf personal
+      policy: null
+      user: null
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf metube-app
@@ -231,8 +211,11 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf opencloud-user-entitlement
-      group: !KeyOf opencloud-users
       order: 0
+    attrs:
+      group: !KeyOf personal
+      policy: null
+      user: null
   - model: authentik_core.applicationentitlement
     identifiers:
       app: !KeyOf opencloud-app
@@ -241,8 +224,11 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf opencloud-admin-entitlement
-      group: !KeyOf opencloud-admins
       order: 0
+    attrs:
+      group: !KeyOf personal
+      policy: null
+      user: null
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf opencloud-app
@@ -255,7 +241,6 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf opencloud-app
-      group: !KeyOf opencloud-admins
       order: 1
     state: absent
   - model: authentik_providers_oauth2.oauth2provider
@@ -297,8 +282,11 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf zipline-user-entitlement
-      group: !KeyOf zipline-users
       order: 0
+    attrs:
+      group: !KeyOf personal
+      policy: null
+      user: null
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf zipline-app
@@ -340,8 +328,11 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf shlink-user-entitlement
-      group: !KeyOf shlink-users
       order: 0
+    attrs:
+      group: !KeyOf personal
+      policy: null
+      user: null
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf shlink-app
@@ -359,3 +350,37 @@ entries:
         - !KeyOf shlink-provider
       config:
         authentik_host: https://auth.${DOMAIN}
+  # Remove superseded service groups after their entitlement bindings are moved.
+  # Keep authentik's built-in administrator group for akadmin.
+  - model: authentik_core.group
+    identifiers:
+      name: Headscale Users
+    state: absent
+  - model: authentik_core.group
+    identifiers:
+      name: MeTube Users
+    state: absent
+  - model: authentik_core.group
+    identifiers:
+      name: OpenCloud Users
+    state: absent
+  - model: authentik_core.group
+    identifiers:
+      name: OpenCloud Admins
+    state: absent
+  - model: authentik_core.group
+    identifiers:
+      name: Zipline Users
+    state: absent
+  - model: authentik_core.group
+    identifiers:
+      name: Shlink Users
+    state: absent
+  - model: authentik_core.group
+    identifiers:
+      name: homelab-admins
+    state: absent
+  - model: authentik_core.group
+    identifiers:
+      name: metube-users
+    state: absent
