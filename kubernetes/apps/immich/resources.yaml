@@ -1,0 +1,199 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: immich
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: onepassword
+  target:
+    name: immich
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        DB_PASSWORD: "{{ .database_password }}"
+        immich.json: |
+          {
+            "backup": {"database": {"enabled": false}},
+            "machineLearning": {
+              "enabled": true,
+              "urls": ["http://immich-machine-learning:3003"]
+            },
+            "oauth": {
+              "enabled": true,
+              "autoLaunch": true,
+              "autoRegister": true,
+              "buttonText": "Authentik",
+              "issuerUrl": "https://auth.${DOMAIN}/application/o/immich/",
+              "clientId": "homelab-immich",
+              "clientSecret": {{ .oidc_secret | toJson }},
+              "scope": "openid profile email immich_roles"
+            },
+            "passwordLogin": {"enabled": false},
+            "server": {
+              "externalDomain": "https://photos.${DOMAIN}",
+              "publicUsers": false
+            }
+          }
+  data:
+    - secretKey: database_password
+      remoteRef:
+        key: ${IMMICH_DATABASE_PASSWORD_REF}
+    - secretKey: oidc_secret
+      remoteRef:
+        key: ${IMMICH_OIDC_SECRET_REF}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      # Required PVC bookkeeping; local-path grows with writes and enforces no quota.
+      storage: 1Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: immich
+  template:
+    metadata:
+      labels:
+        app: immich
+    spec:
+      automountServiceAccountToken: false
+      hostAliases:
+        - ip: ${NODE_IP}
+          hostnames:
+            - auth.${DOMAIN}
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: immich
+          image: ghcr.io/immich-app/immich-server:v3.3.5
+          env:
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: IMMICH_CONFIG_FILE
+              value: /config/immich.json
+            # The owner becomes the first admin through Authentik, not public signup.
+            - name: IMMICH_ALLOW_SETUP
+              value: "false"
+            - name: IMMICH_TRUSTED_PROXIES
+              value: ${NODE_IP}/32
+            - name: CPU_CORES
+              value: "4"
+            - name: DB_HOSTNAME
+              value: immich-postgresql
+            - name: DB_USERNAME
+              value: immich
+            - name: DB_DATABASE_NAME
+              value: immich
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: immich
+                  key: DB_PASSWORD
+            - name: DB_VECTOR_EXTENSION
+              value: vectorchord
+            - name: REDIS_HOSTNAME
+              value: immich-valkey
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 2283
+          startupProbe:
+            httpGet:
+              path: /api/server/ping
+              port: http
+            failureThreshold: 120
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/server/ping
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /api/server/ping
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 4Gi
+          volumeMounts:
+            - name: media
+              mountPath: /data
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: immich-media
+        - name: config
+          secret:
+            secretName: immich
+            defaultMode: 0440
+            items:
+              - key: immich.json
+                path: immich.json
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich
+spec:
+  selector:
+    app: immich
+  ports:
+    - name: http
+      port: 2283
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: immich
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`photos.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: immich
+          port: 2283
+  tls: {}
