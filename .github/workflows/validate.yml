@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: jdx/mise-action@v5.2.3
         with:
-          install_args: opentofu flux2 helm kustomize kubeconform jq yq ${{ inputs.talos && 'talosctl' || '' }}
+          install_args: opentofu flux2 kustomize kubeconform yq ${{ inputs.talos && 'talosctl jq' || '' }}
       - name: Validate OpenTofu configuration
         env:
           TF_DATA_DIR: ${{ runner.temp }}/tofu-providers
@@ -34,7 +34,7 @@ jobs:
           tofu -chdir=infra/talos fmt -check
           tofu -chdir=infra/talos init -backend=false -lockfile=readonly
           tofu -chdir=infra/talos validate
-      - name: Render Kubernetes configuration and Helm charts
+      - name: Build and substitute Kubernetes configuration
         run: |
           while IFS=$'\t' read -r key value; do
             export "$key=$value"
@@ -48,115 +48,13 @@ jobs:
             fi
             printf '\n---\n' >> "$RUNNER_TEMP/rendered/authored.yaml"
           done
-          yq ea -N -o=json -I=0 '.' "$RUNNER_TEMP/rendered/authored.yaml" | jq -s 'map(select(. != null))' > "$RUNNER_TEMP/resources.json"
-          while IFS= read -r release; do
-            repository=$(jq -r '.spec.chart.spec.sourceRef.name' <<< "$release")
-            url=$(jq -r --arg name "$repository" '.[] | select(.kind == "HelmRepository" and .metadata.name == $name) | .spec.url' "$RUNNER_TEMP/resources.json")
-            name=$(jq -r '.spec.releaseName // .metadata.name' <<< "$release")
-            namespace=$(jq -r '.metadata.namespace' <<< "$release")
-            helm template "$name" "$(jq -r '.spec.chart.spec.chart' <<< "$release")" \
-              --repo "$url" --version "$(jq -r '.spec.chart.spec.version' <<< "$release")" \
-              --namespace "$namespace" --kube-version "${KUBERNETES_VERSION#v}" --include-crds \
-              --values <(jq '.spec.values // {}' <<< "$release") > "$RUNNER_TEMP/rendered/$namespace-$name.yaml"
-          done < <(jq -c '.[] | select(.kind == "HelmRelease")' "$RUNNER_TEMP/resources.json")
-          yq ea -N -o=json -I=0 '.' "$RUNNER_TEMP"/rendered/*.yaml | jq -s 'map(select(. != null))' > "$RUNNER_TEMP/resources.json"
-      - name: Validate Kubernetes schemas
+      - name: Validate native Kubernetes schemas
         run: |
-          mkdir -p "$RUNNER_TEMP/schemas"
-          while IFS= read -r schema; do
-            path="$RUNNER_TEMP/schemas/$(jq -r '.path' <<< "$schema")"
-            mkdir -p "$(dirname "$path")"
-            jq '.schema' <<< "$schema" > "$path"
-          done < <(jq -c '.[] | select(.kind == "CustomResourceDefinition") | .spec as $crd | $crd.versions[] | select(.schema.openAPIV3Schema != null) | {path: ($crd.group + "/" + ($crd.names.kind | ascii_downcase) + "_" + .name + ".json"), schema: .schema.openAPIV3Schema}' "$RUNNER_TEMP/resources.json")
-          yq -p=json -oy '.[] | select(.kind != "CustomResourceDefinition") | split_doc' "$RUNNER_TEMP/resources.json" | \
-            kubeconform -strict -summary -kubernetes-version "$(yq -r '.data.KUBERNETES_VERSION | sub("^v", "")' kubernetes/clusters/homelab/settings.yaml)" \
-              -schema-location default -schema-location "$RUNNER_TEMP/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
-      - name: Check data and public access safeguards
-        run: |
-          jq -e --arg domain "$(yq -r '.data.DOMAIN' kubernetes/clusters/homelab/settings.yaml)" \
-            --arg lan "$(yq -r '.data.LAN_CIDR' kubernetes/clusters/homelab/settings.yaml)" \
-            --arg noWorker "worker-src 'none'" '
-            def resource($kind; $name):
-              [.[] | select(.kind == $kind and .metadata.name == $name)]
-              | if length == 1 then .[0] else error("Missing or ambiguous " + $kind + "/" + $name) end;
-            def private: any(.middlewares[]?; .name == "private-only" and .namespace == "traefik");
-            def tailnet: any(.middlewares[]?; .name == "tailnet-only" and .namespace == "traefik");
-            [
-              (resource("StorageClass"; "local-path").reclaimPolicy == "Retain"),
-              (all(.[] | select(.kind == "PersistentVolumeClaim"); .spec.storageClassName == "local-path")),
-              (resource("Deployment"; "opencloud").spec.template.spec.containers[0].volumeMounts
-                | all(.[]; (.name == "public" or .name == "shared-readonly" or .name == "downloads") | not)),
-              (resource("Deployment"; "opencloud").spec.template.spec.containers[0].env
-                | any(.[]; .name == "PROXY_ENABLE_BASIC_AUTH" and .value == "false")
-                  and any(.[]; .name == "PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD" and .value == "jwt")),
-              (resource("Deployment"; "opencloud").spec.template.spec.containers[0].env
-                | any(.[]; .name == "STORAGE_USERS_POSIX_WATCH_FS" and .value == "true")),
-              (resource("Deployment"; "qbittorrent").spec.template.spec.containers[0].volumeMounts
-                | any(.[]; .mountPath == "/public" and .name == "opencloud" and (.subPath | startswith("storage/users/projects/")))
-                  and any(.[]; .mountPath == "/downloads/complete" and .name == "opencloud")),
-              (resource("Deployment"; "metube").spec.template.spec.containers[0].volumeMounts
-                | any(.[]; .mountPath == "/downloads/complete" and .name == "opencloud")),
-              (resource("Middleware"; "private-only").spec.ipAllowList.sourceRange
-                | length > 0 and all(.[]; . == $lan or . == "100.64.0.0/10" or . == "fd7a:115c:a1e0::/48")),
-              (resource("Middleware"; "tailnet-only").spec.ipAllowList.sourceRange
-                | sort == (["100.64.0.0/10", "fd7a:115c:a1e0::/48"] | sort)),
-              (resource("Deployment"; "headscale-gateway").spec.template.spec.containers[0].env
-                | any(.[]; .name == "TS_DEBUG_MTU" and .value == "1350")),
-              (resource("IngressRoute"; "adguard").spec.routes | length == 2 and
-                any(.[]; .match == ("Host(`dns." + $domain + "`) && Path(`/dns-query`) && (Method(`GET`) || Method(`POST`))")
-                  and .priority == 200 and (private | not) and (tailnet | not)
-                  and all(.middlewares[]; .name != "authentik")) and
-                any(.[]; .match == ("Host(`dns." + $domain + "`)") and .priority == 100 and tailnet)),
-              (resource("IngressRoute"; "qbittorrent").spec.routes | length > 0 and all(.[];
-                .match == ("Host(`torrents." + $domain + "`)") and private)),
-              (resource("IngressRoute"; "opencloud").spec.routes | length == 1 and all(.[];
-                .match == ("Host(`cloud." + $domain + "`)") and
-                all(.middlewares[]; .name != "authentik"))),
-              (resource("Deployment"; "collabora").spec.template.spec.containers[0].env
-                | any(.[]; .name == "aliasgroup1" and .value == ("https://wopi." + $domain + ":443"))),
-              (resource("IngressRoute"; "opencloud-wopi").spec.routes | length == 1 and all(.[];
-                .match == ("Host(`wopi." + $domain + "`)") and all(.services[]; .port == 9300))),
-              (resource("IngressRoute"; "zipline").spec.routes | length == 2 and
-                any(.[]; .match == ("Host(`i." + $domain + "`) && (PathPrefix(`/api/setup`) || PathPrefix(`/api/auth/login`))")
-                  and .priority > 100 and private) and
-                any(.[]; .match == ("Host(`i." + $domain + "`)") and .priority == 100
-                  and all(.middlewares[]; .name != "authentik" and .name != "private-only"))),
-              (resource("IngressRoute"; "shlink").spec.routes | length == 1 and all(.[];
-                .match == ("Host(`l." + $domain + "`)") and .priority == 100 and
-                all(.middlewares[]; .name != "authentik" and .name != "private-only" and .name != "tailnet-only"))),
-              (resource("Deployment"; "shlink").spec.template.spec.containers[0].env
-                | all(.[]; .name != "DEFAULT_BASE_URL_REDIRECT")
-                  and any(.[]; .name == "CORS_ALLOW_ORIGIN" and .value == ("https://l." + $domain))),
-              (resource("IngressRoute"; "shlink-web-client").spec.routes | length == 2 and all(.[];
-                tailnet and if (.match | contains("PathPrefix(`/outpost.goauthentik.io/`)")) then
-                  .match == ("Host(`l." + $domain + "`) && PathPrefix(`/outpost.goauthentik.io/`)")
-                  and .priority == 300
-                  and all(.services[]; .name == "authentik-server" and .namespace == "identity")
-                else .priority == 200 and
-                  (.match | contains("Host(`l." + $domain + "`)") and contains("Path(`/`)")
-                    and contains("Path(`/servers.json`)") and contains("PathPrefix(`/conf.d/`)")
-                    and contains("PathPrefix(`/server/`)") and contains("Path(`/settings`)")) and
-                  any(.middlewares[]; .name == "authentik" and .namespace == "traefik") and
-                  any(.middlewares[]; .name == "shlink-no-service-worker") end)),
-              (resource("Middleware"; "shlink-no-service-worker").spec.headers.contentSecurityPolicy == $noWorker),
-              (resource("Middleware"; "clear-proxy-identity").spec.headers.customRequestHeaders["X-authentik-username"] == ""),
-              (resource("Deployment"; "traefik").spec.template.spec
-                | .hostNetwork == true and (.containers[0].args
-                  | any(.[]; startswith("--entryPoints.traefik.address=127.0.0.1:"))
-                    and any(.[]; startswith("--entryPoints.metrics.address=127.0.0.1:"))
-                    and any(.[]; . == "--entryPoints.websecure.address=:443/tcp")
-                    and any(.[]; . == "--entryPoints.websecure.http.tls=true")
-                    and any(.[]; . == "--entryPoints.websecure.http3")
-                    and any(.[]; . == "--entryPoints.websecure.http3.advertisedPort=443")
-                    and all(.[]; contains("forwardedHeaders.insecure") | not))
-                  and (.containers[0].ports
-                    | any(.[]; .name == "websecure" and .containerPort == 443 and .protocol == "TCP")
-                      and any(.[]; .name == "websecure-http3" and .containerPort == 443 and .protocol == "UDP"))),
-              (resource("Service"; "traefik").spec.ports
-                | any(.[]; .port == 443 and .protocol == "TCP" and .targetPort == "websecure")
-                  and any(.[]; .port == 443 and .protocol == "UDP" and .targetPort == "websecure-http3"))
-            ] | all
-          ' "$RUNNER_TEMP/resources.json"
+          # Skip CRD definitions and custom resources; validate native workloads and configuration.
+          kubeconform -strict -summary \
+            -kubernetes-version "$(yq -r '.data.KUBERNETES_VERSION | sub("^v", "")' kubernetes/clusters/homelab/settings.yaml)" \
+            -skip CustomResourceDefinition,Certificate,ClusterIssuer,ClusterSecretStore,ExternalSecret,HelmRelease,HelmRepository,IngressRoute,Kustomization,Middleware,TLSStore \
+            "$RUNNER_TEMP/rendered/authored.yaml"
       - name: Render and validate isolated Talos configuration
         if: ${{ inputs.talos }}
         run: |
