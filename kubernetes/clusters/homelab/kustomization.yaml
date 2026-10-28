@@ -6,4 +6,3 @@ resources:
   - onepassword.yaml
   - sources.yaml
   - reconciliation.yaml
-  - recovery.yaml
