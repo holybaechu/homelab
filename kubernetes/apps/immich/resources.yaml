@@ -76,6 +76,8 @@ spec:
         app: immich
     spec:
       automountServiceAccountToken: false
+      # The immich Service would inject IMMICH_PORT as a URL instead of a number.
+      enableServiceLinks: false
       hostAliases:
         - ip: ${NODE_IP}
           hostnames:

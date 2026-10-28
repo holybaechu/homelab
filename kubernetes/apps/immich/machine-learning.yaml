@@ -27,6 +27,7 @@ spec:
         app: immich-machine-learning
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
