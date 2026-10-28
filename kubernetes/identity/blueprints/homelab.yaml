@@ -72,6 +72,15 @@ entries:
     attrs:
       groups:
         - !Find [authentik_core.group, [is_superuser, true]]
+  # Groups grant application entitlements; service access depends on those grants.
+  - model: authentik_policies_expression.expressionpolicy
+    identifiers:
+      name: Homelab service access
+    id: service-access-policy
+    attrs:
+      cache_timeout: 0
+      expression: |
+        return request.user.app_entitlements(request.obj).filter(name__in=["user", "admin"]).exists()
   - model: authentik_providers_oauth2.scopemapping
     identifiers:
       name: Homelab groups
@@ -79,7 +88,8 @@ entries:
     attrs:
       scope_name: groups
       expression: |
-        return {"groups": [group.name for group in request.user.groups.all()]}
+        # Headscale consumes service roles through its groups claim.
+        return {"groups": [entitlement.name for entitlement in request.user.app_entitlements(provider.application)]}
   - model: authentik_providers_oauth2.oauth2provider
     identifiers:
       name: Headscale
@@ -109,11 +119,25 @@ entries:
       name: Headscale
       provider: !KeyOf headscale-provider
       meta_launch_url: https://vpn.${DOMAIN}
+  - model: authentik_core.applicationentitlement
+    identifiers:
+      app: !KeyOf headscale-app
+      name: user
+    id: headscale-user-entitlement
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf headscale-user-entitlement
+      group: !KeyOf headscale-users
+      order: 0
+  # Match application/order to replace the existing group binding in place.
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf headscale-app
-      group: !KeyOf headscale-users
       order: 0
+    attrs:
+      policy: !KeyOf service-access-policy
+      group: null
+      user: null
   - model: authentik_providers_proxy.proxyprovider
     identifiers:
       name: MeTube
@@ -131,11 +155,24 @@ entries:
       name: MeTube
       provider: !KeyOf metube-provider
       meta_launch_url: https://metube.${DOMAIN}
+  - model: authentik_core.applicationentitlement
+    identifiers:
+      app: !KeyOf metube-app
+      name: user
+    id: metube-user-entitlement
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf metube-user-entitlement
+      group: !KeyOf metube-users
+      order: 0
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf metube-app
-      group: !KeyOf metube-users
       order: 0
+    attrs:
+      policy: !KeyOf service-access-policy
+      group: null
+      user: null
   - model: authentik_providers_oauth2.scopemapping
     identifiers:
       name: OpenCloud roles
@@ -143,9 +180,10 @@ entries:
     attrs:
       scope_name: opencloud_roles
       expression: |
-        if ak_is_group_member(request.user, name="OpenCloud Admins"):
+        entitlements = {entitlement.name for entitlement in request.user.app_entitlements(provider.application)}
+        if "admin" in entitlements:
             return {"roles": ["opencloudAdmin"]}
-        if ak_is_group_member(request.user, name="OpenCloud Users"):
+        if "user" in entitlements:
             return {"roles": ["opencloudUser"]}
         return {"roles": []}
   - model: authentik_providers_oauth2.oauth2provider
@@ -185,16 +223,41 @@ entries:
       provider: !KeyOf opencloud-provider
       policy_engine_mode: any
       meta_launch_url: https://cloud.${DOMAIN}
+  - model: authentik_core.applicationentitlement
+    identifiers:
+      app: !KeyOf opencloud-app
+      name: user
+    id: opencloud-user-entitlement
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf opencloud-user-entitlement
+      group: !KeyOf opencloud-users
+      order: 0
+  - model: authentik_core.applicationentitlement
+    identifiers:
+      app: !KeyOf opencloud-app
+      name: admin
+    id: opencloud-admin-entitlement
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf opencloud-admin-entitlement
+      group: !KeyOf opencloud-admins
+      order: 0
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf opencloud-app
-      group: !KeyOf opencloud-users
       order: 0
+    attrs:
+      policy: !KeyOf service-access-policy
+      group: null
+      user: null
+  # Remove the old admin access binding so it cannot bypass entitlement checks.
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf opencloud-app
       group: !KeyOf opencloud-admins
       order: 1
+    state: absent
   - model: authentik_providers_oauth2.oauth2provider
     identifiers:
       name: Zipline
@@ -226,13 +289,23 @@ entries:
       name: Zipline
       provider: !KeyOf zipline-provider
       meta_launch_url: https://i.${DOMAIN}
-  # Match by application/order to update existing user bindings in place.
+  - model: authentik_core.applicationentitlement
+    identifiers:
+      app: !KeyOf zipline-app
+      name: user
+    id: zipline-user-entitlement
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf zipline-user-entitlement
+      group: !KeyOf zipline-users
+      order: 0
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf zipline-app
       order: 0
     attrs:
-      group: !KeyOf zipline-users
+      policy: !KeyOf service-access-policy
+      group: null
       user: null
   - model: authentik_core.application
     identifiers:
@@ -259,12 +332,23 @@ entries:
       name: Shlink
       provider: !KeyOf shlink-provider
       meta_launch_url: https://l.${DOMAIN}
+  - model: authentik_core.applicationentitlement
+    identifiers:
+      app: !KeyOf shlink-app
+      name: user
+    id: shlink-user-entitlement
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf shlink-user-entitlement
+      group: !KeyOf shlink-users
+      order: 0
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf shlink-app
       order: 0
     attrs:
-      group: !KeyOf shlink-users
+      policy: !KeyOf service-access-policy
+      group: null
       user: null
   - model: authentik_outposts.outpost
     identifiers:

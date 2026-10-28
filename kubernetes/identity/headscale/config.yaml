@@ -43,7 +43,8 @@ oidc:
   - email
   - groups
   allowed_groups:
-  - Headscale Users
+  # The groups claim carries application entitlement names.
+  - user
   email_verified_required: false
   pkce:
     enabled: true
