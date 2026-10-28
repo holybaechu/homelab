@@ -1,0 +1,108 @@
+# Temporary recovery after a drain interrupted the only VPN management path.
+# Remove these resources after the node and remote access have recovered.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: recover-homelab-node
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: recover-homelab-node
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    resourceNames: [talos-homelab]
+    verbs: [patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: recover-homelab-node
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: recover-homelab-node
+subjects:
+  - kind: ServiceAccount
+    name: recover-homelab-node
+    namespace: flux-system
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: recover-homelab-node-20261028
+  namespace: flux-system
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      # Bypass the scheduler because the sole node is currently cordoned.
+      nodeName: talos-homelab
+      serviceAccountName: recover-homelab-node
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: uncordon
+          # Reuse an image already cached on the node; no image download is needed.
+          image: ghcr.io/immich-app/immich-server:v3.3.5
+          imagePullPolicy: IfNotPresent
+          command: [node, -e]
+          args:
+            - |-
+              const fs = require('node:fs');
+              const https = require('node:https');
+              const credentials = '/var/run/secrets/kubernetes.io/serviceaccount/';
+              const request = https.request({
+                hostname: process.env.KUBERNETES_SERVICE_HOST,
+                port: process.env.KUBERNETES_SERVICE_PORT_HTTPS || 443,
+                path: '/api/v1/nodes/talos-homelab',
+                method: 'PATCH',
+                ca: fs.readFileSync(credentials + 'ca.crt'),
+                headers: {
+                  Authorization: 'Bearer ' + fs.readFileSync(credentials + 'token', 'utf8').trim(),
+                  'Content-Type': 'application/merge-patch+json'
+                }
+              }, (response) => {
+                let body = '';
+                response.setEncoding('utf8');
+                response.on('data', (chunk) => { body += chunk; });
+                response.on('end', () => {
+                  if (response.statusCode !== 200) {
+                    console.error('Node recovery failed: HTTP ' + response.statusCode);
+                    process.exitCode = 1;
+                    return;
+                  }
+                  try {
+                    const node = JSON.parse(body);
+                    if (node.metadata.name !== 'talos-homelab' || node.spec.unschedulable === true) {
+                      throw new Error('Node is still unschedulable');
+                    }
+                    console.log('talos-homelab is schedulable; normal workloads can restart.');
+                  } catch (error) {
+                    console.error(error.message);
+                    process.exitCode = 1;
+                  }
+                });
+              });
+              request.setTimeout(10000, () => request.destroy(new Error('Kubernetes API request timed out')));
+              request.on('error', (error) => { console.error(error.message); process.exitCode = 1; });
+              request.end(JSON.stringify({ spec: { unschedulable: false } }));
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
