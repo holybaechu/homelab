@@ -51,7 +51,7 @@ locals {
   settings           = yamldecode(file("${path.module}/../../kubernetes/clusters/homelab/settings.yaml")).data
   talos_version      = local.settings.TALOS_VERSION
   kubernetes_version = local.settings.KUBERNETES_VERSION
-  installer_image    = "factory.talos.dev/metal-installer/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba:${local.talos_version}"
+  installer_image    = "factory.talos.dev/metal-installer/40b13a8d4f3202c7d7c95f0cc0fa5cecea2d480ea9f1f1dd3122395cd68f6e9d:${local.talos_version}"
   disk_match         = "'${local.settings.INSTALL_DISK_ID}' in disk.symlinks && disk.transport == 'sata'"
   networks           = [local.settings.LAN_CIDR, local.settings.POD_CIDR, local.settings.SERVICE_CIDR]
   private_sources = [
@@ -122,8 +122,10 @@ locals {
       params = {
         # Improve downloads over remote paths with variable latency or loss.
         "net.ipv4.tcp_congestion_control" = "bbr"
-        "net.ipv4.ip_forward"             = "1"
-        "net.ipv6.conf.all.forwarding"    = "1"
+        # Required by the NVIDIA container runtime.
+        "net.core.bpf_jit_harden"      = "1"
+        "net.ipv4.ip_forward"          = "1"
+        "net.ipv6.conf.all.forwarding" = "1"
       }
     }),
     yamlencode({
@@ -166,7 +168,11 @@ locals {
       filesystem = { type = "xfs" }
     }),
     yamlencode({ apiVersion = "v1alpha1", kind = "NetworkDefaultActionConfig", ingress = "accept" }),
-    ], [for rule in local.firewall_rules : yamlencode({
+    ], [for name in ["nvidia", "nvidia_uvm", "nvidia_drm", "nvidia_modeset"] : yamlencode({
+      apiVersion = "v1alpha1"
+      kind       = "KernelModuleConfig"
+      name       = name
+      })], [for rule in local.firewall_rules : yamlencode({
       apiVersion   = "v1alpha1"
       kind         = "NetworkRuleConfig"
       name         = rule.name

@@ -17,6 +17,7 @@ spec:
         immich.json: |
           {
             "backup": {"database": {"enabled": false}},
+            "ffmpeg": {"accel": "nvenc", "accelDecode": true},
             "machineLearning": {
               "enabled": true,
               "urls": ["http://immich-machine-learning:3003"]
@@ -75,6 +76,7 @@ spec:
       labels:
         app: immich
     spec:
+      runtimeClassName: nvidia
       automountServiceAccountToken: false
       # The immich Service would inject IMMICH_PORT as a URL instead of a number.
       enableServiceLinks: false
@@ -103,6 +105,8 @@ spec:
               value: "false"
             - name: IMMICH_TRUSTED_PROXIES
               value: ${NODE_IP}/32
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: compute,utility,video
             - name: CPU_CORES
               value: "4"
             - name: DB_HOSTNAME
@@ -149,6 +153,7 @@ spec:
               memory: 1Gi
             limits:
               memory: 8Gi
+              nvidia.com/gpu: 1
           volumeMounts:
             - name: media
               mountPath: /data

@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
 - releases.yaml
 - local-path.yaml
+- nvidia.yaml
