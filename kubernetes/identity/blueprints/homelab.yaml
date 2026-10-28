@@ -58,16 +58,20 @@ entries:
     identifiers:
       name: OpenCloud Admins
     id: opencloud-admins
+  - model: authentik_core.group
+    identifiers:
+      name: Zipline Users
+    id: zipline-users
+  - model: authentik_core.group
+    identifiers:
+      name: Shlink Users
+    id: shlink-users
   - model: authentik_core.user
     identifiers:
       username: akadmin
     attrs:
       groups:
         - !Find [authentik_core.group, [is_superuser, true]]
-        - !KeyOf headscale-users
-        - !KeyOf metube-users
-        - !KeyOf opencloud-users
-        - !KeyOf opencloud-admins
   - model: authentik_providers_oauth2.scopemapping
     identifiers:
       name: Homelab groups
@@ -222,11 +226,14 @@ entries:
       name: Zipline
       provider: !KeyOf zipline-provider
       meta_launch_url: https://i.${DOMAIN}
+  # Match by application/order to update existing user bindings in place.
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf zipline-app
-      user: !Find [authentik_core.user, [username, akadmin]]
       order: 0
+    attrs:
+      group: !KeyOf zipline-users
+      user: null
   - model: authentik_core.application
     identifiers:
       slug: kutt
@@ -255,8 +262,10 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf shlink-app
-      user: !Find [authentik_core.user, [username, akadmin]]
       order: 0
+    attrs:
+      group: !KeyOf shlink-users
+      user: null
   - model: authentik_outposts.outpost
     identifiers:
       managed: goauthentik.io/outposts/embedded
