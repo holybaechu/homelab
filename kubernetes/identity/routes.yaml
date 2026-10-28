@@ -27,8 +27,7 @@ spec:
   - websecure
   routes:
   - kind: Rule
-    # Keep persisted gateway profiles connected while their control URL is migrated.
-    match: Host(`vpn.${DOMAIN}`) || Host(`headscale.${DOMAIN}`)
+    match: Host(`vpn.${DOMAIN}`)
     middlewares:
     - name: secure-headers
       namespace: traefik

@@ -40,8 +40,6 @@ spec:
       - ip: ${NODE_IP}
         hostnames:
         - vpn.${DOMAIN}
-        # The persisted profile can still use this name until its one-time migration.
-        - headscale.${DOMAIN}
       containers:
       - name: tailscale
         image: ghcr.io/tailscale/tailscale:v1.104.2
