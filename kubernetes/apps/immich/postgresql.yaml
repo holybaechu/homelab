@@ -78,6 +78,9 @@ spec:
             limits:
               memory: 2Gi
           volumeMounts:
+            # The image generates postgresql.conf here before starting Postgres.
+            - name: configuration
+              mountPath: /etc/postgresql
             - name: data
               mountPath: /var/lib/postgresql/data
             - name: runtime
@@ -87,6 +90,8 @@ spec:
             - name: temporary
               mountPath: /tmp
       volumes:
+        - name: configuration
+          emptyDir: {}
         - name: data
           persistentVolumeClaim:
             claimName: immich-postgresql
