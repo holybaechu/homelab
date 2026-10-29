@@ -1,0 +1,12 @@
+# Seeded only on first boot. Hermes manages its live config in /opt/data.
+model:
+  provider: openai-codex
+  default: gpt-6-sol
+terminal:
+  backend: local
+  cwd: /opt/data/workspace
+dashboard:
+  public_url: https://hermes.${DOMAIN}
+  trusted_proxies:
+    # Traefik uses the node network, rather than a pod address.
+    - ${NODE_IP}/32
