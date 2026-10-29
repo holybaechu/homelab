@@ -76,6 +76,8 @@ spec:
           envFrom:
             - secretRef:
                 name: hermes-discord
+            - secretRef:
+                name: hermes-web
           env:
             - name: TZ
               value: ${TIME_ZONE}

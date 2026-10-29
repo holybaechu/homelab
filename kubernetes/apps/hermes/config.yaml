@@ -8,6 +8,11 @@ terminal:
 platforms:
   discord:
     enabled: true
+web:
+  search_backend: exa
+  extract_backend: exa
+  provider_tier:
+    exa: paid
 dashboard:
   public_url: https://hermes.${DOMAIN}
   trusted_proxies:
