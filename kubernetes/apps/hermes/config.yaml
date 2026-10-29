@@ -5,6 +5,9 @@ model:
 terminal:
   backend: local
   cwd: /opt/data/workspace
+platforms:
+  discord:
+    enabled: true
 dashboard:
   public_url: https://hermes.${DOMAIN}
   trusted_proxies:
