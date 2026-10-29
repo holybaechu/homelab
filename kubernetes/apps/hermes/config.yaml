@@ -1,7 +1,7 @@
 # Seeded only on first boot. Hermes manages its live config in /opt/data.
 model:
   provider: openai-codex
-  default: gpt-6-sol
+  default: gpt-6.1-sol
 terminal:
   backend: local
   cwd: /opt/data/workspace

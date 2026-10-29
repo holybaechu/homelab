@@ -32,6 +32,10 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+      hostAliases:
+        - ip: ${NODE_IP}
+          hostnames:
+            - auth.${DOMAIN}
       initContainers:
         - name: seed-config
           image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
@@ -69,9 +73,6 @@ spec:
           # Preserve the official entrypoint: s6 starts as root, initializes
           # storage, then drops gateway/dashboard processes to UID 10000.
           args: [gateway, run]
-          envFrom:
-            - secretRef:
-                name: hermes-dashboard
           env:
             - name: TZ
               value: ${TIME_ZONE}
@@ -79,6 +80,14 @@ spec:
               value: "1"
             - name: HERMES_DASHBOARD_HOST
               value: 0.0.0.0
+            - name: HERMES_DASHBOARD_PUBLIC_URL
+              value: https://hermes.${DOMAIN}
+            - name: HERMES_DASHBOARD_OIDC_ISSUER
+              value: https://auth.${DOMAIN}/application/o/hermes/
+            - name: HERMES_DASHBOARD_OIDC_CLIENT_ID
+              value: homelab-hermes
+            - name: HERMES_DASHBOARD_OIDC_SCOPES
+              value: openid profile email offline_access
           securityContext:
             runAsUser: 0
             allowPrivilegeEscalation: false

@@ -360,6 +360,58 @@ entries:
       policy: !KeyOf service-access-policy
       group: null
       user: null
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: Hermes Agent
+    id: hermes-provider
+    attrs:
+      client_id: homelab-hermes
+      # Hermes uses authorization code + S256 PKCE; no shared client secret.
+      client_type: public
+      sub_mode: user_uuid
+      grant_types:
+        - authorization_code
+        - refresh_token
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      redirect_uris:
+        - matching_mode: strict
+          url: https://hermes.${DOMAIN}/auth/callback
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+  - model: authentik_core.application
+    identifiers:
+      slug: hermes
+    id: hermes-app
+    attrs:
+      name: Hermes Agent
+      provider: !KeyOf hermes-provider
+      meta_launch_url: https://hermes.${DOMAIN}
+  - model: authentik_core.applicationentitlement
+    identifiers:
+      app: !KeyOf hermes-app
+      name: admin
+    id: hermes-admin-entitlement
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf hermes-admin-entitlement
+      order: 0
+    attrs:
+      group: !KeyOf personal
+      user: null
+      policy: null
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf hermes-app
+      order: 0
+    attrs:
+      policy: !KeyOf service-access-policy
+      group: null
+      user: null
   - model: authentik_core.application
     identifiers:
       slug: kutt
