@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: homelab
 resources:
   - resources.yaml
+  - secrets.yaml
 configMapGenerator:
   - name: hermes-bootstrap
     files:

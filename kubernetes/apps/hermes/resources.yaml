@@ -73,6 +73,9 @@ spec:
           # Preserve the official entrypoint: s6 starts as root, initializes
           # storage, then drops gateway/dashboard processes to UID 10000.
           args: [gateway, run]
+          envFrom:
+            - secretRef:
+                name: hermes-discord
           env:
             - name: TZ
               value: ${TIME_ZONE}
