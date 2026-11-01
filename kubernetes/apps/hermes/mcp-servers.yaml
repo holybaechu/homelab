@@ -1,0 +1,6 @@
+# Git owns the full MCP server list, reconciled on every pod start.
+# OAuth credentials stay on the persistent volume, outside this ConfigMap.
+ticktick:
+  url: https://mcp.ticktick.com
+  auth: oauth
+  enabled: true

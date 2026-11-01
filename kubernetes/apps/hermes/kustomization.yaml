@@ -8,3 +8,4 @@ configMapGenerator:
   - name: hermes-bootstrap
     files:
       - config.yaml
+      - mcp-servers.yaml

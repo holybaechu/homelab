@@ -48,13 +48,15 @@ spec:
                 chmod 600 /opt/data/config.yaml
               fi
               mkdir -p /opt/data/workspace
-              chown 10000:10000 /opt/data/workspace
+              chown 10000:10000 /opt/data /opt/data/workspace
+              # Git owns the MCP section; the CLI preserves other live settings.
+              hermes config set --force mcp_servers "$(cat /bootstrap/mcp-servers.yaml)"
           securityContext:
             runAsUser: 0
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
-              add: [CHOWN, FOWNER, DAC_OVERRIDE]
+              add: [CHOWN, FOWNER, DAC_OVERRIDE, SETUID, SETGID]
           resources:
             requests:
               cpu: 10m
