@@ -20,7 +20,8 @@ def patch_provider(source: str) -> str:
             and str(response.url) == "https://ticktick.com/.well-known/oauth-authorization-server"
             and response.request.method == "GET"
             and response.status_code == 200
-            and not response.history
+            # HTTPX history also includes prior OAuth 401/200 responses.
+            and not any(300 <= previous.status_code < 400 for previous in response.history)
         )
         if not (
             metadata_issued_by_origin(metadata, self.context.auth_server_url, response)

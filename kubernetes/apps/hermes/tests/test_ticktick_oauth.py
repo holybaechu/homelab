@@ -46,6 +46,7 @@ class TickTickOAuthTests(unittest.IsolatedAsyncioTestCase):
         response_url=None,
         response_method="GET",
         redirected=False,
+        use_http_client=False,
     ):
         source = Path(os.environ.get(
             "HERMES_OAUTH_PROVIDER_FILE", "/opt/hermes/tools/mcp_oauth_provider.py"
@@ -85,33 +86,41 @@ class TickTickOAuthTests(unittest.IsolatedAsyncioTestCase):
             "grant_types_supported": ["authorization_code", "refresh_token"],
             "code_challenge_methods_supported": ["S256"],
         }
+        async def response_for(request):
+            url = str(request.url)
+            if url == server_url:
+                return httpx2.Response(401, request=request, headers={
+                    "WWW-Authenticate": f'Bearer resource_metadata="{resource_metadata_url}"'
+                })
+            if url == resource_metadata_url:
+                return httpx2.Response(200, request=request, json={
+                    "resource": server_url,
+                    "authorization_servers": [advertised_issuer],
+                })
+            if url == discovery_url:
+                response_request = httpx2.Request(response_method, response_url or url)
+                history = [httpx2.Response(302, request=request)] if redirected else []
+                return httpx2.Response(
+                    200, request=response_request, json=metadata, history=history
+                )
+            if url == "https://ticktick.com/oauth/register":
+                registration = json.loads(request.content)
+                registration["client_id"] = "fixture-client"
+                return httpx2.Response(201, request=request, json=registration)
+            self.fail(f"Unexpected OAuth request: {url}")
+
+        if use_http_client:
+            async with httpx2.AsyncClient(
+                auth=provider, transport=httpx2.MockTransport(response_for)
+            ) as client:
+                await client.post(server_url)
+            self.fail("HTTP client did not reach browser authorization")
+
         flow = provider.async_auth_flow(httpx2.Request("POST", server_url))
         try:
             request = await anext(flow)
             for _ in range(10):
-                url = str(request.url)
-                if url == server_url:
-                    response = httpx2.Response(401, request=request, headers={
-                        "WWW-Authenticate": f'Bearer resource_metadata="{resource_metadata_url}"'
-                    })
-                elif url == resource_metadata_url:
-                    response = httpx2.Response(200, request=request, json={
-                        "resource": server_url,
-                        "authorization_servers": [advertised_issuer],
-                    })
-                elif url == discovery_url:
-                    response_request = httpx2.Request(response_method, response_url or url)
-                    history = [httpx2.Response(302, request=request)] if redirected else []
-                    response = httpx2.Response(
-                        200, request=response_request, json=metadata, history=history
-                    )
-                elif url == "https://ticktick.com/oauth/register":
-                    registration = json.loads(request.content)
-                    registration["client_id"] = "fixture-client"
-                    response = httpx2.Response(201, request=request, json=registration)
-                else:
-                    self.fail(f"Unexpected OAuth request: {url}")
-                request = await flow.asend(response)
+                request = await flow.asend(await response_for(request))
             self.fail("OAuth discovery did not reach browser authorization")
         finally:
             await flow.aclose()
@@ -119,6 +128,10 @@ class TickTickOAuthTests(unittest.IsolatedAsyncioTestCase):
     async def test_ticktick_root_slash_mismatch_reaches_authorization(self):
         with self.assertRaises(AuthorizationReached):
             await self.discover()
+
+    async def test_http_client_auth_history_reaches_authorization(self):
+        with self.assertRaises(AuthorizationReached):
+            await self.discover(use_http_client=True)
 
     async def test_ticktick_endpoint_with_root_slash_reaches_authorization(self):
         with self.assertRaises(AuthorizationReached):
