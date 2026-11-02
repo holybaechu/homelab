@@ -69,6 +69,29 @@ spec:
             - name: bootstrap
               mountPath: /bootstrap
               readOnly: true
+        - name: patch-ticktick-oauth
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
+          command:
+            - /opt/hermes/.venv/bin/python
+            - /bootstrap/patch_ticktick_oauth.py
+            - /patched/mcp_oauth_provider.py
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: oauth-provider
+              mountPath: /patched
       containers:
         - name: hermes
           image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
@@ -127,6 +150,10 @@ spec:
               mountPath: /opt/data
             - name: shared-memory
               mountPath: /dev/shm
+            - name: oauth-provider
+              mountPath: /opt/hermes/tools/mcp_oauth_provider.py
+              subPath: mcp_oauth_provider.py
+              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -134,6 +161,8 @@ spec:
         - name: bootstrap
           configMap:
             name: hermes-bootstrap
+        - name: oauth-provider
+          emptyDir: {}
         - name: shared-memory
           emptyDir:
             medium: Memory

@@ -9,3 +9,4 @@ configMapGenerator:
     files:
       - config.yaml
       - mcp-servers.yaml
+      - patch_ticktick_oauth.py
