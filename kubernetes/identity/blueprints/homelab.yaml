@@ -92,6 +92,7 @@ entries:
     attrs:
       name: Headscale
       provider: !KeyOf headscale-provider
+      icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/headscale.svg
       meta_launch_url: https://vpn.${DOMAIN}
   - model: authentik_core.applicationentitlement
     identifiers:
@@ -131,6 +132,7 @@ entries:
     attrs:
       name: MeTube
       provider: !KeyOf metube-provider
+      icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/metube.svg
       meta_launch_url: https://metube.${DOMAIN}
   - model: authentik_core.applicationentitlement
     identifiers:
@@ -202,6 +204,7 @@ entries:
       name: OpenCloud
       provider: !KeyOf opencloud-provider
       policy_engine_mode: any
+      icon: https://cdn.jsdelivr.net/gh/selfhst/icons/svg/opencloud.svg
       meta_launch_url: https://cloud.${DOMAIN}
   - model: authentik_core.applicationentitlement
     identifiers:
@@ -273,6 +276,7 @@ entries:
     attrs:
       name: Zipline
       provider: !KeyOf zipline-provider
+      icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/zipline.svg
       meta_launch_url: https://i.${DOMAIN}
   - model: authentik_core.applicationentitlement
     identifiers:
@@ -338,6 +342,7 @@ entries:
     attrs:
       name: Immich
       provider: !KeyOf immich-provider
+      icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/immich.svg
       meta_launch_url: https://photos.${DOMAIN}
   - model: authentik_core.applicationentitlement
     identifiers:
@@ -390,6 +395,7 @@ entries:
     attrs:
       name: Hermes Agent
       provider: !KeyOf hermes-provider
+      icon: https://cdn.jsdelivr.net/gh/selfhst/icons/svg/hermes-agent.svg
       meta_launch_url: https://hermes.${DOMAIN}
   - model: authentik_core.applicationentitlement
     identifiers:
@@ -436,6 +442,7 @@ entries:
     attrs:
       name: Shlink
       provider: !KeyOf shlink-provider
+      icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/shlink.svg
       meta_launch_url: https://l.${DOMAIN}
   - model: authentik_core.applicationentitlement
     identifiers:
