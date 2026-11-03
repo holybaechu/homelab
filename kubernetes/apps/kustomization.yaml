@@ -8,7 +8,7 @@ resources:
   - opencloud
   - collabora
   - qbittorrent
-  - metube
+  - cobalt
   - cloudflare-ddns
   - zipline
   - shlink

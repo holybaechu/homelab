@@ -118,30 +118,30 @@ entries:
       user: null
   - model: authentik_providers_proxy.proxyprovider
     identifiers:
-      name: MeTube
-    id: metube-provider
+      name: Cobalt
+    id: cobalt-provider
     attrs:
       mode: forward_single
-      external_host: https://metube.${DOMAIN}
+      external_host: https://cobalt.${DOMAIN}
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
   - model: authentik_core.application
     identifiers:
-      slug: metube
-    id: metube-app
+      slug: cobalt
+    id: cobalt-app
     attrs:
-      name: MeTube
-      provider: !KeyOf metube-provider
-      icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/metube.svg
-      meta_launch_url: https://metube.${DOMAIN}
+      name: Cobalt
+      provider: !KeyOf cobalt-provider
+      icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/cobalt.svg
+      meta_launch_url: https://cobalt.${DOMAIN}
   - model: authentik_core.applicationentitlement
     identifiers:
-      app: !KeyOf metube-app
+      app: !KeyOf cobalt-app
       name: user
-    id: metube-user-entitlement
+    id: cobalt-user-entitlement
   - model: authentik_policies.policybinding
     identifiers:
-      target: !KeyOf metube-user-entitlement
+      target: !KeyOf cobalt-user-entitlement
       order: 0
     attrs:
       group: !KeyOf personal
@@ -149,7 +149,7 @@ entries:
       user: null
   - model: authentik_policies.policybinding
     identifiers:
-      target: !KeyOf metube-app
+      target: !KeyOf cobalt-app
       order: 0
     attrs:
       policy: !KeyOf service-access-policy
@@ -470,7 +470,7 @@ entries:
       managed: goauthentik.io/outposts/embedded
     attrs:
       providers:
-        - !KeyOf metube-provider
+        - !KeyOf cobalt-provider
         - !KeyOf shlink-provider
       config:
         authentik_host: https://auth.${DOMAIN}
@@ -479,10 +479,6 @@ entries:
   - model: authentik_core.group
     identifiers:
       name: Headscale Users
-    state: absent
-  - model: authentik_core.group
-    identifiers:
-      name: MeTube Users
     state: absent
   - model: authentik_core.group
     identifiers:
@@ -503,8 +499,4 @@ entries:
   - model: authentik_core.group
     identifiers:
       name: homelab-admins
-    state: absent
-  - model: authentik_core.group
-    identifiers:
-      name: metube-users
     state: absent

@@ -3,3 +3,7 @@ kind: Kustomization
 namespace: homelab
 resources:
   - resources.yaml
+configMapGenerator:
+  - name: cobalt-web-config
+    files:
+      - nginx.conf
