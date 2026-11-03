@@ -3,7 +3,7 @@ kind: ExternalSecret
 metadata:
   name: adguard-credentials
 spec:
-  refreshInterval: 1h
+  refreshInterval: ${SECRET_REFRESH_INTERVAL}
   secretStoreRef:
     kind: ClusterSecretStore
     name: onepassword

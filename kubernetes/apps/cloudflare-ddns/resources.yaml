@@ -3,7 +3,7 @@ kind: ExternalSecret
 metadata:
   name: cloudflare-ddns
 spec:
-  refreshInterval: 1h
+  refreshInterval: ${SECRET_REFRESH_INTERVAL}
   secretStoreRef:
     kind: ClusterSecretStore
     name: onepassword
