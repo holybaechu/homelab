@@ -4,6 +4,11 @@ namespace: homelab
 resources:
   - resources.yaml
 configMapGenerator:
+  - name: cobalt-youtube-compat
+    files:
+      - youtube_client.mjs
+      - package.json=youtube/package.json
+      - package-lock.json=youtube/package-lock.json
   - name: cobalt-web-config
     files:
       - nginx.conf

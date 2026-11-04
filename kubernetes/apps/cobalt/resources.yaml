@@ -23,6 +23,32 @@ spec:
       # Upstream publishes an API image; build the unmodified static web app
       # from the matching source revision without requiring a private registry.
       initContainers:
+        - name: prepare-youtube
+          image: docker.io/library/node:24-bookworm
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              cp /compat/package.json /compat/package-lock.json /youtube/
+              npm ci --prefix /youtube --ignore-scripts --no-audit --no-fund --cache /tmp/npm
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: youtube-compat
+              mountPath: /compat
+              readOnly: true
+            - name: youtube-dependencies
+              mountPath: /youtube
+            - name: build-temporary
+              mountPath: /tmp
         - name: build-web
           image: docker.io/library/node:24-bookworm
           workingDir: /build
@@ -70,7 +96,10 @@ spec:
       containers:
         - name: api
           image: ghcr.io/imputnet/cobalt:11.7.1-a636575
+          command: [node, --import, /compat/youtube_client.mjs, src/cobalt.js]
           env:
+            - name: CUSTOM_INNERTUBE_CLIENT
+              value: VISIONOS
             - name: API_URL
               value: https://cobalt.${DOMAIN}/api/
             - name: CORS_WILDCARD
@@ -109,6 +138,12 @@ spec:
             limits:
               memory: 2Gi
           volumeMounts:
+            - name: youtube-compat
+              mountPath: /compat
+              readOnly: true
+            - name: youtube-dependencies
+              mountPath: /youtube
+              readOnly: true
             - name: api-temporary
               mountPath: /tmp
         - name: web
@@ -148,6 +183,12 @@ spec:
             - name: web-temporary
               mountPath: /tmp
       volumes:
+        - name: youtube-compat
+          configMap:
+            name: cobalt-youtube-compat
+        - name: youtube-dependencies
+          emptyDir:
+            sizeLimit: 128Mi
         - name: build
           emptyDir: {}
         - name: web

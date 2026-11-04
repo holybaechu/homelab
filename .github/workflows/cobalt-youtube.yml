@@ -1,0 +1,40 @@
+name: cobalt-youtube
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - kubernetes/apps/cobalt/**
+      - .github/workflows/cobalt-youtube.yml
+  push:
+    branches: [main]
+    paths:
+      - kubernetes/apps/cobalt/**
+      - .github/workflows/cobalt-youtube.yml
+permissions:
+  contents: read
+jobs:
+  youtube-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: jdx/mise-action@v5.2.3
+        with:
+          install_args: yq
+      - name: Test VISIONOS startup against the deployed API image
+        run: |
+          image=$(yq -N -r 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "api") | .image' kubernetes/apps/cobalt/resources.yaml)
+          node_image=$(yq -N -r 'select(.kind == "Deployment") | .spec.template.spec.initContainers[] | select(.name == "prepare-youtube") | .image' kubernetes/apps/cobalt/resources.yaml)
+          mkdir -p "$RUNNER_TEMP/cobalt-youtube"
+          chmod 0777 "$RUNNER_TEMP/cobalt-youtube"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/kubernetes/apps/cobalt/youtube:/source:ro" \
+            -v "$RUNNER_TEMP/cobalt-youtube:/youtube" \
+            --entrypoint /bin/sh "$node_image" -ec '
+              cp /source/package.json /source/package-lock.json /youtube/
+              npm ci --prefix /youtube --ignore-scripts --no-audit --no-fund
+            '
+          docker run --rm --network none \
+            -e API_URL=http://127.0.0.1:9000/ \
+            -v "$GITHUB_WORKSPACE/kubernetes/apps/cobalt:/compat:ro" \
+            -v "$RUNNER_TEMP/cobalt-youtube:/youtube:ro" \
+            --entrypoint node "$image" /compat/test_youtube_client.mjs
