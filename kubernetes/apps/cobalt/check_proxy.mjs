@@ -8,11 +8,16 @@ const cases = [
     { path: '/', accept: 'application/json', method: 'POST', status: 400 },
     { path: '/api/', accept: '*/*', status: 200 },
     { path: '/session', accept: 'application/json', method: 'POST', status: 400 },
+    { path: '/_libav/libav-remux-cli.mjs', accept: '*/*', status: 200, javascript: true },
+    { path: '/_libav/libav-encode-cli.mjs', accept: '*/*', status: 200, javascript: true },
 ];
 
 function verify(test, status, contentType, body) {
     assert.equal(status, test.status, `${test.method ?? 'GET'} ${test.path}`);
-    if (test.html) {
+    if (test.javascript) {
+        assert.match(contentType, /(?:application|text)\/javascript/);
+        assert.ok(body.length > 0);
+    } else if (test.html) {
         assert.match(contentType, /text\/html/);
         assert.match(body, /<html/);
     } else {
