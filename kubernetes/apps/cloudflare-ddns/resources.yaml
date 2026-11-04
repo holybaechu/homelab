@@ -45,7 +45,7 @@ spec:
                 name: cloudflare-ddns
           env:
             - name: DOMAINS
-              value: dns.${DOMAIN},auth.${DOMAIN},vpn.${DOMAIN},cobalt.${DOMAIN},cloud.${DOMAIN},office.${DOMAIN},wopi.${DOMAIN},i.${DOMAIN},l.${DOMAIN},photos.${DOMAIN},info.hermes.${DOMAIN}
+              value: dns.${DOMAIN},auth.${DOMAIN},vpn.${DOMAIN},cobalt.${DOMAIN},cloud.${DOMAIN},office.${DOMAIN},wopi.${DOMAIN},i.${DOMAIN},l.${DOMAIN},photos.${DOMAIN},info.hermes.${DOMAIN},mysql.${DOMAIN}
             - name: IP6_PROVIDER
               value: none
             - name: PROXIED
