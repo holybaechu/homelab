@@ -60,7 +60,7 @@ spec:
     image:
       registry: docker.io
       repository: library/traefik
-      tag: v3.7.16
+      tag: v3.7.17
     deployment:
       kind: Deployment
       replicas: 1
