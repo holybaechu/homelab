@@ -5,6 +5,11 @@ Hermes. It reads the synced vault at `/vault`; Obsidian remains the source of
 truth. The MCP endpoint binds to the pod's loopback address and has no Service
 or ingress.
 
+The retrieval policy in [second-brain.md](../second-brain.md) keeps expansion and
+reranking for difficult lookups: they load extra local models. The pinned MCP
+runtime unloads models after five idle minutes; Linux may retain their file
+pages as cache afterward.
+
 The Hermes bootstrap installs the locked Linux x64 CPU runtime in `/opt/qmd`.
 Models and the derived SQLite index persist under `/opt/data/qmd`; the default
 models need about 2.1 GiB before the index. Model revisions are pinned in

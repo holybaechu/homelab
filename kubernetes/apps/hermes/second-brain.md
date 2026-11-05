@@ -27,9 +27,16 @@ right capability is unclear. Use TickTick for task requests and the bundled
 Routine capture is authorized without repeated confirmation. Skip casual chat
 and duplicates; respect requests to omit recording.
 
-For note retrieval, use QMD to locate relevant pages, then resolve its
-`vault/<relative-note>` result (or a `qmd://vault/<relative-note>` URI) against
-the vault root above and reopen the
+For note retrieval, start with filename/content search when a note name or exact
+term is known. Otherwise use QMD's `query` tool with typed `searches`: `lex` for
+exact terms or `vec` for meaning-based recall. Set `rerank: false`, provide a
+focused `intent`, and request only the few pages needed. These typed searches
+avoid automatic query expansion. If focused lightweight searches leave a
+meaningful recall gap, escalate to a plain `query` with `rerank: true` and
+`candidateLimit: 20` for expansion and reranking.
+
+Resolve QMD's `vault/<relative-note>` result (or a
+`qmd://vault/<relative-note>` URI) against the vault root above and reopen the
 current file with `read_file` before using it as evidence. QMD `get` reads an
 indexed snapshot. If QMD is unavailable, stale, still indexing, or finds no
 reliable match, use existing vault filename/content search. An empty vector
