@@ -20,6 +20,7 @@ configMapGenerator:
       - qmd-package-lock.json=qmd/package-lock.json
       - qmd-index.yml=qmd/index.yml
       - qmd-refresh.sh=qmd/refresh.sh
+      - configure_qmd.py=qmd/configure_runtime.py
       - prepare_langfuse.py=langfuse/prepare_langfuse.py
       - langfuse-runtime.pth=langfuse/runtime.pth
       - services.py=integrations/services.py

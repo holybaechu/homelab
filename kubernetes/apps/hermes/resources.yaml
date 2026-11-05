@@ -134,6 +134,7 @@ spec:
               cp /bootstrap/qmd-package.json /opt/qmd/package.json
               cp /bootstrap/qmd-package-lock.json /opt/qmd/package-lock.json
               npm ci --prefix /opt/qmd --omit=optional --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache
+              /opt/hermes/.venv/bin/python /bootstrap/configure_qmd.py
               node -e 'const D=require("/opt/qmd/node_modules/better-sqlite3");const db=new D(":memory:");require("/opt/qmd/node_modules/sqlite-vec").load(db);db.prepare("SELECT vec_version()").get();db.close()'
               node -e 'import("/opt/qmd/node_modules/node-llama-cpp/dist/index.js").then(async({getLlama})=>{const llama=await getLlama({gpu:false,build:"never"});await llama.dispose()})'
           securityContext:

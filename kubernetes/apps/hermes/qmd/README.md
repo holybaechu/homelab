@@ -10,6 +10,11 @@ reranking for difficult lookups: they load extra local models. The pinned MCP
 runtime unloads models after five idle minutes; Linux may retain their file
 pages as cache afterward.
 
+Bootstrap changes the pinned MCP schema's reranking default to `false`, so
+omitting the option stays lightweight. Explicit `rerank: true` remains available.
+The narrow compatibility patch refuses an unfamiliar schema; review it when
+upgrading QMD. CLI defaults are unchanged.
+
 The Hermes bootstrap installs the locked Linux x64 CPU runtime in `/opt/qmd`.
 Models and the derived SQLite index persist under `/opt/data/qmd`; the default
 models need about 2.1 GiB before the index. Model revisions are pinned in
