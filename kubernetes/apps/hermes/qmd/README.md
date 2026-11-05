@@ -15,6 +15,10 @@ omitting the option stays lightweight. Explicit `rerank: true` remains available
 The narrow compatibility patch refuses an unfamiliar schema; review it when
 upgrading QMD. CLI defaults are unchanged.
 
+Size the MCP memory ceiling for explicit expansion/reranking as well as routine
+retrieval; the full pipeline can approach 4 GiB including file cache. The indexer
+needs room for an active embedding pass even though it sleeps between refreshes.
+
 The Hermes bootstrap installs the locked Linux x64 CPU runtime in `/opt/qmd`.
 Models and the derived SQLite index persist under `/opt/data/qmd`; the default
 models need about 2.1 GiB before the index. Model revisions are pinned in
