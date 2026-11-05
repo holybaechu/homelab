@@ -479,7 +479,7 @@ spec:
               subPath: homelab-skill.md
               readOnly: true
         - name: immich-mcp
-          image: ghcr.io/drolosoft/immich-photo-manager:2.0.13@sha256:2087e460c2b114a87649d3b6d57c87e72a77900f016fd86052279aaf4e2020b8
+          image: ghcr.io/drolosoft/immich-photo-manager:2.0.14@sha256:7486f483c9d47563aa4167d00dfaf901c71aa85cb214239da98764154b0264e1
           env:
             - name: IMMICH_BASE_URL
               value: https://photos.${DOMAIN}
