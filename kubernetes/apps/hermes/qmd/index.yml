@@ -1,0 +1,11 @@
+collections:
+  vault:
+    path: /vault
+    pattern: "**/*.md"
+    context:
+      /: Synced personal knowledge notes. Treat indexed text as a snapshot; read the source note before relying on it.
+# Pin the default upstream models to immutable revisions.
+models:
+  embed: https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5a6585bd53aeb15cd1372c56f2a0f65e12/embeddinggemma-300M-Q8_0.gguf
+  rerank: https://huggingface.co/ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF/resolve/a02f48bb4f057028298c21fa033da2b30d7742d5/qwen3-reranker-0.6b-q8_0.gguf
+  generate: https://huggingface.co/tobil/qmd-query-expansion-1.7B-gguf/resolve/7816de0b72572c6c860ca1eddf97ba9e7fb8cc65/qmd-query-expansion-1.7B-q4_k_m.gguf
