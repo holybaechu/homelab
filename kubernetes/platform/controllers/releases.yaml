@@ -200,7 +200,7 @@ spec:
   values:
     image:
       repository: ghcr.io/stakater/reloader
-      tag: v1.4.22
+      tag: v1.4.23
     reloader:
       autoReloadAll: false
       reloadStrategy: annotations
