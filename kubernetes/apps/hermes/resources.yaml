@@ -376,6 +376,7 @@ spec:
                 name: hermes-web
             - secretRef:
                 name: hermes-langfuse
+                optional: true
           env:
             - name: TZ
               value: ${TIME_ZONE}

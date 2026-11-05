@@ -30,8 +30,11 @@ and rerunning is idempotent. Inspect the `reconcile-skills` init-container log.
 Modified skills are treated as user-owned by native sync. Review their upstream
 changes when upgrading the Hermes image. JSON anchors encode literal dollar
 characters as `\u0024` so Flux substitution preserves them. To undo overrides,
-stop the gateway and apply a temporary copy with the listed `old` and `new`
-values exchanged; reverting Git alone does not undo edits on the persistent volume.
+stop the gateway, revert the bootstrap change, and manually replace each listed
+`new` span with its `old` value in reverse order within each file, preserving
+neighboring user edits. Verify
+the edited files before restarting; reverting Git alone does not undo edits on
+the persistent volume.
 
 Run the focused synthetic checks with:
 
