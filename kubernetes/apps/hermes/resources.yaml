@@ -218,6 +218,11 @@ spec:
               value: ${TIME_ZONE}
             - name: XDG_CONFIG_HOME
               value: /state
+            - name: OBSIDIAN_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-obsidian
+                  key: OBSIDIAN_AUTH_TOKEN
           securityContext:
             runAsUser: 10000
             runAsGroup: 10000
