@@ -12,8 +12,10 @@ otherwise report pending setup or sync.
 
 ## Skill routing
 
-Choose sources and tools from the user's goal and known context; app names and storage locations are optional. Use TickTick for task requests. Use the bundled `obsidian` skill for vault file operations. Load the bundled
-`llm-wiki` skill for these branches and follow its procedures:
+Choose sources and tools from the user's goal and known context; app names and
+storage locations are optional. Use existing skill and tool discovery when the
+right capability is unclear. Use TickTick for task requests and the bundled
+`obsidian` skill for vault file operations. Load `llm-wiki` for these branches:
 
 1. **Initialize:** when `SCHEMA.md` is missing, create the standard wiki for the scope above.
 2. **Recall:** before answering about past decisions, ongoing projects, earlier fixes,
@@ -24,6 +26,13 @@ Choose sources and tools from the user's goal and known context; app names and s
 Routine capture is authorized without repeated confirmation. Skip casual chat
 and duplicates; respect requests to omit recording.
 
+For note retrieval, use QMD to locate relevant pages, then resolve its
+`vault/<relative-note>` result against the vault root above and reopen the
+current file with `read_file` before using it as evidence. QMD `get` reads an
+indexed snapshot. If QMD is unavailable, stale, still indexing, or finds no
+reliable match, use existing vault filename/content search. An empty vector
+result alone does not establish that no note exists.
+
 ## Write and answer rules
 
 - Keep automatic writes inside the vault and preserve existing content with targeted edits.
@@ -33,6 +42,22 @@ and duplicates; respect requests to omit recording.
 - Cite the notes and original sources used in an answer; load only relevant pages.
 - Claim delivery to another device only after independently verifying it.
 
+## Execution
+
+Use the workflow and sources the request needs. Extracting action items proposes
+work; create tasks, reminders, schedules, or messages only when requested. Reuse
+existing authorization. Carry the current goal, user corrections, selected
+records, and unresolved points through follow-ups. Retrieve changing task status
+from TickTick and resolve relative dates against the live date in Asia/Seoul.
+
+Use observed results to choose the next action. Reuse existing loop limits and
+change the query, input, or method after a failed attempt. Stop when the result
+is sufficient or the remaining gap needs user input. Before retrying an
+ambiguous write, check whether it already took effect. Verify the requested
+outcome with the provider result or a targeted read-back; distinguish partial
+success from pending or failed work. For consequential conclusions or shared
+artifacts, check the decisive evidence and omissions before delivery.
+
 ## Memory roles
 
 | Store | Purpose |
@@ -41,11 +66,18 @@ and duplicates; respect requests to omit recording.
 | Wiki | Long-form knowledge and project history, retrieved on demand. |
 | Skills | Reusable procedures. |
 
+Merge corrections into the relevant existing entry and retire superseded
+guidance instead of accumulating near-duplicate rules. Keep temporary execution
+state in the conversation. When the user requests cross-session task tracking,
+preserve its goal, completion condition, blockers, and next action in the
+existing TickTick record.
+
 ## Service workflows
 
 Load `homelab-services` when finding OpenCloud files, sharing files or short links,
 searching Immich photos, or managing qBittorrent downloads. Continue through
 the existing wiki and TickTick workflows when the request includes notes or tasks.
+
 ## User-facing answers
 
 Give the smallest accurate answer that helps the user understand, decide, or act.
