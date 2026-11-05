@@ -13,6 +13,14 @@ configMapGenerator:
       - obsidian-sync/package.json
       - obsidian-sync/package-lock.json
       - second-brain.md
+      - seed_skills.py
+      - reconcile_skills.py
+      - skill-overrides.json
+      - qmd-package.json=qmd/package.json
+      - qmd-package-lock.json=qmd/package-lock.json
+      - qmd-index.yml=qmd/index.yml
+      - qmd-refresh.sh=qmd/refresh.sh
+      - prepare_langfuse.py=langfuse/prepare_langfuse.py
       - services.py=integrations/services.py
       - mcp_server.py=integrations/mcp_server.py
       - homelab-skill.md=integrations/SKILL.md

@@ -4,6 +4,12 @@ ticktick:
   url: https://mcp.ticktick.com
   auth: oauth
   enabled: true
+qmd:
+  url: http://127.0.0.1:8181/mcp
+  enabled: true
+  tools:
+    resources: false
+    prompts: false
 homelab:
   command: /opt/hermes/.venv/bin/python
   args: [/opt/homelab/mcp_server.py]

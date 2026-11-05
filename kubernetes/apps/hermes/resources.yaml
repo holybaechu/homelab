@@ -54,9 +54,14 @@ spec:
               mkdir -p /opt/data/workspace /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
               mkdir -p /opt/data/skills/homelab-services /opt/data/workspace/homelab
               mkdir -p /opt/homelab/python /opt/homelab/credentials /opt/immich-mcp
+              mkdir -p /opt/qmd /opt/data/qmd/config /opt/data/qmd/cache/qmd
+              mkdir -p /opt/langfuse/python /opt/langfuse/plugin /opt/data/plugins/langfuse
+              cp /bootstrap/qmd-index.yml /opt/data/qmd/config/index.yml
               touch /opt/homelab/services.py /opt/homelab/mcp_server.py
               chown 10000:10000 /opt/data /opt/data/workspace
               chown 10000:10000 /opt/data/skills/homelab-services /opt/data/workspace/homelab
+              chown 10000:10000 /opt/data/skills /opt/qmd /opt/data/qmd /opt/data/qmd/config /opt/data/qmd/config/index.yml /opt/data/qmd/cache /opt/data/qmd/cache/qmd
+              chown 10000:10000 /opt/langfuse /opt/langfuse/python /opt/langfuse/plugin /opt/data/plugins /opt/data/plugins/langfuse
               chown -R 10000:10000 /opt/homelab /opt/immich-mcp
               chown 10000:10000 /opt/data/obsidian /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
               chmod 700 /opt/data/obsidian/headless
@@ -88,6 +93,101 @@ spec:
               mountPath: /opt/homelab
             - name: immich-temporary
               mountPath: /opt/immich-mcp
+            - name: qmd-runtime
+              mountPath: /opt/qmd
+            - name: langfuse-runtime
+              mountPath: /opt/langfuse
+        - name: reconcile-skills
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              /opt/hermes/.venv/bin/python /bootstrap/seed_skills.py
+              /opt/hermes/.venv/bin/python /bootstrap/reconcile_skills.py --skills-dir /opt/data/skills --patches /bootstrap/skill-overrides.json
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: integration-temporary
+              mountPath: /tmp
+        - name: install-qmd
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              cp /bootstrap/qmd-package.json /opt/qmd/package.json
+              cp /bootstrap/qmd-package-lock.json /opt/qmd/package-lock.json
+              npm ci --prefix /opt/qmd --omit=optional --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache
+              node -e 'const D=require("/opt/qmd/node_modules/better-sqlite3");const db=new D(":memory:");require("/opt/qmd/node_modules/sqlite-vec").load(db);db.prepare("SELECT vec_version()").get();db.close()'
+              node -e 'import("/opt/qmd/node_modules/node-llama-cpp/dist/index.js").then(async({getLlama})=>{const llama=await getLlama({gpu:false,build:"never"});await llama.dispose()})'
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: qmd-runtime
+              mountPath: /opt/qmd
+            - name: qmd-temporary
+              mountPath: /tmp
+        - name: prepare-langfuse
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          command: [/opt/hermes/.venv/bin/python, /bootstrap/prepare_langfuse.py, /opt/langfuse]
+          env:
+            - name: PYTHONPATH
+              value: /opt/langfuse/python:/opt/hermes
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: langfuse-runtime
+              mountPath: /opt/langfuse
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: integration-temporary
+              mountPath: /tmp
         - name: install-qbittorrent-client
           image: python:3.15.2-alpine3.23
           command: [python, -m, pip, install]
@@ -176,6 +276,94 @@ spec:
             - name: oauth-provider
               mountPath: /patched
       containers:
+        - name: qmd
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          command: [node, /opt/qmd/node_modules/@tobilu/qmd/dist/cli/qmd.js]
+          args: [--index, index, mcp, --http, --host, 127.0.0.1, --port, "8181"]
+          workingDir: /opt/qmd
+          env:
+            - name: QMD_CONFIG_DIR
+              value: /state/config
+            - name: XDG_CACHE_HOME
+              value: /state/cache
+            - name: QMD_FORCE_CPU
+              value: "1"
+            - name: QMD_EMBED_PARALLELISM
+              value: "1"
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          livenessProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:8181/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 4Gi
+          volumeMounts:
+            - name: qmd-runtime
+              mountPath: /opt/qmd
+              readOnly: true
+            - name: data
+              mountPath: /state
+              subPath: qmd
+            - name: data
+              mountPath: /vault
+              subPath: obsidian/vault
+              readOnly: true
+            - name: qmd-temporary
+              mountPath: /tmp
+        - name: qmd-index
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          command: [/bin/sh, /bootstrap/qmd-refresh.sh]
+          env:
+            - name: QMD_CONFIG_DIR
+              value: /state/config
+            - name: XDG_CACHE_HOME
+              value: /state/cache
+            - name: QMD_FORCE_CPU
+              value: "1"
+            - name: QMD_EMBED_PARALLELISM
+              value: "1"
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: qmd-runtime
+              mountPath: /opt/qmd
+              readOnly: true
+            - name: data
+              mountPath: /state
+              subPath: qmd
+            - name: data
+              mountPath: /vault
+              subPath: obsidian/vault
+              readOnly: true
+            - name: qmd-temporary
+              mountPath: /tmp
         - name: hermes
           image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
           # Preserve the official entrypoint: s6 starts as root, initializes
@@ -186,6 +374,8 @@ spec:
                 name: hermes-discord
             - secretRef:
                 name: hermes-web
+            - secretRef:
+                name: hermes-langfuse
           env:
             - name: TZ
               value: ${TIME_ZONE}
@@ -193,6 +383,12 @@ spec:
               value: /opt/data/obsidian/vault
             - name: WIKI_PATH
               value: /opt/data/obsidian/vault
+            - name: PYTHONPATH
+              value: /opt/langfuse/python:/opt/hermes
+            - name: HERMES_LANGFUSE_BASE_URL
+              value: http://langfuse.homelab.svc.cluster.local:3000
+            - name: HERMES_LANGFUSE_CAPTURE
+              value: sanitized
             - name: HERMES_DASHBOARD
               value: "1"
             - name: HERMES_DASHBOARD_HOST
@@ -235,6 +431,13 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /opt/data
+            - name: langfuse-runtime
+              mountPath: /opt/langfuse
+              readOnly: true
+            - name: langfuse-runtime
+              mountPath: /opt/data/plugins/langfuse
+              subPath: plugin
+              readOnly: true
             - name: shared-memory
               mountPath: /dev/shm
             - name: bootstrap
@@ -394,6 +597,12 @@ spec:
         - name: integration-temporary
           emptyDir: {}
         - name: homelab-workspace
+          emptyDir: {}
+        - name: qmd-runtime
+          emptyDir: {}
+        - name: qmd-temporary
+          emptyDir: {}
+        - name: langfuse-runtime
           emptyDir: {}
 ---
 apiVersion: v1

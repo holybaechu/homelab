@@ -18,7 +18,8 @@ right capability is unclear. Use TickTick for task requests and the bundled
 `obsidian` skill for vault file operations. Load `llm-wiki` for these branches:
 
 1. **Initialize:** when `SCHEMA.md` is missing, create the standard wiki for the scope above.
-2. **Recall:** before answering about past decisions, ongoing projects, earlier fixes,
+2. **Recall:** reuse relevant evidence already verified in this conversation. For
+   missing or stale context about past decisions, ongoing projects, earlier fixes,
    or prior learning, retrieve relevant notes. Use session history when notes are insufficient.
 3. **Capture:** before the final reply, ingest verified fixes, decisions with rationale,
    substantial research, project milestones, and corrections.
@@ -27,7 +28,8 @@ Routine capture is authorized without repeated confirmation. Skip casual chat
 and duplicates; respect requests to omit recording.
 
 For note retrieval, use QMD to locate relevant pages, then resolve its
-`vault/<relative-note>` result against the vault root above and reopen the
+`vault/<relative-note>` result (or a `qmd://vault/<relative-note>` URI) against
+the vault root above and reopen the
 current file with `read_file` before using it as evidence. QMD `get` reads an
 indexed snapshot. If QMD is unavailable, stale, still indexing, or finds no
 reliable match, use existing vault filename/content search. An empty vector

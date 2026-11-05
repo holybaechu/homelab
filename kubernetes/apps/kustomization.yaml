@@ -12,5 +12,6 @@ resources:
   - zipline
   - immich
   - hermes
+  - langfuse
   - hermes-site
   - mysql
