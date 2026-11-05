@@ -30,12 +30,6 @@ class ServiceBoundaryTests(unittest.IsolatedAsyncioTestCase):
             services.select_space(drives, "Public")
         self.assertEqual(services.select_space(drives, "2")["id"], "2")
 
-    def test_cobalt_internal_tunnel_keeps_query_parameters(self):
-        self.assertEqual(services.cobalt_url("https://cobalt.hchu.me/api/tunnel?id=a%2Fb&sig=xyz"),
-                         "http://cobalt:8080/api/tunnel?id=a%2Fb&sig=xyz")
-        with self.assertRaises(ValueError):
-            services.cobalt_url("https://username:password@cdn.example/video.mp4")
-
     async def test_shortening_uses_the_existing_link_domain(self):
         def respond(request):
             self.assertEqual(request.headers["X-Zipline-Domain"], "l.hchu.me")

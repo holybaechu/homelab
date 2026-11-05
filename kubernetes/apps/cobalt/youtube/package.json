@@ -1,8 +1,0 @@
-{
-  "name": "homelab-cobalt-youtube",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "youtubei.js": "18.1.0"
-  }
-}

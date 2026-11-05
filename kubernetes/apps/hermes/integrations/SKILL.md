@@ -12,7 +12,6 @@ description: Find home files/photos, share links, and manage downloads.
    | Find, read or save files | `cloud_*`; list spaces first. OpenCloud holds originals. |
    | Share a file or shorten a URL | `zipline_*`; file links use `i.hchu.me`, short links use `l.hchu.me`. |
    | Find photos or curate albums | Immich tools; keep originals in Immich. |
-   | Download a video/audio URL | `cobalt_download` |
    | Add, inspect or control a torrent | `qbt_*`; use `content_path` to locate completed files in OpenCloud's Public or Downloads space. |
 
 2. Retrieve only relevant results or files. Read downloaded documents with the

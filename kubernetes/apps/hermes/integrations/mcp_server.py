@@ -1,4 +1,4 @@
-"""Hermes' local MCP interface for OpenCloud, Zipline, Cobalt and qBittorrent."""
+"""Hermes' local MCP interface for OpenCloud, Zipline and qBittorrent."""
 
 from contextlib import asynccontextmanager
 import site
@@ -98,14 +98,6 @@ async def zipline_upload_file(ctx: Context, local_path: LocalFile) -> dict[str, 
 async def zipline_shorten_url(ctx: Context, url: str, slug: str | None = None) -> dict[str, Any]:
     """Create an l.hchu.me short link for an HTTP(S) destination, optionally with a custom slug."""
     return await invoke(ctx, "zipline_shorten_url", url=url, slug=slug)
-
-
-@server.tool(annotations=PUBLIC)
-async def cobalt_download(ctx: Context, url: str, audio_only: bool = False,
-                          quality: Literal["max", "2160", "1440", "1080", "720", "480", "360"] = "1080",
-                          selection: Annotated[int | None, Field(ge=0)] = None) -> dict[str, Any]:
-    """Download video/audio from a supported source URL to temporary storage. A gallery returns selection indices."""
-    return await invoke(ctx, "cobalt_download", url=url, audio_only=audio_only, quality=quality, selection=selection)
 
 
 @server.tool(annotations=READ)

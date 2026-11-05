@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 import re
 import tempfile
 import uuid
-from urllib.parse import quote, unquote, urlsplit, urlunsplit
+from urllib.parse import quote, unquote, urlsplit
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
@@ -17,7 +17,6 @@ CREDENTIALS = Path("/opt/homelab/credentials")
 WORKSPACE = Path("/opt/data/workspace/homelab")
 CLOUD = "https://cloud.hchu.me"
 ZIPLINE = "http://zipline:3000"
-COBALT = "http://cobalt:8080/api/"
 DAV = "{DAV:}"
 OC = "{http://owncloud.org/ns}"
 PROPERTIES = ('<d:prop xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:resourcetype/>'
@@ -84,15 +83,6 @@ def dav_items(content: bytes, base: str) -> list[dict]:
                           "etag": prop.findtext(DAV + "getetag"),
                           "id": prop.findtext(OC + "fileid"), "web_url": prop.findtext(OC + "privatelink")})
     return sorted(items, key=lambda item: (not item["is_directory"], item["path"].casefold()))
-
-
-def cobalt_url(value: str) -> str:
-    parsed = urlsplit(value)
-    if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password:
-        raise ValueError("Cobalt returned an unsupported download URL")
-    if parsed.netloc == "cobalt.hchu.me":
-        return urlunsplit(("http", "cobalt:8080", parsed.path, parsed.query, ""))
-    return value
 
 
 def http_url(value: str) -> str:
@@ -231,32 +221,6 @@ class Services:
                                                  "X-Zipline-Domain": "l.hchu.me"})
         response.raise_for_status()
         return response.json()
-
-    async def cobalt_download(self, url: str, audio_only: bool, quality: str, selection: int | None) -> dict:
-        response = await self.http.post(COBALT, headers={"Accept": "application/json"},
-                                       json={"url": http_url(url), "videoQuality": quality,
-                                       "downloadMode": "audio" if audio_only else "auto",
-                                       "localProcessing": "disabled", "alwaysProxy": True})
-        result = response.json()
-        if result.get("status") == "error":
-            code = str(result.get("error", {}).get("code", "unknown"))
-            if not re.fullmatch(r"[\w.]+", code):
-                code = "unknown"
-            raise ValueError(f"Cobalt could not process this source ({code}); try another supported URL")
-        response.raise_for_status()
-        if result.get("status") == "picker":
-            items = result.get("picker", [])
-            if selection is None:
-                return {"status": "selection_required", "items": [
-                    {"selection": i, "type": item.get("type")} for i, item in enumerate(items)],
-                    "next_step": "Call cobalt_download with the same URL and a selection index"}
-            if selection < 0 or selection >= len(items):
-                raise ValueError("Choose a selection index returned by cobalt_download")
-            result = {"status": "tunnel", "url": items[selection]["url"], "filename": "selected-media.bin"}
-        if result.get("status") not in {"tunnel", "redirect"}:
-            raise ValueError("Cobalt requires unsupported local processing for this URL; try audio_only or another source")
-        return {**await self.download(cobalt_url(result["url"]), result.get("filename", "download.bin")),
-                "source_url": url}
 
     async def qbt(self, action: str, **kwargs) -> dict:
         # The maintained library owns session authentication and API-version differences.

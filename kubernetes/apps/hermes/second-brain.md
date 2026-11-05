@@ -44,5 +44,5 @@ and duplicates; respect requests to omit recording.
 ## Service workflows
 
 Load `homelab-services` when finding OpenCloud files, sharing files or short links,
-searching Immich photos, or managing Cobalt/qBittorrent downloads. Continue through
+searching Immich photos, or managing qBittorrent downloads. Continue through
 the existing wiki and TickTick workflows when the request includes notes or tasks.

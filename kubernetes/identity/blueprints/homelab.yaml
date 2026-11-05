@@ -116,45 +116,6 @@ entries:
       policy: !KeyOf service-access-policy
       group: null
       user: null
-  - model: authentik_providers_proxy.proxyprovider
-    identifiers:
-      name: Cobalt
-    id: cobalt-provider
-    attrs:
-      mode: forward_single
-      external_host: https://cobalt.${DOMAIN}
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-  - model: authentik_core.application
-    identifiers:
-      slug: cobalt
-    id: cobalt-app
-    attrs:
-      name: Cobalt
-      provider: !KeyOf cobalt-provider
-      icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/cobalt.svg
-      meta_launch_url: https://cobalt.${DOMAIN}
-  - model: authentik_core.applicationentitlement
-    identifiers:
-      app: !KeyOf cobalt-app
-      name: user
-    id: cobalt-user-entitlement
-  - model: authentik_policies.policybinding
-    identifiers:
-      target: !KeyOf cobalt-user-entitlement
-      order: 0
-    attrs:
-      group: !KeyOf personal
-      policy: null
-      user: null
-  - model: authentik_policies.policybinding
-    identifiers:
-      target: !KeyOf cobalt-app
-      order: 0
-    attrs:
-      policy: !KeyOf service-access-policy
-      group: null
-      user: null
   - model: authentik_providers_oauth2.scopemapping
     identifiers:
       name: OpenCloud roles
@@ -432,8 +393,7 @@ entries:
     identifiers:
       managed: goauthentik.io/outposts/embedded
     attrs:
-      providers:
-        - !KeyOf cobalt-provider
+      providers: []
       config:
         authentik_host: https://auth.${DOMAIN}
   # Remove superseded service groups after their entitlement bindings are moved.
