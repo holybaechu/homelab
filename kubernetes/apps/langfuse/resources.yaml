@@ -292,6 +292,8 @@ spec:
                 secretKeyRef:
                   name: langfuse-env
                   key: MINIO_ROOT_PASSWORD
+            - name: MC_HOST_local
+              value: http://$(MINIO_ROOT_USER):$(MINIO_ROOT_PASSWORD)@127.0.0.1:9090
           securityContext:
             runAsUser: 65532
             runAsGroup: 65532
@@ -301,7 +303,7 @@ spec:
               drop: [ALL]
           startupProbe:
             exec: &minio-probe
-              command: [mc, ready, http://127.0.0.1:9090]
+              command: [mc, ready, local]
             failureThreshold: 60
             periodSeconds: 5
           readinessProbe:
