@@ -10,3 +10,6 @@ configMapGenerator:
       - config.yaml
       - mcp-servers.yaml
       - patch_ticktick_oauth.py
+      - obsidian-sync/package.json
+      - obsidian-sync/package-lock.json
+      - second-brain.md

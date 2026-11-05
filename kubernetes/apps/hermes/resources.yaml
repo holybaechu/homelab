@@ -47,8 +47,10 @@ spec:
                 chown 10000:10000 /opt/data/config.yaml
                 chmod 600 /opt/data/config.yaml
               fi
-              mkdir -p /opt/data/workspace
+              mkdir -p /opt/data/workspace /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
               chown 10000:10000 /opt/data /opt/data/workspace
+              chown 10000:10000 /opt/data/obsidian /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
+              chmod 700 /opt/data/obsidian/headless
               # Git owns the MCP section; the CLI preserves other live settings.
               hermes config set --force mcp_servers "$(cat /bootstrap/mcp-servers.yaml)"
           securityContext:
@@ -69,6 +71,39 @@ spec:
             - name: bootstrap
               mountPath: /bootstrap
               readOnly: true
+            - name: obsidian-runtime
+              mountPath: /opt/obsidian
+        - name: install-obsidian-sync
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              cp /bootstrap/package.json /opt/obsidian/package.json
+              cp /bootstrap/package-lock.json /opt/obsidian/package-lock.json
+              npm ci --prefix /opt/obsidian --omit=dev --no-audit --no-fund --strict-allow-scripts --cache /tmp/npm-cache
+              node -e 'const Database = require("/opt/obsidian/node_modules/better-sqlite3"); const db = new Database(":memory:"); db.prepare("SELECT 1").get(); db.close();'
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: obsidian-runtime
+              mountPath: /opt/obsidian
+            - name: obsidian-temporary
+              mountPath: /tmp
         - name: patch-ticktick-oauth
           image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
           command:
@@ -106,6 +141,10 @@ spec:
           env:
             - name: TZ
               value: ${TIME_ZONE}
+            - name: OBSIDIAN_VAULT_PATH
+              value: /vault
+            - name: WIKI_PATH
+              value: /vault/Hermes
             - name: HERMES_DASHBOARD
               value: "1"
             - name: HERMES_DASHBOARD_HOST
@@ -150,10 +189,64 @@ spec:
               mountPath: /opt/data
             - name: shared-memory
               mountPath: /dev/shm
+            - name: data
+              mountPath: /vault
+              subPath: obsidian/vault
+            - name: bootstrap
+              mountPath: /opt/data/workspace/.hermes.md
+              subPath: second-brain.md
+              readOnly: true
             - name: oauth-provider
               mountPath: /opt/hermes/tools/mcp_oauth_provider.py
               subPath: mcp_oauth_provider.py
               readOnly: true
+        - name: obsidian-sync
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              cli=/opt/obsidian/node_modules/obsidian-headless/cli.js
+              rm -f /state/ready
+              until node "$cli" sync-status --path /vault --json >/dev/null 2>&1; do
+                sleep 10
+              done
+              node "$cli" sync --path /vault
+              touch /state/ready
+              exec node "$cli" sync --path /vault --continuous
+          env:
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: XDG_CONFIG_HOME
+              value: /state
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /vault
+              subPath: obsidian/vault
+            - name: data
+              mountPath: /state
+              subPath: obsidian/headless
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: obsidian-runtime
+              mountPath: /opt/obsidian
+              readOnly: true
+            - name: obsidian-temporary
+              mountPath: /tmp
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -162,6 +255,10 @@ spec:
           configMap:
             name: hermes-bootstrap
         - name: oauth-provider
+          emptyDir: {}
+        - name: obsidian-runtime
+          emptyDir: {}
+        - name: obsidian-temporary
           emptyDir: {}
         - name: shared-memory
           emptyDir:

@@ -1,0 +1,11 @@
+{
+  "name": "hermes-obsidian-sync",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "obsidian-headless": "0.0.14"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  }
+}
