@@ -106,7 +106,7 @@ spec:
               mountPath: /state
       containers:
         - name: adguard
-          image: adguard/adguardhome:v0.107.79
+          image: adguard/adguardhome:v0.107.80
           args: [-c, /opt/adguardhome/conf/AdGuardHome.yaml, -w, /opt/adguardhome/work, --no-check-update]
           securityContext:
             allowPrivilegeEscalation: false

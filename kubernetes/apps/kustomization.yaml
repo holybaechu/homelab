@@ -8,7 +8,6 @@ resources:
   - opencloud
   - collabora
   - qbittorrent
-  - cobalt
   - cloudflare-ddns
   - zipline
   - immich

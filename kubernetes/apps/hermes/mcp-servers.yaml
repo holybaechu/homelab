@@ -4,3 +4,36 @@ ticktick:
   url: https://mcp.ticktick.com
   auth: oauth
   enabled: true
+homelab:
+  command: /opt/hermes/.venv/bin/python
+  args: [/opt/homelab/mcp_server.py]
+  enabled: true
+  tools:
+    resources: false
+    prompts: false
+immich:
+  url: http://127.0.0.1:8626/mcp
+  enabled: true
+  tools:
+    resources: false
+    prompts: false
+    include:
+      - ping
+      - get_server_version
+      - get_capabilities
+      - search_metadata
+      - search_smart
+      - search_explore
+      - search_cities
+      - search_places
+      - search_suggestions
+      - list_albums
+      - get_album
+      - get_asset_info
+      - get_asset_image
+      - get_images_batch
+      - list_people
+      - get_person
+      - search_people
+      - create_album
+      - add_assets_to_album

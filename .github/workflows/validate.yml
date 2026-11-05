@@ -22,7 +22,7 @@ jobs:
       TF_INPUT: "0"
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: jdx/mise-action@v5.2.3
+      - uses: jdx/mise-action@v5.2.6
         with:
           install_args: opentofu flux2 kustomize kubeconform yq ${{ inputs.talos && 'talosctl jq' || '' }}
       - name: Validate OpenTofu configuration
@@ -89,3 +89,7 @@ jobs:
               ([.ingress[].subnet] | sort) == ([$node, $pods] | sort))
           ' > /dev/null
       - run: git diff --check
+      - name: Test Hermes service boundaries
+        run: |
+          python3 -m pip install httpx==0.28.1
+          python3 -m unittest discover -s kubernetes/apps/hermes/integrations -p 'test_*.py'
