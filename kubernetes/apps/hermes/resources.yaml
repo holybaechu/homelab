@@ -142,9 +142,9 @@ spec:
             - name: TZ
               value: ${TIME_ZONE}
             - name: OBSIDIAN_VAULT_PATH
-              value: /vault
+              value: /opt/data/obsidian/vault
             - name: WIKI_PATH
-              value: /vault/Hermes
+              value: /opt/data/obsidian/vault
             - name: HERMES_DASHBOARD
               value: "1"
             - name: HERMES_DASHBOARD_HOST
@@ -189,9 +189,6 @@ spec:
               mountPath: /opt/data
             - name: shared-memory
               mountPath: /dev/shm
-            - name: data
-              mountPath: /vault
-              subPath: obsidian/vault
             - name: bootstrap
               mountPath: /opt/data/workspace/.hermes.md
               subPath: second-brain.md
