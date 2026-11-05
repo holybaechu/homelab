@@ -1,0 +1,1 @@
+qbittorrent-api==2026.10.1 --hash=sha256:e1caf4359eb8b6b129fa50bfe3ffae720d29eb806f51325565198c37a158469c

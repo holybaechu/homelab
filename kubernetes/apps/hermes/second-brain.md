@@ -40,3 +40,9 @@ and duplicates; respect requests to omit recording.
 | Built-in memory | Keep enabled and concise: user preferences, stable environment facts, vault location. |
 | Wiki | Long-form knowledge and project history, retrieved on demand. |
 | Skills | Reusable procedures. |
+
+## Service workflows
+
+Load `homelab-services` when finding OpenCloud files, sharing files or short links,
+searching Immich photos, or managing Cobalt/qBittorrent downloads. Continue through
+the existing wiki and TickTick workflows when the request includes notes or tasks.

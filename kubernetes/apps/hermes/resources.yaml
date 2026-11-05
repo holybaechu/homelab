@@ -36,6 +36,10 @@ spec:
         - ip: ${NODE_IP}
           hostnames:
             - auth.${DOMAIN}
+            - cloud.${DOMAIN}
+            - photos.${DOMAIN}
+            - i.${DOMAIN}
+            - l.${DOMAIN}
       initContainers:
         - name: seed-config
           image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
@@ -48,7 +52,12 @@ spec:
                 chmod 600 /opt/data/config.yaml
               fi
               mkdir -p /opt/data/workspace /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
+              mkdir -p /opt/data/skills/homelab-services /opt/data/workspace/homelab
+              mkdir -p /opt/homelab/python /opt/homelab/credentials /opt/immich-mcp
+              touch /opt/homelab/services.py /opt/homelab/mcp_server.py
               chown 10000:10000 /opt/data /opt/data/workspace
+              chown 10000:10000 /opt/data/skills/homelab-services /opt/data/workspace/homelab
+              chown -R 10000:10000 /opt/homelab /opt/immich-mcp
               chown 10000:10000 /opt/data/obsidian /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
               chmod 700 /opt/data/obsidian/headless
               # Git owns the MCP section; the CLI preserves other live settings.
@@ -68,11 +77,50 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /opt/data
+            - name: homelab-workspace
+              mountPath: /opt/data/workspace/homelab
             - name: bootstrap
               mountPath: /bootstrap
               readOnly: true
             - name: obsidian-runtime
               mountPath: /opt/obsidian
+            - name: homelab-runtime
+              mountPath: /opt/homelab
+            - name: immich-temporary
+              mountPath: /opt/immich-mcp
+        - name: install-qbittorrent-client
+          image: python:3.15.2-alpine3.23
+          command: [python, -m, pip, install]
+          args:
+            - --disable-pip-version-check
+            - --no-deps
+            - --no-compile
+            - --require-hashes
+            - --target=/runtime/python
+            - --cache-dir=/tmp/pip-cache
+            - --requirement=/bootstrap/requirements.txt
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: homelab-runtime
+              mountPath: /runtime
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: integration-temporary
+              mountPath: /tmp
         - name: install-obsidian-sync
           image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
           command: [/bin/sh, -ec]
@@ -197,6 +245,75 @@ spec:
               mountPath: /opt/hermes/tools/mcp_oauth_provider.py
               subPath: mcp_oauth_provider.py
               readOnly: true
+            - name: homelab-runtime
+              mountPath: /opt/homelab
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/homelab/services.py
+              subPath: services.py
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/homelab/mcp_server.py
+              subPath: mcp_server.py
+              readOnly: true
+            - name: service-credentials
+              mountPath: /opt/homelab/credentials
+              readOnly: true
+            - name: homelab-workspace
+              mountPath: /opt/data/workspace/homelab
+            - name: bootstrap
+              mountPath: /opt/data/skills/homelab-services/SKILL.md
+              subPath: homelab-skill.md
+              readOnly: true
+        - name: immich-mcp
+          image: ghcr.io/drolosoft/immich-photo-manager:2.0.13@sha256:2087e460c2b114a87649d3b6d57c87e72a77900f016fd86052279aaf4e2020b8
+          env:
+            - name: IMMICH_BASE_URL
+              value: https://photos.${DOMAIN}
+            - name: IMMICH_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-immich
+                  key: IMMICH_API_KEY
+            - name: MCP_HOST
+              value: 127.0.0.1
+            - name: MCP_PORT
+              value: "8626"
+            - name: MCP_TRANSPORT
+              value: http
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            exec:
+              command: [python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8626/health', timeout=4)"]
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            exec:
+              command: [python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8626/health', timeout=4)"]
+          livenessProbe:
+            exec:
+              command: [python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8626/health', timeout=4)"]
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: immich-temporary
+              mountPath: /data
+            - name: integration-temporary
+              mountPath: /tmp
         - name: obsidian-sync
           image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
           command: [/bin/sh, -ec]
@@ -266,6 +383,18 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 512Mi
+        - name: homelab-runtime
+          emptyDir: {}
+        - name: service-credentials
+          secret:
+            secretName: hermes-services
+            defaultMode: 0444
+        - name: immich-temporary
+          emptyDir: {}
+        - name: integration-temporary
+          emptyDir: {}
+        - name: homelab-workspace
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
