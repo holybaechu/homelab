@@ -21,6 +21,7 @@ configMapGenerator:
       - qmd-index.yml=qmd/index.yml
       - qmd-refresh.sh=qmd/refresh.sh
       - prepare_langfuse.py=langfuse/prepare_langfuse.py
+      - langfuse-runtime.pth=langfuse/runtime.pth
       - services.py=integrations/services.py
       - mcp_server.py=integrations/mcp_server.py
       - homelab-skill.md=integrations/SKILL.md

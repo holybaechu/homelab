@@ -163,7 +163,7 @@ spec:
           command: [/opt/hermes/.venv/bin/python, /bootstrap/prepare_langfuse.py, /opt/langfuse]
           env:
             - name: PYTHONPATH
-              value: /opt/langfuse/python:/opt/hermes
+              value: /opt/hermes
           securityContext:
             runAsUser: 10000
             runAsGroup: 10000
@@ -185,6 +185,10 @@ spec:
               mountPath: /opt/langfuse
             - name: bootstrap
               mountPath: /bootstrap
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/hermes/.venv/lib/python3.14/site-packages/hermes-langfuse.pth
+              subPath: langfuse-runtime.pth
               readOnly: true
             - name: integration-temporary
               mountPath: /tmp
@@ -385,7 +389,7 @@ spec:
             - name: WIKI_PATH
               value: /opt/data/obsidian/vault
             - name: PYTHONPATH
-              value: /opt/langfuse/python:/opt/hermes
+              value: /opt/hermes
             - name: HERMES_LANGFUSE_BASE_URL
               value: http://langfuse.homelab.svc.cluster.local:3000
             - name: HERMES_LANGFUSE_CAPTURE
@@ -438,6 +442,11 @@ spec:
             - name: langfuse-runtime
               mountPath: /opt/data/plugins/langfuse
               subPath: plugin
+              readOnly: true
+            # The native launcher resets PYTHONPATH, then processes this site directory.
+            - name: bootstrap
+              mountPath: /opt/hermes/.venv/lib/python3.14/site-packages/hermes-langfuse.pth
+              subPath: langfuse-runtime.pth
               readOnly: true
             - name: shared-memory
               mountPath: /dev/shm

@@ -47,6 +47,12 @@ startup runs database migrations; an older image may not support the migrated
 schema. See the [upstream deployment](https://langfuse.com/self-hosting) and
 [headless initialization](https://langfuse.com/self-hosting/administration/headless-initialization).
 
+The Hermes launcher resets `PYTHONPATH`. A read-only `.pth` file registers the
+prepared SDK directory through its standard Python site processing. When
+upgrading the pinned Hermes image, verify that its Python site directory still
+matches the `python3.14` mounts in `kubernetes/apps/hermes/resources.yaml`.
+Bootstrap checks SDK imports through this same site path before enabling tracing.
+
 ## Backup, restore and removal
 
 `langfuse-data` contains `postgres`, `clickhouse`, `clickhouse-logs`, `redis` and

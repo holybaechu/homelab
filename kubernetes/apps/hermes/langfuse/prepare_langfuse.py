@@ -68,7 +68,10 @@ def prepare(runtime):
                 (plugin / name).write_bytes(download(f"{SOURCE}/{name}", checksum))
         # Validate against the image's installed dependency versions before the
         # plugin becomes discoverable. Importing the SDK does not create a client.
-        environment = dict(os.environ, PYTHONPATH=str(python))
+        # Match native startup: the mounted site path file must expose the SDK.
+        # Injecting the target here would hide an incorrect Python site mount.
+        environment = dict(os.environ)
+        environment.pop("PYTHONPATH", None)
         subprocess.run(
             [sys.executable, "-c", "from importlib.metadata import distribution, version; "
              "from packaging.requirements import Requirement; "
