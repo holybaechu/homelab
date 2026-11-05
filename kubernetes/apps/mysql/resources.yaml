@@ -43,6 +43,10 @@ spec:
           image: docker.io/library/mysql:8.4.13
           args:
             - --innodb-buffer-pool-size=128M
+            - --innodb-log-buffer-size=16M
+            - --performance-schema-digests-size=1000
+            - --performance-schema-events-statements-history-long-size=1000
+            - --temptable-max-ram=64M
             - --max-connections=50
             - --mysqlx=OFF
             - --skip-log-bin

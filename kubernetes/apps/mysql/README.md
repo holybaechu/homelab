@@ -4,6 +4,11 @@ Single MySQL 8.4 instance with local-path persistent storage. No backup is
 configured. Binary logging is disabled for this temporary workload. TCP
 connections require TLS, using a Let's Encrypt certificate renewed by cert-manager.
 
+Memory settings retain statement diagnostics with shorter global history and
+fewer distinct query patterns. Large temporary tables spill to disk. When
+increasing the workload, check `Innodb_log_waits` and
+`Performance_schema_digest_lost` before enlarging these buffers.
+
 ## Credentials
 
 Create a Login item named `MySQL Temporary` in the `Homelab` 1Password vault:
