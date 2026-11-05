@@ -4,6 +4,8 @@
     <mark_cache_size>134217728</mark_cache_size>
     <index_mark_cache_size>67108864</index_mark_cache_size>
     <uncompressed_cache_size>0</uncompressed_cache_size>
+    <background_schedule_pool_size>32</background_schedule_pool_size>
+    <max_thread_pool_free_size>100</max_thread_pool_free_size>
     <logger>
         <level>warning</level>
         <console>true</console>

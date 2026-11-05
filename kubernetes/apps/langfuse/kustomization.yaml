@@ -11,3 +11,4 @@ configMapGenerator:
   - name: langfuse-clickhouse
     files:
       - homelab.xml
+      - users.xml

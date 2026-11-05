@@ -11,6 +11,11 @@ CPU using the node's kubelet stats summary, and restarts with
 `kubectl -n homelab get pod -l app=langfuse`. The cluster has no Metrics API for
 `kubectl top`. No high availability or automatic backup is configured.
 
+Worker pools and ClickHouse query parallelism are bounded for this small
+deployment; large aggregations can spill to disk. When increasing ingestion,
+check queue backlog and dashboard latency before raising concurrency or memory
+budgets together.
+
 ## Setup and capture
 
 External Secrets reads the existing `LANGFUSE_*_REF` fields from

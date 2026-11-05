@@ -237,6 +237,10 @@ spec:
               mountPath: /etc/clickhouse-server/config.d/homelab.xml
               subPath: homelab.xml
               readOnly: true
+            - name: clickhouse-config
+              mountPath: /etc/clickhouse-server/users.d/homelab.xml
+              subPath: users.xml
+              readOnly: true
         - name: redis
           image: docker.io/library/redis:7@sha256:11b0dc8826c3383847878b058d7cb22b091dd59b842e8ff7a0e3405d1e610667
           command: [/bin/sh, -ec]
