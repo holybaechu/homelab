@@ -38,7 +38,7 @@ spec:
             - auth.${DOMAIN}
       initContainers:
         - name: seed-config
-          image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
           command: [/bin/sh, -ec]
           args:
             - |
@@ -74,7 +74,7 @@ spec:
             - name: obsidian-runtime
               mountPath: /opt/obsidian
         - name: install-obsidian-sync
-          image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
           command: [/bin/sh, -ec]
           args:
             - |
@@ -105,7 +105,7 @@ spec:
             - name: obsidian-temporary
               mountPath: /tmp
         - name: patch-ticktick-oauth
-          image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
           command:
             - /opt/hermes/.venv/bin/python
             - /bootstrap/patch_ticktick_oauth.py
@@ -129,7 +129,7 @@ spec:
               mountPath: /patched
       containers:
         - name: hermes
-          image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
           # Preserve the official entrypoint: s6 starts as root, initializes
           # storage, then drops gateway/dashboard processes to UID 10000.
           args: [gateway, run]
@@ -201,7 +201,7 @@ spec:
               subPath: mcp_oauth_provider.py
               readOnly: true
         - name: obsidian-sync
-          image: nousresearch/hermes-agent:latest-desktop@sha256:b7837e696eebce08495f6984a79a0a6a7ef696af746d407debff26d88473a389
+          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
           command: [/bin/sh, -ec]
           args:
             - |
