@@ -1,0 +1,19 @@
+<clickhouse>
+    <listen_host replace="replace">127.0.0.1</listen_host>
+    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+    <mark_cache_size>134217728</mark_cache_size>
+    <index_mark_cache_size>67108864</index_mark_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+    <logger>
+        <level>warning</level>
+        <console>true</console>
+    </logger>
+    <!-- Langfuse does not query these continuously written internal logs. -->
+    <trace_log remove="1" />
+    <text_log remove="1" />
+    <opentelemetry_span_log remove="1" />
+    <asynchronous_metric_log remove="1" />
+    <metric_log remove="1" />
+    <latency_log remove="1" />
+    <part_log remove="1" />
+</clickhouse>

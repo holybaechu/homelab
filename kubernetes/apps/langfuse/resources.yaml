@@ -1,0 +1,363 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: langfuse-data
+  annotations:
+    # Removing the app must not also remove its databases and ingestion objects.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      # local-path does not enforce a quota; monitor actual disk usage.
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: langfuse
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: langfuse
+  template:
+    metadata:
+      labels:
+        app: langfuse
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: prepare-storage
+          image: docker.io/library/busybox:1.37.0
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              mkdir -p /data/postgres /data/redis /data/clickhouse /data/clickhouse-logs /data/minio/langfuse
+              chown 999:999 /data/postgres /data/redis
+              chown 999:999 /postgres-runtime
+              chown 101:101 /data/clickhouse /data/clickhouse-logs
+              chown 65532:65532 /data/minio /data/minio/langfuse
+              chmod 700 /data/postgres /data/redis /data/clickhouse /data/clickhouse-logs /data/minio
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, FOWNER, DAC_OVERRIDE]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: postgres-runtime
+              mountPath: /postgres-runtime
+      containers:
+        # The six components share localhost and one lifecycle on this single
+        # node. Backend ports have no Kubernetes Service or external ingress.
+        - name: web
+          image: docker.io/langfuse/langfuse:4.75.0
+          envFrom: &langfuse-environment
+            - configMapRef:
+                name: langfuse-config
+            - secretRef:
+                name: langfuse-env
+          env: &langfuse-storage-credentials
+            - name: NODE_OPTIONS
+              value: --max-old-space-size=1536
+            - name: LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-env
+                  key: MINIO_ROOT_PASSWORD
+            - name: LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-env
+                  key: MINIO_ROOT_PASSWORD
+          securityContext: &langfuse-security
+            runAsUser: 1001
+            runAsGroup: 1001
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: web
+              containerPort: 3000
+          startupProbe:
+            httpGet:
+              path: /api/public/health
+              port: web
+            failureThreshold: 120
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/public/ready
+              port: web
+          livenessProbe:
+            httpGet:
+              path: /api/public/health
+              port: web
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 768Mi
+            limits:
+              memory: 2Gi
+        - name: worker
+          image: docker.io/langfuse/langfuse-worker:4.75.0
+          envFrom: *langfuse-environment
+          env: *langfuse-storage-credentials
+          securityContext: *langfuse-security
+          ports:
+            - name: worker
+              containerPort: 3030
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: worker
+            failureThreshold: 120
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: worker
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: worker
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 768Mi
+            limits:
+              memory: 2Gi
+        - name: postgres
+          image: docker.io/library/postgres:17@sha256:653186fe15006c099d2fb3bc1d8461c1dee9d036c43f2e5fdaf4f22e5e601876
+          args: [-c, shared_buffers=128MB, -c, max_connections=50, -c, listen_addresses=127.0.0.1]
+          env:
+            - name: POSTGRES_USER
+              value: langfuse
+            - name: POSTGRES_DB
+              value: langfuse
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-env
+                  key: POSTGRES_PASSWORD
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            exec: &postgres-probe
+              command: [pg_isready, -h, 127.0.0.1, -U, langfuse, -d, langfuse]
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            exec: *postgres-probe
+          livenessProbe:
+            exec: *postgres-probe
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+            - name: postgres-runtime
+              mountPath: /var/run/postgresql
+        - name: clickhouse
+          # The version used by the official Langfuse 4.75.0 Compose example.
+          image: docker.io/clickhouse/clickhouse-server:26.3.62.3
+          env:
+            - name: CLICKHOUSE_DB
+              value: default
+            - name: CLICKHOUSE_USER
+              value: langfuse
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-env
+                  key: CLICKHOUSE_PASSWORD
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            exec: &clickhouse-probe
+              command: [wget, --quiet, --output-document=/dev/null, http://127.0.0.1:8123/ping]
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            exec: *clickhouse-probe
+          livenessProbe:
+            exec: *clickhouse-probe
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 1Gi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+              subPath: clickhouse
+            - name: data
+              mountPath: /var/log/clickhouse-server
+              subPath: clickhouse-logs
+            - name: clickhouse-config
+              mountPath: /etc/clickhouse-server/config.d/homelab.xml
+              subPath: homelab.xml
+              readOnly: true
+        - name: redis
+          image: docker.io/library/redis:7@sha256:11b0dc8826c3383847878b058d7cb22b091dd59b842e8ff7a0e3405d1e610667
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              umask 077
+              printf 'bind 127.0.0.1\nrequirepass %s\nmaxmemory 128mb\nmaxmemory-policy noeviction\nappendonly yes\ndir /data\n' "$REDIS_AUTH" > /tmp/redis.conf
+              exec redis-server /tmp/redis.conf
+          env:
+            - name: REDIS_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-env
+                  key: REDIS_AUTH
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            exec: &redis-probe
+              command: [/bin/sh, -ec, 'REDISCLI_AUTH="$REDIS_AUTH" redis-cli -h 127.0.0.1 ping | grep -q PONG']
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            exec: *redis-probe
+          livenessProbe:
+            exec: *redis-probe
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              subPath: redis
+            - name: redis-runtime
+              mountPath: /tmp
+        - name: minio
+          # Official Compose uses the Chainguard MinIO distribution.
+          image: cgr.dev/chainguard/minio:latest@sha256:3c60a2a8c4d33409a9bc7a623a7fcbfb4605adc3d89422d2f53b3f673a6e5597
+          args: [server, --address, '127.0.0.1:9090', --console-address, '127.0.0.1:9091', /data]
+          env:
+            - name: MINIO_ROOT_USER
+              value: langfuse
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-env
+                  key: MINIO_ROOT_PASSWORD
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            exec: &minio-probe
+              command: [mc, ready, http://127.0.0.1:9090]
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            exec: *minio-probe
+          livenessProbe:
+            exec: *minio-probe
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              subPath: minio
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: langfuse-data
+        - name: clickhouse-config
+          configMap:
+            name: langfuse-clickhouse
+        - name: postgres-runtime
+          emptyDir: {}
+        - name: redis-runtime
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: langfuse
+spec:
+  selector:
+    app: langfuse
+  ports:
+    - name: web
+      port: 3000
+      targetPort: web
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: langfuse
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`langfuse.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: private-only
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: langfuse
+          port: 3000
+  tls: {}
