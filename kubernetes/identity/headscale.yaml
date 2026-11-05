@@ -42,7 +42,7 @@ spec:
         runAsGroup: 1000
       containers:
       - name: headscale
-        image: docker.io/headscale/headscale:v0.29.6
+        image: docker.io/headscale/headscale:v0.29.7
         args:
         - serve
         ports:
