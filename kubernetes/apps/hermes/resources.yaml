@@ -42,7 +42,7 @@ spec:
             - l.${DOMAIN}
       initContainers:
         - name: seed-config
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           command: [/bin/sh, -ec]
           args:
             - |
@@ -98,7 +98,7 @@ spec:
             - name: langfuse-runtime
               mountPath: /opt/langfuse
         - name: reconcile-skills
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           command: [/bin/sh, -ec]
           args:
             - |
@@ -127,7 +127,7 @@ spec:
             - name: integration-temporary
               mountPath: /tmp
         - name: install-qmd
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           command: [/bin/sh, -ec]
           args:
             - |
@@ -160,7 +160,7 @@ spec:
             - name: qmd-temporary
               mountPath: /tmp
         - name: prepare-langfuse
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           command: [/opt/hermes/.venv/bin/python, /bootstrap/prepare_langfuse.py, /opt/langfuse]
           env:
             - name: PYTHONPATH
@@ -227,7 +227,7 @@ spec:
             - name: integration-temporary
               mountPath: /tmp
         - name: install-obsidian-sync
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           command: [/bin/sh, -ec]
           args:
             - |
@@ -258,7 +258,7 @@ spec:
             - name: obsidian-temporary
               mountPath: /tmp
         - name: patch-ticktick-oauth
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           command:
             - /opt/hermes/.venv/bin/python
             - /bootstrap/patch_ticktick_oauth.py
@@ -282,7 +282,7 @@ spec:
               mountPath: /patched
       containers:
         - name: qmd
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           command: [node, /opt/qmd/node_modules/@tobilu/qmd/dist/cli/qmd.js]
           args: [--index, index, mcp, --http, --host, 127.0.0.1, --port, "8181"]
           workingDir: /opt/qmd
@@ -328,7 +328,7 @@ spec:
             - name: qmd-temporary
               mountPath: /tmp
         - name: qmd-index
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           command: [/bin/sh, /bootstrap/qmd-refresh.sh]
           env:
             - name: QMD_CONFIG_DIR
@@ -370,7 +370,7 @@ spec:
             - name: qmd-temporary
               mountPath: /tmp
         - name: hermes
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           # Preserve the official entrypoint: s6 starts as root, initializes
           # storage, then drops gateway/dashboard processes to UID 10000.
           args: [gateway, run]
@@ -529,7 +529,7 @@ spec:
             - name: integration-temporary
               mountPath: /tmp
         - name: obsidian-sync
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:b9d51f440b86c892f4f231619584d2f515d55a2f7c30eff8516e2512425ac742
           command: [/bin/sh, -ec]
           args:
             - |
