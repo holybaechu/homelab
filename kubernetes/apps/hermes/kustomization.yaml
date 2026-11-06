@@ -9,6 +9,7 @@ configMapGenerator:
     files:
       - config.yaml
       - mcp-servers.yaml
+      - webhook.yaml
       - obsidian-sync/package.json
       - obsidian-sync/package-lock.json
       - second-brain.md

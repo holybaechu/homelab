@@ -1,0 +1,67 @@
+{
+  "id": "gmailHermesTriage",
+  "name": "Gmail → Hermes attention triage",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [{ "mode": "everyX", "value": 5, "unit": "minutes" }]
+        },
+        "simple": true,
+        "maxResults": 50,
+        "filters": {
+          "includeSpamTrash": false,
+          "labelIds": ["INBOX"],
+          "readStatus": "both"
+        },
+        "options": {}
+      },
+      "id": "gmail-trigger",
+      "name": "New inbox mail",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [0, 0],
+      "credentials": {
+        "gmailOAuth2": { "id": "homelabGmailOauth", "name": "Gmail (Hermes account)" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://hermes.homelab.svc.cluster.local:8644/webhooks/gmail",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Request-ID", "value": "={{ 'gmail:' + $json.id }}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event_type: 'gmail.message_received', id: $json.id, threadId: $json.threadId }) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "hermes-webhook",
+      "name": "Ask Hermes whether to notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": { "id": "hermesWebhookTok", "name": "Hermes webhook" }
+      }
+    }
+  ],
+  "connections": {
+    "New inbox mail": {
+      "main": [[{ "node": "Ask Hermes whether to notify", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul",
+    "saveDataSuccessExecution": "none"
+  }
+}

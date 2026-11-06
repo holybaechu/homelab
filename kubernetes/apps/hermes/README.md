@@ -12,6 +12,10 @@ answer scope. Discord tool logs stay visible; final answers focus on useful
 results. [QMD](qmd/README.md) supplies local keyword and semantic search over a
 read-only vault mount. Reopen source notes before relying on indexed results.
 
+[n8n Gmail triage](../n8n/README.md) detects new inbox mail and invokes Hermes's
+native, cluster-only webhook. [webhook.yaml](webhook.yaml) owns the attention
+criteria; useful alerts go to the existing Discord home channel.
+
 [Langfuse](../langfuse/README.md) provides self-hosted tracing. The official
 plugin captures sanitized content, with end-user attribution disabled. Monitoring
 failure leaves the assistant running. Pattern-based masking can retain private

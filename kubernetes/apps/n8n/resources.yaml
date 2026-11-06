@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: n8n-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      # local-path does not enforce a capacity quota.
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: n8n
+  template:
+    metadata:
+      labels:
+        app: n8n
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: import-hermes-credential
+          image: docker.n8n.io/n8nio/n8n:2.46.6
+          command: [n8n, import:credentials, --input=/run/secrets/n8n/credentials.json]
+          envFrom:
+            - secretRef:
+                name: n8n-env
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /home/node/.n8n
+            - name: temporary
+              mountPath: /tmp
+            - name: credentials
+              mountPath: /run/secrets/n8n
+              readOnly: true
+      containers:
+        - name: n8n
+          image: docker.n8n.io/n8nio/n8n:2.46.6
+          envFrom:
+            - secretRef:
+                name: n8n-env
+          env:
+            - name: TZ
+              value: ${TIME_ZONE}
+            - name: GENERIC_TIMEZONE
+              value: ${TIME_ZONE}
+            - name: N8N_HOST
+              value: n8n.${DOMAIN}
+            - name: N8N_PORT
+              value: "5678"
+            - name: N8N_PROTOCOL
+              value: https
+            - name: N8N_EDITOR_BASE_URL
+              value: https://n8n.${DOMAIN}
+            - name: N8N_WEBHOOK_URL
+              value: https://n8n.${DOMAIN}/
+            - name: N8N_PROXY_HOPS
+              value: "1"
+            - name: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
+              value: "true"
+            - name: N8N_DIAGNOSTICS_ENABLED
+              value: "false"
+            - name: N8N_INSTANCE_OWNER_MANAGED_BY_ENV
+              value: "true"
+            - name: N8N_INSTANCE_OWNER_FIRST_NAME
+              value: Homelab
+            - name: N8N_INSTANCE_OWNER_LAST_NAME
+              value: Owner
+            - name: DB_SQLITE_POOL_SIZE
+              value: "2"
+            - name: N8N_DEFAULT_BINARY_DATA_MODE
+              value: filesystem
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 5678
+          startupProbe:
+            httpGet:
+              path: /healthz/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz/readiness
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /home/node/.n8n
+            - name: temporary
+              mountPath: /tmp
+            - name: cache
+              mountPath: /home/node/.cache
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: n8n-data
+        - name: temporary
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+        - name: credentials
+          secret:
+            secretName: n8n-hermes-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: n8n
+spec:
+  selector:
+    app: n8n
+  ports:
+    - name: http
+      port: 5678
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: n8n
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`n8n.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: private-only
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: n8n
+          port: 5678
+  tls: {}

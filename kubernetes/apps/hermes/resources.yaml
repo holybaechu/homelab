@@ -67,6 +67,7 @@ spec:
               chmod 700 /opt/data/obsidian/headless
               # Git owns the MCP section; the CLI preserves other live settings.
               hermes config set --force mcp_servers "$(cat /bootstrap/mcp-servers.yaml)"
+              hermes config set --force platforms.webhook "$(cat /bootstrap/webhook.yaml)"
           securityContext:
             runAsUser: 0
             allowPrivilegeEscalation: false
@@ -373,6 +374,8 @@ spec:
             - secretRef:
                 name: hermes-web
             - secretRef:
+                name: hermes-webhook
+            - secretRef:
                 name: hermes-langfuse
                 optional: true
           env:
@@ -409,6 +412,8 @@ spec:
           ports:
             - name: dashboard
               containerPort: 9119
+            - name: webhook
+              containerPort: 8644
           startupProbe:
             tcpSocket:
               port: dashboard
@@ -614,6 +619,9 @@ spec:
     - name: dashboard
       port: 9119
       targetPort: dashboard
+    - name: webhook
+      port: 8644
+      targetPort: webhook
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute

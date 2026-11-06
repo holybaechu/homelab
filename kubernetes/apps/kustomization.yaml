@@ -15,3 +15,4 @@ resources:
   - langfuse
   - hermes-site
   - mysql
+  - n8n
