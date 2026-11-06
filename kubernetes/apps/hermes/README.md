@@ -20,6 +20,10 @@ Keep the Gmail route's explicit `toolsets`: loading the Google Workspace skill
 does not grant the terminal tool its scripts need. The native webhook default
 excludes script and file access. After changes, verify an actual Gmail read in
 the route's tool context; an accepted webhook alone does not verify processing.
+Use the prefixed silence response in `webhook.yaml`: this image replaces a bare
+silence marker with a reply-required warning before webhook delivery runs. The
+native webhook filter suppresses the prefix with its short reason. Verify no
+Discord message is sent for an unimportant email after changing this contract.
 
 [Langfuse](../langfuse/README.md) provides self-hosted tracing. The official
 plugin captures sanitized content, with end-user attribution disabled. Monitoring

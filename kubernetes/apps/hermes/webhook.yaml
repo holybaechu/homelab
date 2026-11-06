@@ -32,8 +32,10 @@ extra:
         status, delete mail, create tasks, or copy mail into the wiki. Retrieve
         links or attachments only if needed to understand an important message.
 
-        If no interruption is useful, return only [SILENT]. Otherwise return a
-        concise Korean notification: sender, what matters and why, any required
+        If no interruption is useful, return exactly: [SILENT] 알림 불필요
+        Do not return the bare marker: the webhook's native suppression accepts
+        this prefix with a short reason. Otherwise return a concise Korean
+        notification: sender, what matters and why, any required
         action/deadline in Asia/Seoul, and the original Gmail thread link. Do
         not send a separate messaging-tool notification; the gateway delivers
         the final response to the existing Discord home channel. Report read
