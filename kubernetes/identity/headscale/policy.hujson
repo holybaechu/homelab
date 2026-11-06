@@ -5,7 +5,7 @@
   "grants": [
     {
       "src": ["autogroup:member"],
-      "dst": ["${LAN_CIDR}", "tag:gateway", "autogroup:internet"],
+      "dst": ["autogroup:member", "${LAN_CIDR}", "tag:gateway", "autogroup:internet"],
       "ip": ["*"]
     }
   ],
