@@ -30,6 +30,7 @@ spec:
   dnsNames:
   - ${DOMAIN}
   - '*.${DOMAIN}'
+  - dash.hermes.${DOMAIN}
   privateKey:
     rotationPolicy: Always
 ---

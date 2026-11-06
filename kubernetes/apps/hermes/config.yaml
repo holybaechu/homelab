@@ -19,8 +19,13 @@ web:
   extract_backend: exa
   provider_tier:
     exa: paid
-dashboard:
+webapp:
+  enabled: true
+  host: 0.0.0.0
+  port: 9120
   public_url: https://hermes.${DOMAIN}
+dashboard:
+  public_url: https://dash.hermes.${DOMAIN}
   trusted_proxies:
     # Traefik uses the node network, rather than a pod address.
     - ${NODE_IP}/32

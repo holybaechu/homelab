@@ -5,6 +5,19 @@ services. Flux applies this app from the apps layer. Credentials remain in
 1Password and arrive through External Secrets; model authentication and the live
 profile remain on `hermes-data`.
 
+## Web access
+
+| Address | Interface |
+| --- | --- |
+| `https://hermes.<DOMAIN>` | Webapp, served by the gateway on port 9120 |
+| `https://dash.hermes.<DOMAIN>` | Administration dashboard on port 9119 |
+
+Both use the existing Authentik OIDC client and remain restricted to LAN and
+tailnet clients. `seed-config` reconciles their public URLs and Webapp settings on
+every startup, including existing profiles. Other live profile settings remain
+on the persistent volume. After deployment, verify Authentik sign-in at both
+addresses and `hermes webapp --status` in the Hermes container.
+
 ## Behavior and search
 
 [second-brain.md](second-brain.md) owns source selection, knowledge capture, and

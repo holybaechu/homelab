@@ -72,6 +72,12 @@ spec:
               # Git owns the MCP section; the CLI preserves other live settings.
               hermes config set --force mcp_servers "$(cat /bootstrap/mcp-servers.yaml)"
               hermes config set --force platforms.webhook "$(cat /bootstrap/webhook.yaml)"
+              # Reconcile web access for existing profiles as well as new installs.
+              hermes config set --force dashboard.public_url https://dash.hermes.${DOMAIN}
+              hermes config set --force webapp.enabled true
+              hermes config set --force webapp.host 0.0.0.0
+              hermes config set --force webapp.port 9120
+              hermes config set --force webapp.public_url https://hermes.${DOMAIN}
               # Keep hybrid routing declarative, including for an existing profile.
               hermes config set --force browser.cloud_provider browser-use
               hermes config set --force browser.auto_local_for_private_urls true
@@ -418,7 +424,7 @@ spec:
             - name: HERMES_DASHBOARD_HOST
               value: 0.0.0.0
             - name: HERMES_DASHBOARD_PUBLIC_URL
-              value: https://hermes.${DOMAIN}
+              value: https://dash.hermes.${DOMAIN}
             - name: HERMES_DASHBOARD_OIDC_ISSUER
               value: https://auth.${DOMAIN}/application/o/hermes/
             - name: HERMES_DASHBOARD_OIDC_CLIENT_ID
@@ -434,6 +440,8 @@ spec:
           ports:
             - name: dashboard
               containerPort: 9119
+            - name: webapp
+              containerPort: 9120
             - name: webhook
               containerPort: 8644
           startupProbe:
@@ -443,7 +451,7 @@ spec:
             periodSeconds: 5
           readinessProbe:
             tcpSocket:
-              port: dashboard
+              port: webapp
           livenessProbe:
             tcpSocket:
               port: dashboard
@@ -647,6 +655,9 @@ spec:
     - name: dashboard
       port: 9119
       targetPort: dashboard
+    - name: webapp
+      port: 9120
+      targetPort: webapp
     - name: webhook
       port: 8644
       targetPort: webhook
@@ -659,6 +670,16 @@ spec:
   entryPoints: [websecure]
   routes:
     - match: Host(`hermes.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: private-only
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: hermes
+          port: 9120
+    - match: Host(`dash.hermes.${DOMAIN}`)
       kind: Rule
       middlewares:
         - name: private-only
