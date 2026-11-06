@@ -95,6 +95,19 @@ spec:
       gateway:
         enabled: false
       additionalEnv:
+        - name: AUTH_AUTHENTIK_CLIENT_ID
+          value: homelab-langfuse
+        - name: AUTH_AUTHENTIK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-env
+              key: AUTH_AUTHENTIK_CLIENT_SECRET
+        - name: AUTH_AUTHENTIK_ISSUER
+          value: https://auth.${DOMAIN}/application/o/langfuse
+        - name: AUTH_AUTHENTIK_ALLOW_ACCOUNT_LINKING
+          value: "true"
+        - name: AUTH_DISABLE_USERNAME_PASSWORD
+          value: "true"
         - name: NODE_OPTIONS
           value: --max-old-space-size=1536
         - name: LANGFUSE_INIT_ORG_ID

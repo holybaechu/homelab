@@ -381,6 +381,57 @@ entries:
       policy: !KeyOf service-access-policy
       group: null
       user: null
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: Langfuse
+    id: langfuse-provider
+    attrs:
+      client_id: homelab-langfuse
+      client_secret: !Env LANGFUSE_OIDC_CLIENT_SECRET
+      client_type: confidential
+      sub_mode: user_uuid
+      grant_types:
+        - authorization_code
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      redirect_uris:
+        - matching_mode: strict
+          url: https://langfuse.${DOMAIN}/api/auth/callback/authentik
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+  - model: authentik_core.application
+    identifiers:
+      slug: langfuse
+    id: langfuse-app
+    attrs:
+      name: Langfuse
+      provider: !KeyOf langfuse-provider
+      icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/langfuse.svg
+      meta_launch_url: https://langfuse.${DOMAIN}
+  - model: authentik_core.applicationentitlement
+    identifiers:
+      app: !KeyOf langfuse-app
+      name: admin
+    id: langfuse-admin-entitlement
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf langfuse-admin-entitlement
+      order: 0
+    attrs:
+      group: !KeyOf personal
+      user: null
+      policy: null
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf langfuse-app
+      order: 0
+    attrs:
+      policy: !KeyOf service-access-policy
+      group: null
+      user: null
   - model: authentik_core.application
     identifiers:
       slug: kutt

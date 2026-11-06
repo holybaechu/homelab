@@ -1,7 +1,8 @@
 # Langfuse
 
-Private Hermes traces at `https://langfuse.${DOMAIN}`, with native sign-in using
-the `Langfuse` item in the `Homelab` 1Password vault. The ingestion endpoint is
+Private Hermes traces at `https://langfuse.${DOMAIN}`, with Authentik SSO-only
+sign-in. Credentials remain in the `Langfuse` Secure Note in the `Homelab` 1Password
+vault. The ingestion endpoint is
 `http://langfuse.homelab.svc.cluster.local:3000`.
 
 The [official Helm chart](https://langfuse.com/self-hosting/deployment/kubernetes-helm)
@@ -29,6 +30,17 @@ the Homelab organization, Hermes project and initial owner. Public sign-up is
 disabled. The OSS deployment retains traces until manually deleted; automatic
 [retention](https://langfuse.com/docs/administration/data-retention) requires the
 self-hosted Enterprise edition.
+
+Authentik's Langfuse application grants access through the existing Personal
+group and admin entitlement. The native
+[Authentik OIDC provider](https://langfuse.com/self-hosting/security/authentication-and-sso) links the
+existing Langfuse account by its matching email, preserving its organization,
+project access, and API keys. Keep public signup disabled. Email/password sign-in
+is disabled with `AUTH_DISABLE_USERNAME_PASSWORD=true`; the original password
+is retained only for recovery. To recover from an unavailable IdP, temporarily
+set that value to `false`, reconcile the Langfuse HelmRelease, and use the saved
+credentials in the Secure Note. Restore SSO-only mode after Authentik is healthy.
+Do not create a replacement owner or regenerate the existing salt/encryption keys.
 
 Hermes uses the official catalog plugin at a fixed revision and the pinned SDK,
 with `HERMES_LANGFUSE_CAPTURE=sanitized` and sender attribution disabled.
