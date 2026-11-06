@@ -12,6 +12,12 @@ answer scope. Discord tool logs stay visible; final answers focus on useful
 results. [QMD](qmd/README.md) supplies local keyword and semantic search over a
 read-only vault mount. Reopen source notes before relying on indexed results.
 
+The Discord home channel is mention-free, with a new thread per top-level message.
+Deployment environment settings reuse its existing Secret reference and enable
+`auto_thread` and `free_response_auto_thread`. Keep the home channel out of live
+`discord.no_thread_channels`; the bot needs Create Public Threads and Send Messages
+in Threads permissions.
+
 [n8n Gmail triage](../n8n/README.md) detects new inbox mail and invokes Hermes's
 native, cluster-only webhook. [webhook.yaml](webhook.yaml) owns the attention
 criteria; useful alerts go to the existing Discord home channel.

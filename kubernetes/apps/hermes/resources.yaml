@@ -394,6 +394,15 @@ spec:
           env:
             - name: TZ
               value: ${TIME_ZONE}
+            - name: DISCORD_FREE_RESPONSE_CHANNELS
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-discord
+                  key: DISCORD_HOME_CHANNEL
+            - name: DISCORD_AUTO_THREAD
+              value: "true"
+            - name: DISCORD_FREE_RESPONSE_AUTO_THREAD
+              value: "true"
             - name: OBSIDIAN_VAULT_PATH
               value: /opt/data/obsidian/vault
             - name: WIKI_PATH
