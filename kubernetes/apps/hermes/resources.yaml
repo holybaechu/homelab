@@ -42,7 +42,7 @@ spec:
             - l.${DOMAIN}
       initContainers:
         - name: seed-config
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, -ec]
           args:
             - |
@@ -98,12 +98,18 @@ spec:
             - name: langfuse-runtime
               mountPath: /opt/langfuse
         - name: reconcile-skills
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, -ec]
           args:
             - |
               /opt/hermes/.venv/bin/python /bootstrap/seed_skills.py
-              /opt/hermes/.venv/bin/python /bootstrap/reconcile_skills.py --skills-dir /opt/data/skills --patches /bootstrap/skill-overrides.json
+              cd /opt/data/skills
+              if git apply --reverse --check /bootstrap/skill-overrides.patch 2>/dev/null; then
+                echo 'Skill overrides already applied.'
+              else
+                git apply --check /bootstrap/skill-overrides.patch
+                git apply /bootstrap/skill-overrides.patch
+              fi
           securityContext:
             runAsUser: 10000
             runAsGroup: 10000
@@ -127,7 +133,7 @@ spec:
             - name: integration-temporary
               mountPath: /tmp
         - name: install-qmd
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, -ec]
           args:
             - |
@@ -159,51 +165,15 @@ spec:
               mountPath: /opt/qmd
             - name: qmd-temporary
               mountPath: /tmp
-        - name: prepare-langfuse
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
-          command: [/opt/hermes/.venv/bin/python, /bootstrap/prepare_langfuse.py, /opt/langfuse]
-          env:
-            - name: PYTHONPATH
-              value: /opt/hermes
-          securityContext:
-            runAsUser: 10000
-            runAsGroup: 10000
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              memory: 256Mi
-          volumeMounts:
-            - name: data
-              mountPath: /opt/data
-            - name: langfuse-runtime
-              mountPath: /opt/langfuse
-            - name: bootstrap
-              mountPath: /bootstrap
-              readOnly: true
-            - name: bootstrap
-              mountPath: /opt/hermes/.venv/lib/python3.14/site-packages/hermes-langfuse.pth
-              subPath: langfuse-runtime.pth
-              readOnly: true
-            - name: integration-temporary
-              mountPath: /tmp
-        - name: install-qbittorrent-client
+        - name: install-python-clients
           image: python:3.15.2-alpine3.23
-          command: [python, -m, pip, install]
+          command: [/bin/sh, -ec]
           args:
-            - --disable-pip-version-check
-            - --no-deps
-            - --no-compile
-            - --require-hashes
-            - --target=/runtime/python
-            - --cache-dir=/tmp/pip-cache
-            - --requirement=/bootstrap/requirements.txt
+            - |
+              python -m pip install --disable-pip-version-check --no-deps --no-compile --require-hashes --target=/runtime/python --cache-dir=/tmp/pip-cache -r /bootstrap/requirements.txt
+              if ! python -m pip install --disable-pip-version-check --no-deps --no-compile --require-hashes --target=/opt/langfuse/python --cache-dir=/tmp/pip-cache --timeout=10 --retries=1 -r /bootstrap/langfuse-requirements.txt; then
+                echo 'Langfuse SDK unavailable; Hermes can continue.' >&2
+              fi
           securityContext:
             runAsUser: 10000
             runAsGroup: 10000
@@ -221,13 +191,59 @@ spec:
           volumeMounts:
             - name: homelab-runtime
               mountPath: /runtime
+            - name: langfuse-runtime
+              mountPath: /opt/langfuse
             - name: bootstrap
               mountPath: /bootstrap
               readOnly: true
             - name: integration-temporary
               mountPath: /tmp
+        - name: prepare-langfuse
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              cd /opt/langfuse/plugin
+              rm -f plugin.yaml plugin.yaml.pending
+              source=https://raw.githubusercontent.com/NousResearch/hermes-official-plugins/83f0a896b3518c7131181838e340c9a80c79524d/langfuse
+              if curl --fail --silent --show-error --location --max-time 30 --retry 1 "$source/__init__.py" -o __init__.py &&
+                 curl --fail --silent --show-error --location --max-time 30 --retry 1 "$source/LICENSE" -o LICENSE &&
+                 curl --fail --silent --show-error --location --max-time 30 --retry 1 "$source/plugin.yaml" -o plugin.yaml.pending &&
+                 sha256sum -c /bootstrap/langfuse-plugin.sha256 &&
+                 /opt/hermes/.venv/bin/python -c 'from langfuse import Langfuse, propagate_attributes' &&
+                 mv plugin.yaml.pending plugin.yaml; then
+                echo 'Langfuse plugin prepared.'
+              else
+                echo 'Langfuse tracing unavailable; Hermes can continue.' >&2
+              fi
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: langfuse-runtime
+              mountPath: /opt/langfuse
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/hermes/.venv/lib/python3.14/site-packages/hermes-langfuse.pth
+              subPath: langfuse-runtime.pth
+              readOnly: true
+            - name: integration-temporary
+              mountPath: /tmp
         - name: install-obsidian-sync
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, -ec]
           args:
             - |
@@ -257,32 +273,9 @@ spec:
               mountPath: /opt/obsidian
             - name: obsidian-temporary
               mountPath: /tmp
-        - name: patch-ticktick-oauth
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
-          command:
-            - /opt/hermes/.venv/bin/python
-            - /bootstrap/patch_ticktick_oauth.py
-            - /patched/mcp_oauth_provider.py
-          securityContext:
-            runAsUser: 0
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
-          resources:
-            requests:
-              cpu: 10m
-              memory: 16Mi
-            limits:
-              memory: 64Mi
-          volumeMounts:
-            - name: bootstrap
-              mountPath: /bootstrap
-              readOnly: true
-            - name: oauth-provider
-              mountPath: /patched
       containers:
         - name: qmd
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [node, /opt/qmd/node_modules/@tobilu/qmd/dist/cli/qmd.js]
           args: [--index, index, mcp, --http, --host, 127.0.0.1, --port, "8181"]
           workingDir: /opt/qmd
@@ -328,7 +321,7 @@ spec:
             - name: qmd-temporary
               mountPath: /tmp
         - name: qmd-index
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, /bootstrap/qmd-refresh.sh]
           env:
             - name: QMD_CONFIG_DIR
@@ -370,7 +363,7 @@ spec:
             - name: qmd-temporary
               mountPath: /tmp
         - name: hermes
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           # Preserve the official entrypoint: s6 starts as root, initializes
           # storage, then drops gateway/dashboard processes to UID 10000.
           args: [gateway, run]
@@ -455,10 +448,6 @@ spec:
               mountPath: /opt/data/workspace/.hermes.md
               subPath: second-brain.md
               readOnly: true
-            - name: oauth-provider
-              mountPath: /opt/hermes/tools/mcp_oauth_provider.py
-              subPath: mcp_oauth_provider.py
-              readOnly: true
             - name: homelab-runtime
               mountPath: /opt/homelab
               readOnly: true
@@ -529,7 +518,7 @@ spec:
             - name: integration-temporary
               mountPath: /tmp
         - name: obsidian-sync
-          image: nousresearch/hermes-agent:latest-desktop@sha256:2393aaca1b7d53b5c04c1b98d5f2b126f763ba3440b0724f4af185415974096f
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, -ec]
           args:
             - |
@@ -587,8 +576,6 @@ spec:
         - name: bootstrap
           configMap:
             name: hermes-bootstrap
-        - name: oauth-provider
-          emptyDir: {}
         - name: obsidian-runtime
           emptyDir: {}
         - name: obsidian-temporary

@@ -66,91 +66,11 @@ spec:
             - name: postgres-runtime
               mountPath: /postgres-runtime
       containers:
-        # The six components share localhost and one lifecycle on this single
-        # node. Backend ports have no Kubernetes Service or external ingress.
-        - name: web
-          image: docker.io/langfuse/langfuse:4.75.0
-          envFrom: &langfuse-environment
-            - configMapRef:
-                name: langfuse-config
-            - secretRef:
-                name: langfuse-env
-          env: &langfuse-storage-credentials
-            - name: NODE_OPTIONS
-              value: --max-old-space-size=1536
-            - name: LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: langfuse-env
-                  key: MINIO_ROOT_PASSWORD
-            - name: LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: langfuse-env
-                  key: MINIO_ROOT_PASSWORD
-          securityContext: &langfuse-security
-            runAsUser: 1001
-            runAsGroup: 1001
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
-          ports:
-            - name: web
-              containerPort: 3000
-          startupProbe:
-            httpGet:
-              path: /api/public/health
-              port: web
-            failureThreshold: 120
-            periodSeconds: 5
-          readinessProbe:
-            httpGet:
-              path: /api/public/ready
-              port: web
-          livenessProbe:
-            httpGet:
-              path: /api/public/health
-              port: web
-            periodSeconds: 30
-          resources:
-            requests:
-              cpu: 100m
-              memory: 768Mi
-            limits:
-              memory: 2Gi
-        - name: worker
-          image: docker.io/langfuse/langfuse-worker:4.75.0
-          envFrom: *langfuse-environment
-          env: *langfuse-storage-credentials
-          securityContext: *langfuse-security
-          ports:
-            - name: worker
-              containerPort: 3030
-          startupProbe:
-            httpGet:
-              path: /api/health
-              port: worker
-            failureThreshold: 120
-            periodSeconds: 5
-          readinessProbe:
-            httpGet:
-              path: /api/health
-              port: worker
-          livenessProbe:
-            httpGet:
-              path: /api/health
-              port: worker
-            periodSeconds: 30
-          resources:
-            requests:
-              cpu: 100m
-              memory: 768Mi
-            limits:
-              memory: 2Gi
+        # Retain the existing data directories and backend versions. The official
+        # Helm chart connects Web/Worker through the internal backend Service.
         - name: postgres
           image: docker.io/library/postgres:17@sha256:653186fe15006c099d2fb3bc1d8461c1dee9d036c43f2e5fdaf4f22e5e601876
-          args: [-c, shared_buffers=128MB, -c, max_connections=50, -c, listen_addresses=127.0.0.1]
+          args: [-c, shared_buffers=128MB, -c, max_connections=50, -c, listen_addresses=*]
           env:
             - name: POSTGRES_USER
               value: langfuse
@@ -247,7 +167,7 @@ spec:
           args:
             - |
               umask 077
-              printf 'bind 127.0.0.1\nrequirepass %s\nmaxmemory 128mb\nmaxmemory-policy noeviction\nappendonly yes\ndir /data\n' "$REDIS_AUTH" > /tmp/redis.conf
+              printf 'bind 0.0.0.0\nrequirepass %s\nmaxmemory 128mb\nmaxmemory-policy noeviction\nappendonly yes\ndir /data\n' "$REDIS_AUTH" > /tmp/redis.conf
               exec redis-server /tmp/redis.conf
           env:
             - name: REDIS_AUTH
@@ -287,7 +207,7 @@ spec:
         - name: minio
           # Official Compose uses the Chainguard MinIO distribution.
           image: cgr.dev/chainguard/minio:latest@sha256:3c60a2a8c4d33409a9bc7a623a7fcbfb4605adc3d89422d2f53b3f673a6e5597
-          args: [server, --address, '127.0.0.1:9090', --console-address, '127.0.0.1:9091', /data]
+          args: [server, --address, '0.0.0.0:9090', --console-address, '127.0.0.1:9091', /data]
           env:
             - name: MINIO_ROOT_USER
               value: langfuse
@@ -343,11 +263,37 @@ metadata:
   name: langfuse
 spec:
   selector:
-    app: langfuse
+    app.kubernetes.io/name: langfuse
+    app.kubernetes.io/instance: langfuse
+    app: web
   ports:
     - name: web
       port: 3000
-      targetPort: web
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: langfuse-backends
+spec:
+  selector:
+    app: langfuse
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: clickhouse-http
+      port: 8123
+      targetPort: 8123
+    - name: clickhouse-native
+      port: 9000
+      targetPort: 9000
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: s3
+      port: 9090
+      targetPort: 9090
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute

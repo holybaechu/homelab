@@ -4,10 +4,8 @@ namespace: homelab
 resources:
   - resources.yaml
   - secrets.yaml
+  - release.yaml
 configMapGenerator:
-  - name: langfuse-config
-    envs:
-      - config.properties
   - name: langfuse-clickhouse
     files:
       - homelab.xml

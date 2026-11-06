@@ -5,6 +5,12 @@ model:
 terminal:
   backend: local
   cwd: /opt/data/workspace
+plugins:
+  enabled: [langfuse]
+  entries:
+    langfuse:
+      settings:
+        end_user_attribution: false
 platforms:
   discord:
     enabled: true

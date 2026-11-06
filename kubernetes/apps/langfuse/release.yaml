@@ -1,0 +1,189 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: langfuse
+spec:
+  interval: 1h
+  url: https://langfuse.github.io/langfuse-k8s
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: langfuse
+spec:
+  interval: 1h
+  releaseName: langfuse
+  timeout: 10m
+  chart:
+    spec:
+      chart: langfuse
+      version: 2.2.3
+      sourceRef:
+        kind: HelmRepository
+        name: langfuse
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  # App-only chart: preserve all current databases, objects and 1Password keys.
+  values:
+    langfuse:
+      image:
+        tag: 4.75.0
+        pullPolicy: IfNotPresent
+      replicas: 1
+      serviceAccount:
+        create: false
+        automountServiceAccountToken: false
+      deployment:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        strategy:
+          type: Recreate
+      podSecurityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      salt:
+        secretKeyRef:
+          name: langfuse-env
+          key: SALT
+      encryptionKey:
+        secretKeyRef:
+          name: langfuse-env
+          key: ENCRYPTION_KEY
+      nextauth:
+        url: https://langfuse.${DOMAIN}
+        secret:
+          secretKeyRef:
+            name: langfuse-env
+            key: NEXTAUTH_SECRET
+      features:
+        telemetryEnabled: false
+        signUpDisabled: true
+      resources:
+        requests:
+          cpu: 100m
+          memory: 768Mi
+        limits:
+          memory: 2Gi
+      web:
+        image:
+          repository: docker.io/langfuse/langfuse
+        pdb:
+          create: false
+        livenessProbe:
+          initialDelaySeconds: 600
+          periodSeconds: 30
+      worker:
+        image:
+          repository: docker.io/langfuse/langfuse-worker
+        pdb:
+          create: false
+        livenessProbe:
+          initialDelaySeconds: 600
+          periodSeconds: 30
+      gateway:
+        enabled: false
+      additionalEnv:
+        - name: NODE_OPTIONS
+          value: --max-old-space-size=1536
+        - name: LANGFUSE_INIT_ORG_ID
+          value: homelab
+        - name: LANGFUSE_INIT_ORG_NAME
+          value: Homelab
+        - name: LANGFUSE_INIT_PROJECT_ID
+          value: hermes
+        - name: LANGFUSE_INIT_PROJECT_NAME
+          value: Hermes
+        - name: LANGFUSE_INIT_USER_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-env
+              key: LANGFUSE_INIT_USER_EMAIL
+        - name: LANGFUSE_INIT_USER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-env
+              key: LANGFUSE_INIT_USER_PASSWORD
+        - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-env
+              key: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+        - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-env
+              key: LANGFUSE_INIT_PROJECT_SECRET_KEY
+        - name: LANGFUSE_INGESTION_QUEUE_PROCESSING_CONCURRENCY
+          value: "2"
+        - name: LANGFUSE_OTEL_INGESTION_QUEUE_PROCESSING_CONCURRENCY
+          value: "2"
+        - name: LANGFUSE_TRACE_UPSERT_WORKER_CONCURRENCY
+          value: "2"
+        - name: LANGFUSE_TOKEN_COUNT_WORKER_POOL_SIZE
+          value: "1"
+        - name: CLICKHOUSE_MAX_BYTES_BEFORE_EXTERNAL_GROUP_BY
+          value: "134217728"
+      ingress:
+        enabled: false
+    postgresql:
+      deploy: false
+      host: langfuse-backends
+      port: 5432
+      auth:
+        username: langfuse
+        database: langfuse
+        existingSecret: langfuse-env
+        secretKeys:
+          userPasswordKey: POSTGRES_PASSWORD
+    clickhouse:
+      deploy: false
+      host: langfuse-backends
+      httpPort: 8123
+      nativePort: 9000
+      database: default
+      auth:
+        username: langfuse
+        existingSecret: langfuse-env
+        existingSecretKey: CLICKHOUSE_PASSWORD
+      cluster:
+        enabled: false
+    redis:
+      deploy: false
+      host: langfuse-backends
+      port: 6379
+      auth:
+        username: null
+        existingSecret: langfuse-env
+        existingSecretPasswordKey: REDIS_AUTH
+      tls:
+        enabled: false
+    s3:
+      deploy: false
+      bucket: langfuse
+      region: auto
+      endpoint: http://langfuse-backends:9090
+      forcePathStyle: true
+      accessKeyId:
+        value: langfuse
+      secretAccessKey:
+        secretKeyRef:
+          name: langfuse-env
+          key: MINIO_ROOT_PASSWORD
+      eventUpload:
+        prefix: events/
+      mediaUpload:
+        prefix: media/
+      batchExport:
+        enabled: false

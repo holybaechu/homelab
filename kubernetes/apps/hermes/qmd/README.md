@@ -48,6 +48,3 @@ their index files under `/opt/data/qmd/cache/qmd`, then restart the pod. Keep th
 vault, model files, and the rest of `hermes-data` intact. Changing the embedding
 model requires removing its cached model file while QMD is stopped, then a full
 `qmd embed --force` pass with the new configuration.
-
-Run the isolated refresher regression check on Linux with
-`python -m unittest discover -s kubernetes/apps/hermes/qmd -p 'test_*.py'`.

@@ -20,28 +20,19 @@ text such as names or note contents.
 ## Skill overrides
 
 Startup seeds the pinned image's native skills and its optional `llm-wiki`, then
-applies only the spans in [skill-overrides.json](skill-overrides.json). Existing
-custom paragraphs, supporting files, and relocated skills are preserved. Missing
-or ambiguous anchors stop startup before any override is written; review the
-changed skill against the pinned image rather than resetting the skills folder.
-An I/O failure can leave earlier files updated; each file replacement is atomic
-and rerunning is idempotent. Inspect the `reconcile-skills` init-container log.
+applies [skill-overrides.patch](skill-overrides.patch) with `git apply`. A reverse
+check recognizes an already-applied patch. Context conflicts or a partially
+applied patch stop startup for review; existing files are not reset. Inspect the
+`reconcile-skills` init-container log and resolve only the conflicting hunks.
 
 Modified skills are treated as user-owned by native sync. Review their upstream
-changes when upgrading the Hermes image. JSON anchors encode literal dollar
-characters as `\u0024` so Flux substitution preserves them. To undo overrides,
-stop the gateway, revert the bootstrap change, and manually replace each listed
-`new` span with its `old` value in reverse order within each file, preserving
-neighboring user edits. Verify
-the edited files before restarting; reverting Git alone does not undo edits on
-the persistent volume.
+changes when upgrading the Hermes image. The patch escapes literal dollars as
+`$$` for Flux substitution. To undo overrides, stop the gateway, reverse-apply
+the rendered bootstrap patch with `git apply --reverse`, and revert its bootstrap
+configuration before restarting. Reverting Git alone does not undo edits on the
+persistent volume. Preserve custom skill content when resolving conflicts.
 
-Run the focused synthetic checks with:
-
-```sh
-python -m unittest discover -s kubernetes/apps/hermes/tests -p 'test_reconcile_skills.py'
-python -m unittest discover -s kubernetes/apps/hermes/langfuse -p 'test_*.py'
-```
-
-The QMD refresher check requires Linux; see its guide. Test fixtures use invented
-data and must stay separate from the synced vault and real tasks.
+Hermes v0.23 supplies the native OAuth issuer normalization used by TickTick;
+no provider file is overlaid. Langfuse dependencies use pip's pinned hashes, and
+the official plugin files use SHA-256 checks. Plugin selection is seeded only
+for a new profile; manage an existing profile with Hermes's native configuration.

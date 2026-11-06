@@ -1,0 +1,4 @@
+# Universal wheels supplement the dependencies already supplied by Hermes.
+langfuse @ https://files.pythonhosted.org/packages/02/de/e59da18cb5ca9cb8515a254199bd96ace8cf918788d13ded66aa2693e007/langfuse-4.15.2-py3-none-any.whl --hash=sha256:98c27a3c06e18c4497045f2d4decce2c716ef11cb215cf5b27bbea6ee0877115
+backoff @ https://files.pythonhosted.org/packages/df/73/b6e24bd22e6720ca8ee9a85a0c4a2971af8497d8f3193fa05390cbd46e09/backoff-2.2.1-py3-none-any.whl --hash=sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8
+wrapt @ https://files.pythonhosted.org/packages/77/8b/1ea57b936b70f98e8e7620a352578096d778dbee95b262f73c066d210ffb/wrapt-2.5.2-py3-none-any.whl --hash=sha256:61eb54e9540ea522c2c4752a57549a83d3c67e6704ed708403d28e067aaf90f0

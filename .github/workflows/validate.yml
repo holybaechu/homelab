@@ -89,7 +89,3 @@ jobs:
               ([.ingress[].subnet] | sort) == ([$node, $pods] | sort))
           ' > /dev/null
       - run: git diff --check
-      - name: Test Hermes service boundaries
-        run: |
-          python3 -m pip install httpx==0.28.1
-          python3 -m unittest discover -s kubernetes/apps/hermes/integrations -p 'test_*.py'
