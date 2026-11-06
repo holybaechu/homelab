@@ -12,7 +12,8 @@ answer scope. Discord tool logs stay visible; final answers focus on useful
 results. [QMD](qmd/README.md) supplies local keyword and semantic search over a
 read-only vault mount. Reopen source notes before relying on indexed results.
 
-The Discord home channel is mention-free, with a new thread per top-level message.
+When the Discord home is a server text channel, messages need no mention and each
+top-level message gets a new thread. DM home channels do not support threads.
 Deployment environment settings reuse its existing Secret reference and enable
 `auto_thread` and `free_response_auto_thread`. Keep the home channel out of live
 `discord.no_thread_channels`; the bot needs Create Public Threads and Send Messages
