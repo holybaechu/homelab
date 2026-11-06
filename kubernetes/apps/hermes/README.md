@@ -39,6 +39,11 @@ and Chromium flags on every startup while preserving other live browser settings
 The Pod blocks Chromium's user-namespace sandbox, so local Chromium runs as UID
 10000 with `--no-sandbox`; it relies on the existing container isolation.
 
+Cloud sessions default to a South Korea (`kr`) residential proxy.
+`seed-config` applies [browser-cloud.patch](browser-cloud.patch) to the image's
+Browser Harness in a runtime volume. Review the patch when upgrading the image;
+a context mismatch stops startup rather than silently losing the country setting.
+
 Store the Browser Use API key in the existing `Hermes Agent` 1Password item;
 `HERMES_BROWSER_USE_API_KEY_REF` supplies `hermes-browser`. Secret refresh follows
 the shared interval and SDK cache; Reloader restarts Hermes after a key change.

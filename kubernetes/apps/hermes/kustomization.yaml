@@ -8,6 +8,7 @@ configMapGenerator:
   - name: hermes-bootstrap
     files:
       - config.yaml
+      - browser-cloud.patch
       - mcp-servers.yaml
       - webhook.yaml
       - obsidian-sync/package.json

@@ -56,6 +56,10 @@ spec:
               mkdir -p /opt/homelab/python /opt/homelab/credentials /opt/immich-mcp
               mkdir -p /opt/qmd /opt/data/qmd/config /opt/data/qmd/cache/qmd
               mkdir -p /opt/langfuse/python /opt/langfuse/plugin /opt/data/plugins/langfuse
+              mkdir -p /opt/browser
+              cp /opt/hermes/.venv/lib/python3.14/site-packages/browser_harness/run.py /opt/browser/run.py
+              git -C /opt/browser apply --check /bootstrap/browser-cloud.patch
+              git -C /opt/browser apply /bootstrap/browser-cloud.patch
               cp /bootstrap/qmd-index.yml /opt/data/qmd/config/index.yml
               touch /opt/homelab/services.py /opt/homelab/mcp_server.py
               chown 10000:10000 /opt/data /opt/data/workspace
@@ -103,6 +107,8 @@ spec:
               mountPath: /opt/qmd
             - name: langfuse-runtime
               mountPath: /opt/langfuse
+            - name: browser-runtime
+              mountPath: /opt/browser
         - name: reconcile-skills
           image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, -ec]
@@ -456,6 +462,10 @@ spec:
               readOnly: true
             - name: shared-memory
               mountPath: /dev/shm
+            - name: browser-runtime
+              mountPath: /opt/hermes/.venv/lib/python3.14/site-packages/browser_harness/run.py
+              subPath: run.py
+              readOnly: true
             - name: bootstrap
               mountPath: /opt/data/workspace/.hermes.md
               subPath: second-brain.md
@@ -613,6 +623,8 @@ spec:
         - name: qmd-temporary
           emptyDir: {}
         - name: langfuse-runtime
+          emptyDir: {}
+        - name: browser-runtime
           emptyDir: {}
 ---
 apiVersion: v1
