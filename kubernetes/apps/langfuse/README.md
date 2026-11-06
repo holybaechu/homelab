@@ -26,8 +26,10 @@ budgets together.
 
 External Secrets reads the existing `LANGFUSE_*_REF` fields from
 `kubernetes/clusters/homelab/onepassword.yaml`. Headless initialization creates
-the Homelab organization, Hermes project and initial owner. Public sign-up is
-disabled. The OSS deployment retains traces until manually deleted; automatic
+the Homelab organization, Hermes project and API keys. The existing owner signs
+in through Authentik; bootstrap user credentials are no longer stored or injected.
+Public sign-up is disabled. The OSS deployment retains traces until manually
+deleted; automatic
 [retention](https://langfuse.com/docs/administration/data-retention) requires the
 self-hosted Enterprise edition.
 
@@ -36,11 +38,10 @@ group and admin entitlement. The native
 [Authentik OIDC provider](https://langfuse.com/self-hosting/security/authentication-and-sso) links the
 existing Langfuse account by its matching email, preserving its organization,
 project access, and API keys. Keep public signup disabled. Email/password sign-in
-is disabled with `AUTH_DISABLE_USERNAME_PASSWORD=true`; the original password
-is retained only for recovery. To recover from an unavailable IdP, temporarily
-set that value to `false`, reconcile the Langfuse HelmRelease, and use the saved
-credentials in the Secure Note. Restore SSO-only mode after Authentik is healthy.
-Do not create a replacement owner or regenerate the existing salt/encryption keys.
+is disabled with `AUTH_DISABLE_USERNAME_PASSWORD=true`; access depends on
+Authentik. Preserve its configuration and the existing Langfuse user when
+restoring access. Do not create a replacement owner or regenerate the existing
+salt/encryption keys.
 
 Hermes uses the official catalog plugin at a fixed revision and the pinned SDK,
 with `HERMES_LANGFUSE_CAPTURE=sanitized` and sender attribution disabled.
@@ -61,9 +62,9 @@ existing encrypted credentials unreadable. PostgreSQL's password initializes
 an empty data directory only. Rotate its existing database role and matching
 1Password password together. The chart builds its database connection from
 individual fields; the legacy `DATABASE_URL` field is retained for rollback.
-Initial owner password and project
-API keys are also creation-time settings; changing `LANGFUSE_INIT_*` does not
-rotate existing records. Change them in Langfuse and update 1Password to match.
+Project API keys are also creation-time settings; changing `LANGFUSE_INIT_*`
+does not rotate existing records. Change them in Langfuse and update 1Password
+to match.
 ClickHouse, Redis and MinIO reload their configured credentials on restart.
 
 Web and Worker must use the same release. Back up data before upgrades because

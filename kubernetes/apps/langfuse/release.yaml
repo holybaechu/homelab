@@ -118,16 +118,6 @@ spec:
           value: hermes
         - name: LANGFUSE_INIT_PROJECT_NAME
           value: Hermes
-        - name: LANGFUSE_INIT_USER_EMAIL
-          valueFrom:
-            secretKeyRef:
-              name: langfuse-env
-              key: LANGFUSE_INIT_USER_EMAIL
-        - name: LANGFUSE_INIT_USER_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: langfuse-env
-              key: LANGFUSE_INIT_USER_PASSWORD
         - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
           valueFrom:
             secretKeyRef:
