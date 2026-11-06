@@ -68,6 +68,11 @@ spec:
               # Git owns the MCP section; the CLI preserves other live settings.
               hermes config set --force mcp_servers "$(cat /bootstrap/mcp-servers.yaml)"
               hermes config set --force platforms.webhook "$(cat /bootstrap/webhook.yaml)"
+              # Keep hybrid routing declarative, including for an existing profile.
+              hermes config set --force browser.cloud_provider browser-use
+              hermes config set --force browser.auto_local_for_private_urls true
+              # This Pod cannot create Chromium's unprivileged user namespaces.
+              hermes config set --force browser.chromium_args '["--no-sandbox"]'
           securityContext:
             runAsUser: 0
             allowPrivilegeEscalation: false
@@ -373,6 +378,8 @@ spec:
                 name: hermes-discord
             - secretRef:
                 name: hermes-web
+            - secretRef:
+                name: hermes-browser
             - secretRef:
                 name: hermes-webhook
             - secretRef:

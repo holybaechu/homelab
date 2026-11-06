@@ -30,6 +30,28 @@ plugin captures sanitized content, with end-user attribution disabled. Monitorin
 failure leaves the assistant running. Pattern-based masking can retain private
 text such as names or note contents.
 
+## Browser
+
+[Hybrid routing](https://hermes-agent.nousresearch.com/docs/user-guide/features/browser#hybrid-routing-cloud-for-public-urls-local-for-lanlocalhost)
+uses Browser Use Cloud for public URLs and the image's packaged Chromium for
+private URLs. `seed-config` enforces the provider, automatic private routing,
+and Chromium flags on every startup while preserving other live browser settings.
+The Pod blocks Chromium's user-namespace sandbox, so local Chromium runs as UID
+10000 with `--no-sandbox`; it relies on the existing container isolation.
+
+Store the Browser Use API key in the existing `Hermes Agent` 1Password item;
+`HERMES_BROWSER_USE_API_KEY_REF` supplies `hermes-browser`. Secret refresh follows
+the shared interval and SDK cache; Reloader restarts Hermes after a key change.
+
+After deployment, verify `hermes config get browser` in the Hermes container.
+In one conversation, open `https://example.com` and then
+`http://n8n.homelab.svc.cluster.local:5678` in separate browser calls. Confirm
+the first uses Browser Use Cloud and the second uses local Chromium. A call
+containing both public and private URLs runs entirely on the local browser.
+`localhost` means the Hermes Pod; use a Service DNS name or LAN address for other
+homelab apps. A public URL that later redirects to a private address stays in
+the cloud browser, so open the internal URL directly.
+
 ## Skill overrides
 
 Startup seeds the pinned image's native skills and its optional `llm-wiki`, then
