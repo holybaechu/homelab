@@ -6,6 +6,7 @@ extra:
     gmail:
       events: [gmail.message_received]
       skills: [google-workspace]
+      toolsets: [terminal, file, skills, web, mcp-qmd, mcp-ticktick]
       deliver: discord
       mirror_to_session: true
       prompt: |

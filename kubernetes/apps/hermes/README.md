@@ -16,6 +16,11 @@ read-only vault mount. Reopen source notes before relying on indexed results.
 native, cluster-only webhook. [webhook.yaml](webhook.yaml) owns the attention
 criteria; useful alerts go to the existing Discord home channel.
 
+Keep the Gmail route's explicit `toolsets`: loading the Google Workspace skill
+does not grant the terminal tool its scripts need. The native webhook default
+excludes script and file access. After changes, verify an actual Gmail read in
+the route's tool context; an accepted webhook alone does not verify processing.
+
 [Langfuse](../langfuse/README.md) provides self-hosted tracing. The official
 plugin captures sanitized content, with end-user attribution disabled. Monitoring
 failure leaves the assistant running. Pattern-based masking can retain private
