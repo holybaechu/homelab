@@ -112,7 +112,7 @@ spec:
               mountPath: /var/run/postgresql
         - name: clickhouse
           # The version used by the official Langfuse 4.75.0 Compose example.
-          image: docker.io/clickhouse/clickhouse-server:26.3.62.3
+          image: docker.io/clickhouse/clickhouse-server:26.10.3.7
           env:
             - name: CLICKHOUSE_DB
               value: default
