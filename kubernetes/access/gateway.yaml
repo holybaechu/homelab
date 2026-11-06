@@ -42,7 +42,7 @@ spec:
         - vpn.${DOMAIN}
       containers:
       - name: tailscale
-        image: ghcr.io/tailscale/tailscale:v1.104.2
+        image: ghcr.io/tailscale/tailscale:v1.104.4
         env:
         - name: TS_AUTHKEY
           valueFrom:
