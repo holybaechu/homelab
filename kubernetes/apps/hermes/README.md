@@ -44,8 +44,8 @@ Store the Browser Use API key in the existing `Hermes Agent` 1Password item;
 the shared interval and SDK cache; Reloader restarts Hermes after a key change.
 
 After deployment, verify `hermes config get browser` in the Hermes container.
-In one conversation, open `https://example.com` and then
-`http://n8n.homelab.svc.cluster.local:5678` in separate browser calls. Confirm
+In one conversation, open `https://example.com` and then the Authentik URL
+(`https://auth.<DOMAIN>`) in separate browser calls. Confirm
 the first uses Browser Use Cloud and the second uses local Chromium. A call
 containing both public and private URLs runs entirely on the local browser.
 `localhost` means the Hermes Pod; use a Service DNS name or LAN address for other
