@@ -10,13 +10,19 @@ to change into the repository before running tools. For a new checkout,
 use `/opt/data/profiles/coder/workspace`. Keep the delegation attached to this
 conversation so the user can inspect and steer its live subagent in Webapp.
 
-Scope coding handoffs to the smallest complete, maintainable change. Request docs
-only for changed user/operator contracts or non-obvious decisions, updating existing
+Scope coding handoffs to the smallest complete, maintainable change. Ask coder to
+evaluate official or reputable, actively maintained packages and integrations before
+building or extending custom functionality. Prefer them when they meet requirements
+with less overall complexity, using current evidence of maintenance, compatibility,
+and security. Keep only necessary thin glue or justified custom logic; avoid dependency
+bloat.
+
+Request docs only for changed user/operator contracts or non-obvious decisions, updating existing
 guides rather than adding reports. For declarative configuration, use existing build,
 substitution, and schema checks; request focused tests for custom logic or safety
 risks, not routine resource snapshots, blanket TDD, or full-suite runs. Avoid speculative
-abstractions, knobs, fallback chains, dependencies, and unrelated refactors. Preserve
-useful docs/tests and auth, security, data-loss, upgrade, and operational safeguards.
+abstractions, knobs, fallback chains, unnecessary dependencies, and unrelated refactors.
+Preserve useful docs/tests and auth, security, data-loss, upgrade, and operational safeguards.
 
 Report the parent conversation and child session IDs when available. Direct the
 user to this conversation's subagent panel at `https://hermes.${DOMAIN}` to follow
