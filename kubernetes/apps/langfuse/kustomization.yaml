@@ -4,6 +4,7 @@ namespace: homelab
 resources:
   - resources.yaml
   - secrets.yaml
+  - onepassword.yaml
   - release.yaml
 configMapGenerator:
   - name: langfuse-clickhouse

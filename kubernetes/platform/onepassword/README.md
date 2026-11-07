@@ -168,7 +168,7 @@ Before any future cutover or rollback verification, run this read-only check fro
 permission to read the two OnePasswordItems and their Secrets:
 
 ```sh
-python3 scripts/verify-onepassword-staging.py
+python3 scripts/verify-onepassword-staging.py mysql-connect n8n-connect
 ```
 
 It compares exact decoded bytes (including newlines), source paths, Ready status,
@@ -225,6 +225,68 @@ pods a Connect token with access to that item, either: a vault-scoped token can
 read the broad token stored alongside app fields. The four templates still need
 app-local safe renderers; signing still needs the verified OpenSSH transform.
 Neither a relabel nor Injector alone resolves those contracts or rotation.
+
+### Administrative label migration and next replacements
+
+`scripts/relabel-onepassword-sources.py` implements exactly the nine source-item
+label changes above, using the official CLI's JSON-stdin editing. It never reads
+`Hermes Agent`, creates items, changes field IDs or intentionally changes values.
+It retains credential JSON in process memory only; subprocess output is captured,
+not echoed or written to files. Run it in an authenticated administrative CLI
+session with edit access to `Homelab`, not with the read-only infrastructure token.
+Do not edit these items concurrently while running it.
+
+**First inspect these nine items in the 1Password app for passkeys or other
+credentials not represented by CLI JSON.** The official CLI warns that JSON-template
+edits can delete passkeys. Do not apply this helper to an item containing one;
+make the table's label-only changes in the app instead. The helper also refuses
+attachments, unexpected item identity, missing fields and unreviewed label drift.
+
+From the administrative Windows checkout, use the fetched script without switching
+branches, pulling over local work or resetting a dirty tree:
+
+```powershell
+git fetch origin main
+git show origin/main:scripts/relabel-onepassword-sources.py | mise x python@3 -- python -
+# Only after all previews pass and the app inspection above confirms no passkeys:
+git show origin/main:scripts/relabel-onepassword-sources.py | mise x python@3 -- python - --apply --confirm-no-passkeys
+```
+
+The default is a read-only CLI preview of every pending change. Apply rechecks
+each snapshot immediately before writing and reads the exact item back afterward,
+checking field IDs, types, sections and values, plus item title/category/tags/URLs.
+It stops at the first mismatch without exposing credentials. Already-correct
+labels are accepted, so a partial run can be resumed after reviewing any failure.
+There is no cross-item transaction or automatic rollback; use 1Password item
+history if an unexpected write needs recovery. Return only the helper's sanitized
+PASS/FAIL output, never raw CLI JSON.
+
+Six additional Operator Secrets are staged without changing their consumers:
+
+| Namespace | Replacement | Existing ESO target |
+| --- | --- | --- |
+| cert-manager | `cloudflare-connect` | `cloudflare-dns` |
+| homelab | `cloudflare-connect` | `cloudflare-ddns` |
+| identity | `headscale-connect` | `headscale-oidc` |
+| networking | `headscale-connect` | `headscale-gateway` |
+| homelab | `zipline-connect` | `zipline-env` |
+| homelab | `langfuse-connect` | `langfuse-env` |
+
+These items can be Ready before relabeling while still missing required keys;
+Ready alone is **not** permission to cut over. After relabeling, allow the
+Operator's six-hour poll, or have an administrator restart only the Operator and
+wait for reconciliation. Then run the six checks from the fetched script:
+
+```powershell
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - cloudflare-dns cloudflare-ddns headscale-oidc headscale-gateway zipline-connect langfuse-connect
+```
+
+Each PASS requires the expected vault/item path, Operator ownership and Ready
+status, allowed keys and exact bytes against the still-working ESO target. No
+arguments runs all eight staged checks. Only after all six new checks pass should
+the respective consumers move, using explicit key projections and retaining their
+existing Reloader behavior. This staging does not retire any additional ESO
+target, exercise application authentication or prove rotation.
 
 ## Cutover, refresh and rollback
 
