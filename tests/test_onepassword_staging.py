@@ -276,6 +276,40 @@ class StagingVerificationTests(unittest.TestCase):
                 self.assertIn("category=invalid-response-schema", err.getvalue())
                 self.assertNotIn("PRIVATE", err.getvalue())
 
+    def test_metadata_mode_reports_independent_drift_without_source_text_or_kubernetes(self):
+        contract = staging.CONTRACTS["zipline-connect"]
+        source, _ = self.source_fixture(contract)
+        source.update(title="PRIVATE_TITLE", vault={"id": "PRIVATE_VAULT"},
+                      files=[{"name": "PRIVATE_FILE"}], urls=[{"href": "PRIVATE_URL"}])
+        source["sections"][0]["label"] = "PRIVATE_SECTION"
+        source["fields"][2]["section"] = {"id": "add more"}
+        source["fields"].append({"id": "PRIVATE_ID", "value": "PRIVATE_VALUE"})
+        with patch.object(staging, "read_source", return_value=source), \
+                patch.object(staging, "read_resource") as resources, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(staging.main(["--source-metadata", "zipline-connect"]), 0)
+        resources.assert_not_called()
+        output = out.getvalue()
+        for text in ("item-match=true vault-match=false title-match=false",
+                     "files-count=1 urls-count=1", "unreviewed-fields-count=1",
+                     "section-index=0 id-reviewed=true label-present=true",
+                     "section-match=false section-present=true section-index=0"):
+            self.assertIn(text, output)
+        self.assertNotIn("PRIVATE", output)
+        self.assertNotIn("PASS", output)
+        with self.assertRaises(staging.CheckFailure):
+            staging.verify_source(source, {}, contract)
+
+    def test_metadata_mode_sanitizes_malformed_data_and_continues(self):
+        with patch.object(staging, "read_source", return_value={"fields": ["PRIVATE"]}), \
+                patch.object(staging, "read_resource") as resources, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(staging.main([
+                "--source-metadata", "zipline-connect", "langfuse-connect"]), 1)
+        resources.assert_not_called()
+        self.assertEqual(err.getvalue().count("category=invalid-response-schema"), 2)
+        self.assertNotIn("PRIVATE", err.getvalue())
+
     def test_selected_check_uses_its_namespace(self):
         with patch.object(staging, "read_resource", return_value={}) as read:
             with patch.object(staging, "verify"), patch.object(staging, "read_source"), \

@@ -136,6 +136,49 @@ def read_source(item_id):
     return source
 
 
+def source_metadata_summary(source, contract):
+    """Fixed structural diagnostics, never arbitrary source strings or values."""
+    item_id = contract["item_id"]
+    title, labels = SOURCE_LABELS[item_id]
+    fields = source["fields"]
+    sections = source.get("sections") or []
+    expected_sections = {section for _, section in labels.values() if section}
+    if not isinstance(fields, list) or not isinstance(sections, list):
+        raise ValueError("invalid source metadata")
+    lines = [
+        "identity " + " ".join(f"{key}-match={str(matches).lower()}" for key, matches in (
+            ("item", source["id"] == item_id),
+            ("vault", source["vault"]["id"] == VAULT),
+            ("title", source["title"] == title))),
+        f"content files-count={len(source.get('files') or [])} "
+        f"urls-count={len(source.get('urls') or [])} "
+        f"fields-count={len(fields)} sections-count={len(sections)} "
+        f"unreviewed-fields-count={sum(f['id'] not in {*labels, 'notesPlain'} for f in fields)}",
+    ]
+    for index, section in enumerate(sections):
+        known = section["id"] in expected_sections
+        lines.append(f"section-index={index} id-reviewed={str(known).lower()} "
+                     f"label-present={str(bool(section.get('label'))).lower()}")
+    for field_id, (label, expected_section) in {**labels, "notesPlain": ("notesPlain", None)}.items():
+        matches = [f for f in fields if f["id"] == field_id]
+        lines.append(f"field={field_id} occurrences={len(matches)}")
+        if len(matches) != 1:
+            continue
+        field = matches[0]
+        section_id = (field.get("section") or {}).get("id")
+        indexes = [str(i) for i, s in enumerate(sections) if s["id"] == section_id]
+        notes = field_id == "notesPlain"
+        lines.append(f"field={field_id} " + " ".join(
+            f"{key}-match={str(match).lower()}" for key, match in (
+                ("label", field.get("label") == label),
+                ("type", field.get("type") == ("STRING" if notes else "CONCEALED")),
+                ("purpose", field.get("purpose") == ("NOTES" if notes else None)),
+                ("section", section_id == expected_section))) +
+            f" section-present={str(section_id is not None).lower()} "
+            f"section-index={','.join(indexes) or 'none'}")
+    return lines
+
+
 def verify_source(source, replacement, contract):
     item_id = contract["item_id"]
     title, labels = SOURCE_LABELS[item_id]
@@ -239,7 +282,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checks", nargs="*", metavar="CHECK",
                         help="check names; default: all staged replacements")
+    parser.add_argument("--source-metadata", action="store_true",
+                        help="read only 1Password structure; no Kubernetes or byte checks")
     args = parser.parse_args(argv)
+    if args.source_metadata and (not args.checks or any(
+            name not in CONTRACTS or CONTRACTS[name]["item_id"] not in SOURCE_LABELS
+            for name in args.checks)):
+        parser.error("--source-metadata requires explicit source-reviewed check names")
     if {"cloudflare-dns", "cloudflare-ddns"} & set(args.checks):
         parser.error("Cloudflare is blocked: built-in label is uneditable; keep ESO")
     if set(args.checks) - CONTRACTS.keys():
@@ -276,6 +325,20 @@ def main(argv=None):
                 category = "invalid-response-schema"
             errors.append(f"FAIL {check}: stage={stage} category={category}")
             return None
+
+        if args.source_metadata:
+            source = attempt(f"read 1Password/Item/{contract['item_id']}",
+                             read_source, contract["item_id"])
+            if source is not None:
+                lines = attempt("source-metadata", source_metadata_summary, source, contract)
+                if lines is not None:
+                    for line in lines:
+                        print(f"INFO {check}: metadata {line}")
+            if errors:
+                failed = True
+                for error in errors:
+                    print(error, file=sys.stderr)
+            continue
 
         item_target = f"Kubernetes/{namespace}/OnePasswordItem/{name}"
         secret_target = f"Kubernetes/{namespace}/Secret/{name}"
