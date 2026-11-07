@@ -94,6 +94,8 @@ private URLs. `seed-config` enforces the provider, automatic private routing,
 and Chromium flags on every startup while preserving other live browser settings.
 The Pod blocks Chromium's user-namespace sandbox, so local Chromium runs as UID
 10000 with `--no-sandbox`; it relies on the existing container isolation.
+Coder uses local Chromium by default; `configure-profiles` reconciles the same
+flag from `coder.yaml` without replacing its other live browser settings.
 
 Cloud sessions default to a South Korea (`kr`) residential proxy.
 `seed-config` applies [browser-cloud.patch](browser-cloud.patch) to the image's

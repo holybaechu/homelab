@@ -17,6 +17,7 @@ def reconcile(root: Path, bootstrap: Path) -> None:
     (coder / "workspace").mkdir(exist_ok=True)
     desired = yaml.safe_load((bootstrap / "coder.yaml").read_text())
     config = yaml.safe_load((coder / "config.yaml").read_text()) or {}
+    config.setdefault("browser", {}).update(desired.pop("browser"))
     config.update(desired)
     atomic_yaml_write(coder / "config.yaml", config, sort_keys=False)
     (coder / "SOUL.md").write_text((bootstrap / "coder-soul.md").read_text())
