@@ -309,9 +309,10 @@ resource namespace/kind/name (or reviewed item ID), and a fixed category:
 An INFO line compares the source item version with the Operator Secret's
 `operator.1password.io/item-version` annotation as `match`, `mismatch` or
 `unavailable`. This is a sync hint, not a parity gate: a matching version alone
-proves neither correct bytes nor current ESO data. If source metadata is correct
-but replacement keys/bytes differ and versions mismatch after relabeling, allow
-its six-hour poll, or have an administrator refresh **only the Operator**:
+proves neither correct bytes nor current ESO data. Replacement key/byte failures
+with mismatched versions after relabeling justify an Operator-only refresh (or
+waiting for its six-hour poll), even when separate source-structure failures
+remain. A refresh cannot fix source metadata drift. Have an administrator run:
 
 ```sh
 kubectl -n onepassword rollout restart deployment/onepassword-connect-operator
@@ -319,6 +320,24 @@ kubectl -n onepassword rollout status deployment/onepassword-connect-operator
 ```
 
 Then rerun all four checks; deployment readiness alone does not prove item sync.
+For independent source drift, run this small structural read without Kubernetes
+access (it is diagnostic only, never a parity PASS):
+
+```powershell
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - --source-metadata zipline-connect langfuse-connect
+```
+
+It reports separate item/vault/title match flags, file/URL/field/section counts,
+reviewed field metadata match flags and section membership by anonymous index.
+Section IDs are classified as reviewed/unreviewed, section labels as
+present/absent; arbitrary names, URLs, values and raw JSON are never printed.
+Share only INFO/FAIL lines. Review any extra files or URLs privately rather than
+allowing whole-item synchronization to copy unrelated content. A changed section
+must not be accepted solely because the field ID/value survived: first verify
+that existing ID-based consumer references still resolve to identical bytes.
+A copied label-based URI does not validate that older reference. Do not recreate
+fields, change values or edit source JSON to satisfy the checker.
+
 If versions match but ESO bytes differ, inspect item history and ESO freshness
 privately before any cutover. Share only PASS/FAIL/INFO lines, not CLI or
 Kubernetes JSON. This agent cannot read Secrets or
