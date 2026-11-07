@@ -69,33 +69,6 @@ class RelabelTests(unittest.TestCase):
             changed["fields"][0][key] = "changed"
             self.assertNotEqual(relabel.content(changed), relabel.content(self.original))
 
-    def test_default_is_read_only_and_apply_reads_back_exact_target(self):
-        for apply in (False, True):
-            with self.subTest(apply=apply):
-                values = [self.original, self.updated()]
-                if apply:
-                    values += [self.original, self.updated(), self.updated()]
-                with patch.object(relabel, "SOURCES", {self.item_id: (self.title, self.labels)}):
-                    with patch.object(relabel, "op", side_effect=values) as op:
-                        with contextlib.redirect_stdout(io.StringIO()):
-                            self.assertEqual(relabel.main(
-                                ["--apply", "--confirm-no-passkeys"] if apply else []), 0)
-                edits = [call for call in op.call_args_list if call.args[:2] == ("item", "edit")]
-                self.assertEqual(len(edits), 2 if apply else 1)
-                self.assertIn("--dry-run", edits[0].args)
-                if apply:
-                    self.assertEqual(op.call_args_list[-1].args[:3], ("item", "get", self.item_id))
-
-    def test_preview_mismatch_or_concurrent_edit_never_writes(self):
-        for values in ([self.original, self.original],
-                       [self.original, self.updated(), {**self.original, "version": 2}]):
-            with patch.object(relabel, "SOURCES", {self.item_id: (self.title, self.labels)}):
-                with patch.object(relabel, "op", side_effect=values) as op:
-                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                        self.assertEqual(relabel.main(["--apply", "--confirm-no-passkeys"]), 1)
-            self.assertTrue(all("--dry-run" in call.args for call in op.call_args_list
-                                if call.args[:2] == ("item", "edit")))
-
     def test_cli_secrets_stay_in_stdin_and_failures_are_sanitized(self):
         with patch.object(relabel.subprocess, "run", return_value=subprocess.CompletedProcess(
                 [], 0, stdout=json.dumps(self.original).encode())) as run:
@@ -109,7 +82,7 @@ class RelabelTests(unittest.TestCase):
                 self.assertEqual(relabel.main([]), 1)
         self.assertNotIn("PRIVATE_VALUE", out.getvalue())
 
-    def run_cli(self, responses, apply=False):
+    def run_cli(self, responses, items=()):
         def response(value):
             if isinstance(value, BaseException):
                 return value
@@ -119,7 +92,7 @@ class RelabelTests(unittest.TestCase):
         with patch.object(relabel, "SOURCES", {self.item_id: (self.title, self.labels)}), \
                 patch.object(relabel.subprocess, "run", side_effect=[response(v) for v in responses]) as run, \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = relabel.main(["--apply", "--confirm-no-passkeys"] if apply else [])
+            code = relabel.main(list(items))
         return code, out.getvalue() + err.getvalue(), run.call_args_list
 
     def test_subprocess_failures_identify_stage_without_leaking_output(self):
@@ -173,14 +146,14 @@ class RelabelTests(unittest.TestCase):
     def test_subprocess_dry_run_checks_utf8_stdin_and_never_writes(self):
         code, output, calls = self.run_cli([self.original, self.updated()])
         self.assertEqual(code, 0)
-        self.assertIn("DRY RUN: no items written", output)
+        self.assertIn("READ ONLY: no items written", output)
         edit = calls[1]
         self.assertIn("--dry-run", edit.args[0])
         self.assertEqual(json.loads(edit.kwargs["input"].decode("utf-8")), self.updated())
         self.assertNotIn(self.original["fields"][0]["value"], repr(edit.args))
         self.assertNotIn(self.original["fields"][0]["value"], output)
 
-    def test_drift_and_preview_failures_are_read_only_in_both_modes(self):
+    def test_drift_and_preview_failures_are_read_only(self):
         drift = copy.deepcopy(self.original)
         drift["fields"][0]["label"] = "PRIVATE_VALUE"
         for responses, stage in (
@@ -190,48 +163,13 @@ class RelabelTests(unittest.TestCase):
             ([self.original, subprocess.CalledProcessError(1, [], stderr=b"PRIVATE_VALUE")],
              "preview-edit: op-command-failed"),
         ):
-            for apply in (False, True):
-                code, output, calls = self.run_cli(responses, apply=apply)
-                self.assertEqual(code, 1)
-                self.assertIn(stage, output)
-                self.assertIn("No items written; no write commands attempted", output)
-                self.assertNotIn("PRIVATE_VALUE", output)
-                self.assertTrue(all("--dry-run" in c.args[0] for c in calls
-                                    if c.args[0][1:3] == ["item", "edit"]))
-
-    def test_apply_failure_distinguishes_unknown_write_and_failed_readback(self):
-        for tail, expected in (
-            ([subprocess.CalledProcessError(1, [], stderr=b"PRIVATE_VALUE")],
-             "Write attempted for Cloudflare DNS; outcome unknown"),
-            ([self.updated(), self.original],
-             "Successful write commands: 1; read-back verified: 0"),
-        ):
-            code, output, _ = self.run_cli(
-                [self.original, self.updated(), self.original, *tail], apply=True)
+            code, output, calls = self.run_cli(responses)
             self.assertEqual(code, 1)
-            self.assertIn(expected, output)
-            self.assertNotIn("No items written", output)
+            self.assertIn(stage, output)
+            self.assertIn("No items written; no write commands attempted", output)
             self.assertNotIn("PRIVATE_VALUE", output)
-
-    def test_partial_apply_counts_only_completed_writes(self):
-        other_id = "vyenqrf6ko2aficwt3dyaao2de"
-        other = {**copy.deepcopy(self.original), "id": other_id, "title": "Headscale"}
-        other_updated = relabel.relabel(other, other_id, "Headscale", self.labels)
-        responses = [self.original, self.updated(), other, other_updated,
-                     self.original, self.updated(), self.updated(), other,
-                     subprocess.CalledProcessError(1, [], stderr=b"PRIVATE_VALUE")]
-        responses = [v if isinstance(v, BaseException) else subprocess.CompletedProcess(
-            [], 0, stdout=json.dumps(v).encode()) for v in responses]
-        out = io.StringIO()
-        with patch.object(relabel, "SOURCES", {
-                self.item_id: (self.title, self.labels), other_id: ("Headscale", self.labels)}), \
-                patch.object(relabel.subprocess, "run", side_effect=responses), \
-                contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
-            self.assertEqual(relabel.main(["--apply", "--confirm-no-passkeys"]), 1)
-        self.assertIn("Successful write commands: 1; read-back verified: 1", out.getvalue())
-        self.assertIn("Write attempted for Headscale; outcome unknown", out.getvalue())
-        self.assertNotIn("No items written", out.getvalue())
-        self.assertNotIn("PRIVATE_VALUE", out.getvalue())
+            self.assertTrue(all("--dry-run" in c.args[0] for c in calls
+                                if c.args[0][1:3] == ["item", "edit"]))
 
     def test_comparison_keeps_existing_metadata_exclusions_and_field_order(self):
         expected = self.updated()
@@ -255,18 +193,17 @@ class RelabelTests(unittest.TestCase):
             (lambda x: x.pop("vault"), ".vault: presence"),
             (lambda x: x["fields"].append(copy.deepcopy(x["fields"][0])), "invalid item shape"),
         ):
-            for apply in (False, True):
-                with self.subTest(diagnostic=diagnostic, apply=apply):
-                    actual = self.updated()
-                    mutate(actual)
-                    code, output, calls = self.run_cli([self.original, actual], apply=apply)
-                    self.assertEqual(code, 1)
-                    self.assertIn(diagnostic, output)
-                    self.assertIn("No items written; no write commands attempted", output)
-                    self.assertNotIn("PRIVATE_VALUE", output)
-                    self.assertNotIn(self.original["fields"][0]["value"], output)
-                    self.assertEqual(len(calls), 2)
-                    self.assertIn("--dry-run", calls[1].args[0])
+            with self.subTest(diagnostic=diagnostic):
+                actual = self.updated()
+                mutate(actual)
+                code, output, calls = self.run_cli([self.original, actual])
+                self.assertEqual(code, 1)
+                self.assertIn(diagnostic, output)
+                self.assertIn("No items written; no write commands attempted", output)
+                self.assertNotIn("PRIVATE_VALUE", output)
+                self.assertNotIn(self.original["fields"][0]["value"], output)
+                self.assertEqual(len(calls), 2)
+                self.assertIn("--dry-run", calls[1].args[0])
 
     def test_adversarial_dynamic_names_never_appear_in_bounded_diagnostics(self):
         secret = "PRIVATE_VALUE_\u001b[31m\nFAIL forged"
@@ -286,86 +223,56 @@ class RelabelTests(unittest.TestCase):
         mismatch = relabel.ContentMismatch([secret] * 30, [], "compared content")
         self.assertEqual(len(mismatch.diagnostics), 20)
 
-    def test_cloudflare_empty_date_defaults_pass_preview_and_readback_without_changing_payload(self):
-        for field_id in ("validFrom", "expires"):
-            self.original["fields"].append({"id": field_id, "type": "DATE", "label": field_id})
-        preview = self.updated()
-        for field in preview["fields"][1:]:
-            field["value"] = ""
-        for apply in (False, True):
-            responses = [self.original, preview]
-            if apply:
-                responses += [self.original, preview, preview]
-            code, output, calls = self.run_cli(responses, apply=apply)
-            self.assertEqual(code, 0, output)
-            if apply:
-                self.assertIn("read-back labels, IDs and exact values unchanged", output)
-            for call in calls:
-                if call.args[0][1:3] == ["item", "edit"]:
-                    self.assertEqual(json.loads(call.kwargs["input"]), self.updated())
-        self.assertTrue(all("value" not in f for f in self.original["fields"][1:]))
-        self.assertTrue(all(f["value"] == "" for f in preview["fields"][1:]))
-
-    def test_optional_date_default_rejects_nonempty_and_nonstring_values_without_leaking(self):
-        self.original["fields"].append({"id": "validFrom", "type": "DATE", "label": "validFrom"})
-        for value in ("PRIVATE_VALUE", " ", "0", None, 0, False):
-            for readback in (False, True):
-                actual = self.updated()
-                actual["fields"][-1]["value"] = value
-                responses = ([self.original, self.updated(), self.original, self.updated(), actual]
-                             if readback else [self.original, actual])
-                code, output, calls = self.run_cli(responses, apply=True)
-                self.assertEqual(code, 1)
-                self.assertIn("readback-comparison" if readback else "preview-comparison", output)
-                if isinstance(value, str):
-                    self.assertIn("type=string string=nonempty", output)
-                self.assertNotIn("PRIVATE_VALUE", output)
-                if not readback:
-                    self.assertEqual(len(calls), 2)
-                    self.assertIn("No items written", output)
-
-    def test_date_default_exception_does_not_hide_other_content_changes(self):
-        expected = self.updated()
-        expected["fields"].append({"id": "expires", "type": "DATE", "label": "expires"})
-        for change in ("missing-field", "new-field", "type", "label", "other-field",
-                       "other-item", "other-category", "removed-empty", "cleared-date", "changed-secret"):
-            with self.subTest(change=change):
-                before = copy.deepcopy(expected)
-                after = copy.deepcopy(expected)
-                after["fields"][-1]["value"] = ""
-                if change == "missing-field":
-                    after["fields"].pop()
-                elif change == "new-field":
-                    before["fields"].pop()
-                elif change == "type":
-                    after["fields"][-1]["type"] = "STRING"
-                elif change == "label":
-                    after["fields"][-1]["label"] = "changed"
-                elif change == "other-field":
-                    before["fields"][-1]["id"] = after["fields"][-1]["id"] = "other"
-                elif change == "other-item":
-                    before["id"] = after["id"] = "other"
-                elif change == "other-category":
-                    before["category"] = after["category"] = "LOGIN"
-                elif change == "removed-empty":
-                    before, after = after, before
-                elif change == "cleared-date":
-                    before["fields"][-1]["value"] = "1234567890"
-                elif change == "changed-secret":
-                    after["fields"][0]["value"] = "changed"
-                with self.assertRaises(relabel.ContentMismatch):
-                    relabel.check_content(before, after)
-
     def test_string_presence_diagnostics_classify_empty_without_values(self):
         for value, marker in (("", "empty"), ("PRIVATE_VALUE", "nonempty")):
             mismatch = relabel.ContentMismatch({}, {"value": value}, "compared content")
             self.assertIn(f"type=string string={marker}", mismatch.diagnostics[0])
             self.assertNotIn("PRIVATE_VALUE", str(mismatch.diagnostics))
 
-    def test_apply_requires_explicit_passkey_review(self):
-        with contextlib.redirect_stderr(io.StringIO()), patch.object(relabel, "op") as op:
+    def test_apply_is_disabled_before_any_cli_call_even_with_legacy_confirmation(self):
+        for args in (["--apply"], ["--apply", "--confirm-no-passkeys"]):
+            out = io.StringIO()
+            with contextlib.redirect_stderr(out), patch.object(relabel, "op") as op:
+                with self.assertRaises(SystemExit) as error:
+                    relabel.main(args)
+            self.assertEqual(error.exception.code, 2)
+            op.assert_not_called()
+            self.assertIn("automated writes disabled", out.getvalue())
+
+    def test_absent_dates_reject_every_added_value_and_never_write(self):
+        for field_id in ("validFrom", "expires"):
+            for value in ("", "PRIVATE_VALUE", " ", "0", None, 0, False):
+                with self.subTest(field_id=field_id, value_type=type(value).__name__):
+                    original = copy.deepcopy(self.original)
+                    original["fields"].append({"id": field_id, "type": "DATE", "label": field_id})
+                    actual = self.updated(original)
+                    actual["fields"][-1]["value"] = value
+                    code, output, calls = self.run_cli([original, actual])
+                    self.assertEqual(code, 1)
+                    self.assertIn("preview-comparison", output)
+                    self.assertIn("No items written; no write commands attempted", output)
+                    self.assertNotIn("PRIVATE_VALUE", output)
+                    self.assertEqual(len(calls), 2)
+                    self.assertIn("--dry-run", calls[1].args[0])
+                    self.assertEqual(json.loads(calls[1].kwargs["input"]), self.updated(original))
+
+    def test_already_renamed_items_are_read_only_gets(self):
+        code, output, calls = self.run_cli([self.updated()])
+        self.assertEqual(code, 0, output)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].args[0][1:3], ["item", "get"])
+        self.assertIn("READ ONLY", output)
+
+    def test_only_selected_cutover_items_are_read(self):
+        out = io.StringIO()
+        with patch.object(relabel, "op", return_value=self.updated()) as op, \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(relabel.main([self.title]), 0)
+        op.assert_called_once_with("item", "get", self.item_id, "--vault", relabel.VAULT)
+        self.assertIn("PASS labels Cloudflare DNS", out.getvalue())
+        with patch.object(relabel, "op") as op, contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
-                relabel.main(["--apply"])
+                relabel.main(["unreviewed"])
         op.assert_not_called()
 
 

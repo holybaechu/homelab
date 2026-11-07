@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Administrative, label-only migration using official op JSON stdin editing."""
+"""Read-only label audit and CLI preview; rename labels in the 1Password app."""
 import argparse
 import copy
 import json
@@ -193,40 +193,33 @@ def check_content(expected, actual):
         left, right = content(expected), content(actual)
     except (ValueError, KeyError, TypeError, IndexError, AttributeError):
         raise ContentMismatch(expected, actual, "raw structure; invalid item shape") from None
-    # Cloudflare preview strings may be empty defaults on these optional DATE fields.
-    # Accept only absent -> empty string, never a missing field or a removed value.
-    if (left["id"] == right["id"] == "x62vzi4s2sdnerrjev6pp5ndnu"
-            and left["category"] == right["category"] == "API_CREDENTIAL"):
-        for field_id in ("validFrom", "expires"):
-            before = left["fields"].get(field_id)
-            after = right["fields"].get(field_id)
-            if (before is not None and after is not None
-                    and before.get("type") == after.get("type") == "DATE"
-                    and "value" not in before and after.get("value") == ""):
-                del after["value"]
     if left != right:
         raise ContentMismatch(left, right, "compared content")
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apply", action="store_true", help="write after all read-only previews pass")
+    parser.add_argument("--apply", action="store_true", help="disabled: use label-only edits in the 1Password app")
     parser.add_argument("--confirm-no-passkeys", action="store_true",
-                        help="confirm all nine items have no passkeys or other non-JSON credentials")
+                        help="legacy option; does not enable writes")
+    parser.add_argument("items", nargs="*", metavar="ITEM",
+                        help="reviewed item titles to check (default: all nine)")
     args = parser.parse_args(argv)
-    if args.apply and not args.confirm_no_passkeys:
-        parser.error("--apply requires --confirm-no-passkeys; inspect all nine items in the 1Password app")
+    if set(args.items) - {title for title, _ in SOURCES.values()}:
+        parser.error("unreviewed item title; use titles from the source-label table")
+    if args.apply:
+        parser.error("automated writes disabled: CLI JSON round-trips can populate absent DATE values; "
+                     "rename only the required field labels in the 1Password app, preserving IDs and values")
     stage, title, item_id = "environment", "none", "none"
-    written = verified = 0
-    pending_write = False
     try:
         if any(os.environ.get(name) for name in ("OP_CONNECT_HOST", "OP_CONNECT_TOKEN")):
             raise CliFailure("connect-environment; OP_CONNECT_HOST or OP_CONNECT_TOKEN is set; "
                              "Connect does not support item edit; use a separate administrative "
                              "personal-account CLI session without Connect variables. "
                              "No environment or credentials were changed")
-        plans = []
         for item_id, (title, labels) in SOURCES.items():
+            if args.items and title not in args.items:
+                continue
             stage = "source-get"
             original = op("item", "get", item_id, "--vault", VAULT)
             stage = "source-validation"
@@ -237,29 +230,11 @@ def main(argv=None):
                              "--dry-run", item=updated)
                 stage = "preview-comparison"
                 check_content(updated, preview)
-                plans.append((item_id, title, original, updated))
-            print(f"PASS preview {title}: identity, field IDs and label-only content")
-        if not args.apply:
-            print("DRY RUN: no items written; inspect passkeys before applying")
-            return 0
-        for item_id, title, original, updated in plans:
-            stage = "prewrite-get"
-            current = op("item", "get", item_id, "--vault", VAULT)
-            stage = "snapshot-comparison"
-            if current != original:
-                raise ValueError("item changed since preview; rerun after review")
-            stage = "apply-edit"
-            pending_write = True
-            op("item", "edit", item_id, "--vault", VAULT, item=updated)
-            written += 1
-            pending_write = False
-            stage = "readback-get"
-            actual = op("item", "get", item_id, "--vault", VAULT)
-            stage = "readback-comparison"
-            check_content(updated, actual)
-            verified += 1
-            print(f"PASS applied {title}: read-back labels, IDs and exact values unchanged")
-        print("PASS all sources: label-only migration verified (including already-correct items)")
+                print(f"PASS preview {title}: labels still pending; rename in the app, not via JSON")
+            else:
+                print(f"PASS labels {title}: reviewed field IDs already have required labels")
+        print("READ ONLY: no items written. Previews are not permission to apply JSON templates; "
+              "rename pending labels in the 1Password app.")
         return 0
     except (CliFailure, OSError, ValueError, KeyError, TypeError, IndexError, AttributeError) as error:
         if isinstance(error, CliFailure):
@@ -270,21 +245,15 @@ def main(argv=None):
             detail = {
                 "source-validation": "source-drift-or-unsupported-content; review identity, attachments, field IDs and old labels in the app",
                 "preview-comparison": "preview-mismatch; preview did not preserve expected content; do not apply",
-                "snapshot-comparison": "concurrent-change; source changed since preview; review before rerun",
-                "readback-comparison": "readback-mismatch; inspect item history before continuing",
             }.get(stage, "unexpected-item-json; inspect CLI compatibility locally")
         print(f"FAIL item={title} ({item_id}) stage={stage}: {detail}", file=sys.stderr)
         if isinstance(error, ContentMismatch):
             print(f"Structural diff ({error.scope}; at most 20 entries; no values):", file=sys.stderr)
             for diagnostic in error.diagnostics:
                 print(f"  {diagnostic}", file=sys.stderr)
-        if not written and not pending_write:
-            print("No items written; no write commands attempted.", file=sys.stderr)
-        else:
-            print(f"Successful write commands: {written}; read-back verified: {verified}. "
-                  "Inspect item history before rerun; no automatic rollback.", file=sys.stderr)
-            if pending_write:
-                print(f"Write attempted for {title}; outcome unknown and item may have changed.", file=sys.stderr)
+        print("No items written; no write commands attempted.", file=sys.stderr)
+        print("Do not apply JSON templates or accept added DATE values. Rename only the required "
+              "labels in the 1Password app; see kubernetes/platform/onepassword/README.md.", file=sys.stderr)
         return 1
 
 
