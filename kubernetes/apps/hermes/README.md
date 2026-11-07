@@ -79,6 +79,8 @@ certificate in `hermes-talos-managed`. Certificates last six hours and renew wit
 less than one hour remaining. `TALOSCONFIG` reads its read-only Secret mount on
 each invocation; the CA signing key stays on the node. Reloader watches only the
 other app Secrets, so certificate renewal does not restart Hermes.
+The generated talosconfig uses `talos.default` as its endpoint and has no default
+target node; pass `--nodes <NODE_IP>` using the IP from cluster settings.
 
 `KubeTalosAPIAccessConfig` allows this issuance only in `homelab`, with roles
 bounded to `os:admin`. Only authorized operators and Flux may create the Talos
@@ -91,7 +93,8 @@ longer uses it and has no yearly client-certificate renewal procedure.
 
 Activating these mounts replaces Hermes because its Deployment uses `Recreate`.
 Verify from the Hermes container with `kubectl get nodes,pv`, `kubectl get pods,pvc
--A`, `flux get kustomizations -A`, `talosctl version`, and `talosctl get extensions`.
+-A`, `flux get kustomizations -A`, `talosctl --nodes <NODE_IP> version`, and
+`talosctl --nodes <NODE_IP> get extensions`.
 For future node upgrades, extensions or kernel-module changes, follow the Talos
 infrastructure configuration and run `scripts/talos-preflight` before applying;
 confirm disk and USB identities and arrange the single node's downtime first.
