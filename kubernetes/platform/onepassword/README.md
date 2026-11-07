@@ -221,15 +221,20 @@ find the original field ID with label exactly `hermes-api-token`. A literal
 `op://...` label fails; do not normalize that mistake into an accepted key.
 
 The OnePasswordItem manifests already reference vault/item IDs, not field keys,
-so these edits require no manifest reference changes. Consumers still use ESO;
-future cutovers must explicitly project these keys into their existing
+so these edits require no manifest reference changes. Future cutovers must
+explicitly project these keys into their existing
 interfaces, not use `envFrom` or whole-item mounts. Headscale OIDC now projects
 only `oidc-client-secret` from `identity/headscale-connect` to its unchanged
 `/var/run/secrets/headscale/client-secret` file and reloads on replacement Secret
 changes. Keep `headscale-oidc` on ESO for rollback: restore the old Secret name,
 remove the `items` projection and restore its Reloader reference together.
-The gateway, Zipline and Langfuse still use ESO. Operator auto-restart is off;
-preserve each consumer's existing restart policy when moving it.
+The gateway maps only `networking/headscale-connect`'s `gateway-auth-key` to
+`TS_AUTHKEY` and reloads on that Secret. Its PVC/state directory, `TS_AUTH_ONCE`,
+node identity, routes, hostname and image entrypoint remain unchanged. Keep
+`headscale-gateway` on ESO for rollback: restore its `authkey` reference and
+Reloader target together; never delete/reinitialize its persistent state.
+Zipline and Langfuse still use ESO. Operator auto-restart is off; preserve each
+consumer's existing restart policy when moving it.
 
 ### Cloudflare stays on ESO
 
