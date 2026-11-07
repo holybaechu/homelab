@@ -130,7 +130,7 @@ duplicates are not a replacement for the existing source of truth.
 | networking | `headscale-gateway` | `authkey`; preserve gateway identity/state and Tailscale entrypoint |
 | networking | `adguard-credentials` | Rendered `AdGuardHome.yaml`; strict username/bcrypt validation, JSON quoting, cluster substitutions, UI-edit-preserving initializer and TLS mount |
 | homelab | `cloudflare-ddns` | `CLOUDFLARE_API_TOKEN`; Injector candidate only with verified `/bin/ddns` entrypoint and rotation trigger |
-| homelab | `zipline-env` | `CORE_SECRET`, `OAUTH_OIDC_CLIENT_SECRET`; Injector candidate only with verified `/zipline/entrypoint` and rotation trigger |
+| homelab | `zipline-env` | `CORE_SECRET`, `OAUTH_OIDC_CLIENT_SECRET`; explicit Operator keys, unchanged image entrypoint and Reloader policy |
 | homelab | `immich` | `DB_PASSWORD` for both server and PostgreSQL, plus JSON-escaped OIDC `immich.json` and all current config fields |
 | homelab | `qbittorrent-credentials` | Rendered `managed.conf`; strict username/PBKDF2 validation and JSON quoting; retain merge.py, torrent state and root/s6 startup |
 | homelab | `mysql-env` | `username`, `password`, `root-password`; mounted password files and authenticated readiness probe; **no credential-triggered restart** |
@@ -233,8 +233,13 @@ The gateway maps only `networking/headscale-connect`'s `gateway-auth-key` to
 node identity, routes, hostname and image entrypoint remain unchanged. Keep
 `headscale-gateway` on ESO for rollback: restore its `authkey` reference and
 Reloader target together; never delete/reinitialize its persistent state.
-Zipline and Langfuse still use ESO. Operator auto-restart is off; preserve each
-consumer's existing restart policy when moving it.
+Zipline now maps only `zipline-connect` keys `core-secret` and `oidc-client-secret`
+to `CORE_SECRET` and `OAUTH_OIDC_CLIENT_SECRET`. Its Hermes API token is not
+injected. The existing Reloader auto policy observes the replacement; the image
+entrypoint, single-writer strategy, PGlite database and upload PVCs are unchanged.
+Keep `zipline-env` on ESO for rollback: restore its original `envFrom` and remove
+the two explicit projections together. Langfuse still uses ESO pending its own
+administrative parity PASS. Operator auto-restart remains off.
 
 ### Cloudflare stays on ESO
 
@@ -289,7 +294,8 @@ JSON and credential bytes remain in captured subprocess memory, never output or
 files. Each PASS checks:
 
 - Source vault/item/title and exact field IDs, labels, types, purposes and section
-  membership against reviewed metadata; no added files or URLs.
+  membership against reviewed metadata; no added files or URLs except the single
+  reviewed Operator-skipped empty-label Langfuse URL described below.
 - Every current nonempty source field, including Zipline's Hermes token and
   optional notes, against the replacement's exact key set and UTF-8 bytes.
 - Operator ownership UID, source path, Ready status, and the existing ESO target's
@@ -355,17 +361,24 @@ against replacement bytes with a captured `op read --no-newline`. A missing or
 changed reference fails even if metadata and the app's two ESO keys pass.
 Do not recreate fields, change values or edit source JSON to satisfy the checker.
 
-Langfuse's refreshed metadata has exactly one URL but does not identify its
-label. Operator 1.12.1 normalizes URL labels into Secret keys before copying
-fields; empty normalized keys are skipped and a colliding field overwrites the
-URL. Do not assume a URL necessarily creates an extra key or allow arbitrary
-extras. `--source-metadata langfuse-connect` now reports only URL index,
-label/key emptiness, collision with field keys, reviewed-key membership and href
-presence. It never displays URL labels or contents. Langfuse's gate still rejects
-URLs pending this narrow review. Privately inspect the existing URL's label and
-confirm it is an ordinary application URL without credentials; share the bounded
-INFO lines and, only if non-sensitive, the label, never the URL contents. Do not
-delete the URL or rename a field merely to pass the gate.
+Langfuse's reviewed metadata has exactly one empty-label URL with a nonempty
+href and an empty normalized Operator key, with no field-key collision. Operator
+1.12.1 skips it before copying fields. Only this source may have that single
+empty-label URL; nonempty labels (even those normalizing to empty), multiple
+URLs, files and any extra replacement key remain blocked. The href is never
+displayed or copied by this check. Exact reviewed field metadata and complete
+source/replacement/ESO byte parity are still required; matching item versions
+alone is insufficient. No source edits or URL deletion are needed.
+
+Before Langfuse cutover, fetch and run the updated read-only checker in the
+administrator's authenticated Windows checkout, returning only PASS/FAIL/INFO:
+
+```powershell
+git fetch origin main
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - langfuse-connect
+```
+
+Langfuse remains on ESO until that independent check passes.
 
 If versions match but ESO bytes differ, inspect item history and ESO freshness
 privately before any cutover. Share only PASS/FAIL/INFO lines, not CLI or

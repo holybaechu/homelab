@@ -342,12 +342,42 @@ class StagingVerificationTests(unittest.TestCase):
         self.assertNotIn("PRIVATE", output)
         self.assertNotIn("PASS", output)
 
-    def test_url_diagnostics_hide_labels_and_values_and_do_not_allow_urls(self):
+    def test_langfuse_skipped_url_requires_strict_source_and_replacement_parity(self):
+        contract = staging.CONTRACTS["langfuse-connect"]
+        source, replacement = self.source_fixture(contract)
+        source["urls"] = [{"label": "", "href": "PRIVATE_URL"}]
+        staging.verify_source(source, replacement, contract)
+        for mutate in (
+            lambda s, r: s["urls"].append(copy.deepcopy(s["urls"][0])),
+            lambda s, r: s["urls"][0].update(href=""),
+            lambda s, r: s.update(files=[{"id": "PRIVATE_FILE"}]),
+            lambda s, r: s.update(id="changed"),
+            lambda s, r: s["fields"][0].update(label="changed"),
+            lambda s, r: s["fields"][0].update(value="changed"),
+            lambda s, r: s["fields"].append(copy.deepcopy(s["fields"][0])),
+            lambda s, r: r["data"].update({"": base64.b64encode(b"PRIVATE_URL").decode()}),
+            lambda s, r: r["data"].update({"PRIVATE_KEY": base64.b64encode(b"PRIVATE_URL").decode()}),
+            lambda s, r: r["data"].pop("salt"),
+            lambda s, r: r["data"].update(salt=base64.b64encode(b"changed\n").decode()),
+        ):
+            changed_source, changed_replacement = copy.deepcopy((source, replacement))
+            mutate(changed_source, changed_replacement)
+            with self.assertRaises(staging.CheckFailure):
+                staging.verify_source(changed_source, changed_replacement, contract)
+        zipline = staging.CONTRACTS["zipline-connect"]
+        other_source, other_replacement = self.source_fixture(zipline)
+        other_source["urls"] = source["urls"]
+        with self.assertRaisesRegex(staging.CheckFailure, "source-identity-or-extra-content"):
+            staging.verify_source(other_source, other_replacement, zipline)
+
+    def test_url_diagnostics_hide_labels_and_values_and_reject_unreviewed_urls(self):
         contract = staging.CONTRACTS["langfuse-connect"]
         source, replacement = self.source_fixture(contract)
         for label, empty, collision, reviewed in (
             ("", True, False, False),
             ("PRIVATE_LABEL", False, False, False),
+            (" ", True, False, False),
+            ("\uc790\uaca9", True, False, False),
             ("salt", False, True, True),
             (" salt ", False, True, True),
         ):
@@ -357,8 +387,11 @@ class StagingVerificationTests(unittest.TestCase):
                                ("field-key-collision", collision), ("key-reviewed", reviewed)):
                 self.assertIn(f"{key}={str(value).lower()}", output)
             self.assertNotIn("PRIVATE", output)
-            with self.assertRaisesRegex(staging.CheckFailure, "source-identity-or-extra-content"):
+            if label == "":
                 staging.verify_source(source, replacement, contract)
+            else:
+                with self.assertRaisesRegex(staging.CheckFailure, "source-identity-or-extra-content"):
+                    staging.verify_source(source, replacement, contract)
 
     def test_metadata_mode_sanitizes_malformed_data_and_continues(self):
         with patch.object(staging, "read_source", return_value={"fields": ["PRIVATE"]}), \

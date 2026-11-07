@@ -76,10 +76,17 @@ spec:
       containers:
         - name: zipline
           image: ghcr.io/diced/zipline:4.8.2
-          envFrom:
-            - secretRef:
-                name: zipline-env
           env:
+            - name: CORE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: zipline-connect
+                  key: core-secret
+            - name: OAUTH_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: zipline-connect
+                  key: oidc-client-secret
             - name: TZ
               value: ${TIME_ZONE}
             - name: DATABASE_URL

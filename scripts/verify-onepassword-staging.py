@@ -195,8 +195,18 @@ def source_metadata_summary(source, contract):
 def verify_source(source, replacement, contract):
     item_id = contract["item_id"]
     title, labels = SOURCE_LABELS[item_id]
+    urls = source.get("urls") or []
+    # Only this reviewed Langfuse URL is skipped by Operator 1.12.1.
+    skipped_url = (
+        item_id == "77j3ul6ntreertxl3bjkdko4h4" and isinstance(urls, list)
+        and len(urls) == 1 and isinstance(urls[0], dict)
+        and urls[0].get("label") in (None, "")
+        and operator_key(urls[0].get("label") or "") == ""
+        and isinstance(urls[0].get("href"), str) and bool(urls[0]["href"])
+    )
     if (source["id"] != item_id or source["vault"]["id"] != VAULT
-            or source["title"] != title or source.get("files") or source.get("urls")):
+            or source["title"] != title or source.get("files")
+            or (urls and not skipped_url)):
         raise CheckFailure("source-identity-or-extra-content")
     fields = {f["id"]: f for f in source["fields"]}
     if len(fields) != len(source["fields"]) or set(fields) != {*labels, "notesPlain"}:
