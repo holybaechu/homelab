@@ -570,10 +570,6 @@ spec:
             - name: coder-runtime
               mountPath: /opt/coder
               readOnly: true
-            - name: bootstrap
-              mountPath: /opt/coder/gitconfig
-              subPath: coder-gitconfig
-              readOnly: true
             - name: coder-credentials
               mountPath: /opt/coder-credentials
               readOnly: true

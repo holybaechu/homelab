@@ -15,6 +15,7 @@ tar -xJf mise.tar.xz --strip-components=2 -C /opt/coder/bin mise/bin/mise
 tar -xzf gh.tar.gz --strip-components=2 -C /opt/coder/bin gh_2.103.2_linux_amd64/bin/gh
 mv /opt/coder/bin/gh /opt/coder/bin/gh-real
 cp /bootstrap/coder-gh.sh /opt/coder/bin/gh
+cp /bootstrap/coder-gitconfig /opt/coder/gitconfig
 chmod 755 /opt/coder/bin/mise /opt/coder/bin/gh /opt/coder/bin/gh-real
 /opt/coder/bin/mise --version
 /opt/coder/bin/gh-real --version
