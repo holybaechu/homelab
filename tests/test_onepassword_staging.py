@@ -102,9 +102,92 @@ class StagingVerificationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "unexpected source item"):
                     staging.verify(item, new, sources, contract)
 
+    def source_fixture(self, contract):
+        item_id = contract["item_id"]
+        title, labels = staging.SOURCE_LABELS[item_id]
+        fields = [{"id": field_id, "label": label, "type": "CONCEALED",
+                   "section": {"id": section} if section else None,
+                   "value": label + '\n"\\\u0000'}
+                  for field_id, (label, section) in labels.items()]
+        fields.append({"id": "notesPlain", "label": "notesPlain", "type": "STRING",
+                       "purpose": "NOTES", "value": ""})
+        source = {"id": item_id, "vault": {"id": staging.VAULT}, "title": title,
+                  "fields": fields, "sections": [{"id": section} for section in
+                   sorted({s for _, s in labels.values() if s})]}
+        replacement = {"data": {staging.operator_key(f["label"]):
+                                base64.b64encode(f["value"].encode()).decode()
+                                for f in fields if f["value"]}}
+        return source, replacement
+
+    def test_operator_normalization_preserves_case_and_skips_korean_only(self):
+        for label, key in (("PostgreSQL Password", "PostgreSQL-Password"),
+                           ("Hermes API token", "Hermes-API-token"),
+                           ("postgresql-password", "postgresql-password"),
+                           ("\uc790\uaca9 \uc99d\uba85", ""),
+                           ("\ud55c Hermes \uae00", "Hermes"),
+                           ("root_password", "root_password")):
+            self.assertEqual(staging.operator_key(label), key)
+
+    def test_source_metadata_and_all_field_bytes_for_each_staged_target(self):
+        for contract in staging.CONTRACTS.values():
+            if contract["item_id"] not in staging.SOURCE_LABELS:
+                continue
+            with self.subTest(contract=contract["name"], namespace=contract["namespace"]):
+                source, replacement = self.source_fixture(contract)
+                staging.verify_source(source, replacement, contract)
+                self.assertEqual(set(replacement["data"]), contract["allowed"] - {"notesPlain"})
+                for old_key, new_key in contract["sources"][next(iter(contract["sources"]))].items():
+                    self.assertIn(new_key, replacement["data"])
+                replacement["data"][next(iter(replacement["data"]))] = base64.b64encode(b"changed").decode()
+                with self.assertRaises(ValueError):
+                    staging.verify_source(source, replacement, contract)
+
+    def test_source_drift_uri_labels_and_extra_content_fail_closed(self):
+        contract = staging.CONTRACTS["zipline-connect"]
+        source, replacement = self.source_fixture(contract)
+        for mutate in (
+            lambda x: x.update(id="changed"),
+            lambda x: x["fields"][0].update(id="changed"),
+            lambda x: x["fields"][0].update(type="STRING"),
+            lambda x: x["fields"][0].update(section=None),
+            lambda x: x["fields"][0].update(value=""),
+            lambda x: x["fields"][2].update(label="op://Homelab/Zipline/hermes-api-token"),
+            lambda x: x["fields"].append(copy.deepcopy(x["fields"][0])),
+            lambda x: x.update(files=[{"id": "attachment"}]),
+            lambda x: x.update(urls=[{"label": "new"}]),
+            lambda x: x["sections"][0].update(label="new"),
+        ):
+            changed = copy.deepcopy(source)
+            mutate(changed)
+            with self.assertRaises(ValueError):
+                staging.verify_source(changed, replacement, contract)
+        replacement["data"]["unexpected"] = base64.b64encode(b"test").decode()
+        with self.assertRaises(ValueError):
+            staging.verify_source(source, replacement, contract)
+
+    def test_cloudflare_explicit_checks_block_before_reads(self):
+        for name in ("cloudflare-dns", "cloudflare-ddns"):
+            with patch.object(staging, "read_resource") as read, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    staging.main([name])
+                self.assertEqual(error.exception.code, 2)
+                read.assert_not_called()
+        self.assertFalse({"cloudflare-dns", "cloudflare-ddns"} & staging.CONTRACTS.keys())
+
+    def test_source_read_failures_are_sanitized_and_never_write(self):
+        with patch.object(staging.subprocess, "run", side_effect=ValueError("PRIVATE_VALUE")) as run, \
+                patch.object(staging, "read_resource", return_value={}), \
+                patch.object(staging, "verify"), contextlib.redirect_stderr(io.StringIO()) as out:
+            self.assertEqual(staging.main(["zipline-connect"]), 1)
+        self.assertNotIn("PRIVATE_VALUE", out.getvalue())
+        self.assertEqual(run.call_args.args[0][0:3], ["op", "item", "get"])
+        self.assertTrue(run.call_args.kwargs["capture_output"])
+
     def test_selected_check_uses_its_namespace(self):
         with patch.object(staging, "read_resource", return_value={}) as read:
-            with patch.object(staging, "verify"), contextlib.redirect_stdout(io.StringIO()):
+            with patch.object(staging, "verify"), patch.object(staging, "read_source"), \
+                    patch.object(staging, "verify_source"), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(staging.main(["headscale-gateway"]), 0)
         self.assertEqual(read.call_args_list[0].args,
                          ("onepassworditem", "headscale-connect", "networking"))

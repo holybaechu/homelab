@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+import re
 import subprocess
 import sys
 
@@ -31,56 +32,125 @@ CONTRACTS = {
             "hermes-webhook": {"WEBHOOK_SECRET": "hermes_webhook_secret"},
         },
     },
-    "cloudflare-dns": {
-        "namespace": "cert-manager", "name": "cloudflare-connect",
-        "item_id": "x62vzi4s2sdnerrjev6pp5ndnu",
-        "allowed": {"api_token", "notesPlain"},
-        "sources": {"cloudflare-dns": {"api-token": "api_token"}},
-    },
-    "cloudflare-ddns": {
-        "namespace": "homelab", "name": "cloudflare-connect",
-        "item_id": "x62vzi4s2sdnerrjev6pp5ndnu",
-        "allowed": {"api_token", "notesPlain"},
-        "sources": {"cloudflare-ddns": {"CLOUDFLARE_API_TOKEN": "api_token"}},
-    },
     "headscale-oidc": {
         "namespace": "identity", "name": "headscale-connect",
         "item_id": "vyenqrf6ko2aficwt3dyaao2de",
-        "allowed": {"oidc_client_secret", "authkey", "notesPlain"},
-        "sources": {"headscale-oidc": {"client-secret": "oidc_client_secret"}},
+        "allowed": {"oidc-client-secret", "gateway-auth-key", "notesPlain"},
+        "sources": {"headscale-oidc": {"client-secret": "oidc-client-secret"}},
     },
     "headscale-gateway": {
         "namespace": "networking", "name": "headscale-connect",
         "item_id": "vyenqrf6ko2aficwt3dyaao2de",
-        "allowed": {"oidc_client_secret", "authkey", "notesPlain"},
-        "sources": {"headscale-gateway": {"authkey": "authkey"}},
+        "allowed": {"oidc-client-secret", "gateway-auth-key", "notesPlain"},
+        "sources": {"headscale-gateway": {"authkey": "gateway-auth-key"}},
     },
     "zipline-connect": {
         "namespace": "homelab", "name": "zipline-connect",
         "item_id": "ia7seg53btlz2t4xluwkzmfjly",
-        "allowed": {"core_secret", "oidc_client_secret", "hermes_api_token", "notesPlain"},
+        "allowed": {"core-secret", "oidc-client-secret", "hermes-api-token", "notesPlain"},
         "sources": {"zipline-env": {
-            "CORE_SECRET": "core_secret", "OAUTH_OIDC_CLIENT_SECRET": "oidc_client_secret",
+            "CORE_SECRET": "core-secret", "OAUTH_OIDC_CLIENT_SECRET": "oidc-client-secret",
         }},
     },
     "langfuse-connect": {
         "namespace": "homelab", "name": "langfuse-connect",
         "item_id": "77j3ul6ntreertxl3bjkdko4h4",
-        "allowed": {"database_url", "postgres_password", "clickhouse_password", "redis_auth",
-                    "minio_root_password", "salt", "encryption_key", "nextauth_secret",
-                    "oidc_client_secret", "langfuse_init_project_public_key",
-                    "langfuse_init_project_secret_key", "notesPlain"},
+        "allowed": {"database-url", "postgresql-password", "clickhouse-password", "redis-auth",
+                    "minio-root-password", "salt", "encryption-key", "nextauth-secret",
+                    "oidc-client-secret", "hermes-project-public-key",
+                    "hermes-project-secret-key", "notesPlain"},
         "sources": {"langfuse-env": {
-            "DATABASE_URL": "database_url", "POSTGRES_PASSWORD": "postgres_password",
-            "CLICKHOUSE_PASSWORD": "clickhouse_password", "REDIS_AUTH": "redis_auth",
-            "MINIO_ROOT_PASSWORD": "minio_root_password", "SALT": "salt",
-            "ENCRYPTION_KEY": "encryption_key", "NEXTAUTH_SECRET": "nextauth_secret",
-            "AUTH_AUTHENTIK_CLIENT_SECRET": "oidc_client_secret",
-            "LANGFUSE_INIT_PROJECT_PUBLIC_KEY": "langfuse_init_project_public_key",
-            "LANGFUSE_INIT_PROJECT_SECRET_KEY": "langfuse_init_project_secret_key",
+            "DATABASE_URL": "database-url", "POSTGRES_PASSWORD": "postgresql-password",
+            "CLICKHOUSE_PASSWORD": "clickhouse-password", "REDIS_AUTH": "redis-auth",
+            "MINIO_ROOT_PASSWORD": "minio-root-password", "SALT": "salt",
+            "ENCRYPTION_KEY": "encryption-key", "NEXTAUTH_SECRET": "nextauth-secret",
+            "AUTH_AUTHENTIK_CLIENT_SECRET": "oidc-client-secret",
+            "LANGFUSE_INIT_PROJECT_PUBLIC_KEY": "hermes-project-public-key",
+            "LANGFUSE_INIT_PROJECT_SECRET_KEY": "hermes-project-secret-key",
         }},
     },
 }
+
+
+VAULT = "3ryhjdiydkomgh3oxfl5yrg5j4"
+# Reviewed field IDs and section membership from the pre-edit metadata export.
+SOURCE_LABELS = {
+    "vyenqrf6ko2aficwt3dyaao2de": ("Headscale", {
+        "3u3ughywinbmkybgdopzodjnxy": ("oidc-client-secret", "add more"),
+        "biwyjxnpkpvmrmy42ffpt45fpe": ("gateway-auth-key", "add more"),
+    }),
+    "ia7seg53btlz2t4xluwkzmfjly": ("Zipline", {
+        "eteoaoehfwqkierraxfgbx5xru": ("core-secret", "add more"),
+        "6rvlh45inzbb55zwnyi53spfne": ("oidc-client-secret", "add more"),
+        "mq3jr7zyvy5zyff2zzpz7zrmgq": ("hermes-api-token", None),
+    }),
+    "77j3ul6ntreertxl3bjkdko4h4": ("Langfuse", {
+        "postgres_password": ("postgresql-password", None),
+        "database_url": ("database-url", None),
+        "clickhouse_password": ("clickhouse-password", None),
+        "redis_auth": ("redis-auth", None),
+        "minio_root_password": ("minio-root-password", None),
+        "salt": ("salt", None),
+        "encryption_key": ("encryption-key", None),
+        "nextauth_secret": ("nextauth-secret", None),
+        "langfuse_init_project_public_key": ("hermes-project-public-key", None),
+        "langfuse_init_project_secret_key": ("hermes-project-secret-key", None),
+        "oidc_client_secret": ("oidc-client-secret", None),
+    }),
+}
+
+
+def operator_key(label):
+    # Operator v1.12.1 kubernetes_secrets_builder.go preserves ASCII case.
+    label = re.sub(r"^[^a-zA-Z0-9-._]+|[^a-zA-Z0-9-._]+$", "", label)
+    return re.sub(r"[^a-zA-Z0-9-._]+", "-", label)[:253]
+
+
+def read_source(item_id):
+    result = subprocess.run(
+        ["op", "item", "get", item_id, "--vault", VAULT, "--format=json"],
+        stdin=subprocess.DEVNULL, capture_output=True, check=True,
+    )
+    return json.loads(result.stdout)
+
+
+def verify_source(source, replacement, contract):
+    item_id = contract["item_id"]
+    title, labels = SOURCE_LABELS[item_id]
+    if (source["id"] != item_id or source["vault"]["id"] != VAULT
+            or source["title"] != title or source.get("files") or source.get("urls")):
+        raise ValueError("source identity, files or URLs changed")
+    fields = {f["id"]: f for f in source["fields"]}
+    if len(fields) != len(source["fields"]) or set(fields) != {*labels, "notesPlain"}:
+        raise ValueError("source field IDs changed")
+    sections = source.get("sections", [])
+    expected_sections = {section for _, section in labels.values() if section}
+    if (len(sections) != len(expected_sections)
+            or {s["id"] for s in sections} != expected_sections
+            or any(s.get("label") for s in sections)):
+        raise ValueError("source sections changed")
+    expected, keys = {}, set()
+    for field_id, field in fields.items():
+        label, section = labels.get(field_id, ("notesPlain", None))
+        notes = field_id == "notesPlain"
+        if (field["label"] != label
+                or field["type"] != ("STRING" if notes else "CONCEALED")
+                or field.get("purpose") != ("NOTES" if notes else None)
+                or (field.get("section") or {}).get("id") != section):
+            raise ValueError("source field metadata changed")
+        key = operator_key(label)
+        if not key or key in keys:
+            raise ValueError("source key is empty or collides")
+        keys.add(key)
+        value = field.get("value", "")
+        if not isinstance(value, str) or (not notes and not value):
+            raise ValueError("source credential empty or invalid")
+        if value:
+            expected[key] = value.encode("utf-8")
+    actual = {key: base64.b64decode(value, validate=True)
+              for key, value in replacement.get("data", {}).items()}
+    if expected != actual:
+        raise ValueError("source and replacement key sets or bytes differ")
 
 
 def read_resource(kind, name, namespace):
@@ -128,6 +198,8 @@ def main(argv=None):
     parser.add_argument("checks", nargs="*", metavar="CHECK",
                         help="check names; default: all staged replacements")
     args = parser.parse_args(argv)
+    if {"cloudflare-dns", "cloudflare-ddns"} & set(args.checks):
+        parser.error("Cloudflare is blocked: built-in label is uneditable; keep ESO")
     if set(args.checks) - CONTRACTS.keys():
         parser.error("unknown check; choose from " + ", ".join(CONTRACTS))
     for check in args.checks or CONTRACTS:
@@ -138,10 +210,13 @@ def main(argv=None):
             replacement = read_resource("secret", name, namespace)
             sources = {n: read_resource("secret", n, namespace) for n in contract["sources"]}
             verify(item, replacement, sources, contract)
-        except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+            if contract["item_id"] in SOURCE_LABELS:
+                verify_source(read_source(contract["item_id"]), replacement, contract)
+        except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError, AttributeError):
             print(f"FAIL {check}: access, ownership, key-set or byte check failed", file=sys.stderr)
             return 1
-        print(f"PASS {check}: Ready, ownership, source path, allowed keys and exact bytes")
+        scope = "source metadata, source/replacement/ESO bytes" if contract["item_id"] in SOURCE_LABELS else "allowed keys and exact bytes"
+        print(f"PASS {check}: Ready, ownership, source path, {scope}")
     return 0
 
 

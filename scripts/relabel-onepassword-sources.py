@@ -12,49 +12,46 @@ import sys
 VAULT = "3ryhjdiydkomgh3oxfl5yrg5j4"
 # item ID: (display name, field ID: (reviewed old label, required label))
 SOURCES = {
-    "x62vzi4s2sdnerrjev6pp5ndnu": ("Cloudflare DNS", {
-        "credential": ("\uc790\uaca9 \uc99d\uba85", "api_token"),
-    }),
     "vyenqrf6ko2aficwt3dyaao2de": ("Headscale", {
-        "3u3ughywinbmkybgdopzodjnxy": ("OIDC \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2a4\ud06c\ub9bf", "oidc_client_secret"),
-        "biwyjxnpkpvmrmy42ffpt45fpe": ("\uac8c\uc774\ud2b8\uc6e8\uc774 \uc778\uc99d \ud0a4", "authkey"),
+        "3u3ughywinbmkybgdopzodjnxy": ("OIDC \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2a4\ud06c\ub9bf", "oidc-client-secret"),
+        "biwyjxnpkpvmrmy42ffpt45fpe": ("\uac8c\uc774\ud2b8\uc6e8\uc774 \uc778\uc99d \ud0a4", "gateway-auth-key"),
     }),
     "n2olk4p3ngumyuttl6b7itutba": ("AdGuard Home", {
-        "vu2pnknisjne6k4t5sh5laxf3e": ("\ube44\ubc00\ubc88\ud638 \ud574\uc2dc", "password_hash"),
+        "vu2pnknisjne6k4t5sh5laxf3e": ("\ube44\ubc00\ubc88\ud638 \ud574\uc2dc", "password-hash"),
     }),
     "ztl6gih3jqixgb5xufbv4xq4bi": ("qBittorrent", {
-        "t25w4tvxducf5bqt5owlk4mvjy": ("\ube44\ubc00\ubc88\ud638 \ud574\uc2dc", "password_hash"),
+        "t25w4tvxducf5bqt5owlk4mvjy": ("\ube44\ubc00\ubc88\ud638 \ud574\uc2dc", "password-hash"),
     }),
     "ltncwd5wyxwknf5xfqwxraqmtm": ("Immich", {
-        "trytrwmlxrksnvjujdd57hqk7a": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \ube44\ubc00\ubc88\ud638", "database_password"),
-        "sf4ch3lie57owvqxdwvl3cl6he": ("OIDC \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2dc\ud06c\ub9bf", "oidc_client_secret"),
-        "kpjesisize67f6kdidzwdhrriq": ("Hermes API \ud0a4", "hermes_api_key"),
+        "trytrwmlxrksnvjujdd57hqk7a": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \ube44\ubc00\ubc88\ud638", "database-password"),
+        "sf4ch3lie57owvqxdwvl3cl6he": ("OIDC \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2dc\ud06c\ub9bf", "oidc-client-secret"),
+        "kpjesisize67f6kdidzwdhrriq": ("Hermes API \ud0a4", "hermes-api-key"),
     }),
     "ia7seg53btlz2t4xluwkzmfjly": ("Zipline", {
-        "eteoaoehfwqkierraxfgbx5xru": ("\ucf54\uc5b4 \uc2dc\ud06c\ub9bf", "core_secret"),
-        "6rvlh45inzbb55zwnyi53spfne": ("OIDC \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2dc\ud06c\ub9bf", "oidc_client_secret"),
-        "mq3jr7zyvy5zyff2zzpz7zrmgq": ("Hermes API token", "hermes_api_token"),
+        "eteoaoehfwqkierraxfgbx5xru": ("\ucf54\uc5b4 \uc2dc\ud06c\ub9bf", "core-secret"),
+        "6rvlh45inzbb55zwnyi53spfne": ("OIDC \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2dc\ud06c\ub9bf", "oidc-client-secret"),
+        "mq3jr7zyvy5zyff2zzpz7zrmgq": ("Hermes API token", "hermes-api-token"),
     }),
     "3galz5zqqwdrqoj2mjk4wcxfdy": ("Obsidian Sync", {
-        "auth_token": ("\uc778\uc99d \ud1a0\ud070", "auth_token"),
+        "auth_token": ("\uc778\uc99d \ud1a0\ud070", "auth-token"),
     }),
     "d7ginmnpodzvevvb472v26jvmq": ("authentik [Admin]", {
-        "pinyekye2iau23hchko7js763a": ("\uc2dc\ud06c\ub9bf \ud0a4", "secret_key"),
-        "fhw4wuych7l2y5fs62p5leldtm": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \ube44\ubc00\ubc88\ud638", "database_password"),
+        "pinyekye2iau23hchko7js763a": ("\uc2dc\ud06c\ub9bf \ud0a4", "secret-key"),
+        "fhw4wuych7l2y5fs62p5leldtm": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \ube44\ubc00\ubc88\ud638", "database-password"),
         "c6t67ly54dysrlik57ft332464": ("\uc774\uba54\uc77c", "email"),
     }),
     "77j3ul6ntreertxl3bjkdko4h4": ("Langfuse", {
-        "postgres_password": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \ube44\ubc00\ubc88\ud638", "postgres_password"),
-        "database_url": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \uc5f0\uacb0 \uc8fc\uc18c", "database_url"),
-        "clickhouse_password": ("ClickHouse \ube44\ubc00\ubc88\ud638", "clickhouse_password"),
-        "redis_auth": ("Redis \ube44\ubc00\ubc88\ud638", "redis_auth"),
-        "minio_root_password": ("S3 \uc800\uc7a5\uc18c \ube44\ubc00\ubc88\ud638", "minio_root_password"),
+        "postgres_password": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \ube44\ubc00\ubc88\ud638", "postgresql-password"),
+        "database_url": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \uc5f0\uacb0 \uc8fc\uc18c", "database-url"),
+        "clickhouse_password": ("ClickHouse \ube44\ubc00\ubc88\ud638", "clickhouse-password"),
+        "redis_auth": ("Redis \ube44\ubc00\ubc88\ud638", "redis-auth"),
+        "minio_root_password": ("S3 \uc800\uc7a5\uc18c \ube44\ubc00\ubc88\ud638", "minio-root-password"),
         "salt": ("\ud574\uc2dc \uc194\ud2b8", "salt"),
-        "encryption_key": ("\uc554\ud638\ud654 \ud0a4", "encryption_key"),
-        "nextauth_secret": ("\ub85c\uadf8\uc778 \uc138\uc158 \uc2dc\ud06c\ub9bf", "nextauth_secret"),
-        "langfuse_init_project_public_key": ("Hermes \uacf5\uac1c \ud0a4", "langfuse_init_project_public_key"),
-        "langfuse_init_project_secret_key": ("Hermes \uc2dc\ud06c\ub9bf \ud0a4", "langfuse_init_project_secret_key"),
-        "oidc_client_secret": ("Authentik \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2dc\ud06c\ub9bf", "oidc_client_secret"),
+        "encryption_key": ("\uc554\ud638\ud654 \ud0a4", "encryption-key"),
+        "nextauth_secret": ("\ub85c\uadf8\uc778 \uc138\uc158 \uc2dc\ud06c\ub9bf", "nextauth-secret"),
+        "langfuse_init_project_public_key": ("Hermes \uacf5\uac1c \ud0a4", "hermes-project-public-key"),
+        "langfuse_init_project_secret_key": ("Hermes \uc2dc\ud06c\ub9bf \ud0a4", "hermes-project-secret-key"),
+        "oidc_client_secret": ("Authentik \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2dc\ud06c\ub9bf", "oidc-client-secret"),
     }),
 }
 
@@ -203,7 +200,7 @@ def main(argv=None):
     parser.add_argument("--confirm-no-passkeys", action="store_true",
                         help="legacy option; does not enable writes")
     parser.add_argument("items", nargs="*", metavar="ITEM",
-                        help="reviewed item titles to check (default: all nine)")
+                        help="reviewed item titles to check (default: all eight)")
     args = parser.parse_args(argv)
     if set(args.items) - {title for title, _ in SOURCES.values()}:
         parser.error("unreviewed item title; use titles from the source-label table")
