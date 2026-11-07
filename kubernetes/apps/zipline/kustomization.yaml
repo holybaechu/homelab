@@ -3,3 +3,4 @@ kind: Kustomization
 namespace: homelab
 resources:
   - resources.yaml
+  - onepassword.yaml
