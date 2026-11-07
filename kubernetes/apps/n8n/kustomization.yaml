@@ -4,3 +4,4 @@ namespace: homelab
 resources:
   - resources.yaml
   - secrets.yaml
+  - onepassword.yaml
