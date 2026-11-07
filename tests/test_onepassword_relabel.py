@@ -286,6 +286,82 @@ class RelabelTests(unittest.TestCase):
         mismatch = relabel.ContentMismatch([secret] * 30, [], "compared content")
         self.assertEqual(len(mismatch.diagnostics), 20)
 
+    def test_cloudflare_empty_date_defaults_pass_preview_and_readback_without_changing_payload(self):
+        for field_id in ("validFrom", "expires"):
+            self.original["fields"].append({"id": field_id, "type": "DATE", "label": field_id})
+        preview = self.updated()
+        for field in preview["fields"][1:]:
+            field["value"] = ""
+        for apply in (False, True):
+            responses = [self.original, preview]
+            if apply:
+                responses += [self.original, preview, preview]
+            code, output, calls = self.run_cli(responses, apply=apply)
+            self.assertEqual(code, 0, output)
+            if apply:
+                self.assertIn("read-back labels, IDs and exact values unchanged", output)
+            for call in calls:
+                if call.args[0][1:3] == ["item", "edit"]:
+                    self.assertEqual(json.loads(call.kwargs["input"]), self.updated())
+        self.assertTrue(all("value" not in f for f in self.original["fields"][1:]))
+        self.assertTrue(all(f["value"] == "" for f in preview["fields"][1:]))
+
+    def test_optional_date_default_rejects_nonempty_and_nonstring_values_without_leaking(self):
+        self.original["fields"].append({"id": "validFrom", "type": "DATE", "label": "validFrom"})
+        for value in ("PRIVATE_VALUE", " ", "0", None, 0, False):
+            for readback in (False, True):
+                actual = self.updated()
+                actual["fields"][-1]["value"] = value
+                responses = ([self.original, self.updated(), self.original, self.updated(), actual]
+                             if readback else [self.original, actual])
+                code, output, calls = self.run_cli(responses, apply=True)
+                self.assertEqual(code, 1)
+                self.assertIn("readback-comparison" if readback else "preview-comparison", output)
+                if isinstance(value, str):
+                    self.assertIn("type=string string=nonempty", output)
+                self.assertNotIn("PRIVATE_VALUE", output)
+                if not readback:
+                    self.assertEqual(len(calls), 2)
+                    self.assertIn("No items written", output)
+
+    def test_date_default_exception_does_not_hide_other_content_changes(self):
+        expected = self.updated()
+        expected["fields"].append({"id": "expires", "type": "DATE", "label": "expires"})
+        for change in ("missing-field", "new-field", "type", "label", "other-field",
+                       "other-item", "other-category", "removed-empty", "cleared-date", "changed-secret"):
+            with self.subTest(change=change):
+                before = copy.deepcopy(expected)
+                after = copy.deepcopy(expected)
+                after["fields"][-1]["value"] = ""
+                if change == "missing-field":
+                    after["fields"].pop()
+                elif change == "new-field":
+                    before["fields"].pop()
+                elif change == "type":
+                    after["fields"][-1]["type"] = "STRING"
+                elif change == "label":
+                    after["fields"][-1]["label"] = "changed"
+                elif change == "other-field":
+                    before["fields"][-1]["id"] = after["fields"][-1]["id"] = "other"
+                elif change == "other-item":
+                    before["id"] = after["id"] = "other"
+                elif change == "other-category":
+                    before["category"] = after["category"] = "LOGIN"
+                elif change == "removed-empty":
+                    before, after = after, before
+                elif change == "cleared-date":
+                    before["fields"][-1]["value"] = "1234567890"
+                elif change == "changed-secret":
+                    after["fields"][0]["value"] = "changed"
+                with self.assertRaises(relabel.ContentMismatch):
+                    relabel.check_content(before, after)
+
+    def test_string_presence_diagnostics_classify_empty_without_values(self):
+        for value, marker in (("", "empty"), ("PRIVATE_VALUE", "nonempty")):
+            mismatch = relabel.ContentMismatch({}, {"value": value}, "compared content")
+            self.assertIn(f"type=string string={marker}", mismatch.diagnostics[0])
+            self.assertNotIn("PRIVATE_VALUE", str(mismatch.diagnostics))
+
     def test_apply_requires_explicit_passkey_review(self):
         with contextlib.redirect_stderr(io.StringIO()), patch.object(relabel, "op") as op:
             with self.assertRaises(SystemExit):

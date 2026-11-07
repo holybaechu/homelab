@@ -147,7 +147,9 @@ class ContentMismatch(ValueError):
                         present = right[key] if key not in left else left[key]
                         self.diagnostics.append(
                             f"{child}: presence expected={'present' if key in left else 'missing'} "
-                            f"actual={'present' if key in right else 'missing'} type={kind(present)}")
+                            f"actual={'present' if key in right else 'missing'} type={kind(present)}"
+                            + (f" string={'empty' if present == '' else 'nonempty'}"
+                               if isinstance(present, str) else ""))
                     else:
                         visit(left[key], right[key], child)
                     if len(self.diagnostics) >= 20:
@@ -191,6 +193,17 @@ def check_content(expected, actual):
         left, right = content(expected), content(actual)
     except (ValueError, KeyError, TypeError, IndexError, AttributeError):
         raise ContentMismatch(expected, actual, "raw structure; invalid item shape") from None
+    # Cloudflare preview strings may be empty defaults on these optional DATE fields.
+    # Accept only absent -> empty string, never a missing field or a removed value.
+    if (left["id"] == right["id"] == "x62vzi4s2sdnerrjev6pp5ndnu"
+            and left["category"] == right["category"] == "API_CREDENTIAL"):
+        for field_id in ("validFrom", "expires"):
+            before = left["fields"].get(field_id)
+            after = right["fields"].get(field_id)
+            if (before is not None and after is not None
+                    and before.get("type") == after.get("type") == "DATE"
+                    and "value" not in before and after.get("value") == ""):
+                del after["value"]
     if left != right:
         raise ContentMismatch(left, right, "compared content")
 
