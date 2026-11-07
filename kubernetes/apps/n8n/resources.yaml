@@ -41,7 +41,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: import-workflow-credentials
-          image: docker.n8n.io/n8nio/n8n:2.46.6
+          image: docker.n8n.io/n8nio/n8n:2.47.2
           command: [n8n, "import:credentials", --input=/run/secrets/n8n/credentials.json]
           env:
             - name: N8N_ENCRYPTION_KEY
@@ -80,7 +80,7 @@ spec:
               readOnly: true
       containers:
         - name: n8n
-          image: docker.n8n.io/n8nio/n8n:2.46.6
+          image: docker.n8n.io/n8nio/n8n:2.47.2
           env:
             - name: N8N_ENCRYPTION_KEY
               valueFrom:
