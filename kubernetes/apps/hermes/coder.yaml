@@ -4,6 +4,8 @@ model:
 terminal:
   backend: local
   cwd: /opt/data/profiles/coder/workspace
+browser:
+  chromium_args: [--no-sandbox]
 mcp_servers: {}
 platforms:
   discord:
