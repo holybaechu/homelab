@@ -49,12 +49,12 @@ class StagingVerificationTests(unittest.TestCase):
 
     def test_byte_change_including_newline_is_rejected(self):
         self.new["data"]["password"] = base64.b64encode(b"password").decode()
-        with self.assertRaisesRegex(ValueError, "unequal credential bytes"):
+        with self.assertRaisesRegex(ValueError, "eso-replacement-bytes"):
             self.verify()
 
     def test_unrelated_key_is_rejected(self):
         self.new["data"]["OP_CONNECT_TOKEN"] = base64.b64encode(b"test-only").decode()
-        with self.assertRaisesRegex(ValueError, "unexpected replacement keys"):
+        with self.assertRaisesRegex(ValueError, "replacement-keys"):
             self.verify()
 
     def test_missing_key_wrong_owner_and_not_ready_are_rejected(self):
@@ -68,7 +68,7 @@ class StagingVerificationTests(unittest.TestCase):
             with self.assertRaises((KeyError, ValueError)):
                 self.verify(replacement)
         self.item["status"]["conditions"][0]["status"] = "False"
-        with self.assertRaisesRegex(ValueError, "not Ready"):
+        with self.assertRaisesRegex(ValueError, "operator-not-ready"):
             self.verify()
 
     def test_failures_do_not_print_resource_or_exception_contents(self):
@@ -99,10 +99,10 @@ class StagingVerificationTests(unittest.TestCase):
                 staging.verify(item, new, sources, contract)
                 item["spec"]["itemPath"] = "vaults/wrong/items/wrong"
                 new["metadata"]["annotations"]["operator.1password.io/item-path"] = item["spec"]["itemPath"]
-                with self.assertRaisesRegex(ValueError, "unexpected source item"):
+                with self.assertRaisesRegex(ValueError, "item-path"):
                     staging.verify(item, new, sources, contract)
 
-    def source_fixture(self, contract):
+    def source_fixture(self, contract) -> tuple[dict, dict]:
         item_id = contract["item_id"]
         title, labels = staging.SOURCE_LABELS[item_id]
         fields = [{"id": field_id, "label": label, "type": "CONCEALED",
@@ -183,6 +183,98 @@ class StagingVerificationTests(unittest.TestCase):
         self.assertNotIn("PRIVATE_VALUE", out.getvalue())
         self.assertEqual(run.call_args.args[0][0:3], ["op", "item", "get"])
         self.assertTrue(run.call_args.kwargs["capture_output"])
+
+    def headscale_fixture(self) -> tuple[dict, dict, dict, dict]:
+        contract = staging.CONTRACTS["headscale-oidc"]
+        source, replacement = self.source_fixture(contract)
+        item = copy.deepcopy(self.item)
+        item["metadata"]["name"] = contract["name"]
+        item["spec"]["itemPath"] = f"vaults/{staging.VAULT}/items/{contract['item_id']}"
+        replacement["metadata"] = copy.deepcopy(self.new["metadata"])
+        replacement["metadata"]["ownerReferences"][0]["name"] = contract["name"]
+        replacement["metadata"]["annotations"]["operator.1password.io/item-path"] = item["spec"]["itemPath"]
+        source["version"] = 2
+        replacement["metadata"]["annotations"]["operator.1password.io/item-version"] = "2"
+        old = {"data": {"client-secret": replacement["data"]["oidc-client-secret"]}}
+        return item, replacement, old, source
+
+    def run_headscale(self, item, replacement, old, source):
+        resources = {"onepassworditem": item, "headscale-connect": replacement,
+                     "headscale-oidc": old}
+        def read(kind, name, namespace):
+            return resources["onepassworditem" if kind == "onepassworditem" else name]
+        with patch.object(staging, "read_resource", side_effect=read), \
+                patch.object(staging, "read_source", return_value=source), \
+                contextlib.redirect_stdout(io.StringIO()) as out, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            result = staging.main(["headscale-oidc"])
+        return result, out.getvalue() + err.getvalue()
+
+    def test_mocked_headscale_diagnostics_distinguish_failure_stages(self):
+        mutations = (
+            (lambda i, r, o, s: i["status"].update(conditions=[]), "operator-not-ready Ready=missing"),
+            (lambda i, r, o, s: i["status"]["conditions"][0].update(status="False", message="PRIVATE_VALUE"), "operator-not-ready Ready=False"),
+            (lambda i, r, o, s: r["metadata"].update(ownerReferences=[]), "replacement-ownership"),
+            (lambda i, r, o, s: r["data"].pop("oidc-client-secret"), "replacement-missing-keys"),
+            (lambda i, r, o, s: o["data"].update({"PRIVATE_KEY": "PRIVATE_VALUE"}), "eso-keys"),
+            (lambda i, r, o, s: o["data"].update({"client-secret": base64.b64encode(b"PRIVATE_VALUE").decode()}), "eso-replacement-bytes"),
+            (lambda i, r, o, s: s["fields"][0].update(label="PRIVATE_KEY"), "source-label"),
+            (lambda i, r, o, s: s["fields"][0].update(type="PRIVATE_VALUE"), "source-field-type"),
+            (lambda i, r, o, s: s["fields"][0].update(section=None), "source-field-section"),
+            (lambda i, r, o, s: s["fields"][0].update(value="PRIVATE_VALUE"), "source-replacement-bytes"),
+        )
+        for mutate, category in mutations:
+            with self.subTest(category=category):
+                values = self.headscale_fixture()
+                mutate(*values)
+                result, output = self.run_headscale(*values)
+                self.assertEqual(result, 1)
+                self.assertIn("category=" + category, output)
+                self.assertNotIn("PASS", output)
+                self.assertNotIn("PRIVATE", output)
+        self.assertEqual(self.run_headscale(*self.headscale_fixture())[0], 0)
+
+    def test_stale_secret_and_source_label_drift_are_reported_independently(self):
+        item, replacement, old, source = self.headscale_fixture()
+        replacement["data"] = {"PRIVATE_KEY": base64.b64encode(b"PRIVATE_VALUE").decode()}
+        replacement["metadata"]["annotations"]["operator.1password.io/item-version"] = "1"
+        source["fields"][0]["label"] = "PRIVATE_LABEL"
+        result, output = self.run_headscale(item, replacement, old, source)
+        self.assertEqual(result, 1)
+        for text in ("category=replacement-keys", "category=source-label",
+                     "unreviewed-count=1", "source-replacement-item-version=mismatch"):
+            self.assertIn(text, output)
+        self.assertNotIn("PRIVATE", output)
+
+    def test_mocked_subprocess_failures_are_classified_and_continue_all_checks(self):
+        for marker, category in (("(Forbidden)", "access-denied"),
+                                 ("(NotFound)", "not-found"),
+                                 ("(Unauthorized)", "unauthorized"),
+                                 ("anything", "command-failed")):
+            error = staging.subprocess.CalledProcessError(
+                1, ["PRIVATE_COMMAND"], output=b"PRIVATE_STDOUT",
+                stderr=(marker + " PRIVATE_STDERR").encode())
+            with self.subTest(category=category), \
+                    patch.object(staging.subprocess, "run", side_effect=error) as run, \
+                    contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(staging.main(["headscale-oidc", "headscale-gateway"]), 1)
+                output = err.getvalue()
+            self.assertIn("category=" + category + " exit=1", output)
+            self.assertIn("stage=read Kubernetes/identity/Secret/headscale-oidc", output)
+            self.assertIn("stage=read Kubernetes/networking/Secret/headscale-gateway", output)
+            self.assertIn("stage=read 1Password/Item/", output)
+            self.assertNotIn("PRIVATE", output)
+            self.assertEqual(run.call_count, 8)
+            self.assertTrue(all(c.kwargs["capture_output"] for c in run.call_args_list))
+
+    def test_nonobject_json_cannot_skip_verification_and_pass(self):
+        for payload in (b"null", b"[]", b'"PRIVATE_VALUE"'):
+            with self.subTest(payload=payload), \
+                    patch.object(staging.subprocess, "run", return_value=staging.subprocess.CompletedProcess([], 0, payload)), \
+                    contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(staging.main(["headscale-oidc"]), 1)
+                self.assertIn("category=invalid-response-schema", err.getvalue())
+                self.assertNotIn("PRIVATE", err.getvalue())
 
     def test_selected_check_uses_its_namespace(self):
         with patch.object(staging, "read_resource", return_value={}) as read:

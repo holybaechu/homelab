@@ -263,8 +263,8 @@ call, even with `--confirm-no-passkeys`.
 App label read-backs are not independent proof that IDs or values survived.
 Before cutover, an administrator needs an authenticated `op` session plus read
 access to the staged OnePasswordItems, their Secrets and existing ESO Secrets.
-Allow the Operator's six-hour poll after edits, or have an administrator restart
-only the Operator and wait for reconciliation. On Windows, fetch and run the
+Run the gate first; do not restart the Operator merely because a check failed.
+On Windows, fetch and run the
 reviewed checker without pulling/resetting a dirty checkout:
 
 ```powershell
@@ -283,8 +283,45 @@ files. Each PASS checks:
 - Operator ownership UID, source path, Ready status, and the existing ESO target's
   exact key set and decoded credential bytes, including newlines.
 
-A mismatch or denied read exits nonzero with sanitized output. Share only
-PASS/FAIL lines, not CLI or Kubernetes JSON. This agent cannot read Secrets or
+A mismatch or denied read exits nonzero with sanitized output. The checker
+continues through every requested target, and runs source-metadata comparison
+independently of the Kubernetes parity result. Each FAIL identifies the stage,
+resource namespace/kind/name (or reviewed item ID), and a fixed category:
+
+- `access-denied`, `unauthorized`, `not-found`, or `command-failed exit=N` identifies
+  the failing read. Other CLI errors are deliberately not interpreted as auth
+  failures. Resolve access/session/existence in that administrator's context;
+  do not share raw errors.
+- `operator-not-ready Ready=False|Unknown|missing|invalid` identifies readiness,
+  without displaying the condition message, which can contain sensitive errors.
+- `source-label` identifies the reviewed field ID and expected label; actual
+  unreviewed labels are never printed. Other `source-field-*` categories identify
+  type, purpose or section drift. Review the existing item in the official app;
+  do not recreate fields or use JSON-template writes.
+- `replacement-ownership`, `item-path` and `replacement-item-path` require
+  investigation of controller ownership/source identity, not a blind restart.
+- `replacement-keys`, `replacement-missing-keys`, `eso-keys` and
+  `source-replacement-keys` distinguish key-set errors from
+  `eso-replacement-bytes` and `source-replacement-bytes`. Only reviewed key names
+  are printed; unknown names are counted. A byte failure prints no values or
+  digests. Do not regenerate credentials or relax exact-byte checks.
+
+An INFO line compares the source item version with the Operator Secret's
+`operator.1password.io/item-version` annotation as `match`, `mismatch` or
+`unavailable`. This is a sync hint, not a parity gate: a matching version alone
+proves neither correct bytes nor current ESO data. If source metadata is correct
+but replacement keys/bytes differ and versions mismatch after relabeling, allow
+its six-hour poll, or have an administrator refresh **only the Operator**:
+
+```sh
+kubectl -n onepassword rollout restart deployment/onepassword-connect-operator
+kubectl -n onepassword rollout status deployment/onepassword-connect-operator
+```
+
+Then rerun all four checks; deployment readiness alone does not prove item sync.
+If versions match but ESO bytes differ, inspect item history and ESO freshness
+privately before any cutover. Share only PASS/FAIL/INFO lines, not CLI or
+Kubernetes JSON. This agent cannot read Secrets or
 OnePasswordItems; do not broaden RBAC or bypass it with pods/exec. No arguments
 checks six eligible targets, including the already-cut-over MySQL and n8n
 contracts, which retain their Kubernetes-only comparison.
