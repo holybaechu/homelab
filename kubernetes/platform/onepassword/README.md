@@ -283,7 +283,8 @@ git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- 
 
 Require a PASS for **each consumer being cut over**, independently. A failure for
 Zipline or Langfuse does not invalidate a Headscale PASS. Only `op item get` and
-`kubectl get` are used; raw
+`kubectl get` are used, plus a captured `op read --no-newline` for Zipline's
+existing Hermes field-ID reference. Raw
 JSON and credential bytes remain in captured subprocess memory, never output or
 files. Each PASS checks:
 
@@ -346,8 +347,25 @@ Share only INFO/FAIL lines. Review any extra files or URLs privately rather than
 allowing whole-item synchronization to copy unrelated content. A changed section
 must not be accepted solely because the field ID/value survived: first verify
 that existing ID-based consumer references still resolve to identical bytes.
-A copied label-based URI does not validate that older reference. Do not recreate
-fields, change values or edit source JSON to satisfy the checker.
+A copied label-based URI does not validate that older reference. Zipline's
+refreshed metadata places its existing Hermes token field in the same reviewed
+`add more` section as its other two fields. The checker now requires that exact
+membership and compares the **unchanged** field-ID URI from the cluster settings
+against replacement bytes with a captured `op read --no-newline`. A missing or
+changed reference fails even if metadata and the app's two ESO keys pass.
+Do not recreate fields, change values or edit source JSON to satisfy the checker.
+
+Langfuse's refreshed metadata has exactly one URL but does not identify its
+label. Operator 1.12.1 normalizes URL labels into Secret keys before copying
+fields; empty normalized keys are skipped and a colliding field overwrites the
+URL. Do not assume a URL necessarily creates an extra key or allow arbitrary
+extras. `--source-metadata langfuse-connect` now reports only URL index,
+label/key emptiness, collision with field keys, reviewed-key membership and href
+presence. It never displays URL labels or contents. Langfuse's gate still rejects
+URLs pending this narrow review. Privately inspect the existing URL's label and
+confirm it is an ordinary application URL without credentials; share the bounded
+INFO lines and, only if non-sensitive, the label, never the URL contents. Do not
+delete the URL or rename a field merely to pass the gate.
 
 If versions match but ESO bytes differ, inspect item history and ESO freshness
 privately before any cutover. Share only PASS/FAIL/INFO lines, not CLI or
