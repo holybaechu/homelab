@@ -1,0 +1,100 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: onepassword-connect
+spec:
+  interval: 1h
+  releaseName: onepassword-connect
+  chart:
+    spec:
+      chart: connect
+      version: 2.4.3
+      sourceRef:
+        kind: HelmRepository
+        name: onepassword
+        namespace: flux-system
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    connect:
+      create: true
+      serviceType: ClusterIP
+      credentialsName: onepassword-connect-credentials
+      credentialsKey: 1password-credentials.json
+      serviceAccount:
+        create: false
+        name: onepassword-connect
+      api:
+        logLevel: warn
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+      sync:
+        logLevel: warn
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+    operator:
+      create: true
+      authMethod: connect
+      token:
+        name: onepassword-operator-token
+        key: token
+      watchNamespace: [cert-manager, homelab, identity, networking]
+      pollingInterval: 21600
+      # Reloader owns existing restart policies, including MySQL's TLS-only policy.
+      autoRestart: false
+      logLevel: info
+      resources:
+        requests:
+          cpu: 20m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: onepassword-connect
+            patch: |-
+              - op: add
+                path: /spec/template/spec/serviceAccountName
+                value: onepassword-connect
+              - op: add
+                path: /spec/template/spec/automountServiceAccountToken
+                value: false
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: onepassword-injector
+spec:
+  interval: 1h
+  releaseName: onepassword-injector
+  chart:
+    spec:
+      chart: secrets-injector
+      version: 1.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: onepassword
+        namespace: flux-system
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3

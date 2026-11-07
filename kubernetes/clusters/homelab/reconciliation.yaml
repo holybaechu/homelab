@@ -24,6 +24,26 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: onepassword
+  namespace: flux-system
+spec:
+  suspend: false
+  dependsOn:
+    - name: controllers
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: homelab
+  path: ./kubernetes/platform/onepassword
+  prune: true
+  deletionPolicy: Orphan
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: platform-config
   namespace: flux-system
 spec:
