@@ -55,6 +55,41 @@ change their source files instead of editing them in the dashboard. Other live
 assistant settings and both profiles' histories remain on the PVC. Configuration
 backups taken before the initial migration remain under `/opt/data/backups`.
 
+## Cluster administration
+
+Startup installs `kubectl`, `flux`, and `talosctl` with the existing checksum-pinned
+mise runtime. Versions follow `KUBERNETES_VERSION`, `FLUX_VERSION`, and
+`TALOS_VERSION` in cluster settings, matching the repository's `mise.toml`.
+Direct runtime links make them available from either profile and any directory;
+the installed tools persist on `hermes-data` and are prepared again on startup.
+
+The dedicated `hermes` ServiceAccount can inspect cluster status, logs and
+storage, reconcile Flux resources, and deploy, restart, scale and roll back
+workloads across namespaces. It cannot directly read Secrets, edit RBAC, or delete
+PVs/PVCs. Workload creation and Flux specification patches still provide powerful
+indirect access: both profiles are trusted cluster operators, sharing one identity.
+Keep persistent app changes in Git so reconciliation preserves them.
+
+Only the Hermes container mounts the one-hour projected Kubernetes token and
+cluster CA. Kubelet rotates the token; the nonsecret kubeconfig reads `tokenFile`
+on each invocation. No token is embedded in configuration or copied to the PVC.
+
+Talos uses a dedicated one-year `os:admin` client certificate in the existing
+`Talos` 1Password item's `hermes_talosconfig` field. `HERMES_TALOSCONFIG_REF`
+feeds `hermes-talos` through the shared External Secrets store; `TALOSCONFIG`
+points directly to its read-only Secret mount. It contains no CA signing key or
+OpenTofu state. Before expiry, issue a replacement with an existing administrator's
+`talosctl config new <private-path> --roles os:admin --crt-ttl 8760h`, set its
+endpoint/node to `NODE_IP`, and update the same concealed field. Respect the shared
+refresh interval and cache; Reloader restarts Hermes after Secret changes.
+
+Activating these mounts replaces Hermes because its Deployment uses `Recreate`.
+Verify from the Hermes container with `kubectl get nodes,pv`, `kubectl get pods,pvc
+-A`, `flux get kustomizations -A`, `talosctl version`, and `talosctl get extensions`.
+For future node upgrades, extensions or kernel-module changes, follow the Talos
+infrastructure configuration and run `scripts/talos-preflight` before applying;
+confirm disk and USB identities and arrange the single node's downtime first.
+
 ## Behavior and search
 
 [second-brain.md](second-brain.md) owns source selection, knowledge capture, and

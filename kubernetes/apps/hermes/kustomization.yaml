@@ -8,6 +8,7 @@ configMapGenerator:
   - name: hermes-bootstrap
     files:
       - config.yaml
+      - kubeconfig.yaml=kubernetes-client.yaml
       - assistant-soul.md
       - coder.yaml
       - coder-soul.md

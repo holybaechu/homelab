@@ -1,0 +1,19 @@
+# Connection metadata only; kubelet rotates the separately projected token.
+apiVersion: v1
+kind: Config
+clusters:
+  - name: in-cluster
+    cluster:
+      server: https://kubernetes.default.svc
+      certificate-authority: /var/run/secrets/hermes-kubernetes/ca.crt
+users:
+  - name: hermes
+    user:
+      tokenFile: /var/run/secrets/hermes-kubernetes/token
+contexts:
+  - name: homelab
+    context:
+      cluster: in-cluster
+      user: hermes
+      namespace: homelab
+current-context: homelab

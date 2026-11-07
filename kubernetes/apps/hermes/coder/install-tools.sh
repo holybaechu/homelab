@@ -19,3 +19,13 @@ cp /bootstrap/coder-gitconfig /opt/coder/gitconfig
 chmod 755 /opt/coder/bin/mise /opt/coder/bin/gh /opt/coder/bin/gh-real
 /opt/coder/bin/mise --version
 /opt/coder/bin/gh-real --version
+
+export PATH=/opt/coder/bin:$PATH
+kubectl_version=$(printf '%s' "$KUBERNETES_VERSION" | sed 's/^v//')
+talos_version=$(printf '%s' "$TALOS_VERSION" | sed 's/^v//')
+flux_version=$(printf '%s' "$FLUX_VERSION" | sed 's/^v//')
+mise install "kubectl@$kubectl_version" "flux2@$flux_version" "talosctl@$talos_version"
+# Direct links make the administration tools available outside trusted checkouts.
+ln -sf "$(mise where "kubectl@$kubectl_version")/kubectl" /opt/coder/bin/kubectl
+ln -sf "$(mise where "flux2@$flux_version")/flux" /opt/coder/bin/flux
+ln -sf "$(mise where "talosctl@$talos_version")/talosctl" /opt/coder/bin/talosctl

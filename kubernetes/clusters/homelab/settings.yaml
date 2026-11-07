@@ -9,6 +9,8 @@ data:
   TALOS_VERSION: v1.14.5
   # renovate: datasource=github-releases depName=kubernetes/kubernetes
   KUBERNETES_VERSION: v1.37.2
+  # renovate: datasource=github-releases depName=fluxcd/flux2
+  FLUX_VERSION: v2.10.0
   NODE_IP: 192.168.0.2
   NODE_CIDR: 192.168.0.2/24
   LAN_CIDR: 192.168.0.0/24

@@ -28,6 +28,7 @@ spec:
       labels:
         app: hermes
     spec:
+      serviceAccountName: hermes
       automountServiceAccountToken: false
       securityContext:
         seccompProfile:
@@ -200,6 +201,19 @@ spec:
         - name: install-coder-tools
           image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, /bootstrap/coder-install-tools.sh]
+          env:
+            - name: KUBERNETES_VERSION
+              value: ${KUBERNETES_VERSION}
+            - name: TALOS_VERSION
+              value: ${TALOS_VERSION}
+            - name: FLUX_VERSION
+              value: ${FLUX_VERSION}
+            - name: MISE_DATA_DIR
+              value: /opt/data/coder-tools/mise
+            - name: MISE_CACHE_DIR
+              value: /opt/data/coder-tools/cache
+            - name: MISE_CONFIG_DIR
+              value: /opt/data/coder-tools/config
           securityContext:
             runAsUser: 10000
             runAsGroup: 10000
@@ -217,6 +231,9 @@ spec:
           volumeMounts:
             - name: coder-runtime
               mountPath: /opt/coder
+            - name: data
+              mountPath: /opt/data/coder-tools
+              subPath: coder-tools
             - name: bootstrap
               mountPath: /bootstrap
               readOnly: true
@@ -497,6 +514,10 @@ spec:
               value: /opt/data/coder-tools/config
             - name: GIT_CONFIG_GLOBAL
               value: /opt/coder/gitconfig
+            - name: KUBECONFIG
+              value: /etc/hermes-kubernetes/kubeconfig.yaml
+            - name: TALOSCONFIG
+              value: /var/run/secrets/talos.dev/talosconfig
             - name: GH_CONFIG_DIR
               value: /opt/data/profiles/coder/home/.config/gh
             - name: GH_HOST
@@ -572,6 +593,15 @@ spec:
               readOnly: true
             - name: coder-credentials
               mountPath: /opt/coder-credentials
+              readOnly: true
+            - name: kubernetes-identity
+              mountPath: /var/run/secrets/hermes-kubernetes
+              readOnly: true
+            - name: kubernetes-client
+              mountPath: /etc/hermes-kubernetes
+              readOnly: true
+            - name: talos-identity
+              mountPath: /var/run/secrets/talos.dev
               readOnly: true
             - name: browser-runtime
               mountPath: /opt/hermes/.venv/lib/python3.14/site-packages/browser_harness/run.py
@@ -703,6 +733,28 @@ spec:
             - name: obsidian-temporary
               mountPath: /tmp
       volumes:
+        - name: talos-identity
+          secret:
+            secretName: hermes-talos
+            defaultMode: 0444
+        - name: kubernetes-identity
+          projected:
+            defaultMode: 0444
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+        - name: kubernetes-client
+          configMap:
+            name: hermes-bootstrap
+            items:
+              - key: kubeconfig.yaml
+                path: kubeconfig.yaml
         - name: data
           persistentVolumeClaim:
             claimName: hermes-data
