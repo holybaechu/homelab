@@ -19,6 +19,15 @@ spec:
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
+  name: onepassword
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://1password.github.io/connect-helm-charts/
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
   name: jetstack
   namespace: flux-system
 spec:
