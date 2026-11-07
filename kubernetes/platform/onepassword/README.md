@@ -223,9 +223,13 @@ find the original field ID with label exactly `hermes-api-token`. A literal
 The OnePasswordItem manifests already reference vault/item IDs, not field keys,
 so these edits require no manifest reference changes. Consumers still use ESO;
 future cutovers must explicitly project these keys into their existing
-interfaces, not use `envFrom` or whole-item mounts. Operator auto-restart is off;
-the staged Secret names are not existing consumer Reloader targets. Preserve
-those restart policies when moving each consumer.
+interfaces, not use `envFrom` or whole-item mounts. Headscale OIDC now projects
+only `oidc-client-secret` from `identity/headscale-connect` to its unchanged
+`/var/run/secrets/headscale/client-secret` file and reloads on replacement Secret
+changes. Keep `headscale-oidc` on ESO for rollback: restore the old Secret name,
+remove the `items` projection and restore its Reloader reference together.
+The gateway, Zipline and Langfuse still use ESO. Operator auto-restart is off;
+preserve each consumer's existing restart policy when moving it.
 
 ### Cloudflare stays on ESO
 
@@ -272,7 +276,9 @@ git fetch origin main
 git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - headscale-oidc headscale-gateway zipline-connect langfuse-connect
 ```
 
-Require **four PASS lines**. Only `op item get` and `kubectl get` are used; raw
+Require a PASS for **each consumer being cut over**, independently. A failure for
+Zipline or Langfuse does not invalidate a Headscale PASS. Only `op item get` and
+`kubectl get` are used; raw
 JSON and credential bytes remain in captured subprocess memory, never output or
 files. Each PASS checks:
 
