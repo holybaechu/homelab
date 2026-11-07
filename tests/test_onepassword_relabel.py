@@ -111,7 +111,7 @@ class RelabelTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 code, output, calls = self.run_cli([failure])
                 self.assertEqual(code, 1)
-                self.assertIn("item=Cloudflare DNS", output)
+                self.assertIn("item=Headscale", output)
                 self.assertIn("stage=source-get", output)
                 self.assertIn(expected, output)
                 self.assertIn("No items written; no write commands attempted", output)
@@ -269,7 +269,7 @@ class RelabelTests(unittest.TestCase):
                 contextlib.redirect_stdout(out):
             self.assertEqual(relabel.main([self.title]), 0)
         op.assert_called_once_with("item", "get", self.item_id, "--vault", relabel.VAULT)
-        self.assertIn("PASS labels Cloudflare DNS", out.getvalue())
+        self.assertIn("PASS labels Headscale", out.getvalue())
         with patch.object(relabel, "op") as op, contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
                 relabel.main(["unreviewed"])

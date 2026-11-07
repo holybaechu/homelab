@@ -197,122 +197,195 @@ mappings, with no missing/ambiguous fields. Null-only files/sections/URL labels
 are serialization artifacts: there are no attached files in this export. Metadata
 is not proof of credential byte equality or authentication.
 
-For the other sources, the smallest Operator-compatible source change is to
-**relabel existing fields**, retaining their IDs and values, then explicitly
-select keys in each consumer rather than mounting whole items. Korean-only labels
-are omitted by Operator 1.12.1; mixed labels can collapse to the same ASCII key.
-For example, Langfuse's two `Hermes` labels both normalize to `Hermes`, losing one
-project key. Do not deploy these as replacements before their labels are fixed.
-The necessary stable labels are:
+## Source labels and staged replacements
 
-| Source item | Existing field ID → required unique label |
+Keep the labels now edited in the official app; no further cosmetic renames are
+needed. Existing ESO references use field IDs and must remain unchanged. The
+[deployed Operator 1.12.1 Secret builder](https://github.com/1Password/onepassword-operator/blob/v1.12.1/pkg/kubernetessecrets/kubernetes_secrets_builder.go)
+**preserves case**, trims invalid leading/trailing characters and replaces
+internal invalid runs (including spaces) with hyphens. It does not lowercase
+labels. The latest labels below are already lowercase hyphen keys, so each
+becomes the identical Secret key. Korean-only labels are skipped; the former
+mixed Langfuse project labels both collapsed to `Hermes`.
+
+| Source item | Existing field ID → current label and Operator key |
 | --- | --- |
-| Cloudflare DNS | `credential` → `api_token` |
-| Headscale | `3u3ughywinbmkybgdopzodjnxy` → `oidc_client_secret`; `biwyjxnpkpvmrmy42ffpt45fpe` → `authkey` |
-| AdGuard Home | `vu2pnknisjne6k4t5sh5laxf3e` → `password_hash` |
-| qBittorrent | `t25w4tvxducf5bqt5owlk4mvjy` → `password_hash` |
-| Immich | `trytrwmlxrksnvjujdd57hqk7a` → `database_password`; `sf4ch3lie57owvqxdwvl3cl6he` → `oidc_client_secret`; `kpjesisize67f6kdidzwdhrriq` → `hermes_api_key` |
-| Zipline | `eteoaoehfwqkierraxfgbx5xru` → `core_secret`; `6rvlh45inzbb55zwnyi53spfne` → `oidc_client_secret`; `mq3jr7zyvy5zyff2zzpz7zrmgq` → `hermes_api_token` |
-| Obsidian Sync | `auth_token` → `auth_token` |
-| authentik [Admin] | `pinyekye2iau23hchko7js763a` → `secret_key`; `fhw4wuych7l2y5fs62p5leldtm` → `database_password`; `c6t67ly54dysrlik57ft332464` → `email` |
-| Langfuse | Relabel each non-notes field to its existing ASCII field ID, including both project keys and `nextauth_secret` |
+| Headscale | `3u3ughywinbmkybgdopzodjnxy` → `oidc-client-secret`; `biwyjxnpkpvmrmy42ffpt45fpe` → `gateway-auth-key` |
+| Zipline | `eteoaoehfwqkierraxfgbx5xru` → `core-secret`; `6rvlh45inzbb55zwnyi53spfne` → `oidc-client-secret`; `mq3jr7zyvy5zyff2zzpz7zrmgq` → `hermes-api-token` |
+| Langfuse | `postgres_password` → `postgresql-password`; `database_url` → `database-url`; `clickhouse_password` → `clickhouse-password`; `redis_auth` → `redis-auth`; `minio_root_password` → `minio-root-password` |
+| Langfuse | `salt` → `salt`; `encryption_key` → `encryption-key`; `nextauth_secret` → `nextauth-secret`; `langfuse_init_project_public_key` → `hermes-project-public-key`; `langfuse_init_project_secret_key` → `hermes-project-secret-key`; `oidc_client_secret` → `oidc-client-secret` |
 
-These metadata edits need authenticated administrator access; do not create
-unmanaged credential copies. Existing ESO ID-based references continue to resolve.
-Do not synchronize `Hermes Agent` wholesale: its broad Connect token needs an
-explicitly approved separate source layout before Operator use. Do not hand app
-pods a Connect token with access to that item, either: a vault-scoped token can
-read the broad token stored alongside app fields. The four templates still need
-app-local safe renderers; signing still needs the verified OpenSSH transform.
-Neither a relabel nor Injector alone resolves those contracts or rotation.
+The reported Zipline reference `op://Homelab/Zipline/hermes-api-token` is a
+reference, not a field label or a replacement field ID. The read-only gate must
+find the original field ID with label exactly `hermes-api-token`. A literal
+`op://...` label fails; do not normalize that mistake into an accepted key.
 
-### Administrative label migration and next replacements
+The OnePasswordItem manifests already reference vault/item IDs, not field keys,
+so these edits require no manifest reference changes. Consumers still use ESO;
+future cutovers must explicitly project these keys into their existing
+interfaces, not use `envFrom` or whole-item mounts. Operator auto-restart is off;
+the staged Secret names are not existing consumer Reloader targets. Preserve
+those restart policies when moving each consumer.
 
-**Automated JSON-template writes are disabled.** The real Cloudflare DNS preview
-populated nonempty `validFrom` and `expires` DATE values that were absent in the
-source. These are unintended content changes, not harmless empty defaults.
-The helper now rejects every added value, including empty strings; `--apply`
-refuses before any CLI call, even with `--confirm-no-passkeys`.
+### Cloudflare stays on ESO
 
-The [official CLI assignment syntax](https://www.1password.dev/cli/item-edit)
-changes values/types, not labels. Deleting/recreating fields would change their
-IDs and break ESO references. The documented JSON-template flow round-trips an
-item; it does not establish a safe sparse ID/label merge. Do not remove omitted
-DATE fields or metadata from a write payload on that assumption. JSON-template
-edits can also overwrite passkeys invisible in CLI JSON. No automatic label-edit
-path has been verified safe here; do not apply a template, bypass preservation
-checks, or share credential values to troubleshoot this.
+Cloudflare DNS's built-in `credential` label remains `자격 증명` and is uneditable
+in the official app. Operator 1.12.1 skips its empty normalized key. Its
+[OnePasswordItem spec](https://github.com/1Password/onepassword-operator/blob/v1.12.1/api/v1/onepassworditem_types.go)
+only supports `itemPath`, with no field-ID selection or key remapping. The two
+unused `cloudflare-connect` staging resources remain, but neither is a supported
+replacement for `cloudflare-dns` or `cloudflare-ddns`. Ready alone is insufficient.
+Both targets are excluded from the checker, including its default invocation;
+explicit requests fail before any reads.
 
-For the six staged replacements below, **only four source items need manual
-label edits now**: Cloudflare DNS, Headscale, Zipline and Langfuse. Use their exact
-field ID → label mappings in the table above (17 labels total). Leave AdGuard Home,
-qBittorrent, Immich, Obsidian Sync and authentik for their own later cutovers.
+Do not delete/recreate the built-in field, change category, populate the unset
+`validFrom`/`expires` dates, or duplicate the token into an unmanaged field.
+The [official Injector](https://developer.1password.com/docs/k8s/injector/) can
+resolve `op://Homelab/Cloudflare DNS/credential` by field ID for DDNS, but does not
+create cert-manager's required DNS01 Secret. DDNS also needs a verified
+`/bin/ddns` command, an exercised item-change restart trigger and credentials
+that cannot retrieve the broad Hermes token. A Homelab-scoped Connect token is
+**not** safe for DDNS: that vault contains the Hermes broad token, even if the
+Connect token itself has no other vault grants. No Injector cutover is configured
+here. Keep Cloudflare on ESO until a supported integration with safe scope and
+rotation, or an explicitly reviewed minimal source adaptation, satisfies both
+consumers.
 
-1. Open the existing item in the `Homelab` vault in the 1Password app and select
-   **Edit**. Rename only the existing field's label using the table, not its value,
-   type, section or position. Do not add, delete, duplicate or recreate fields.
-   Keep both Cloudflare DATE fields untouched; do not select a date or expiry alert.
-2. Preserve all other item content, tags, URLs, attachments and passkeys. Save the
-   item and inspect it locally. If a built-in field's label is not editable in the
-   app, **stop that source's cutover** rather than replacing the field or using a
-   CLI template. Existing ESO references and consumers remain operational.
-3. Check the four items read-only from the administrative Windows checkout. These
-   commands fetch the reviewed helper without pulling, resetting or switching a
-   dirty working tree:
+### Read-only administrative gates
 
-   ```powershell
-   git fetch origin main
-   git show origin/main:scripts/relabel-onepassword-sources.py | mise x python@3 -- python - "Cloudflare DNS" Headscale Zipline Langfuse
-   ```
+**Automated JSON-template writes remain disabled.** A real Cloudflare preview
+populated nonempty DATE values absent from its source. CLI assignments change
+values/types, not labels; sparse templates have no verified preservation
+contract, and JSON edits can overwrite passkeys invisible in CLI JSON. Never
+apply templates or relax preservation checks. `--apply` refuses before any CLI
+call, even with `--confirm-no-passkeys`.
 
-   Require four `PASS labels` lines, not `PASS preview`: the former means the
-   existing field IDs already have the required labels, so the helper only ran
-   `op item get`. Pending labels still use read-only CLI previews with strict
-   content comparison and can fail on the DATE issue; do not retry template writes.
-   Label checks alone do not prove every credential or item property stayed intact.
-4. Continue with the six staging byte-parity checks below before any consumer
-   cutover. Inspect item history locally if anything other than labels changed;
-   do not proceed on Ready status or label checks alone.
+App label read-backs are not independent proof that IDs or values survived.
+Before cutover, an administrator needs an authenticated `op` session plus read
+access to the staged OnePasswordItems, their Secrets and existing ESO Secrets.
+Allow the Operator's six-hour poll after edits, or have an administrator restart
+only the Operator and wait for reconciliation. On Windows, fetch and run the
+reviewed checker without pulling/resetting a dirty checkout:
 
-The helper keeps credential JSON and captured CLI output in memory only, without
-printing values or writing files. Use an established administrative personal-account
-session or desktop app integration, not Connect or a read-only service token.
-For manual PowerShell sign-in, use `Invoke-Expression "$(op signin)"`; `op signin`
-alone does not install the session environment. The helper refuses Connect
-environment overrides without changing them. It retains identity, attachment,
-field-ID and old-label drift checks. A failure reports the reviewed item, stage
-and fixed error hints; content mismatches use bounded anonymous structural paths,
-types and presence/empty/nonempty markers, never values or dynamic names. Return
-only this sanitized output, not raw CLI JSON, stdout or stderr. Default invocation
-checks all nine reviewed sources; optional item titles limit it to the current
-cutover. No invocation can write items.
+```powershell
+git fetch origin main
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - headscale-oidc headscale-gateway zipline-connect langfuse-connect
+```
 
-Six additional Operator Secrets are staged without changing their consumers:
+Require **four PASS lines**. Only `op item get` and `kubectl get` are used; raw
+JSON and credential bytes remain in captured subprocess memory, never output or
+files. Each PASS checks:
 
-| Namespace | Replacement | Existing ESO target |
+- Source vault/item/title and exact field IDs, labels, types, purposes and section
+  membership against reviewed metadata; no added files or URLs.
+- Every current nonempty source field, including Zipline's Hermes token and
+  optional notes, against the replacement's exact key set and UTF-8 bytes.
+- Operator ownership UID, source path, Ready status, and the existing ESO target's
+  exact key set and decoded credential bytes, including newlines.
+
+A mismatch or denied read exits nonzero with sanitized output. Share only
+PASS/FAIL lines, not CLI or Kubernetes JSON. This agent cannot read Secrets or
+OnePasswordItems; do not broaden RBAC or bypass it with pods/exec. No arguments
+checks six eligible targets, including the already-cut-over MySQL and n8n
+contracts, which retain their Kubernetes-only comparison.
+
+| Namespace | Eligible staged replacement | Existing ESO target |
 | --- | --- | --- |
-| cert-manager | `cloudflare-connect` | `cloudflare-dns` |
-| homelab | `cloudflare-connect` | `cloudflare-ddns` |
 | identity | `headscale-connect` | `headscale-oidc` |
 | networking | `headscale-connect` | `headscale-gateway` |
 | homelab | `zipline-connect` | `zipline-env` |
 | homelab | `langfuse-connect` | `langfuse-env` |
 
-These items can be Ready before relabeling while still missing required keys;
-Ready alone is **not** permission to cut over. After relabeling, allow the
-Operator's six-hour poll, or have an administrator restart only the Operator and
-wait for reconciliation. Then run the six checks from the fetched script:
+These gates prove current metadata and byte parity, not historical preservation
+of every item property. CLI JSON cannot prove passkey preservation; the metadata
+export contains no prior values. Inspect app item history locally for unintended
+non-label changes, including attachments/passkeys, and confirm Cloudflare dates
+remain unset. Do not claim these were independently compared. Only after each
+eligible gate passes should its consumer move, retaining ESO for rollback.
+Staging does not retire more ESO targets, prove app authentication or exercise
+rotation.
 
-```powershell
-git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - cloudflare-dns cloudflare-ddns headscale-oidc headscale-gateway zipline-connect langfuse-connect
-```
+### Standardize all known Homelab source fields
 
-Each PASS requires the expected vault/item path, Operator ownership and Ready
-status, allowed keys and exact bytes against the still-working ESO target. No
-arguments runs all eight staged checks. Only after all six new checks pass should
-the respective consumers move, using explicit key projections and retaining their
-existing Reloader behavior. This staging does not retire any additional ESO
-target, exercise application authentication or prove rotation.
+The target convention for **all editable field labels** is lowercase words
+separated by hyphens, not snake_case. Scope here is the 15 Homelab source items
+in the reviewed metadata export, not the entire personal account. Talos and other
+sources outside that export need fresh read-only metadata before adding them;
+do not guess their field inventory. Existing built-in `username`, `password`,
+`credential`, `type`, `filename`, `expires`, `hostname` and `fingerprint` already
+fit the convention where they have those English labels.
+
+The three staged sources above use their latest reported labels. The remaining
+inventory and proposed in-place label changes are below; each left-hand token is
+an existing **field ID**, not a proposed new field. Do not bulk-rename yet.
+
+| Source | Existing field ID → target label | Coordination |
+| --- | --- | --- |
+| MySQL Temporary | `ovcwlzwylqyjgsnrpk3amvl36q` → `root-password` | Live Operator consumer: use the protected sequence below |
+| n8n | `encryption_key` → `encryption-key`; `hermes_webhook_secret` → `hermes-webhook-secret`; `owner_password_hash` → `owner-password-hash` | Live server and import-init projections; webhook/template consumers retain ID references |
+| AdGuard Home | `vu2pnknisjne6k4t5sh5laxf3e` → `password-hash` | Preserve validated bcrypt config rendering and initializer |
+| qBittorrent | `t25w4tvxducf5bqt5owlk4mvjy` → `password-hash` | Preserve PBKDF2 config merge and root/s6 startup |
+| Immich | `trytrwmlxrksnvjujdd57hqk7a` → `database-password`; `sf4ch3lie57owvqxdwvl3cl6he` → `oidc-client-secret`; `kpjesisize67f6kdidzwdhrriq` → `hermes-api-key` | Preserve DB/server equality, OIDC JSON and MCP interface |
+| Obsidian Sync | `auth_token` → `auth-token`; `vault_password` → `vault-password`; `vault_name` → `vault-name` | Preserve vault identity/encryption; do not project unused fields |
+| authentik [Admin] | `pinyekye2iau23hchko7js763a` → `secret-key`; `fhw4wuych7l2y5fs62p5leldtm` → `database-password`; `c6t67ly54dysrlik57ft332464` → `email` | Shared chart server/worker/blueprint and database contracts |
+| Hermes Agent | `op3m7hudiprbm63fk4wcxqglmi` → `discord-bot-token`; `fn446i6ddovmn7n4jcmck5afg4` → `discord-allowed-users`; `7ooupb36fhrns3ylsnros4fj6e` → `discord-home-channel`; `dhkzzpalgt33qdmvlm6knod72a` → `exa-api-key`; `52qljnwq55ysuf3hb2r4vxawni` → `browser-use-api-key`; `t4554lneydfcucvqsqjuck2zdi` → `perplexity-api-key`; `dxraaqrzo4qi6p3swaak5ebyue` → `onepassword-access-token` | Hermes last; never synchronize this whole item or distribute a token that can read its broad token |
+| OpenCloud | `username`, `password` already conform | No custom-field rename needed; preserve Hermes services interface |
+| Hermes Coder Signing | `public_key` → `public-key`; `private_key` → `private-key`; `key_type` → `key-type` | Built-ins: only if official app supports label-only edits; preserve OpenSSH transform and key bytes |
+| GitHub Hermes | `validFrom` → `valid-from` | Built-in: only if editable without setting a date; otherwise record exception; other English fields already conform |
+| Cloudflare DNS | `username` → `username`; `credential` → `credential`; `type` → `type`; `filename` → `filename`; `validFrom` → `valid-from`; `expires` → `expires`; `hostname` → `hostname` | Localized built-ins are blocked unless the official app supports safe in-place label edits; keep dates unset and ESO active |
+| Every source | `notesPlain` → `notes-plain` | Built-in: confirm label-only editability; until then retain `notesPlain` as an explicit exception, including in checkers |
+
+Built-in editability has not been independently established except for the
+reported uneditable Cloudflare credential. A target label is not permission to
+replace a field, change its type/category or round-trip the item through JSON.
+
+Before each batch, capture/review current metadata and app history locally,
+including IDs, types, sections, URL labels, files and passkeys. Keep credentials
+private. Update that batch's source-metadata checks, allowed key sets and explicit
+consumer projections **together**, with exact-byte comparisons against the
+retained ESO targets. Keep encryption/database keys, roots/PVCs and application
+interfaces unchanged. Check authenticated use and rotation after cutover.
+
+For the already-live MySQL/n8n label changes, avoid a missing-key window:
+
+1. Verify current `mysql-connect`/`n8n-connect` parity against retained ESO targets.
+   MySQL's former label-based `root_password` source reference is now its reviewed
+   ID `ovcwlzwylqyjgsnrpk3amvl36q`; all other configured field paths in this
+   inventory already use actual IDs (including the ASCII underscore IDs).
+   Preserve section IDs and signing's `?ssh-format=openssh` query.
+2. In a separate reviewed GitOps step, temporarily return MySQL's password-file
+   projection to `mysql-env` (`root-password`) and both n8n server/import-init
+   references to `n8n-env` (`N8N_ENCRYPTION_KEY`, `N8N_INSTANCE_OWNER_EMAIL`,
+   `N8N_INSTANCE_OWNER_PASSWORD_HASH`). Wait for the actual new generations and
+   authenticated readiness before editing any live-source label. Preserve MySQL's
+   TLS-only restart policy and n8n's import-before-start behavior.
+3. Only then edit existing source labels in place. Update checker contracts to
+   the new keys, verify source metadata and exact source/replacement/ESO parity,
+   and restore Operator consumers with explicit `root-password`, `encryption-key`,
+   `username`, `owner-password-hash` projections. Keep webhook/template ID paths.
+   Compare the unprojected webhook field too; no secret regeneration or rotation
+   is part of this rename. Update owning MySQL/n8n docs in that consumer PR.
+4. Verify rollout/authentication and safe rotation, retaining ESO for rollback.
+   Do not perform this sequence merely because the four newer staging checks pass.
+
+No MySQL/n8n projection or live source label is changed by this preparatory step.
+Their present checker contracts deliberately remain on the current underscore
+keys until the protected sequence has reached its metadata/byte gate. Remaining
+ESO-only sources can be relabeled in their coordinated batches after ID checks,
+then staged and verified before consumer changes; they are not permanent exclusions.
+
+`scripts/relabel-onepassword-sources.py` retains a read-only audit/strict preview
+for its eight reviewed editable sources; optional titles limit its scope. It is
+not the complete inventory checker and never writes. Pending labels can produce
+a preview, not a migration PASS. Use the app for later in-place label edits,
+preserving IDs, values, types, sections, URLs, tags, attachments and passkeys;
+stop if a built-in label cannot be edited. Manual PowerShell personal-account
+sign-in is `Invoke-Expression "$(op signin)"`; the audit rejects Connect overrides
+without changing them. Return sanitized diagnostics only, never raw CLI output.
+
+The four ESO templates still need app-local safe renderers; signing still needs
+the verified OpenSSH transform. Neither a relabel nor Injector alone resolves
+those contracts or rotation.
 
 ## Cutover, refresh and rollback
 
