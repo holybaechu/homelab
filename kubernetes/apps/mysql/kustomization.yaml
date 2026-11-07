@@ -3,5 +3,6 @@ kind: Kustomization
 namespace: homelab
 resources:
   - secrets.yaml
+  - onepassword.yaml
   - certificate.yaml
   - resources.yaml

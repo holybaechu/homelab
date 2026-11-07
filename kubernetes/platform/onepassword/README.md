@@ -2,7 +2,7 @@
 
 This layer uses the official [Connect/Operator and Injector charts](https://github.com/1Password/connect-helm-charts).
 Its Flux Kustomization is active after out-of-band bootstrap. It does not replace
-the working ESO SDK store or any application Secret yet. Keep ESO running until every
+the working ESO SDK store or any active consumer yet. Keep ESO running until every
 consumer below has moved and its replacement has been verified.
 
 Connect is an internal ClusterIP service at
@@ -151,6 +151,77 @@ substitutions; moving files to 1Password does not make those substitutions happe
 Do not turn the ESO Go templates into literal Operator item fields. Keep safe
 format-specific rendering and validation with each owning app rather than adding
 a generic replacement templating controller.
+
+## Staged MySQL and n8n replacements
+
+`mysql-connect` and `n8n-connect` are separate Operator-owned Secrets, sourced
+from the existing items by their verified vault/item IDs. No credentials or item
+labels need changing for these two sources. Their creation does **not** switch
+any consumer: `mysql-env`, `n8n-env`, `hermes-webhook` and all existing ESO templates remain
+in service. Do not delete either OnePasswordItem while its Secret is in use;
+the Operator finalizer deletes the corresponding Secret.
+
+Before cutover, run this read-only check from an administrative checkout with
+permission to read the two OnePasswordItems and their Secrets:
+
+```sh
+python3 scripts/verify-onepassword-staging.py
+```
+
+It compares exact decoded bytes (including newlines), source paths, Ready status,
+owner UIDs and allowed key sets, without printing credentials or writing files.
+A denied read or any mismatch exits nonzero. Return only the two PASS lines, not
+Secret JSON. This check is intentionally unavailable to the agent's restricted
+identity; do not grant it Secret access or run the check inside a new workload.
+
+After both checks pass, a separate consumer change must use explicit keys:
+
+- MySQL: map `username`, `password`, `root_password` to its existing environment
+  and password-file paths (`root-password` remains the projected filename).
+  Project only the two password keys; never mount the entire replacement Secret.
+  Preserve the initialized database, authenticated readiness and TLS-only Reloader
+  policy. Verify the existing account against MySQL; changing 1Password alone
+  does not rotate database accounts.
+- n8n: map `encryption_key`, `username`, `owner_password_hash` to the existing
+  three `N8N_*` variables in **both** the server and credential-import container.
+  Do not use `envFrom`; the whole item can also contain its login password and
+  webhook key. Keep the import template on ESO until its Perplexity source and
+  safe JSON rendering are migrated. The webhook key can later supply the explicit
+  `WEBHOOK_SECRET` variable in Hermes, which is migrated last.
+
+The uploaded source metadata covers all 15 source items, 23 ESO targets and 57
+mappings, with no missing/ambiguous fields. Null-only files/sections/URL labels
+are serialization artifacts: there are no attached files in this export. Metadata
+is not proof of credential byte equality or authentication.
+
+For the other sources, the smallest Operator-compatible source change is to
+**relabel existing fields**, retaining their IDs and values, then explicitly
+select keys in each consumer rather than mounting whole items. Korean-only labels
+are omitted by Operator 1.12.1; mixed labels can collapse to the same ASCII key.
+For example, Langfuse's two `Hermes` labels both normalize to `Hermes`, losing one
+project key. Do not deploy these as replacements before their labels are fixed.
+The necessary stable labels are:
+
+| Source item | Existing field ID → required unique label |
+| --- | --- |
+| Cloudflare DNS | `credential` → `api_token` |
+| Headscale | `3u3ughywinbmkybgdopzodjnxy` → `oidc_client_secret`; `biwyjxnpkpvmrmy42ffpt45fpe` → `authkey` |
+| AdGuard Home | `vu2pnknisjne6k4t5sh5laxf3e` → `password_hash` |
+| qBittorrent | `t25w4tvxducf5bqt5owlk4mvjy` → `password_hash` |
+| Immich | `trytrwmlxrksnvjujdd57hqk7a` → `database_password`; `sf4ch3lie57owvqxdwvl3cl6he` → `oidc_client_secret`; `kpjesisize67f6kdidzwdhrriq` → `hermes_api_key` |
+| Zipline | `eteoaoehfwqkierraxfgbx5xru` → `core_secret`; `6rvlh45inzbb55zwnyi53spfne` → `oidc_client_secret`; `mq3jr7zyvy5zyff2zzpz7zrmgq` → `hermes_api_token` |
+| Obsidian Sync | `auth_token` → `auth_token` |
+| authentik [Admin] | `pinyekye2iau23hchko7js763a` → `secret_key`; `fhw4wuych7l2y5fs62p5leldtm` → `database_password`; `c6t67ly54dysrlik57ft332464` → `email` |
+| Langfuse | Relabel each non-notes field to its existing ASCII field ID, including both project keys and `nextauth_secret` |
+
+These metadata edits need authenticated administrator access; do not create
+unmanaged credential copies. Existing ESO ID-based references continue to resolve.
+Do not synchronize `Hermes Agent` wholesale: its broad Connect token needs an
+explicitly approved separate source layout before Operator use. Do not hand app
+pods a Connect token with access to that item, either: a vault-scoped token can
+read the broad token stored alongside app fields. The four templates still need
+app-local safe renderers; signing still needs the verified OpenSSH transform.
+Neither a relabel nor Injector alone resolves those contracts or rotation.
 
 ## Cutover, refresh and rollback
 

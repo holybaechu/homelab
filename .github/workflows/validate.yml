@@ -55,7 +55,7 @@ jobs:
           # Skip CRD definitions and custom resources; validate native workloads and configuration.
           kubeconform -strict -summary \
             -kubernetes-version "$(yq -r '.data.KUBERNETES_VERSION | sub("^v", "")' kubernetes/clusters/homelab/settings.yaml)" \
-            -skip CustomResourceDefinition,Certificate,ClusterIssuer,ClusterSecretStore,ExternalSecret,HelmRelease,HelmRepository,IngressRoute,Kustomization,Middleware,TLSStore,talos.dev/v1alpha1/ServiceAccount \
+            -skip CustomResourceDefinition,Certificate,ClusterIssuer,ClusterSecretStore,ExternalSecret,OnePasswordItem,HelmRelease,HelmRepository,IngressRoute,Kustomization,Middleware,TLSStore,talos.dev/v1alpha1/ServiceAccount \
             "$RUNNER_TEMP/rendered/authored.yaml"
       - name: Render and validate isolated Talos configuration
         if: ${{ inputs.talos }}
