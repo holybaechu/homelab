@@ -94,7 +94,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: immich
-          image: ghcr.io/immich-app/immich-server:v3.3.5
+          image: ghcr.io/immich-app/immich-server:v3.3.6
           env:
             - name: TZ
               value: ${TIME_ZONE}

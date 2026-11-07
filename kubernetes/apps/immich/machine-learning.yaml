@@ -39,7 +39,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: machine-learning
-          image: ghcr.io/immich-app/immich-machine-learning:v3.3.5-cuda
+          image: ghcr.io/immich-app/immich-machine-learning:v3.3.6-cuda
           env:
             - name: TZ
               value: ${TIME_ZONE}
