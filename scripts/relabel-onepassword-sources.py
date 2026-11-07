@@ -120,17 +120,79 @@ def relabel(original, item_id, title, labels):
     return updated
 
 
+class ContentMismatch(ValueError):
+    def __init__(self, expected, actual, scope):
+        self.diagnostics = []
+        # Never print dynamic keys (including field IDs), labels or scalar values.
+        known_keys = {
+            "id", "vault", "title", "category", "fields", "sections", "urls", "tags",
+            "files", "type", "purpose", "label", "value", "section", "href", "primary",
+            "reference", "password_details", "strength", "entropy", "generated", "history",
+        }
+
+        def kind(value):
+            return {dict: "object", list: "array", str: "string", int: "number",
+                    float: "number", bool: "boolean", type(None): "null"}.get(type(value), "unknown")
+
+        def visit(left, right, path):
+            if len(self.diagnostics) >= 20:
+                return
+            if type(left) is not type(right):
+                self.diagnostics.append(f"{path}: type expected={kind(left)} actual={kind(right)}")
+            elif isinstance(left, dict):
+                for index, key in enumerate(dict.fromkeys([*left, *right])):
+                    name = key if key in known_keys and path != "$.fields" else f"property[{index}]"
+                    child = f"{path}.{name}"
+                    if key not in left or key not in right:
+                        present = right[key] if key not in left else left[key]
+                        self.diagnostics.append(
+                            f"{child}: presence expected={'present' if key in left else 'missing'} "
+                            f"actual={'present' if key in right else 'missing'} type={kind(present)}")
+                    else:
+                        visit(left[key], right[key], child)
+                    if len(self.diagnostics) >= 20:
+                        break
+            elif isinstance(left, list):
+                for index in range(max(len(left), len(right))):
+                    if index >= len(left) or index >= len(right):
+                        present = right[index] if index >= len(left) else left[index]
+                        self.diagnostics.append(
+                            f"{path}[{index}]: presence expected={'present' if index < len(left) else 'missing'} "
+                            f"actual={'present' if index < len(right) else 'missing'} type={kind(present)}")
+                    else:
+                        visit(left[index], right[index], f"{path}[{index}]")
+                    if len(self.diagnostics) >= 20:
+                        break
+            elif left != right:
+                self.diagnostics.append(f"{path}: changed type={kind(left)}")
+
+        visit(expected, actual, "$")
+        self.scope = scope
+        super().__init__("content mismatch")
+
+
 def content(item):
     # These properties are writable through the CLI template; reference is derived.
     fields = {
         f["id"]: {k: v for k, v in f.items() if k != "reference"}
         for f in item["fields"]
     }
+    if len(fields) != len(item["fields"]):
+        raise ValueError("duplicate field IDs")
     return {
         "id": item["id"], "vault": item["vault"]["id"],
         "title": item["title"], "category": item["category"], "fields": fields,
         **{k: item.get(k) or [] for k in ("sections", "urls", "tags", "files")},
     }
+
+
+def check_content(expected, actual):
+    try:
+        left, right = content(expected), content(actual)
+    except (ValueError, KeyError, TypeError, IndexError, AttributeError):
+        raise ContentMismatch(expected, actual, "raw structure; invalid item shape") from None
+    if left != right:
+        raise ContentMismatch(left, right, "compared content")
 
 
 def main(argv=None):
@@ -161,8 +223,7 @@ def main(argv=None):
                 preview = op("item", "edit", item_id, "--vault", VAULT,
                              "--dry-run", item=updated)
                 stage = "preview-comparison"
-                if content(preview) != content(updated):
-                    raise ValueError("CLI preview changed non-label content")
+                check_content(updated, preview)
                 plans.append((item_id, title, original, updated))
             print(f"PASS preview {title}: identity, field IDs and label-only content")
         if not args.apply:
@@ -182,8 +243,7 @@ def main(argv=None):
             stage = "readback-get"
             actual = op("item", "get", item_id, "--vault", VAULT)
             stage = "readback-comparison"
-            if content(actual) != content(updated):
-                raise ValueError("read-back mismatch; inspect item history before continuing")
+            check_content(updated, actual)
             verified += 1
             print(f"PASS applied {title}: read-back labels, IDs and exact values unchanged")
         print("PASS all sources: label-only migration verified (including already-correct items)")
@@ -201,6 +261,10 @@ def main(argv=None):
                 "readback-comparison": "readback-mismatch; inspect item history before continuing",
             }.get(stage, "unexpected-item-json; inspect CLI compatibility locally")
         print(f"FAIL item={title} ({item_id}) stage={stage}: {detail}", file=sys.stderr)
+        if isinstance(error, ContentMismatch):
+            print(f"Structural diff ({error.scope}; at most 20 entries; no values):", file=sys.stderr)
+            for diagnostic in error.diagnostics:
+                print(f"  {diagnostic}", file=sys.stderr)
         if not written and not pending_write:
             print("No items written; no write commands attempted.", file=sys.stderr)
         else:

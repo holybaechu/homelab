@@ -233,6 +233,59 @@ class RelabelTests(unittest.TestCase):
         self.assertNotIn("No items written", out.getvalue())
         self.assertNotIn("PRIVATE_VALUE", out.getvalue())
 
+    def test_comparison_keeps_existing_metadata_exclusions_and_field_order(self):
+        expected = self.updated()
+        expected["fields"].append({"id": "other", "label": "other", "value": "unchanged"})
+        actual = copy.deepcopy(expected)
+        actual.update(version=2, updated_at="changed", tags=expected["tags"])
+        actual["fields"].reverse()
+        actual["fields"][1]["reference"] = "derived-reference-changed"
+        relabel.check_content(expected, actual)
+
+    def test_structural_diff_rejects_real_changes_without_exposing_values(self):
+        for mutate, diagnostic in (
+            (lambda x: x["fields"][0].update(value="PRIVATE_VALUE"), ".value: changed type=string"),
+            (lambda x: x["fields"][0].update(value=None), ".value: type expected=string actual=null"),
+            (lambda x: x["fields"][0].pop("value"), ".value: presence expected=present actual=missing"),
+            (lambda x: x["fields"][0].update(id="PRIVATE_VALUE"), ".fields.property[0]: presence"),
+            (lambda x: x["urls"][0].update(href="PRIVATE_VALUE"), ".urls[0].href: changed"),
+            (lambda x: x.update(tags=[]), ".tags[0]: presence"),
+            (lambda x: x.update(sections=[]), ".sections[0]: presence"),
+            (lambda x: x.update(files=[{"name": "PRIVATE_VALUE"}]), ".files[0]: presence"),
+            (lambda x: x.pop("vault"), ".vault: presence"),
+            (lambda x: x["fields"].append(copy.deepcopy(x["fields"][0])), "invalid item shape"),
+        ):
+            for apply in (False, True):
+                with self.subTest(diagnostic=diagnostic, apply=apply):
+                    actual = self.updated()
+                    mutate(actual)
+                    code, output, calls = self.run_cli([self.original, actual], apply=apply)
+                    self.assertEqual(code, 1)
+                    self.assertIn(diagnostic, output)
+                    self.assertIn("No items written; no write commands attempted", output)
+                    self.assertNotIn("PRIVATE_VALUE", output)
+                    self.assertNotIn(self.original["fields"][0]["value"], output)
+                    self.assertEqual(len(calls), 2)
+                    self.assertIn("--dry-run", calls[1].args[0])
+
+    def test_adversarial_dynamic_names_never_appear_in_bounded_diagnostics(self):
+        secret = "PRIVATE_VALUE_\u001b[31m\nFAIL forged"
+        original = copy.deepcopy(self.original)
+        original["fields"].append({"id": secret, "label": secret, "value": secret,
+                                   secret: {secret: secret}})
+        actual = self.updated(original)
+        actual["fields"][-1].update(value="changed")
+        actual["fields"][-1][secret][secret] = None
+        actual["fields"][0][secret] = [secret] * 30
+        code, output, _ = self.run_cli([original, actual])
+        self.assertEqual(code, 1)
+        self.assertIn(".fields.property[", output)
+        self.assertNotIn(secret, output)
+        self.assertNotIn("PRIVATE_VALUE", output)
+        self.assertNotIn("FAIL forged", output)
+        mismatch = relabel.ContentMismatch([secret] * 30, [], "compared content")
+        self.assertEqual(len(mismatch.diagnostics), 20)
+
     def test_apply_requires_explicit_passkey_review(self):
         with contextlib.redirect_stderr(io.StringIO()), patch.object(relabel, "op") as op:
             with self.assertRaises(SystemExit):
