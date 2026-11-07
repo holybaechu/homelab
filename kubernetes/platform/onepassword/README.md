@@ -234,6 +234,13 @@ label changes above, using the official CLI's JSON-stdin editing. It never reads
 It retains credential JSON in process memory only; subprocess output is captured,
 not echoed or written to files. Run it in an authenticated administrative CLI
 session with edit access to `Homelab`, not with the read-only infrastructure token.
+Use the 1Password desktop app integration or an already established personal-account
+session. For manual PowerShell sign-in, use `Invoke-Expression "$(op signin)"`
+in that shell; `op signin` alone does not install the returned session environment.
+The helper refuses `OP_CONNECT_HOST` or `OP_CONNECT_TOKEN`: Connect does not support
+`op item edit`, including previews. Use a separate administrative shell without
+those variables or a read-only `OP_SERVICE_ACCOUNT_TOKEN` override; the helper
+never removes variables or switches credentials for you. Do not share credentials.
 Do not edit these items concurrently while running it.
 
 **First inspect these nine items in the 1Password app for passkeys or other
@@ -258,8 +265,17 @@ checking field IDs, types, sections and values, plus item title/category/tags/UR
 It stops at the first mismatch without exposing credentials. Already-correct
 labels are accepted, so a partial run can be resumed after reviewing any failure.
 There is no cross-item transaction or automatic rollback; use 1Password item
-history if an unexpected write needs recovery. Return only the helper's sanitized
-PASS/FAIL output, never raw CLI JSON.
+history if an unexpected write needs recovery. Failures identify the reviewed item,
+stage and error category. CLI failures include an exit code and only fixed,
+allowlisted HTTP/auth hints, never raw output. For `source-get` failures, check the
+reported CLI category, account sign-in and vault-read access; for `preview-edit`,
+check edit support/permissions.
+`source-validation`, `preview-comparison` and `snapshot-comparison` failures require
+local source/CLI review, not bypassing the checks. A failure before a write explicitly
+reports no writes; apply reports successful write commands separately from verified
+read-backs. A failed write command has an unknown outcome: inspect that item's
+history before rerunning. Return only the helper's sanitized PASS/FAIL output,
+never raw CLI JSON, stdout or stderr.
 
 Six additional Operator Secrets are staged without changing their consumers:
 

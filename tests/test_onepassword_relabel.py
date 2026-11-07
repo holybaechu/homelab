@@ -19,6 +19,9 @@ spec.loader.exec_module(relabel)
 
 class RelabelTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(relabel.os.environ, {}, clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
         self.item_id, (self.title, self.labels) = next(iter(relabel.SOURCES.items()))
         self.original = {
             "id": self.item_id, "title": self.title, "vault": {"id": relabel.VAULT},
@@ -104,6 +107,130 @@ class RelabelTests(unittest.TestCase):
         with patch.object(relabel, "op", side_effect=ValueError("PRIVATE_VALUE")):
             with contextlib.redirect_stderr(out):
                 self.assertEqual(relabel.main([]), 1)
+        self.assertNotIn("PRIVATE_VALUE", out.getvalue())
+
+    def run_cli(self, responses, apply=False):
+        def response(value):
+            if isinstance(value, BaseException):
+                return value
+            return subprocess.CompletedProcess([], 0, stdout=json.dumps(value).encode("utf-8"))
+
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(relabel, "SOURCES", {self.item_id: (self.title, self.labels)}), \
+                patch.object(relabel.subprocess, "run", side_effect=[response(v) for v in responses]) as run, \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = relabel.main(["--apply", "--confirm-no-passkeys"] if apply else [])
+        return code, out.getvalue() + err.getvalue(), run.call_args_list
+
+    def test_subprocess_failures_identify_stage_without_leaking_output(self):
+        secret = "PRIVATE_VALUE_\u001b[31m\nFAIL forged"
+        for failure, expected in (
+            (FileNotFoundError(secret), "op-not-found"),
+            (PermissionError(secret), "local-process-error"),
+            (subprocess.CalledProcessError(7, [secret], output=secret.encode(),
+                                          stderr=f"HTTP 401 not signed in {secret}".encode()),
+             "exit=7; HTTP 401; check account sign-in"),
+            (subprocess.CalledProcessError(1, [secret], stderr=b"HTTP 403 forbidden"),
+             "HTTP 403; check vault read/edit permissions"),
+            (subprocess.CalledProcessError(2, [secret], stderr=secret.encode()),
+             "op-command-failed; exit=2"),
+        ):
+            with self.subTest(expected=expected):
+                code, output, calls = self.run_cli([failure])
+                self.assertEqual(code, 1)
+                self.assertIn("item=Cloudflare DNS", output)
+                self.assertIn("stage=source-get", output)
+                self.assertIn(expected, output)
+                self.assertIn("No items written; no write commands attempted", output)
+                self.assertNotIn(secret, output)
+                self.assertNotIn("Earlier PASS applied", output)
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(calls[0].kwargs["stdin"], subprocess.DEVNULL)
+
+    def test_invalid_json_and_encoding_are_sanitized(self):
+        for payload in (b'{"secret":"PRIVATE_VALUE"', b"\xffPRIVATE_VALUE"):
+            with patch.object(relabel.subprocess, "run", return_value=subprocess.CompletedProcess(
+                    [], 0, stdout=payload)):
+                out = io.StringIO()
+                with contextlib.redirect_stderr(out):
+                    self.assertEqual(relabel.main([]), 1)
+                self.assertIn("stage=source-get: invalid-cli-json; exit=0", out.getvalue())
+                self.assertNotIn("PRIVATE_VALUE", out.getvalue())
+
+    def test_connect_presence_blocks_without_reading_or_changing_credentials(self):
+        for name in ("OP_CONNECT_HOST", "OP_CONNECT_TOKEN"):
+            with patch.dict(relabel.os.environ, {name: "PRIVATE_VALUE"}), \
+                    patch.object(relabel.subprocess, "run") as run:
+                out = io.StringIO()
+                with contextlib.redirect_stderr(out):
+                    self.assertEqual(relabel.main([]), 1)
+                run.assert_not_called()
+                self.assertIn("stage=environment: connect-environment", out.getvalue())
+                self.assertIn("No items written", out.getvalue())
+                self.assertNotIn("PRIVATE_VALUE", out.getvalue())
+                self.assertEqual(relabel.os.environ[name], "PRIVATE_VALUE")
+
+    def test_subprocess_dry_run_checks_utf8_stdin_and_never_writes(self):
+        code, output, calls = self.run_cli([self.original, self.updated()])
+        self.assertEqual(code, 0)
+        self.assertIn("DRY RUN: no items written", output)
+        edit = calls[1]
+        self.assertIn("--dry-run", edit.args[0])
+        self.assertEqual(json.loads(edit.kwargs["input"].decode("utf-8")), self.updated())
+        self.assertNotIn(self.original["fields"][0]["value"], repr(edit.args))
+        self.assertNotIn(self.original["fields"][0]["value"], output)
+
+    def test_drift_and_preview_failures_are_read_only_in_both_modes(self):
+        drift = copy.deepcopy(self.original)
+        drift["fields"][0]["label"] = "PRIVATE_VALUE"
+        for responses, stage in (
+            ([drift], "source-validation: source-drift"),
+            ([self.original, []], "preview-comparison: preview-mismatch"),
+            ([self.original, self.original], "preview-comparison: preview-mismatch"),
+            ([self.original, subprocess.CalledProcessError(1, [], stderr=b"PRIVATE_VALUE")],
+             "preview-edit: op-command-failed"),
+        ):
+            for apply in (False, True):
+                code, output, calls = self.run_cli(responses, apply=apply)
+                self.assertEqual(code, 1)
+                self.assertIn(stage, output)
+                self.assertIn("No items written; no write commands attempted", output)
+                self.assertNotIn("PRIVATE_VALUE", output)
+                self.assertTrue(all("--dry-run" in c.args[0] for c in calls
+                                    if c.args[0][1:3] == ["item", "edit"]))
+
+    def test_apply_failure_distinguishes_unknown_write_and_failed_readback(self):
+        for tail, expected in (
+            ([subprocess.CalledProcessError(1, [], stderr=b"PRIVATE_VALUE")],
+             "Write attempted for Cloudflare DNS; outcome unknown"),
+            ([self.updated(), self.original],
+             "Successful write commands: 1; read-back verified: 0"),
+        ):
+            code, output, _ = self.run_cli(
+                [self.original, self.updated(), self.original, *tail], apply=True)
+            self.assertEqual(code, 1)
+            self.assertIn(expected, output)
+            self.assertNotIn("No items written", output)
+            self.assertNotIn("PRIVATE_VALUE", output)
+
+    def test_partial_apply_counts_only_completed_writes(self):
+        other_id = "vyenqrf6ko2aficwt3dyaao2de"
+        other = {**copy.deepcopy(self.original), "id": other_id, "title": "Headscale"}
+        other_updated = relabel.relabel(other, other_id, "Headscale", self.labels)
+        responses = [self.original, self.updated(), other, other_updated,
+                     self.original, self.updated(), self.updated(), other,
+                     subprocess.CalledProcessError(1, [], stderr=b"PRIVATE_VALUE")]
+        responses = [v if isinstance(v, BaseException) else subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps(v).encode()) for v in responses]
+        out = io.StringIO()
+        with patch.object(relabel, "SOURCES", {
+                self.item_id: (self.title, self.labels), other_id: ("Headscale", self.labels)}), \
+                patch.object(relabel.subprocess, "run", side_effect=responses), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            self.assertEqual(relabel.main(["--apply", "--confirm-no-passkeys"]), 1)
+        self.assertIn("Successful write commands: 1; read-back verified: 1", out.getvalue())
+        self.assertIn("Write attempted for Headscale; outcome unknown", out.getvalue())
+        self.assertNotIn("No items written", out.getvalue())
         self.assertNotIn("PRIVATE_VALUE", out.getvalue())
 
     def test_apply_requires_explicit_passkey_review(self):

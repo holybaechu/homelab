@@ -3,6 +3,8 @@
 import argparse
 import copy
 import json
+import os
+import re
 import subprocess
 import sys
 
@@ -57,13 +59,50 @@ SOURCES = {
 }
 
 
-def op(*args, item=None):
-    result = subprocess.run(
-        ["op", *args, "--format=json"],
-        input=json.dumps(item, ensure_ascii=False).encode("utf-8") if item is not None else None,
-        capture_output=True, check=True,
+class CliFailure(Exception):
+    pass
+
+
+def cli_failure(error):
+    # Only fixed hints are emitted, never exception text or fragments of CLI output.
+    raw = error.stderr or b""
+    text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+    text = text.lower()
+    hints = []
+    for status in re.findall(r"\b(?:status(?: code)?|http)[ :=]+(\d{3})\b", text):
+        if status in {"400", "401", "403", "404", "409", "429", "500", "502", "503", "504"}:
+            hints.append(f"HTTP {status}")
+    if any(s in text for s in ("not signed in", "sign in", "signin", "session expired",
+                                "unauthorized", "authentication", "no accounts configured")):
+        hints.append("check account sign-in / desktop app integration")
+    if any(s in text for s in ("forbidden", "permission", "access denied")):
+        hints.append("check vault read/edit permissions")
+    if "connect" in text and "support" in text:
+        hints.append("Connect does not support item edit; use an administrative account session")
+    if any(s in text for s in ("unknown flag", "unknown command", "invalid json")):
+        hints.append("check op version and JSON-stdin support (repo pins 2.41.1)")
+    return f"op-command-failed; exit={error.returncode}" + (
+        "; " + "; ".join(dict.fromkeys(hints)) if hints else
+        "; check CLI authentication, vault access and item history locally; do not share raw output"
     )
-    return json.loads(result.stdout)
+
+
+def op(*args, item=None):
+    try:
+        result = subprocess.run(
+            ["op", *args, "--format=json"],
+            input=json.dumps(item, ensure_ascii=False).encode("utf-8") if item is not None else None,
+            stdin=subprocess.DEVNULL if item is None else None,
+            capture_output=True, check=True,
+        )
+    except FileNotFoundError:
+        raise CliFailure("op-not-found; install/activate the repo-pinned op CLI with mise") from None
+    except subprocess.CalledProcessError as error:
+        raise CliFailure(cli_failure(error)) from None
+    try:
+        return json.loads(result.stdout)
+    except (ValueError, UnicodeError):
+        raise CliFailure("invalid-cli-json; exit=0; expected UTF-8 JSON from op --format=json") from None
 
 
 def relabel(original, item_id, title, labels):
@@ -102,14 +141,26 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.apply and not args.confirm_no_passkeys:
         parser.error("--apply requires --confirm-no-passkeys; inspect all nine items in the 1Password app")
+    stage, title, item_id = "environment", "none", "none"
+    written = verified = 0
+    pending_write = False
     try:
+        if any(os.environ.get(name) for name in ("OP_CONNECT_HOST", "OP_CONNECT_TOKEN")):
+            raise CliFailure("connect-environment; OP_CONNECT_HOST or OP_CONNECT_TOKEN is set; "
+                             "Connect does not support item edit; use a separate administrative "
+                             "personal-account CLI session without Connect variables. "
+                             "No environment or credentials were changed")
         plans = []
         for item_id, (title, labels) in SOURCES.items():
+            stage = "source-get"
             original = op("item", "get", item_id, "--vault", VAULT)
+            stage = "source-validation"
             updated = relabel(original, item_id, title, labels)
             if content(original) != content(updated):
+                stage = "preview-edit"
                 preview = op("item", "edit", item_id, "--vault", VAULT,
                              "--dry-run", item=updated)
+                stage = "preview-comparison"
                 if content(preview) != content(updated):
                     raise ValueError("CLI preview changed non-label content")
                 plans.append((item_id, title, original, updated))
@@ -118,20 +169,45 @@ def main(argv=None):
             print("DRY RUN: no items written; inspect passkeys before applying")
             return 0
         for item_id, title, original, updated in plans:
+            stage = "prewrite-get"
             current = op("item", "get", item_id, "--vault", VAULT)
+            stage = "snapshot-comparison"
             if current != original:
                 raise ValueError("item changed since preview; rerun after review")
+            stage = "apply-edit"
+            pending_write = True
             op("item", "edit", item_id, "--vault", VAULT, item=updated)
+            written += 1
+            pending_write = False
+            stage = "readback-get"
             actual = op("item", "get", item_id, "--vault", VAULT)
+            stage = "readback-comparison"
             if content(actual) != content(updated):
                 raise ValueError("read-back mismatch; inspect item history before continuing")
+            verified += 1
             print(f"PASS applied {title}: read-back labels, IDs and exact values unchanged")
         print("PASS all sources: label-only migration verified (including already-correct items)")
         return 0
-    except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError):
-        print("FAIL: authentication, source drift, preview or read-back check; "
-              "stop and review. Earlier PASS applied items remain changed; safe to rerun after review.",
-              file=sys.stderr)
+    except (CliFailure, OSError, ValueError, KeyError, TypeError, IndexError, AttributeError) as error:
+        if isinstance(error, CliFailure):
+            detail = str(error)
+        elif isinstance(error, OSError):
+            detail = "local-process-error; check op execution permissions and OS configuration"
+        else:
+            detail = {
+                "source-validation": "source-drift-or-unsupported-content; review identity, attachments, field IDs and old labels in the app",
+                "preview-comparison": "preview-mismatch; preview did not preserve expected content; do not apply",
+                "snapshot-comparison": "concurrent-change; source changed since preview; review before rerun",
+                "readback-comparison": "readback-mismatch; inspect item history before continuing",
+            }.get(stage, "unexpected-item-json; inspect CLI compatibility locally")
+        print(f"FAIL item={title} ({item_id}) stage={stage}: {detail}", file=sys.stderr)
+        if not written and not pending_write:
+            print("No items written; no write commands attempted.", file=sys.stderr)
+        else:
+            print(f"Successful write commands: {written}; read-back verified: {verified}. "
+                  "Inspect item history before rerun; no automatic rollback.", file=sys.stderr)
+            if pending_write:
+                print(f"Write attempted for {title}; outcome unknown and item may have changed.", file=sys.stderr)
         return 1
 
 
