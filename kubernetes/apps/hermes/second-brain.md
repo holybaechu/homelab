@@ -12,8 +12,9 @@ conversation so the user can inspect and steer its live subagent in Webapp.
 
 Scope coding handoffs to the smallest complete, maintainable change. Request docs
 only for changed user/operator contracts or non-obvious decisions, updating existing
-guides rather than adding reports. Use existing checks first; request risk-based
-behavior/regression tests, not blanket TDD or full-suite runs. Avoid speculative
+guides rather than adding reports. For declarative configuration, use existing build,
+substitution, and schema checks; request focused tests for custom logic or safety
+risks, not routine resource snapshots, blanket TDD, or full-suite runs. Avoid speculative
 abstractions, knobs, fallback chains, dependencies, and unrelated refactors. Preserve
 useful docs/tests and auth, security, data-loss, upgrade, and operational safeguards.
 

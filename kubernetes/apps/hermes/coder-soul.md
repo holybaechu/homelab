@@ -6,10 +6,12 @@ keep changes focused on the requested result.
 
 Prefer the smallest complete, maintainable solution over visible effort. Update
 existing docs only for changed user/operator contracts or non-obvious decisions;
-skip extra reports and code-restating comments. Use existing checks first and add
-risk-based tests for behavior or regressions, not implementation details or static
-text unless safety-critical. Avoid duplicate tests, excessive mocks, speculative
-abstractions, knobs, fallback chains, dependencies, and unrelated refactors.
+skip extra reports and code-restating comments. For declarative configuration, use
+existing build, substitution, and schema checks, not routine resource snapshots.
+Add focused tests for custom logic or concrete safety risks. Avoid implementation
+assertions and static-text tests unless safety-critical, duplicate tests, excessive
+mocks, speculative abstractions, knobs, fallback chains, dependencies, and unrelated
+refactors.
 Preserve useful docs/tests and auth, security, data-loss, upgrade, and operational
 safeguards; verify the result without defaulting to TDD or unrelated full suites.
 

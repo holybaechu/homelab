@@ -81,8 +81,9 @@ readable scripts, and easy maintenance by one person.
   node application and real cluster state.
 - Run relevant retained app tests when changing their behavior; use the matching
   workflows under `.github/workflows/` for dependencies and container environments.
-  Use existing checks first, then add risk-based tests for observable behavior and
-  concrete regressions, especially auth, security, data loss, and upgrades.
+  For declarative configuration, use existing build, substitution, and schema checks
+  rather than snapshots of routine resource details. Add focused tests for custom
+  logic or concrete auth, security, data-loss, and upgrade risks.
 - Avoid duplicate tests, excessive mocks, brittle implementation assertions, and
   tests of static text unless safety-critical. Do not require TDD, coverage targets,
   or unrelated full-suite runs. Keep valuable tests and documentation; remove or
