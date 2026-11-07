@@ -78,7 +78,8 @@ Talos uses a dedicated one-year `os:admin` client certificate in the existing
 `Talos` 1Password item's `hermes_talosconfig` field. `HERMES_TALOSCONFIG_REF`
 feeds `hermes-talos` through the shared External Secrets store; `TALOSCONFIG`
 points directly to its read-only Secret mount. It contains no CA signing key or
-OpenTofu state. Before expiry, issue a replacement with an existing administrator's
+OpenTofu state. The Talos API firewall also allows the cluster Pod CIDR; client
+certificates remain required. Before expiry, issue a replacement with an existing administrator's
 `talosctl config new <private-path> --roles os:admin --crt-ttl 8760h`, set its
 endpoint/node to `NODE_IP`, and update the same concealed field. Respect the shared
 refresh interval and cache; Reloader restarts Hermes after Secret changes.

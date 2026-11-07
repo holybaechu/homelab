@@ -88,6 +88,9 @@ jobs:
               .features["rx-udp-gro-forwarding"] == true and .features["rx-gro-list"] == false) and
             any(.[]; .kind == "NetworkRuleConfig" and .name == "adguard-http" and
               .portSelector.ports == [3000] and .portSelector.protocol == "tcp" and
-              ([.ingress[].subnet] | sort) == ([$node, $pods] | sort))
+              ([.ingress[].subnet] | sort) == ([$node, $pods] | sort)) and
+            any(.[]; .kind == "NetworkRuleConfig" and .name == "talos-api" and
+              .portSelector.ports == [50000] and .portSelector.protocol == "tcp" and
+              ([.ingress[].subnet] | index($pods)) != null)
           ' > /dev/null
       - run: git diff --check
