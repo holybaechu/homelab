@@ -7,8 +7,12 @@ readable scripts, and easy maintenance by one person.
 ## Keep changes small
 
 - Make the smallest change that fulfills the request. Keep unrelated cleanup separate.
-- Prefer existing configuration options and direct code. Keep one-off logic local;
-  introduce abstractions or dependencies only when the current task needs them.
+- Before building or extending custom functionality, evaluate existing configuration
+  and official or reputable, actively maintained packages and integrations. Prefer
+  them when they meet requirements with less overall complexity; verify maintenance,
+  compatibility, and security from current evidence. Keep only necessary thin glue
+  or justified custom logic, and avoid dependency bloat.
+- Keep one-off logic local; introduce abstractions only when the current task needs them.
 - Avoid speculative helpers, configuration knobs, fallback chains, and comments or
   docstrings that merely restate the code. Do not refactor unrelated code.
 - Build for the cluster and environments this repository actually supports. Add
