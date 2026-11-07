@@ -274,6 +274,11 @@ check edit support/permissions.
 local source/CLI review, not bypassing the checks. Preview/read-back mismatches
 include a bounded structural diff: fixed property paths, anonymous field/property
 indexes, types and presence/change markers only, never values or dynamic names.
+Added/removed strings include only an `empty`/`nonempty` marker. The only accepted
+field-value default is an added empty string on Cloudflare DNS's existing
+`validFrom` or `expires` DATE fields when the source omitted `value`; this applies
+to both preview and read-back. Missing/new fields, removed values, nonempty values,
+and all other field content changes still fail; submitted JSON remains unchanged.
 Indexes identify entries in that comparison, not persistent field IDs. Invalid
 item shapes are marked as raw-structure diagnostics rather than compared content.
 Return this sanitized diff with the failure; do not share raw item JSON. Additional
