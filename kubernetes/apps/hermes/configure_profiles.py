@@ -10,6 +10,7 @@ from utils import atomic_yaml_write
 
 
 def reconcile(root: Path, bootstrap: Path) -> None:
+    (root / "SOUL.md").write_text((bootstrap / "assistant-soul.md").read_text())
     if not profile_exists("coder"):
         create_profile("coder", no_alias=True)
 

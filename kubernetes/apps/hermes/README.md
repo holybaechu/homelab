@@ -49,7 +49,8 @@ profile.
 
 `configure-profiles` verifies the immutable official `advanced-delegation` plugin
 against [delegation-plugin.sha256](delegation-plugin.sha256) and fails startup if
-it cannot prepare the route. Git owns these profile settings and coder's SOUL;
+it cannot prepare the route. Git owns these profile settings and both SOUL files
+([assistant-soul.md](assistant-soul.md) and [coder-soul.md](coder-soul.md));
 change their source files instead of editing them in the dashboard. Other live
 assistant settings and both profiles' histories remain on the PVC. Configuration
 backups taken before the initial migration remain under `/opt/data/backups`.
