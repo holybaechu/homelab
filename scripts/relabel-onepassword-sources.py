@@ -11,48 +11,48 @@ VAULT = "3ryhjdiydkomgh3oxfl5yrg5j4"
 # item ID: (display name, field ID: (reviewed old label, required label))
 SOURCES = {
     "x62vzi4s2sdnerrjev6pp5ndnu": ("Cloudflare DNS", {
-        "credential": ("자격 증명", "api_token"),
+        "credential": ("\uc790\uaca9 \uc99d\uba85", "api_token"),
     }),
     "vyenqrf6ko2aficwt3dyaao2de": ("Headscale", {
-        "3u3ughywinbmkybgdopzodjnxy": ("OIDC 클라이언트 스크릿", "oidc_client_secret"),
-        "biwyjxnpkpvmrmy42ffpt45fpe": ("게이트웨이 인증 키", "authkey"),
+        "3u3ughywinbmkybgdopzodjnxy": ("OIDC \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2a4\ud06c\ub9bf", "oidc_client_secret"),
+        "biwyjxnpkpvmrmy42ffpt45fpe": ("\uac8c\uc774\ud2b8\uc6e8\uc774 \uc778\uc99d \ud0a4", "authkey"),
     }),
     "n2olk4p3ngumyuttl6b7itutba": ("AdGuard Home", {
-        "vu2pnknisjne6k4t5sh5laxf3e": ("비밀번호 해시", "password_hash"),
+        "vu2pnknisjne6k4t5sh5laxf3e": ("\ube44\ubc00\ubc88\ud638 \ud574\uc2dc", "password_hash"),
     }),
     "ztl6gih3jqixgb5xufbv4xq4bi": ("qBittorrent", {
-        "t25w4tvxducf5bqt5owlk4mvjy": ("비밀번호 해시", "password_hash"),
+        "t25w4tvxducf5bqt5owlk4mvjy": ("\ube44\ubc00\ubc88\ud638 \ud574\uc2dc", "password_hash"),
     }),
     "ltncwd5wyxwknf5xfqwxraqmtm": ("Immich", {
-        "trytrwmlxrksnvjujdd57hqk7a": ("데이터베이스 비밀번호", "database_password"),
-        "sf4ch3lie57owvqxdwvl3cl6he": ("OIDC 클라이언트 시크릿", "oidc_client_secret"),
-        "kpjesisize67f6kdidzwdhrriq": ("Hermes API 키", "hermes_api_key"),
+        "trytrwmlxrksnvjujdd57hqk7a": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \ube44\ubc00\ubc88\ud638", "database_password"),
+        "sf4ch3lie57owvqxdwvl3cl6he": ("OIDC \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2dc\ud06c\ub9bf", "oidc_client_secret"),
+        "kpjesisize67f6kdidzwdhrriq": ("Hermes API \ud0a4", "hermes_api_key"),
     }),
     "ia7seg53btlz2t4xluwkzmfjly": ("Zipline", {
-        "eteoaoehfwqkierraxfgbx5xru": ("코어 시크릿", "core_secret"),
-        "6rvlh45inzbb55zwnyi53spfne": ("OIDC 클라이언트 시크릿", "oidc_client_secret"),
+        "eteoaoehfwqkierraxfgbx5xru": ("\ucf54\uc5b4 \uc2dc\ud06c\ub9bf", "core_secret"),
+        "6rvlh45inzbb55zwnyi53spfne": ("OIDC \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2dc\ud06c\ub9bf", "oidc_client_secret"),
         "mq3jr7zyvy5zyff2zzpz7zrmgq": ("Hermes API token", "hermes_api_token"),
     }),
     "3galz5zqqwdrqoj2mjk4wcxfdy": ("Obsidian Sync", {
-        "auth_token": ("인증 토큰", "auth_token"),
+        "auth_token": ("\uc778\uc99d \ud1a0\ud070", "auth_token"),
     }),
     "d7ginmnpodzvevvb472v26jvmq": ("authentik [Admin]", {
-        "pinyekye2iau23hchko7js763a": ("시크릿 키", "secret_key"),
-        "fhw4wuych7l2y5fs62p5leldtm": ("데이터베이스 비밀번호", "database_password"),
-        "c6t67ly54dysrlik57ft332464": ("이메일", "email"),
+        "pinyekye2iau23hchko7js763a": ("\uc2dc\ud06c\ub9bf \ud0a4", "secret_key"),
+        "fhw4wuych7l2y5fs62p5leldtm": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \ube44\ubc00\ubc88\ud638", "database_password"),
+        "c6t67ly54dysrlik57ft332464": ("\uc774\uba54\uc77c", "email"),
     }),
     "77j3ul6ntreertxl3bjkdko4h4": ("Langfuse", {
-        "postgres_password": ("데이터베이스 비밀번호", "postgres_password"),
-        "database_url": ("데이터베이스 연결 주소", "database_url"),
-        "clickhouse_password": ("ClickHouse 비밀번호", "clickhouse_password"),
-        "redis_auth": ("Redis 비밀번호", "redis_auth"),
-        "minio_root_password": ("S3 저장소 비밀번호", "minio_root_password"),
-        "salt": ("해시 솔트", "salt"),
-        "encryption_key": ("암호화 키", "encryption_key"),
-        "nextauth_secret": ("로그인 세션 시크릿", "nextauth_secret"),
-        "langfuse_init_project_public_key": ("Hermes 공개 키", "langfuse_init_project_public_key"),
-        "langfuse_init_project_secret_key": ("Hermes 시크릿 키", "langfuse_init_project_secret_key"),
-        "oidc_client_secret": ("Authentik 클라이언트 시크릿", "oidc_client_secret"),
+        "postgres_password": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \ube44\ubc00\ubc88\ud638", "postgres_password"),
+        "database_url": ("\ub370\uc774\ud130\ubca0\uc774\uc2a4 \uc5f0\uacb0 \uc8fc\uc18c", "database_url"),
+        "clickhouse_password": ("ClickHouse \ube44\ubc00\ubc88\ud638", "clickhouse_password"),
+        "redis_auth": ("Redis \ube44\ubc00\ubc88\ud638", "redis_auth"),
+        "minio_root_password": ("S3 \uc800\uc7a5\uc18c \ube44\ubc00\ubc88\ud638", "minio_root_password"),
+        "salt": ("\ud574\uc2dc \uc194\ud2b8", "salt"),
+        "encryption_key": ("\uc554\ud638\ud654 \ud0a4", "encryption_key"),
+        "nextauth_secret": ("\ub85c\uadf8\uc778 \uc138\uc158 \uc2dc\ud06c\ub9bf", "nextauth_secret"),
+        "langfuse_init_project_public_key": ("Hermes \uacf5\uac1c \ud0a4", "langfuse_init_project_public_key"),
+        "langfuse_init_project_secret_key": ("Hermes \uc2dc\ud06c\ub9bf \ud0a4", "langfuse_init_project_secret_key"),
+        "oidc_client_secret": ("Authentik \ud074\ub77c\uc774\uc5b8\ud2b8 \uc2dc\ud06c\ub9bf", "oidc_client_secret"),
     }),
 }
 
