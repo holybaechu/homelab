@@ -228,66 +228,64 @@ Neither a relabel nor Injector alone resolves those contracts or rotation.
 
 ### Administrative label migration and next replacements
 
-`scripts/relabel-onepassword-sources.py` implements exactly the nine source-item
-label changes above, using the official CLI's JSON-stdin editing. It never reads
-`Hermes Agent`, creates items, changes field IDs or intentionally changes values.
-It retains credential JSON in process memory only; subprocess output is captured,
-not echoed or written to files. Run it in an authenticated administrative CLI
-session with edit access to `Homelab`, not with the read-only infrastructure token.
-Use the 1Password desktop app integration or an already established personal-account
-session. For manual PowerShell sign-in, use `Invoke-Expression "$(op signin)"`
-in that shell; `op signin` alone does not install the returned session environment.
-The helper refuses `OP_CONNECT_HOST` or `OP_CONNECT_TOKEN`: Connect does not support
-`op item edit`, including previews. Use a separate administrative shell without
-those variables or a read-only `OP_SERVICE_ACCOUNT_TOKEN` override; the helper
-never removes variables or switches credentials for you. Do not share credentials.
-Do not edit these items concurrently while running it.
+**Automated JSON-template writes are disabled.** The real Cloudflare DNS preview
+populated nonempty `validFrom` and `expires` DATE values that were absent in the
+source. These are unintended content changes, not harmless empty defaults.
+The helper now rejects every added value, including empty strings; `--apply`
+refuses before any CLI call, even with `--confirm-no-passkeys`.
 
-**First inspect these nine items in the 1Password app for passkeys or other
-credentials not represented by CLI JSON.** The official CLI warns that JSON-template
-edits can delete passkeys. Do not apply this helper to an item containing one;
-make the table's label-only changes in the app instead. The helper also refuses
-attachments, unexpected item identity, missing fields and unreviewed label drift.
+The [official CLI assignment syntax](https://www.1password.dev/cli/item-edit)
+changes values/types, not labels. Deleting/recreating fields would change their
+IDs and break ESO references. The documented JSON-template flow round-trips an
+item; it does not establish a safe sparse ID/label merge. Do not remove omitted
+DATE fields or metadata from a write payload on that assumption. JSON-template
+edits can also overwrite passkeys invisible in CLI JSON. No automatic label-edit
+path has been verified safe here; do not apply a template, bypass preservation
+checks, or share credential values to troubleshoot this.
 
-From the administrative Windows checkout, use the fetched script without switching
-branches, pulling over local work or resetting a dirty tree:
+For the six staged replacements below, **only four source items need manual
+label edits now**: Cloudflare DNS, Headscale, Zipline and Langfuse. Use their exact
+field ID → label mappings in the table above (17 labels total). Leave AdGuard Home,
+qBittorrent, Immich, Obsidian Sync and authentik for their own later cutovers.
 
-```powershell
-git fetch origin main
-git show origin/main:scripts/relabel-onepassword-sources.py | mise x python@3 -- python -
-# Only after all previews pass and the app inspection above confirms no passkeys:
-git show origin/main:scripts/relabel-onepassword-sources.py | mise x python@3 -- python - --apply --confirm-no-passkeys
-```
+1. Open the existing item in the `Homelab` vault in the 1Password app and select
+   **Edit**. Rename only the existing field's label using the table, not its value,
+   type, section or position. Do not add, delete, duplicate or recreate fields.
+   Keep both Cloudflare DATE fields untouched; do not select a date or expiry alert.
+2. Preserve all other item content, tags, URLs, attachments and passkeys. Save the
+   item and inspect it locally. If a built-in field's label is not editable in the
+   app, **stop that source's cutover** rather than replacing the field or using a
+   CLI template. Existing ESO references and consumers remain operational.
+3. Check the four items read-only from the administrative Windows checkout. These
+   commands fetch the reviewed helper without pulling, resetting or switching a
+   dirty working tree:
 
-The default is a read-only CLI preview of every pending change. Apply rechecks
-each snapshot immediately before writing and reads the exact item back afterward,
-checking field IDs, types, sections and values, plus item title/category/tags/URLs.
-It stops at the first mismatch without exposing credentials. Already-correct
-labels are accepted, so a partial run can be resumed after reviewing any failure.
-There is no cross-item transaction or automatic rollback; use 1Password item
-history if an unexpected write needs recovery. Failures identify the reviewed item,
-stage and error category. CLI failures include an exit code and only fixed,
-allowlisted HTTP/auth hints, never raw output. For `source-get` failures, check the
-reported CLI category, account sign-in and vault-read access; for `preview-edit`,
-check edit support/permissions.
-`source-validation`, `preview-comparison` and `snapshot-comparison` failures require
-local source/CLI review, not bypassing the checks. Preview/read-back mismatches
-include a bounded structural diff: fixed property paths, anonymous field/property
-indexes, types and presence/change markers only, never values or dynamic names.
-Added/removed strings include only an `empty`/`nonempty` marker. The only accepted
-field-value default is an added empty string on Cloudflare DNS's existing
-`validFrom` or `expires` DATE fields when the source omitted `value`; this applies
-to both preview and read-back. Missing/new fields, removed values, nonempty values,
-and all other field content changes still fail; submitted JSON remains unchanged.
-Indexes identify entries in that comparison, not persistent field IDs. Invalid
-item shapes are marked as raw-structure diagnostics rather than compared content.
-Return this sanitized diff with the failure; do not share raw item JSON. Additional
-metadata/default differences must be proven harmless before changing comparison rules.
-A failure before a write explicitly
-reports no writes; apply reports successful write commands separately from verified
-read-backs. A failed write command has an unknown outcome: inspect that item's
-history before rerunning. Return only the helper's sanitized PASS/FAIL output,
-never raw CLI JSON, stdout or stderr.
+   ```powershell
+   git fetch origin main
+   git show origin/main:scripts/relabel-onepassword-sources.py | mise x python@3 -- python - "Cloudflare DNS" Headscale Zipline Langfuse
+   ```
+
+   Require four `PASS labels` lines, not `PASS preview`: the former means the
+   existing field IDs already have the required labels, so the helper only ran
+   `op item get`. Pending labels still use read-only CLI previews with strict
+   content comparison and can fail on the DATE issue; do not retry template writes.
+   Label checks alone do not prove every credential or item property stayed intact.
+4. Continue with the six staging byte-parity checks below before any consumer
+   cutover. Inspect item history locally if anything other than labels changed;
+   do not proceed on Ready status or label checks alone.
+
+The helper keeps credential JSON and captured CLI output in memory only, without
+printing values or writing files. Use an established administrative personal-account
+session or desktop app integration, not Connect or a read-only service token.
+For manual PowerShell sign-in, use `Invoke-Expression "$(op signin)"`; `op signin`
+alone does not install the session environment. The helper refuses Connect
+environment overrides without changing them. It retains identity, attachment,
+field-ID and old-label drift checks. A failure reports the reviewed item, stage
+and fixed error hints; content mismatches use bounded anonymous structural paths,
+types and presence/empty/nonempty markers, never values or dynamic names. Return
+only this sanitized output, not raw CLI JSON, stdout or stderr. Default invocation
+checks all nine reviewed sources; optional item titles limit it to the current
+cutover. No invocation can write items.
 
 Six additional Operator Secrets are staged without changing their consumers:
 
