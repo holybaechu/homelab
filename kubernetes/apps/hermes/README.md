@@ -20,6 +20,9 @@ addresses and `hermes webapp --status` in the Hermes container.
 
 ## Assistant and coder
 
+[Coder development tools](coder/README.md) covers mise, GitHub authentication,
+commit signing, and credential rotation.
+
 The existing Discord profile is displayed as `assistant`; its built-in ID stays
 `default` to preserve sessions, memory, and model authentication. Startup creates
 a blank `coder` profile and reconciles [coder.yaml](coder.yaml),

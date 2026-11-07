@@ -12,6 +12,11 @@ configMapGenerator:
       - coder-soul.md
       - configure_profiles.py
       - delegation-plugin.sha256
+      - coder-install-tools.sh=coder/install-tools.sh
+      - coder-tools.sha256=coder/tools.sha256
+      - coder-gh.sh=coder/gh.sh
+      - coder-gitconfig=coder/gitconfig
+      - coder-configure-git.sh=coder/configure-git.sh
       - browser-cloud.patch
       - mcp-servers.yaml
       - webhook.yaml

@@ -57,6 +57,11 @@ spec:
               mkdir -p /opt/qmd /opt/data/qmd/config /opt/data/qmd/cache/qmd
               mkdir -p /opt/langfuse/python /opt/langfuse/plugin /opt/data/plugins/langfuse
               mkdir -p /opt/browser
+              mkdir -p /opt/coder/bin /opt/coder-credentials
+              mkdir -p /opt/data/coder-tools/mise /opt/data/coder-tools/cache /opt/data/coder-tools/config
+              chown 10000:10000 /opt/coder /opt/coder/bin /opt/coder-credentials
+              chown 10000:10000 /opt/data/coder-tools /opt/data/coder-tools/mise /opt/data/coder-tools/cache /opt/data/coder-tools/config
+              /bin/sh /bootstrap/coder-configure-git.sh
               cp /opt/hermes/.venv/lib/python3.14/site-packages/browser_harness/run.py /opt/browser/run.py
               git -C /opt/browser apply --check /bootstrap/browser-cloud.patch
               git -C /opt/browser apply /bootstrap/browser-cloud.patch
@@ -115,6 +120,13 @@ spec:
               mountPath: /opt/langfuse
             - name: browser-runtime
               mountPath: /opt/browser
+            - name: coder-runtime
+              mountPath: /opt/coder
+            - name: coder-source
+              mountPath: /var/run/coder-source
+              readOnly: true
+            - name: coder-credentials
+              mountPath: /opt/coder-credentials
         - name: reconcile-skills
           image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, -ec]
@@ -180,6 +192,31 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /opt/data
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: integration-temporary
+              mountPath: /tmp
+        - name: install-coder-tools
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
+          command: [/bin/sh, /bootstrap/coder-install-tools.sh]
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: coder-runtime
+              mountPath: /opt/coder
             - name: bootstrap
               mountPath: /bootstrap
               readOnly: true
@@ -450,6 +487,22 @@ spec:
               value: /opt/data/obsidian/vault
             - name: PYTHONPATH
               value: /opt/hermes
+            - name: PATH
+              value: /opt/coder/bin:/opt/data/coder-tools/mise/shims:/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: MISE_DATA_DIR
+              value: /opt/data/coder-tools/mise
+            - name: MISE_CACHE_DIR
+              value: /opt/data/coder-tools/cache
+            - name: MISE_CONFIG_DIR
+              value: /opt/data/coder-tools/config
+            - name: GIT_CONFIG_GLOBAL
+              value: /opt/coder/gitconfig
+            - name: GH_CONFIG_DIR
+              value: /opt/data/profiles/coder/home/.config/gh
+            - name: GH_HOST
+              value: github.com
+            - name: GH_PROMPT_DISABLED
+              value: "1"
             - name: HERMES_LANGFUSE_BASE_URL
               value: http://langfuse.homelab.svc.cluster.local:3000
             - name: HERMES_LANGFUSE_CAPTURE
@@ -514,6 +567,16 @@ spec:
               readOnly: true
             - name: shared-memory
               mountPath: /dev/shm
+            - name: coder-runtime
+              mountPath: /opt/coder
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/coder/gitconfig
+              subPath: coder-gitconfig
+              readOnly: true
+            - name: coder-credentials
+              mountPath: /opt/coder-credentials
+              readOnly: true
             - name: browser-runtime
               mountPath: /opt/hermes/.venv/lib/python3.14/site-packages/browser_harness/run.py
               subPath: run.py
@@ -678,6 +741,16 @@ spec:
           emptyDir: {}
         - name: browser-runtime
           emptyDir: {}
+        - name: coder-runtime
+          emptyDir: {}
+        - name: coder-source
+          secret:
+            secretName: hermes-coder-git
+            defaultMode: 0400
+        - name: coder-credentials
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
 ---
 apiVersion: v1
 kind: Service
