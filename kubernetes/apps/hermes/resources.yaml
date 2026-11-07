@@ -150,6 +150,41 @@ spec:
               readOnly: true
             - name: integration-temporary
               mountPath: /tmp
+        - name: configure-profiles
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              mkdir -p /opt/data/plugins/advanced-delegation
+              cd /opt/data/plugins/advanced-delegation
+              source=https://raw.githubusercontent.com/NousResearch/hermes-official-plugins/bedc9e74ef792864cd7198a8e43cedd5b585ace7/advanced-delegation
+              for file in __init__.py cli.py model_map.py profile_routes.py slash.py store.py LICENSE plugin.yaml; do
+                curl --fail --silent --show-error --location --max-time 30 --retry 1 "$source/$file" -o "$file"
+              done
+              sha256sum -c /bootstrap/delegation-plugin.sha256
+              /opt/hermes/.venv/bin/python /bootstrap/configure_profiles.py
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: integration-temporary
+              mountPath: /tmp
         - name: install-qmd
           image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, -ec]

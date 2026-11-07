@@ -1,5 +1,21 @@
 # Second Brain
 
+## Coding handoff
+
+You are the assistant. Delegate implementation, debugging, and code verification
+to a task with `profile: coder` using the native `delegate_task` tool. Include the
+absolute repository path, requested behavior, constraints, relevant context, and
+verification criteria. Ask coder to use terminal/file tools for code changes and
+to change into the repository before running tools. For a new checkout,
+use `/opt/data/profiles/coder/workspace`. Keep the delegation attached to this
+conversation so the user can inspect and steer its live subagent in Webapp.
+
+Report the parent conversation and child session IDs when available. Direct the
+user to this conversation's subagent panel at `https://hermes.${DOMAIN}` to follow
+the coder transcript and use Steer or Stop. Forward later task corrections with
+`delegate_task(action="steer", subagent_id=..., message=...)`; use its `list` action
+to find the active child when needed. Report its verified result and any blocker.
+
 ## Storage
 
 - **Vault and wiki:** `/opt/data/obsidian/vault`.

@@ -18,6 +18,39 @@ every startup, including existing profiles. Other live profile settings remain
 on the persistent volume. After deployment, verify Authentik sign-in at both
 addresses and `hermes webapp --status` in the Hermes container.
 
+## Assistant and coder
+
+The existing Discord profile is displayed as `assistant`; its built-in ID stays
+`default` to preserve sessions, memory, and model authentication. Startup creates
+a blank `coder` profile and reconciles [coder.yaml](coder.yaml),
+[coder-soul.md](coder-soul.md), and the assistant's native profile delegation route.
+Coder inherits the root Codex OAuth grant through Hermes's native fallback; keep
+its `auth.json` absent rather than copying rotating OAuth tokens.
+
+Ask assistant in Discord to implement a task and provide the repository path or
+clone URL. Open the same Discord conversation in Webapp, expand its subagent
+panel, and read coder's live transcript. Use **Steer** to update the active task or
+**Stop** to interrupt it. A queued steer takes effect at the next tool checkpoint;
+verify the resulting behavior. The child transcript belongs to the assistant's
+conversation, so look there rather than in coder's separate chat history.
+Existing chats retain their saved delegation schema: use `/new`, or run
+`/delegation profile_routes --now` once to rebuild the current chat's tools.
+
+New checkouts belong in `/opt/data/profiles/coder/workspace` on `hermes-data`;
+`/opt/data/workspace/homelab` is an ephemeral service workspace. Coder has no
+personal MCP server configuration. Native delegated tasks inherit the parent's
+toolsets, and profiles share one container and Unix user; this is a workflow
+separation rather than an access boundary. Use normal interactive sessions for
+profile delegation; frozen managed-worker sessions cannot switch to another
+profile.
+
+`configure-profiles` verifies the immutable official `advanced-delegation` plugin
+against [delegation-plugin.sha256](delegation-plugin.sha256) and fails startup if
+it cannot prepare the route. Git owns these profile settings and coder's SOUL;
+change their source files instead of editing them in the dashboard. Other live
+assistant settings and both profiles' histories remain on the PVC. Configuration
+backups taken before the initial migration remain under `/opt/data/backups`.
+
 ## Behavior and search
 
 [second-brain.md](second-brain.md) owns source selection, knowledge capture, and
@@ -94,5 +127,6 @@ persistent volume. Preserve custom skill content when resolving conflicts.
 
 Hermes v0.23 supplies the native OAuth issuer normalization used by TickTick;
 no provider file is overlaid. Langfuse dependencies use pip's pinned hashes, and
-the official plugin files use SHA-256 checks. Plugin selection is seeded only
-for a new profile; manage an existing profile with Hermes's native configuration.
+the official plugin files use SHA-256 checks. Langfuse selection is seeded only
+for a new profile; manage its selection with Hermes's native configuration.
+The coding route's plugin selection is reconciled on every startup.

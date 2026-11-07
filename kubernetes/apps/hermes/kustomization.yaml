@@ -8,6 +8,10 @@ configMapGenerator:
   - name: hermes-bootstrap
     files:
       - config.yaml
+      - coder.yaml
+      - coder-soul.md
+      - configure_profiles.py
+      - delegation-plugin.sha256
       - browser-cloud.patch
       - mcp-servers.yaml
       - webhook.yaml
