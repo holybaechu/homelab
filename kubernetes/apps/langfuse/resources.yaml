@@ -206,7 +206,7 @@ spec:
               mountPath: /tmp
         - name: minio
           # Official Compose uses the Chainguard MinIO distribution.
-          image: cgr.dev/chainguard/minio:latest@sha256:cee9a8e35885e93f14b3cb32960e5017aff74e2adfb52ba87c65003b0163886b
+          image: cgr.dev/chainguard/minio:latest@sha256:869ca3178831d9f521ea02258a0f0d4fbc1e9f84302e707514e1f861b860865d
           args: [server, --address, '0.0.0.0:9090', --console-address, '127.0.0.1:9091', /data]
           env:
             - name: MINIO_ROOT_USER
