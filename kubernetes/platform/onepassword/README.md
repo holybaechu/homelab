@@ -271,7 +271,14 @@ allowlisted HTTP/auth hints, never raw output. For `source-get` failures, check 
 reported CLI category, account sign-in and vault-read access; for `preview-edit`,
 check edit support/permissions.
 `source-validation`, `preview-comparison` and `snapshot-comparison` failures require
-local source/CLI review, not bypassing the checks. A failure before a write explicitly
+local source/CLI review, not bypassing the checks. Preview/read-back mismatches
+include a bounded structural diff: fixed property paths, anonymous field/property
+indexes, types and presence/change markers only, never values or dynamic names.
+Indexes identify entries in that comparison, not persistent field IDs. Invalid
+item shapes are marked as raw-structure diagnostics rather than compared content.
+Return this sanitized diff with the failure; do not share raw item JSON. Additional
+metadata/default differences must be proven harmless before changing comparison rules.
+A failure before a write explicitly
 reports no writes; apply reports successful write commands separately from verified
 read-backs. A failed write command has an unknown outcome: inspect that item's
 history before rerunning. Return only the helper's sanitized PASS/FAIL output,
