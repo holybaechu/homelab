@@ -282,7 +282,7 @@ class StagingVerificationTests(unittest.TestCase):
         source.update(title="PRIVATE_TITLE", vault={"id": "PRIVATE_VAULT"},
                       files=[{"name": "PRIVATE_FILE"}], urls=[{"href": "PRIVATE_URL"}])
         source["sections"][0]["label"] = "PRIVATE_SECTION"
-        source["fields"][2]["section"] = {"id": "add more"}
+        source["fields"][2]["section"] = None
         source["fields"].append({"id": "PRIVATE_ID", "value": "PRIVATE_VALUE"})
         with patch.object(staging, "read_source", return_value=source), \
                 patch.object(staging, "read_resource") as resources, \
@@ -293,12 +293,72 @@ class StagingVerificationTests(unittest.TestCase):
         for text in ("item-match=true vault-match=false title-match=false",
                      "files-count=1 urls-count=1", "unreviewed-fields-count=1",
                      "section-index=0 id-reviewed=true label-present=true",
-                     "section-match=false section-present=true section-index=0"):
+                     "section-match=false section-present=false section-index=none"):
             self.assertIn(text, output)
         self.assertNotIn("PRIVATE", output)
         self.assertNotIn("PASS", output)
         with self.assertRaises(staging.CheckFailure):
             staging.verify_source(source, {}, contract)
+
+    def test_zipline_reviewed_section_and_existing_reference_remain_strict(self):
+        contract = staging.CONTRACTS["zipline-connect"]
+        source, replacement = self.source_fixture(contract)
+        staging.verify_source(source, replacement, contract)
+        for section in (None, {"id": "other"}):
+            changed = copy.deepcopy(source)
+            changed["fields"][2]["section"] = section
+            with self.assertRaisesRegex(staging.CheckFailure, "source-field-section"):
+                staging.verify_source(changed, replacement, contract)
+        value = base64.b64decode(replacement["data"]["hermes-api-token"])
+        for actual in (value, value + b"\n", b"", b"PRIVATE_VALUE"):
+            with self.subTest(matches=actual == value), patch.object(
+                staging.subprocess, "run", return_value=staging.subprocess.CompletedProcess([], 0, actual)
+            ) as run:
+                if actual == value:
+                    staging.verify_references(replacement, contract)
+                else:
+                    with self.assertRaisesRegex(staging.CheckFailure, "source-reference-bytes"):
+                        staging.verify_references(replacement, contract)
+                self.assertEqual(run.call_args.args[0], [
+                    "op", "read", "--no-newline",
+                    "op://Homelab/Zipline/mq3jr7zyvy5zyff2zzpz7zrmgq"])
+                self.assertTrue(run.call_args.kwargs["capture_output"])
+
+    def test_reference_read_failure_blocks_pass_without_leaking_output(self):
+        contract = staging.CONTRACTS["zipline-connect"]
+        source, replacement = self.source_fixture(contract)
+        error = staging.subprocess.CalledProcessError(
+            1, ["PRIVATE_COMMAND"], output=b"PRIVATE_VALUE", stderr=b"PRIVATE_ERROR")
+        with patch.object(staging, "read_resource", return_value=replacement), \
+                patch.object(staging, "read_source", return_value=source), \
+                patch.object(staging, "verify"), \
+                patch.object(staging.subprocess, "run", side_effect=error), \
+                contextlib.redirect_stdout(io.StringIO()) as out, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(staging.main(["zipline-connect"]), 1)
+        output = out.getvalue() + err.getvalue()
+        self.assertIn("stage=verify source-reference/", output)
+        self.assertIn("category=command-failed exit=1", output)
+        self.assertNotIn("PRIVATE", output)
+        self.assertNotIn("PASS", output)
+
+    def test_url_diagnostics_hide_labels_and_values_and_do_not_allow_urls(self):
+        contract = staging.CONTRACTS["langfuse-connect"]
+        source, replacement = self.source_fixture(contract)
+        for label, empty, collision, reviewed in (
+            ("", True, False, False),
+            ("PRIVATE_LABEL", False, False, False),
+            ("salt", False, True, True),
+            (" salt ", False, True, True),
+        ):
+            source["urls"] = [{"label": label, "href": "PRIVATE_URL"}]
+            output = "\n".join(staging.source_metadata_summary(source, contract))
+            for key, value in (("operator-key-empty", empty),
+                               ("field-key-collision", collision), ("key-reviewed", reviewed)):
+                self.assertIn(f"{key}={str(value).lower()}", output)
+            self.assertNotIn("PRIVATE", output)
+            with self.assertRaisesRegex(staging.CheckFailure, "source-identity-or-extra-content"):
+                staging.verify_source(source, replacement, contract)
 
     def test_metadata_mode_sanitizes_malformed_data_and_continues(self):
         with patch.object(staging, "read_source", return_value={"fields": ["PRIVATE"]}), \

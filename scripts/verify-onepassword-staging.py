@@ -51,6 +51,9 @@ CONTRACTS = {
         "sources": {"zipline-env": {
             "CORE_SECRET": "core-secret", "OAUTH_OIDC_CLIENT_SECRET": "oidc-client-secret",
         }},
+        "references": {
+            "op://Homelab/Zipline/mq3jr7zyvy5zyff2zzpz7zrmgq": "hermes-api-token",
+        },
     },
     "langfuse-connect": {
         "namespace": "homelab", "name": "langfuse-connect",
@@ -82,7 +85,7 @@ SOURCE_LABELS = {
     "ia7seg53btlz2t4xluwkzmfjly": ("Zipline", {
         "eteoaoehfwqkierraxfgbx5xru": ("core-secret", "add more"),
         "6rvlh45inzbb55zwnyi53spfne": ("oidc-client-secret", "add more"),
-        "mq3jr7zyvy5zyff2zzpz7zrmgq": ("hermes-api-token", None),
+        "mq3jr7zyvy5zyff2zzpz7zrmgq": ("hermes-api-token", "add more"),
     }),
     "77j3ul6ntreertxl3bjkdko4h4": ("Langfuse", {
         "postgres_password": ("postgresql-password", None),
@@ -155,6 +158,16 @@ def source_metadata_summary(source, contract):
         f"fields-count={len(fields)} sections-count={len(sections)} "
         f"unreviewed-fields-count={sum(f['id'] not in {*labels, 'notesPlain'} for f in fields)}",
     ]
+    field_keys = {operator_key(f.get("label", "")) for f in fields}
+    for index, url in enumerate(source.get("urls") or []):
+        label = url.get("label") or ""
+        key = operator_key(label)
+        lines.append(f"url-index={index} " + " ".join(
+            f"{name}={str(value).lower()}" for name, value in (
+                ("label-empty", not label), ("operator-key-empty", not key),
+                ("field-key-collision", bool(key) and key in field_keys),
+                ("key-reviewed", bool(key) and key in contract["allowed"]),
+                ("href-present", bool(url.get("href"))))))
     for index, section in enumerate(sections):
         known = section["id"] in expected_sections
         lines.append(f"section-index={index} id-reviewed={str(known).lower()} "
@@ -222,6 +235,17 @@ def verify_source(source, replacement, contract):
     if expected != actual:
         different = sorted(key for key in expected if expected[key] != actual[key])
         raise CheckFailure("source-replacement-bytes keys=" + ",".join(different))
+
+
+def verify_references(replacement, contract):
+    data = decode_data(replacement)
+    for reference, key in contract.get("references", {}).items():
+        result = subprocess.run(
+            ["op", "read", "--no-newline", reference],
+            stdin=subprocess.DEVNULL, capture_output=True, check=True,
+        )
+        if not result.stdout or result.stdout != data.get(key):
+            raise CheckFailure(f"source-reference-bytes key={key}")
 
 
 def read_resource(kind, name, namespace):
@@ -358,6 +382,9 @@ def main(argv=None):
         if source is not None and replacement is not None:
             attempt("verify 1Password/Item/" + contract["item_id"] + "+" + secret_target,
                     verify_source, source, replacement, contract)
+            if contract.get("references"):
+                attempt("verify source-reference/" + contract['item_id'],
+                        verify_references, replacement, contract)
         if errors:
             failed = True
             for error in errors:
