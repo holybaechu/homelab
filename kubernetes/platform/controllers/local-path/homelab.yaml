@@ -1,0 +1,64 @@
+# The clusters/homelab layer already owns this Namespace and its security labels.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: local-path-storage
+$patch: delete
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: local-path-provisioner
+  namespace: local-path-storage
+spec:
+  template:
+    spec:
+      containers:
+        - name: local-path-provisioner
+          # Do not enable upstream's debug logging.
+          command: [local-path-provisioner, start, --config, /etc/config/config.json]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+# Both retention safeguards are intentional; never inherit upstream's Delete/rm.
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: local-path-config
+  namespace: local-path-storage
+data:
+  config.json: |
+    {
+      "nodePathMap": [{"node": "DEFAULT_PATH_FOR_NON_LISTED_NODES", "paths": ["${DATA_PATH}"]}]
+    }
+  teardown: |
+    #!/bin/sh
+    set -eu
+    printf "%s\n" "Retaining volume directory"
+  helperPod.yaml: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: helper-pod
+    spec:
+      priorityClassName: system-node-critical
+      tolerations:
+      - key: node.kubernetes.io/disk-pressure
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: helper-pod
+        image: docker.io/library/busybox:1.38.0
+        imagePullPolicy: IfNotPresent
