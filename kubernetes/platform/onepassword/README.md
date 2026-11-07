@@ -1,8 +1,9 @@
 # 1Password Connect, Operator and Injector
 
 This layer uses the official [Connect/Operator and Injector charts](https://github.com/1Password/connect-helm-charts).
-Its Flux Kustomization is active after out-of-band bootstrap. It does not replace
-the working ESO SDK store or any active consumer yet. Keep ESO running until every
+Its Flux Kustomization is active after out-of-band bootstrap. MySQL and n8n's
+environment use verified Operator replacements; the ESO SDK store still serves
+the remaining consumers. Keep ESO running until every
 consumer below has moved and its replacement has been verified.
 
 Connect is an internal ClusterIP service at
@@ -152,16 +153,18 @@ Do not turn the ESO Go templates into literal Operator item fields. Keep safe
 format-specific rendering and validation with each owning app rather than adding
 a generic replacement templating controller.
 
-## Staged MySQL and n8n replacements
+## MySQL and n8n replacements
 
 `mysql-connect` and `n8n-connect` are separate Operator-owned Secrets, sourced
 from the existing items by their verified vault/item IDs. No credentials or item
-labels need changing for these two sources. Their creation does **not** switch
-any consumer: `mysql-env`, `n8n-env`, `hermes-webhook` and all existing ESO templates remain
-in service. Do not delete either OnePasswordItem while its Secret is in use;
+labels need changing for these two sources. MySQL and both n8n containers now use
+explicit keys from these replacements after administrative byte-parity checks.
+`mysql-env` and `n8n-env` remain for rollback, without active consumers;
+`hermes-webhook` and all existing ESO templates remain in service.
+Do not delete either OnePasswordItem while its Secret is in use;
 the Operator finalizer deletes the corresponding Secret.
 
-Before cutover, run this read-only check from an administrative checkout with
+Before any future cutover or rollback verification, run this read-only check from an administrative checkout with
 permission to read the two OnePasswordItems and their Secrets:
 
 ```sh
@@ -174,7 +177,7 @@ A denied read or any mismatch exits nonzero. Return only the two PASS lines, not
 Secret JSON. This check is intentionally unavailable to the agent's restricted
 identity; do not grant it Secret access or run the check inside a new workload.
 
-After both checks pass, a separate consumer change must use explicit keys:
+The consumer mappings preserve these contracts:
 
 - MySQL: map `username`, `password`, `root_password` to its existing environment
   and password-file paths (`root-password` remains the projected filename).

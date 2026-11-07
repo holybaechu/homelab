@@ -60,6 +60,13 @@ and Hermes tracing follows its native settings.
 
 ## Secrets and recovery
 
+The official 1Password Operator supplies `n8n-connect`. Both the server and import
+container explicitly select `encryption_key`, `username` and `owner_password_hash`;
+the item's login password and webhook key are not exposed to either environment.
+Reloader watches the replacement through these references. `n8n-env` remains on
+ESO only for rollback; restore the three original environment mappings to use it.
+Do not delete the replacement OnePasswordItem while its Secret is consumed.
+
 External Secrets supplies the shared token to both apps. At n8n startup, its
 official `import:credentials` command reconciles **Hermes webhook** and the native
 **Perplexity Decider** API credential. `PERPLEXITY_API_KEY_REF` reuses the existing

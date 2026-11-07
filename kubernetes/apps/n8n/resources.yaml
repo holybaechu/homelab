@@ -42,10 +42,23 @@ spec:
       initContainers:
         - name: import-workflow-credentials
           image: docker.n8n.io/n8nio/n8n:2.46.6
-          command: [n8n, import:credentials, --input=/run/secrets/n8n/credentials.json]
-          envFrom:
-            - secretRef:
-                name: n8n-env
+          command: [n8n, "import:credentials", --input=/run/secrets/n8n/credentials.json]
+          env:
+            - name: N8N_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-connect
+                  key: encryption_key
+            - name: N8N_INSTANCE_OWNER_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-connect
+                  key: username
+            - name: N8N_INSTANCE_OWNER_PASSWORD_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-connect
+                  key: owner_password_hash
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -68,10 +81,22 @@ spec:
       containers:
         - name: n8n
           image: docker.n8n.io/n8nio/n8n:2.46.6
-          envFrom:
-            - secretRef:
-                name: n8n-env
           env:
+            - name: N8N_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-connect
+                  key: encryption_key
+            - name: N8N_INSTANCE_OWNER_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-connect
+                  key: username
+            - name: N8N_INSTANCE_OWNER_PASSWORD_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-connect
+                  key: owner_password_hash
             - name: TZ
               value: ${TIME_ZONE}
             - name: GENERIC_TIMEZONE

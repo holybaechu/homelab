@@ -61,7 +61,7 @@ spec:
             - name: MYSQL_USER
               valueFrom:
                 secretKeyRef:
-                  name: mysql-env
+                  name: mysql-connect
                   key: username
             - name: MYSQL_PASSWORD_FILE
               value: /run/secrets/mysql/password
@@ -122,8 +122,13 @@ spec:
           emptyDir: {}
         - name: credentials
           secret:
-            secretName: mysql-env
+            secretName: mysql-connect
             defaultMode: 0440
+            items:
+              - key: password
+                path: password
+              - key: root_password
+                path: root-password
         - name: tls
           secret:
             secretName: mysql-tls
