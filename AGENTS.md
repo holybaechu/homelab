@@ -9,6 +9,8 @@ readable scripts, and easy maintenance by one person.
 - Make the smallest change that fulfills the request. Keep unrelated cleanup separate.
 - Prefer existing configuration options and direct code. Keep one-off logic local;
   introduce abstractions or dependencies only when the current task needs them.
+- Avoid speculative helpers, configuration knobs, fallback chains, and comments or
+  docstrings that merely restate the code. Do not refactor unrelated code.
 - Build for the cluster and environments this repository actually supports. Add
   portability, fallback behavior, and configurability only for a concrete requirement.
 - Keep tooling lightweight. Add automation or process only when requested or needed
@@ -55,8 +57,9 @@ readable scripts, and easy maintenance by one person.
 
 ## Documentation
 
-- Keep READMEs short: purpose, setup entry point, essential cautions, and links.
-  Put feature details and implementation notes in the relevant app or infrastructure guide.
+- Add documentation only for a changed user/operator contract or a non-obvious
+  decision. Update the existing owning guide; do not add a summary or changelog
+  for each change. Keep essential setup, security, upgrade, and recovery guidance.
 - Write instructions people can act on. Use short paragraphs, steps for procedures,
   and tables for shortcuts. Cut repetition and obvious explanations.
 - Document each fact once. Update its owning guide and check links when moving
@@ -78,9 +81,12 @@ readable scripts, and easy maintenance by one person.
   node application and real cluster state.
 - Run relevant retained app tests when changing their behavior; use the matching
   workflows under `.github/workflows/` for dependencies and container environments.
-  Add a test only for a concrete regression that is difficult to check manually.
-  Reuse fixtures and keep machine interactions mocked or isolated. Prefer
-  representative behavior checks; coverage targets and exhaustive combinations are unnecessary.
+  Use existing checks first, then add risk-based tests for observable behavior and
+  concrete regressions, especially auth, security, data loss, and upgrades.
+- Avoid duplicate tests, excessive mocks, brittle implementation assertions, and
+  tests of static text unless safety-critical. Do not require TDD, coverage targets,
+  or unrelated full-suite runs. Keep valuable tests and documentation; remove or
+  condense only content whose purpose has been checked and found redundant.
 
 ## Commits and pull requests
 

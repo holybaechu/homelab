@@ -8,6 +8,7 @@ configMapGenerator:
   - name: hermes-bootstrap
     files:
       - config.yaml
+      - assistant-soul.md
       - coder.yaml
       - coder-soul.md
       - configure_profiles.py
