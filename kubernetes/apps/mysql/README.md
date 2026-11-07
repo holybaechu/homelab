@@ -17,12 +17,21 @@ Create a Login item named `MySQL Temporary` in the `Homelab` 1Password vault:
 - `password`: generated application password
 - `root_password`: separate generated password, custom field outside any section
 
-External Secrets reads these fields through the references in
-`kubernetes/clusters/homelab/onepassword.yaml`. The application user has access to
+The official 1Password Operator supplies `mysql-connect` from the existing item.
+The workload selects only its username and two password keys, projecting
+`root_password` as `root-password`. The old ESO target `mysql-env` is retained for
+rollback but is not consumed. The application user has access to
 the `temp` database. Root access is restricted to localhost inside the container.
 Credentials initialize an empty data directory only: editing 1Password later does
 not change existing MySQL accounts. Use SQL to rotate an existing account and
 update 1Password to match.
+
+Only TLS changes trigger Reloader; credential changes do not restart MySQL.
+Coordinate SQL password changes with the source update and verify the authenticated
+readiness probe before restarting manually. To roll back the source cutover,
+restore both workload references to `mysql-env` and remove the password-key
+projection (its old key is `root-password`). Do not delete `mysql-connect` while
+in use: deleting its OnePasswordItem also deletes the replacement Secret.
 
 ## Connect
 
