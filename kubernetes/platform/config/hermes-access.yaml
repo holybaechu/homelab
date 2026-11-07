@@ -5,6 +5,14 @@ metadata:
   namespace: homelab
 automountServiceAccountToken: false
 ---
+apiVersion: talos.dev/v1alpha1
+kind: ServiceAccount
+metadata:
+  name: hermes-talos-managed
+  namespace: homelab
+spec:
+  roles: [os:admin]
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

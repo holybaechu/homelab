@@ -74,15 +74,20 @@ Only the Hermes container mounts the one-hour projected Kubernetes token and
 cluster CA. Kubelet rotates the token; the nonsecret kubeconfig reads `tokenFile`
 on each invocation. No token is embedded in configuration or copied to the PVC.
 
-Talos uses a dedicated one-year `os:admin` client certificate in the existing
-`Talos` 1Password item's `hermes_talosconfig` field. `HERMES_TALOSCONFIG_REF`
-feeds `hermes-talos` through the shared External Secrets store; `TALOSCONFIG`
-points directly to its read-only Secret mount. It contains no CA signing key or
-OpenTofu state. The Talos API firewall also allows the cluster Pod CIDR; client
-certificates remain required. Before expiry, issue a replacement with an existing administrator's
-`talosctl config new <private-path> --roles os:admin --crt-ttl 8760h`, set its
-endpoint/node to `NODE_IP`, and update the same concealed field. Respect the shared
-refresh interval and cache; Reloader restarts Hermes after Secret changes.
+Talos's native `ServiceAccount` controller issues and renews the `os:admin`
+certificate in `hermes-talos-managed`. Certificates last six hours and renew with
+less than one hour remaining. `TALOSCONFIG` reads its read-only Secret mount on
+each invocation; the CA signing key stays on the node. Reloader watches only the
+other app Secrets, so certificate renewal does not restart Hermes.
+
+`KubeTalosAPIAccessConfig` allows this issuance only in `homelab`, with roles
+bounded to `os:admin`. Only authorized operators and Flux may create the Talos
+ServiceAccount resources. The Talos API firewall allows the cluster Pod CIDR;
+client certificates remain required. Enable the node feature before reconciling
+`platform-config`, because Talos installs the required CRD. Other app credentials
+continue to use 1Password and External Secrets. The original `hermes_talosconfig`
+field remains in the `Talos` 1Password item for migration recovery; the Pod no
+longer uses it and has no yearly client-certificate renewal procedure.
 
 Activating these mounts replaces Hermes because its Deployment uses `Recreate`.
 Verify from the Hermes container with `kubectl get nodes,pv`, `kubectl get pods,pvc

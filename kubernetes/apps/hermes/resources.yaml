@@ -15,7 +15,7 @@ kind: Deployment
 metadata:
   name: hermes
   annotations:
-    reloader.stakater.com/auto: "true"
+    secret.reloader.stakater.com/reload: hermes-discord,hermes-web,hermes-browser,hermes-webhook,hermes-langfuse,hermes-coder-git,hermes-immich,hermes-obsidian,hermes-services
 spec:
   replicas: 1
   strategy:
@@ -735,8 +735,11 @@ spec:
       volumes:
         - name: talos-identity
           secret:
-            secretName: hermes-talos
+            secretName: hermes-talos-managed
             defaultMode: 0444
+            items:
+              - key: config
+                path: talosconfig
         - name: kubernetes-identity
           projected:
             defaultMode: 0444

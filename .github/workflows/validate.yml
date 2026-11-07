@@ -55,7 +55,7 @@ jobs:
           # Skip CRD definitions and custom resources; validate native workloads and configuration.
           kubeconform -strict -summary \
             -kubernetes-version "$(yq -r '.data.KUBERNETES_VERSION | sub("^v", "")' kubernetes/clusters/homelab/settings.yaml)" \
-            -skip CustomResourceDefinition,Certificate,ClusterIssuer,ClusterSecretStore,ExternalSecret,HelmRelease,HelmRepository,IngressRoute,Kustomization,Middleware,TLSStore \
+            -skip CustomResourceDefinition,Certificate,ClusterIssuer,ClusterSecretStore,ExternalSecret,HelmRelease,HelmRepository,IngressRoute,Kustomization,Middleware,TLSStore,talos.dev/v1alpha1/ServiceAccount \
             "$RUNNER_TEMP/rendered/authored.yaml"
       - name: Render and validate isolated Talos configuration
         if: ${{ inputs.talos }}
@@ -91,6 +91,8 @@ jobs:
               ([.ingress[].subnet] | sort) == ([$node, $pods] | sort)) and
             any(.[]; .kind == "NetworkRuleConfig" and .name == "talos-api" and
               .portSelector.ports == [50000] and .portSelector.protocol == "tcp" and
-              ([.ingress[].subnet] | index($pods)) != null)
+              ([.ingress[].subnet] | index($pods)) != null) and
+            any(.[]; .kind == "KubeTalosAPIAccessConfig" and
+              .allowedRoles == ["os:admin"] and .allowedKubernetesNamespaces == ["homelab"])
           ' > /dev/null
       - run: git diff --check

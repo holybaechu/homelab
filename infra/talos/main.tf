@@ -70,6 +70,12 @@ locals {
   ]
   config_patches = concat([
     yamlencode({
+      apiVersion                  = "v1alpha1"
+      kind                        = "KubeTalosAPIAccessConfig"
+      allowedRoles                = ["os:admin"]
+      allowedKubernetesNamespaces = ["homelab"]
+    }),
+    yamlencode({
       apiVersion = "v1alpha1"
       kind       = "UnattendedInstallConfig"
       installer  = { image = local.installer_image }
