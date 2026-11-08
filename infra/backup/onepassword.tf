@@ -1,3 +1,12 @@
+variable "scaleway_runtime_item_title" {
+  type    = string
+  default = ""
+  validation {
+    condition     = !(var.provision_scaleway && var.provision_runtime_credentials) || (length(trimspace(var.scaleway_runtime_item_title)) > 0 && var.scaleway_runtime_item_title != "homelab-backup-b2")
+    error_message = "Supply a separately approved, collision-checked Scaleway runtime item title, distinct from B2."
+  }
+}
+
 variable "onepassword_vault_id" {
   type        = string
   default     = ""
@@ -11,15 +20,15 @@ variable "onepassword_vault_id" {
 provider "onepassword" {}
 
 locals {
-  runtime_destinations = var.provision_runtime_credentials ? toset(concat(["b2"], var.provision_ovh ? ["ovh"] : [])) : toset([])
+  runtime_destinations = var.provision_runtime_credentials ? toset(concat(["b2"], var.provision_scaleway ? ["scaleway"] : [])) : toset([])
   runtime_credentials = {
     b2 = var.provision_runtime_credentials ? {
       access_key = b2_application_key.runtime[0].application_key_id
       secret_key = b2_application_key.runtime[0].application_key
     } : null
-    ovh = var.provision_ovh && var.provision_runtime_credentials ? {
-      access_key = ovh_cloud_project_user_s3_credential.runtime[0].access_key_id
-      secret_key = ovh_cloud_project_user_s3_credential.runtime[0].secret_access_key
+    scaleway = var.provision_scaleway && var.provision_runtime_credentials ? {
+      access_key = scaleway_iam_api_key.runtime[0].access_key
+      secret_key = scaleway_iam_api_key.runtime[0].secret_key
     } : null
   }
 }
@@ -27,7 +36,7 @@ locals {
 resource "onepassword_item" "runtime" {
   for_each = local.runtime_destinations
   vault    = var.onepassword_vault_id
-  title    = "homelab-backup-${each.key}"
+  title    = each.key == "b2" ? "homelab-backup-b2" : var.scaleway_runtime_item_title
   category = "password"
   section {
     label = "credentials"

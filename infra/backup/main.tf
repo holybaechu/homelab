@@ -9,9 +9,9 @@ terraform {
       source  = "1Password/onepassword"
       version = "3.4.1"
     }
-    ovh = {
-      source  = "ovh/ovh"
-      version = "2.23.0"
+    scaleway = {
+      source  = "scaleway/scaleway"
+      version = "2.91.0"
     }
   }
   backend "local" {
@@ -45,33 +45,68 @@ variable "state_passphrase" {
   }
 }
 
-variable "provision_ovh" {
+variable "provision_scaleway" {
   type        = bool
   default     = false
-  description = "Enable only after the existing project is activated, SGP availability and the separate bucket owner are verified."
+  description = "Enable only after account verification, approved names/region, dedicated-project isolation and bootstrap authorization. Not a teardown switch."
 }
 
 variable "provision_runtime_credentials" {
   type        = bool
   default     = false
-  description = "Enable only after an authorized administrator can securely persist generated credentials to the approved 1Password items."
+  description = "Enable only after an authorized Windows-local SDK writer and independent recovery are verified."
 }
 
-variable "ovh_owner_user_id" {
-  type        = string
-  default     = ""
-  description = "Verified existing project Object Storage owner user ID, separate from the runtime user; never inferred or automatically created."
+variable "scaleway_organization_id" {
+  type    = string
+  default = ""
+  validation {
+    condition     = !var.provision_scaleway || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.scaleway_organization_id))
+    error_message = "Supply the verified Scaleway organization UUID before provisioning."
+  }
+}
+
+variable "scaleway_project_name" {
+  type    = string
+  default = ""
+  validation {
+    condition     = !var.provision_scaleway || length(trimspace(var.scaleway_project_name)) > 0
+    error_message = "Supply the explicitly approved dedicated backup project name."
+  }
+}
+
+variable "scaleway_bucket_name" {
+  type    = string
+  default = ""
+  validation {
+    condition     = !var.provision_scaleway || can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.scaleway_bucket_name))
+    error_message = "Supply the approved private bucket name (3-63 lowercase alphanumeric/hyphen characters)."
+  }
+}
+
+variable "scaleway_region" {
+  type    = string
+  default = ""
+  validation {
+    condition     = !var.provision_scaleway || contains(["fr-par", "nl-ams", "pl-waw"], var.scaleway_region)
+    error_message = "Supply an approved supported region after verifying Standard One Zone availability there."
+  }
+}
+
+variable "scaleway_runtime_name" {
+  type    = string
+  default = ""
+  validation {
+    condition     = !(var.provision_scaleway && var.provision_runtime_credentials) || length(trimspace(var.scaleway_runtime_name)) > 0
+    error_message = "Supply the explicitly approved Scaleway application/policy/key description."
+  }
 }
 
 provider "b2" {}
 
-provider "ovh" {
-  endpoint = "ovh-ca"
-}
-
-locals {
-  ovh_project_id = "ca114dc8826842a093ba32f8ead79f99"
-  ovh_bucket     = "homelab-backup-ovh"
+provider "scaleway" {
+  organization_id = var.scaleway_organization_id != "" ? var.scaleway_organization_id : null
+  region          = var.scaleway_region != "" ? var.scaleway_region : null
 }
 
 import {
@@ -100,82 +135,59 @@ resource "b2_application_key" "runtime" {
   lifecycle { prevent_destroy = true }
 }
 
-# Read the onboarding project; never order, upgrade, rename or delete it here.
-data "ovh_cloud_project" "backup" {
-  service_name = local.ovh_project_id
-}
-
-resource "ovh_cloud_storage_object_bucket" "backup" {
-  count         = var.provision_ovh ? 1 : 0
-  service_name  = data.ovh_cloud_project.backup.service_name
-  name          = local.ovh_bucket
-  region        = "SGP"
-  owner_user_id = var.ovh_owner_user_id
-  encryption = {
-    algorithm = "AES256"
-  }
-  versioning = {
-    status = "DISABLED"
-  }
-  lifecycle {
-    prevent_destroy = true
-    precondition {
-      condition = (
-        data.ovh_cloud_project.backup.status == "ok" &&
-        data.ovh_cloud_project.backup.plan_code != "project.discovery" &&
-        length(data.ovh_cloud_project.backup.plan_code) > 0 &&
-        length(var.ovh_owner_user_id) > 0
-      )
-      error_message = "Stop: verify activation of the existing project and a separate owner user; IaC must not bypass discovery eligibility or billing activation."
-    }
-  }
-}
-
-resource "ovh_cloud_project_user" "runtime" {
-  count        = var.provision_ovh && var.provision_runtime_credentials ? 1 : 0
-  service_name = local.ovh_project_id
-  description  = "homelab-backup-ovh"
-  role_names   = ["objectstore_operator"]
-  depends_on   = [ovh_cloud_storage_object_bucket.backup]
+resource "scaleway_account_project" "backup" {
+  count                 = var.provision_scaleway ? 1 : 0
+  name                  = var.scaleway_project_name
+  organization_id       = var.scaleway_organization_id
+  delete_with_resources = false
   lifecycle { prevent_destroy = true }
 }
 
-resource "ovh_cloud_project_user_s3_policy" "runtime" {
-  count        = var.provision_ovh && var.provision_runtime_credentials ? 1 : 0
-  service_name = local.ovh_project_id
-  user_id      = ovh_cloud_project_user.runtime[0].id
-  policy = jsonencode({
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["s3:ListBucket", "s3:GetBucketLocation", "s3:ListBucketMultipartUploads"]
-        Resource = ["arn:aws:s3:::${local.ovh_bucket}"]
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListMultipartUploadParts", "s3:AbortMultipartUpload"]
-        Resource = ["arn:aws:s3:::${local.ovh_bucket}/*"]
-      },
-      {
-        Effect = "Deny"
-        Action = [
-          "s3:ListAllMyBuckets", "s3:CreateBucket", "s3:DeleteBucket",
-          "s3:PutBucketAcl", "s3:PutBucketCORS", "s3:PutBucketVersioning",
-          "s3:PutEncryptionConfiguration", "s3:PutLifecycleConfiguration",
-          "s3:PutBucketObjectLockConfiguration", "s3:PutObjectAcl",
-          "s3:PutObjectRetention", "s3:PutObjectLegalHold", "s3:BypassGovernanceRetention"
-        ]
-        Resource = ["*"]
-      }
-    ]
-  })
+resource "scaleway_object_bucket" "backup" {
+  count               = var.provision_scaleway ? 1 : 0
+  name                = var.scaleway_bucket_name
+  project_id          = scaleway_account_project.backup[0].id
+  region              = var.scaleway_region
+  force_destroy       = false
+  object_lock_enabled = false
+  versioning { enabled = false }
   lifecycle { prevent_destroy = true }
 }
 
-resource "ovh_cloud_project_user_s3_credential" "runtime" {
-  count        = var.provision_ovh && var.provision_runtime_credentials ? 1 : 0
-  service_name = local.ovh_project_id
-  user_id      = ovh_cloud_project_user.runtime[0].id
-  depends_on   = [ovh_cloud_project_user_s3_policy.runtime]
+resource "scaleway_object_bucket_acl" "backup" {
+  count                 = var.provision_scaleway ? 1 : 0
+  bucket                = scaleway_object_bucket.backup[0].id
+  project_id            = scaleway_account_project.backup[0].id
+  expected_bucket_owner = scaleway_account_project.backup[0].id
+  region                = var.scaleway_region
+  acl                   = "private"
+  lifecycle { prevent_destroy = true }
+}
+
+resource "scaleway_iam_application" "runtime" {
+  count           = var.provision_scaleway && var.provision_runtime_credentials ? 1 : 0
+  name            = var.scaleway_runtime_name
+  organization_id = var.scaleway_organization_id
+  lifecycle { prevent_destroy = true }
+}
+
+resource "scaleway_iam_policy" "runtime" {
+  count           = var.provision_scaleway && var.provision_runtime_credentials ? 1 : 0
+  name            = var.scaleway_runtime_name
+  organization_id = var.scaleway_organization_id
+  application_id  = scaleway_iam_application.runtime[0].id
+  rule {
+    project_ids          = [scaleway_account_project.backup[0].id]
+    permission_set_names = ["ObjectStorageReadOnly", "ObjectStorageObjectsWrite", "ObjectStorageObjectsDelete"]
+  }
+  lifecycle { prevent_destroy = true }
+}
+
+resource "scaleway_iam_api_key" "runtime" {
+  count              = var.provision_scaleway && var.provision_runtime_credentials ? 1 : 0
+  application_id     = scaleway_iam_application.runtime[0].id
+  default_project_id = scaleway_account_project.backup[0].id
+  description        = var.scaleway_runtime_name
+  depends_on         = [scaleway_iam_policy.runtime, scaleway_object_bucket_acl.backup]
   lifecycle { prevent_destroy = true }
 }

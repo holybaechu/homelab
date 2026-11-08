@@ -36,7 +36,6 @@ $conflicts = @(Get-ChildItem Env: | Where-Object {
 })
 if ($conflicts.Count) { Stop-Review 'Start a clean process without logging, CLI overrides or automation authentication.' }
 foreach ($name in @('OP_ACCOUNT', 'B2_APPLICATION_KEY_ID', 'B2_APPLICATION_KEY',
-                    'OVH_APPLICATION_KEY', 'OVH_APPLICATION_SECRET', 'OVH_CONSUMER_KEY',
                     'TF_VAR_state_passphrase')) {
     $value = [Environment]::GetEnvironmentVariable($name)
     if ([string]::IsNullOrWhiteSpace($value) -or $value.StartsWith('op://')) {
@@ -61,7 +60,7 @@ $env:TF_INPUT = '0'
 & tofu "-chdir=$source" init -input=false -lockfile=readonly "-backend-config=path=$statePath" 1>$null 2>$null
 if ($LASTEXITCODE -ne 0) { Stop-Review 'Initialization failed; no plan approved. Do not enable debug logs.' }
 & tofu "-chdir=$source" plan -input=false -detailed-exitcode "-out=$planPath" `
-    -var=provision_ovh=false -var=provision_runtime_credentials=false 1>$null 2>$null
+    -var=provision_scaleway=false -var=provision_runtime_credentials=false 1>$null 2>$null
 $planExit = $LASTEXITCODE
 if ($planExit -notin @(0, 2)) { Stop-Review 'Read-only plan failed; no plan approved. Check local authentication and cloud prerequisites privately.' }
 # Capture producer first; never pipe failed/partial decrypted output into a gate.
@@ -78,16 +77,11 @@ if ($managed.Count -ne 1 -or $managed[0].address -ne 'b2_bucket.backup' -or
     Stop-Review 'Stop: expected only the unchanged B2 bucket import. No apply authorized.'
 }
 foreach ($change in $changes) {
-    if ($change.mode -eq 'data') {
-        if ($change.address -ne 'data.ovh_cloud_project.backup' -or
-            ($change.change.actions -join ',') -notin @('read', 'no-op')) {
-            Stop-Review 'Unexpected data resource/action; stop.'
-        }
-    } elseif ($change.mode -ne 'managed') { Stop-Review 'Unexpected plan mode; stop.' }
+    if ($change.mode -ne 'managed') { Stop-Review 'Unexpected plan mode/resource; stop.' }
 }
 foreach ($change in $changes) {
     Write-Output ('{0}: {1}' -f $change.address, ($change.change.actions -join ','))
 }
 $plan = $null
 Write-Output 'PASS: unchanged B2 metadata import only. Encrypted plan retained; no import/apply performed.'
-Write-Output 'STOP here. SDK write authentication and OVH activation/runtime provisioning remain separate gates.'
+Write-Output 'STOP here. SDK write authentication and Scaleway account/naming/runtime provisioning remain separate gates.'
