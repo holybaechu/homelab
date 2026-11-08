@@ -73,8 +73,10 @@ before cutover. Reloader keeps observing the explicitly referenced replacement;
 Operator auto-restart stays disabled. Keep ESO's `langfuse-env` for rollback and
 its field-ID references unchanged. To roll back, restore the Secret names and
 key mappings in **both** `release.yaml` and `resources.yaml` together, without
-changing credentials or storage. Hermes still consumes the separate ESO-owned
-`hermes-langfuse` project-key Secret; this cutover does not restart or migrate it.
+changing credentials or storage. Hermes independently projects the two
+`hermes-project-*` keys from `langfuse-connect`, retaining the optional project-key
+behavior. Its coordinated cutover leaves ESO's `hermes-langfuse` for rollback;
+see the [Hermes activation boundary](../../platform/onepassword/README.md#remaining-hermes-n8n-and-signing-source-batch).
 
 Web and Worker must use the same release. Back up data before upgrades because
 startup runs database migrations; an older image may not support the migrated
