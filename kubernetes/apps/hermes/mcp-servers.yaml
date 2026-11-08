@@ -1,5 +1,21 @@
 # Git owns the full MCP server list, reconciled on every pod start.
 # OAuth credentials stay on the persistent volume, outside this ConfigMap.
+langfuse:
+  url: http://langfuse.homelab.svc.cluster.local:3000/api/public/mcp
+  headers:
+    Authorization: $${env:HERMES_LANGFUSE_MCP_AUTH}
+    Host: langfuse.${DOMAIN}
+  tools:
+    include:
+      - listObservations
+      - getObservation
+      - getObservationFieldSchema
+      - getObservationFilterSchema
+      - getObservationFilterValues
+      - queryMetrics
+      - getMetricsSchema
+    resources: false
+    prompts: false
 ticktick:
   url: https://mcp.ticktick.com
   auth: oauth

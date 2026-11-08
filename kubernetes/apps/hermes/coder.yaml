@@ -11,4 +11,8 @@ platforms:
   discord:
     enabled: false
 plugins:
-  enabled: []
+  enabled: [langfuse]
+  entries:
+    langfuse:
+      settings:
+        end_user_attribution: false
