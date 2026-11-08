@@ -157,8 +157,14 @@ resource "ovh_cloud_project_user_s3_policy" "runtime" {
         Resource = ["arn:aws:s3:::${local.ovh_bucket}/*"]
       },
       {
-        Effect   = "Deny"
-        Action   = ["s3:ListAllMyBuckets"]
+        Effect = "Deny"
+        Action = [
+          "s3:ListAllMyBuckets", "s3:CreateBucket", "s3:DeleteBucket",
+          "s3:PutBucketAcl", "s3:PutBucketCORS", "s3:PutBucketVersioning",
+          "s3:PutEncryptionConfiguration", "s3:PutLifecycleConfiguration",
+          "s3:PutBucketObjectLockConfiguration", "s3:PutObjectAcl",
+          "s3:PutObjectRetention", "s3:PutObjectLegalHold", "s3:BypassGovernanceRetention"
+        ]
         Resource = ["*"]
       }
     ]
