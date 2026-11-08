@@ -2,7 +2,7 @@
 
 Personal assistant with TickTick, a synced Obsidian vault, and existing homelab
 services. Flux applies this app from the apps layer. Credentials remain in
-1Password and arrive through External Secrets; model authentication and the live
+1Password and arrive through explicit 1Password Operator Secret projections; model authentication and the live
 profile remain on `hermes-data`.
 
 ## Web access
@@ -87,7 +87,7 @@ bounded to `os:admin`. Only authorized operators and Flux may create the Talos
 ServiceAccount resources. The Talos API firewall allows the cluster Pod CIDR;
 client certificates remain required. Enable the node feature before reconciling
 `platform-config`, because Talos installs the required CRD. Other app credentials
-continue to use 1Password and External Secrets. The original `hermes_talosconfig`
+continue to use 1Password Operator projections. The original `hermes_talosconfig`
 field remains in the `Talos` 1Password item for migration recovery; the Pod no
 longer uses it and has no yearly client-certificate renewal procedure.
 

@@ -63,17 +63,19 @@ and Hermes tracing follows its native settings.
 The official 1Password Operator supplies `n8n-connect`. Both the server and import
 container explicitly select `encryption_key`, `username` and `owner_password_hash`;
 the item's login password and webhook key are not exposed to either environment.
-Reloader watches the replacement through these references. `n8n-env` remains on
-ESO only for rollback; restore the three original environment mappings to use it.
-Do not delete the replacement OnePasswordItem while its Secret is consumed.
+Reloader watches the replacement through these references. The obsolete
+`n8n-env` and `n8n-hermes-credentials` targets are removed; recovering their former
+contracts requires the [retirement recovery set](../../platform/onepassword/README.md#ordered-eso-retirement),
+not just reverting Secret names. Do not delete a consumed OnePasswordItem.
 
-External Secrets supplies the shared token to both apps. At n8n startup, its
+The Operator supplies `n8n-connect/hermes_webhook_secret` to both apps. At n8n startup, its
 official `import:credentials` command reconciles **Hermes webhook** and the native
-**Perplexity Decider** API credential. `PERPLEXITY_API_KEY_REF` reuses the existing
-key in the Homelab vault; no key is embedded in the workflow or environment.
+**Perplexity Decider** API credential. `hermes-runtime-connect/perplexity-api-key`
+reuses the existing authoritative runtime key; no key is embedded in the workflow
+or environment.
 `X-Gitlab-Token` is Hermes's existing shared-token auth header;
 no HMAC implementation is added. The webhook service is cluster-only. Secret
-refresh uses the shared store/cache and interval; Reloader restarts the affected
+refresh uses the Operator's six-hour poll; Reloader restarts the affected
 apps so rotation reaches both the gateway and native n8n credentials.
 
 Keep the original `encryption_key` with a backup of the entire `n8n-data` volume.
