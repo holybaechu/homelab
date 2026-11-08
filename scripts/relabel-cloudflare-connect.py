@@ -2,8 +2,10 @@
 """Administrator-only Cloudflare field-label PATCH; never print item contents."""
 import argparse
 import copy
+import http.client
 import json
 import os
+import socket
 import sys
 import urllib.error
 import urllib.request
@@ -130,7 +132,30 @@ def main(argv=None):
         if isinstance(error, urllib.error.HTTPError):
             category = f"http-status-{int(error.code)}"
             error.close()
-        print(f"FAIL cloudflare-label: stage={stage} category={category} outcome={state}; inspect item history privately", file=sys.stderr)
+        elif isinstance(error, json.JSONDecodeError):
+            category = "response-invalid-json"
+        elif isinstance(error, UnicodeError):
+            category = "response-or-header-encoding-invalid"
+        elif isinstance(error, http.client.IncompleteRead):
+            category = "response-incomplete"
+        elif isinstance(error, http.client.HTTPException):
+            category = "http-protocol-error"
+        else:
+            reason = error.reason if isinstance(error, urllib.error.URLError) else error
+            for kind, name in ((TimeoutError, "transport-timeout"),
+                               (ConnectionRefusedError, "transport-connection-refused"),
+                               (ConnectionResetError, "transport-connection-reset"),
+                               (socket.gaierror, "transport-name-resolution")):
+                if isinstance(reason, kind):
+                    category = name
+                    break
+            else:
+                if isinstance(error, urllib.error.URLError):
+                    category = "transport-url-error"
+                elif isinstance(error, OSError):
+                    category = "transport-os-error"
+        guidance = "; inspect item history privately before any retry" if submitted else "; GET-only diagnosis; no PATCH sent by this run"
+        print(f"FAIL cloudflare-label: stage={stage} category={category} outcome={state}{guidance}", file=sys.stderr)
         return 1
     print("PASS cloudflare-label: label-only PATCH response and GET verified; consumer parity not checked")
     return 0

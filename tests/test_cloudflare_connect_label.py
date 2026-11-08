@@ -105,6 +105,27 @@ class CloudflarePatchTests(unittest.TestCase):
             self.assertIn("outcome=unknown-after-patch-attempt", output)
             self.assertEqual(client.request.call_count, 2)
 
+    def test_get_transport_and_response_diagnostics_are_safe_and_never_patch(self):
+        cases = (
+            (helper.urllib.error.URLError(ConnectionRefusedError("PRIVATE_ENDPOINT")), "transport-connection-refused"),
+            (helper.urllib.error.URLError(TimeoutError("PRIVATE_ENDPOINT")), "transport-timeout"),
+            (ConnectionResetError("PRIVATE_ENDPOINT"), "transport-connection-reset"),
+            (helper.urllib.error.URLError(helper.socket.gaierror("PRIVATE_HOST")), "transport-name-resolution"),
+            (helper.urllib.error.URLError("PRIVATE_REASON"), "transport-url-error"),
+            (json.JSONDecodeError("PRIVATE_ERROR", "PRIVATE_BODY", 0), "response-invalid-json"),
+            (helper.http.client.IncompleteRead(b"PRIVATE_BODY"), "response-incomplete"),
+            (helper.http.client.BadStatusLine("PRIVATE_STATUS"), "http-protocol-error"),
+            (helper.urllib.error.HTTPError("PRIVATE_URL", 403, "PRIVATE_STATUS", {}, io.BytesIO(b"PRIVATE_BODY")), "http-status-403"),
+        )
+        for error, category in cases:
+            with self.subTest(category=category):
+                status, output, client = self.run_main([error], ["--apply"])
+                self.assertEqual(status, 1)
+                self.assertIn("stage=source-get category=" + category, output)
+                self.assertIn("outcome=no-write-attempted", output)
+                self.assertNotIn("inspect item history", output)
+                self.assertEqual([c.args for c in client.request.call_args_list], [("GET",)])
+
     def test_real_http_transport_sends_only_reviewed_label_payload(self):
         requests = []
         class Handler(BaseHTTPRequestHandler):
