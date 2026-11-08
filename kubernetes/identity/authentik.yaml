@@ -28,13 +28,50 @@ spec:
         repository: ghcr.io/goauthentik/server
         tag: 2026.8.5
       deploymentAnnotations:
-        secret.reloader.stakater.com/reload: authentik-env
+        secret.reloader.stakater.com/reload: authentik-connect,headscale-connect,zipline-connect,immich-connect,langfuse-connect
       deploymentStrategy:
         type: Recreate
-      envFrom:
-      - secretRef:
-          name: authentik-env
       env:
+      - name: AUTHENTIK_SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: authentik-connect
+            key: secret-key
+      - name: AUTHENTIK_POSTGRESQL__PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: authentik-connect
+            key: database-password
+      - name: AUTHENTIK_BOOTSTRAP_EMAIL
+        valueFrom:
+          secretKeyRef:
+            name: authentik-connect
+            key: email
+      - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: authentik-connect
+            key: password
+      - name: HEADSCALE_OIDC_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: headscale-connect
+            key: oidc-client-secret
+      - name: ZIPLINE_OIDC_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: zipline-connect
+            key: oidc-client-secret
+      - name: IMMICH_OIDC_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: immich-connect
+            key: oidc-client-secret
+      - name: LANGFUSE_OIDC_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: langfuse-connect
+            key: oidc-client-secret
       - name: AUTHENTIK_POSTGRESQL__HOST
         value: authentik-postgresql
       - name: AUTHENTIK_POSTGRESQL__USER
