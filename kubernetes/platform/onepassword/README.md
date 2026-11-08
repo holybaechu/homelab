@@ -265,8 +265,9 @@ fields. Preserve IDs, values, types, sections, URLs and history; do not recreate
 fields or apply JSON templates. These sources have no live Operator consumers.
 Do **not** rename MySQL/n8n yet: those require the separate protected sequence.
 
-Include Cloudflare's administrator-only label PATCH below in this same source
-batch. After the new manifests reconcile and the Operator observes the edits, run one
+**Cloudflare mutations are disabled after the real DATE preservation failure.**
+Handle that source's read-only incident review separately below. After the other
+new manifests reconcile and the Operator observes the reviewed edits, run one
 read-only gate from the authenticated administrative Windows checkout:
 
 ```powershell
@@ -285,7 +286,7 @@ immediate Hermes restart:
 
 | Check | Exact existing contract compared |
 | --- | --- |
-| `cloudflare-dns`, `cloudflare-ddns` | Separate namespace ownership and exact `api-token` / `CLOUDFLARE_API_TOKEN` bytes after the reviewed label-only API adaptation |
+| `cloudflare-dns`, `cloudflare-ddns` | Blocked on the real DATE preservation incident; keep exact `api-token` / `CLOUDFLARE_API_TOKEN` bytes and existing ESO consumers |
 | `authentik-connect` | `authentik-postgresql` plus all eight `authentik-env` keys, checking source metadata/bytes and ownership for each of its five source items in `identity` |
 | `immich-connect` | `immich` database bytes and the entire parsed JSON config, including the exact OIDC string; also `hermes-immich` API-key bytes |
 | `adguard-connect` | Complete `adguard-credentials` file bytes, including validated username/bcrypt hash and cluster substitutions |
@@ -318,83 +319,72 @@ URL, accepts no arbitrary skipped labels and does not permit extra Secret keys.
 Cloudflare's real API adaptation and the token-bearing Hermes source remain
 blocked as described below; staging or a nine-contract gate is not full ESO retirement.
 
-### Cloudflare label-only Connect adaptation
+### Cloudflare preservation incident: mutations disabled
 
-Cloudflare DNS's built-in labels are uneditable in the official app. The current
-localized credential label produces an empty Operator key. Keep both consumers
-on ESO until the label adaptation **and** independent parity gates pass.
+The real label-attribute PATCH reached the server, but its response failed
+`source-dates-not-unset`. The administrator subsequently observed `valid-from`
+and `expires` displaying **1970.01.01** in the app. This is an unintended DATE
+change, not a successful preservation check. The screenshot alone does not prove
+the underlying stored value is numeric zero. The original GET passed the unset-date
+precondition; the PATCH response did not. No raw before/after snapshot was saved,
+so historical credential/property preservation has not been independently proved.
 
-Unlike CLI JSON-template edits, the official [Connect PATCH API](https://developer.1password.com/docs/connect/api-reference/#update-a-subset-of-item-attributes)
-addresses a field attribute directly by its existing ID:
-`replace /fields/credential/label`. The published 1.8.1 OpenAPI specification
-explicitly documents field-attribute patches and `application/json`. This does
-not require sending credential values, recreating fields, or replacing the item.
-`scripts/relabel-cloudflare-connect.py` uses only that documented operation for
-all eight reviewed Cloudflare labels. It never uses PUT or CLI item edits.
+Although the official [Connect API](https://developer.1password.com/docs/connect/api-reference/#update-a-subset-of-item-attributes)
+documents field-attribute PATCH operations, that request shape did **not** prove
+preservation on the real server. Both CLI-template writes and Connect PATCH writes
+are now disabled. `--apply` fails before authentication or any network request;
+the transport itself also rejects every method except GET. Do not use older
+script revisions, retry mutations, clear dates with PATCH, round-trip JSON or
+normalize nonempty dates into accepted defaults. Keep both Cloudflare consumers
+on working ESO and the staged replacements consumer-free.
 
-**This exact mutation has not yet been exercised against the real server.**
-Focused tests use an isolated loopback HTTP server with dummy credentials, not
-1Password. An administrator must perform and review the real adaptation:
-
-1. Keep the infrastructure Operator token read-only. Provision a **separate,
-   temporary Homelab-write Connect token** out of band on the administrator's
-   machine; never give it to the agent, apps, Git or chat. Do not replace either
-   existing bootstrap Secret. Revoke the temporary token after this batch.
-2. In a separate administrative terminal, run:
+1. Cancel the open app editor without saving. Privately review the item's
+   [version history](https://support.1password.com/item-history/), comparing the
+   pre-PATCH version, the latest version, credentials, field IDs/types/labels,
+   attachments and any passkeys. Do not share credential values or raw item JSON.
+2. Inspect current server structure read-only. Keep the existing port-forward
+   running in a separate terminal:
    `kubectl -n onepassword port-forward service/onepassword-connect 8080:8080`.
-   The helper accepts only this fixed loopback endpoint or the exact internal
-   Connect service, disables environment proxies, and refuses redirects.
-3. Fetch the reviewed script, then supply the temporary token in a **masked local
-   prompt**, never as a command argument:
+   Use a read-capable token in a masked local prompt; write permission is not
+   required, and the infrastructure token must remain read-only:
 
    ```powershell
    git fetch origin main
    $env:OP_CONNECT_HOST = 'http://127.0.0.1:8080'
-   $env:OP_CONNECT_TOKEN = [System.Net.NetworkCredential]::new('', (Read-Host 'Temporary Connect write token' -AsSecureString)).Password
-   git show origin/main:scripts/relabel-cloudflare-connect.py | mise x python@3 -- python -
+   $env:OP_CONNECT_TOKEN = [System.Net.NetworkCredential]::new('', (Read-Host 'Connect read token' -AsSecureString)).Password
+   try {
+     git show origin/main:scripts/relabel-cloudflare-connect.py | mise x python@3 -- python - --source-metadata
+   } finally {
+     Remove-Item Env:OP_CONNECT_TOKEN -ErrorAction SilentlyContinue
+     Remove-Item Env:OP_CONNECT_HOST -ErrorAction SilentlyContinue
+   }
    ```
 
-   The default performs only GET and structural eligibility checks. It prints
-   INFO, not a mutation or consumer-parity PASS. It requires the exact source
-   vault/item/title, eight existing field IDs/types and only reviewed old/target
-   labels, a nonempty credential, and both date values still unset.
-4. With no concurrent item edits, apply the reviewed label-only patch:
+   Only reviewed field IDs, label-state/type-match flags, occurrence counts and
+   DATE value-shapes are printed. `number-zero` and `nonempty-string` remain
+   preservation failures, not accepted sentinel values. INFO means inspection,
+   never preservation or consumer-parity PASS. GET transport errors are separate
+   from write-permission errors; no mutation is retried.
+3. Decide recovery only after the private history review. If the official app
+   explicitly supports **clearing a DATE value while retaining the same field**,
+   that can be considered as a separately reviewed recovery action; the published
+   [custom-field guide](https://support.1password.com/custom-fields/) does not
+   establish such a clearing operation for these built-ins. Do not press the red
+   field-removal controls, recreate fields or invent a keyboard/calendar sequence.
+   The officially supported alternative is restoring the reviewed pre-PATCH item
+   version; this also reverts labels and any other intervening edits, so select
+   the correct version and obtain explicit recovery approval before restoring.
+   Never restore blindly or overwrite a newer credential.
+4. After the approved recovery, rerun GET-only inspection and independently compare
+   source, retained ESO and replacement bytes. Dates must genuinely be unset;
+   field IDs/types and credential bytes must survive. A history restore may make
+   the former localized-label Operator blocker return; report that blocker rather
+   than repeating PATCH. Revoke the temporary write token. No Cloudflare cutover
+   or ESO removal is authorized by an INFO inspection.
 
-   ```powershell
-   git show origin/main:scripts/relabel-cloudflare-connect.py | mise x python@3 -- python - --apply
-   Remove-Item Env:OP_CONNECT_TOKEN
-   Remove-Item Env:OP_CONNECT_HOST
-   ```
-
-   The helper compares the entire PATCH response and a fresh GET against the
-   pre-write item, allowing only the eight labels plus server revision/timestamp
-   changes. Field IDs, values, date presence, field order and all other returned
-   metadata must remain identical. Raw responses, credentials and exception text
-   never reach output or files. After **any** attempted PATCH failure, the outcome
-   is unknown: inspect item history privately before retrying. It never retries
-   automatically. A PASS is API read-back evidence, not historical/passkey proof,
-   credential authentication or consumer parity.
-5. Revoke the temporary write token and inspect the real item history, including
-   untouched dates and attachments/passkeys. After Operator synchronization, run
-   `cloudflare-dns cloudflare-ddns` together with the consolidated parity batch.
-   The existing authenticated CLI account session is sufficient; do not retain the
-   write token to run the checker.
-
-The checker requires the eight target labels (`notes-plain`, `username`,
-`credential`, `type`, `filename`, `valid-from`, `expires`, `hostname`), original
-IDs/types/purposes, unset dates, no files/URLs, the exact Operator-produced key
-set, and source/replacement/ESO bytes for both namespaces. Optional empty built-in
-fields are skipped exactly as Operator 1.12.1 skips them; `credential` must be
-nonempty. Old localized labels, a changed credential or meaningful dates fail.
-This does not weaken the disabled CLI-template write helper.
-
-After independent PASS, both cert-manager and DDNS can use explicit Operator
-key references without an Injector token. Retain cert-manager's Secret interface
-and verify DNS01 renewal; preserve DDNS's entrypoint and Reloader policy. Never
-hand DDNS a Homelab-scoped Connect token: that vault also contains Hermes's broad
-token. Both existing `cloudflare-connect` resources remain consumer-free pending
-these gates; no label mutation or consumer cutover is performed by merging this
-helper.
+Retain cert-manager's Secret interface and require DNS01 renewal before any future
+cutover; preserve DDNS's entrypoint and Reloader policy. Never give DDNS the
+Homelab-scoped Connect token, since that vault contains Hermes's broader token.
 
 ### Read-only administrative gates
 
@@ -563,7 +553,7 @@ an existing **field ID**, not a proposed new field. Do not bulk-rename yet.
 | OpenCloud | `username`, `password` already conform | No custom-field rename needed; preserve Hermes services interface |
 | Hermes Coder Signing | `public_key` → `public-key`; `private_key` → `private-key`; `key_type` → `key-type` | Built-ins: only if official app supports label-only edits; preserve OpenSSH transform and key bytes |
 | GitHub Hermes | `validFrom` → `valid-from` | Built-in: only if editable without setting a date; otherwise record exception; other English fields already conform |
-| Cloudflare DNS | `username` → `username`; `credential` → `credential`; `type` → `type`; `filename` → `filename`; `validFrom` → `valid-from`; `expires` → `expires`; `hostname` → `hostname`; `notesPlain` → `notes-plain` | Use the administrator-only label-attribute PATCH above; keep dates unset and ESO active until real preservation/parity gates pass |
+| Cloudflare DNS | `username` → `username`; `credential` → `credential`; `type` → `type`; `filename` → `filename`; `validFrom` → `valid-from`; `expires` → `expires`; `hostname` → `hostname`; `notesPlain` → `notes-plain` | Mutations disabled after real PATCH materialized dates; use GET-only incident inspection and separately approved recovery, keeping ESO active |
 | Every source | `notesPlain` → `notes-plain` | Built-in: confirm label-only editability; until then retain `notesPlain` as an explicit exception, including in checkers |
 
 Built-in editability has not been independently established except for the

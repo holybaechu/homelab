@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Administrator-only Cloudflare field-label PATCH; never print item contents."""
+"""Read-only Cloudflare incident inspection; all mutations are disabled."""
 import argparse
 import copy
 import http.client
@@ -23,8 +23,7 @@ FIELDS = {
     "expires": ("\ub9cc\ub8cc\uc77c", "expires", "DATE"),
     "hostname": ("\ud638\uc2a4\ud2b8 \uc774\ub984", "hostname", "STRING"),
 }
-PATCH = [{"op": "replace", "path": f"/fields/{name}/label", "value": target}
-         for name, (_, target, _) in FIELDS.items()]
+
 HOSTS = {"http://127.0.0.1:8080", "http://localhost:8080",
          "http://onepassword-connect.onepassword.svc.cluster.local:8080"}
 
@@ -47,14 +46,12 @@ class Connect:
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
     def request(self, method):
+        if method != "GET":
+            raise Refused("mutation-disabled-date-preservation-incident")
         headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
-        body = None
-        if method == "PATCH":
-            headers["Content-Type"] = "application/json"
-            body = json.dumps(PATCH).encode("utf-8")
         request = urllib.request.Request(
             f"{self.host}/v1/vaults/{VAULT}/items/{ITEM}",
-            data=body, headers=headers, method=method,
+            headers=headers, method="GET",
         )
         with self.opener.open(request, timeout=20) as response:
             data = response.read(1024 * 1024 + 1)
@@ -102,32 +99,62 @@ def verify(before, after):
         raise Refused("non-label-change-or-stale-readback")
 
 
+def metadata(item):
+    if item.get("id") != ITEM or item.get("vault", {}).get("id") != VAULT or item.get("title") != "Cloudflare DNS":
+        raise Refused("source-identity")
+    fields = item.get("fields")
+    if not isinstance(fields, list):
+        raise Refused("source-field-ids")
+    lines = []
+    for name, (old, target, kind) in FIELDS.items():
+        matches = [field for field in fields if field.get("id") == name]
+        lines.append(f"field={name} occurrences={len(matches)}")
+        if len(matches) != 1:
+            continue
+        field = matches[0]
+        label = "target" if field.get("label") == target else "old" if field.get("label") == old else "unreviewed"
+        line = f"field={name} label-state={label} type-match={str(field.get('type') == kind).lower()}"
+        if kind == "DATE":
+            value = field.get("value")
+            shape = ("absent" if "value" not in field else "null" if value is None else
+                     "empty-string" if value == "" else "nonempty-string" if isinstance(value, str) else
+                     "number-zero" if type(value) in (int, float) and value == 0 else
+                     "number-nonzero" if type(value) in (int, float) else "other")
+            line += f" value-shape={shape}"
+        lines.append(line)
+    lines.append(f"unreviewed-fields-count={sum(field.get('id') not in FIELDS for field in fields)}")
+    return lines
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apply", action="store_true", help="apply only the eight reviewed field-label patches")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true", help="disabled after the real DATE preservation failure")
+    mode.add_argument("--source-metadata", action="store_true", help="GET-only redacted incident structure; never a parity PASS")
     args = parser.parse_args(argv)
-    stage, submitted = "connect-setup", False
+    stage = "connect-setup"
     try:
+        if args.apply:
+            raise Refused("mutation-disabled-date-preservation-incident")
         client = Connect()
         stage = "source-get"
         before = client.request("GET")
+        if args.source_metadata:
+            stage = "source-metadata"
+            for line in metadata(before):
+                print("INFO cloudflare-label: " + line)
+            print("INFO cloudflare-label: GET-only incident inspection; no writes; preservation and parity not verified")
+            return 0
         stage = "source-inspection"
         already_target = inspect(before)
         if already_target:
             print("INFO cloudflare-label: already-target-label; no write; parity not checked")
             return 0
-        if not args.apply:
-            print("INFO cloudflare-label: eligible eight-field label-only PATCH; no write; parity not checked")
-            return 0
-        stage, submitted = "patch", True
-        response = client.request("PATCH")
-        stage = "patch-response-verification"
-        verify(before, response)
-        stage = "source-readback"
-        verify(before, client.request("GET"))
+        print("INFO cloudflare-label: current source structure inspected; mutations disabled; no write; parity not checked")
+        return 0
     except Exception as error:
         # HTTP errors, JSON schemas and exceptions can carry secrets or entire item bodies.
-        state = "unknown-after-patch-attempt" if submitted else "no-write-attempted"
+        state = "no-write-attempted"
         category = str(error) if isinstance(error, Refused) else "execution-or-response-error"
         if isinstance(error, urllib.error.HTTPError):
             category = f"http-status-{int(error.code)}"
@@ -154,11 +181,10 @@ def main(argv=None):
                     category = "transport-url-error"
                 elif isinstance(error, OSError):
                     category = "transport-os-error"
-        guidance = "; inspect item history privately before any retry" if submitted else "; GET-only diagnosis; no PATCH sent by this run"
+        guidance = "; GET-only diagnosis; no PATCH sent by this run"
         print(f"FAIL cloudflare-label: stage={stage} category={category} outcome={state}{guidance}", file=sys.stderr)
         return 1
-    print("PASS cloudflare-label: label-only PATCH response and GET verified; consumer parity not checked")
-    return 0
+
 
 
 if __name__ == "__main__":
