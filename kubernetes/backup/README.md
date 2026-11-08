@@ -72,7 +72,9 @@ state, Langfuse, Kutt, incomplete downloads, model/tool caches or temporary file
 are selected. Generated Hermes GitOps configuration is excluded. For the exact
 authoritative homelab Git origin, clean tracked files already present in
 `origin/main` are omitted and recorded in `hermes-repositories.json`; restore
-those from that commit before overlaying workspace recovery. Dirty files,
+those from that commit before overlaying workspace recovery. The manifest also
+records tracked deletion tombstones, which must be applied after the overlay
+(see below), preserving both staged and unstaged deletions. Dirty files,
 untracked files, unpublished commits, index/stash recovery and other repositories
 are retained. Git secret references are **not** key values: original runtime
 keys remain in 1Password and required recovery keys are explicitly projected into
@@ -183,7 +185,18 @@ errors. Immich needs its pinned vector extensions. Restore OpenCloud config and
 data together, Zipline data/uploads together, and Headscale/gateway identities
 from the same snapshot. Do not attach a second live PGlite process or production
 OIDC/webhook ingress to a restore drill. Rebuild excluded caches/indexes and
-GitOps-managed configuration after recovery.
+GitOps-managed configuration after recovery. For Hermes Git recovery, reconstruct
+repositories at each recorded commit, then overlay the captured `hermes-data`
+and `hermes-repositories.json` into an isolated directory below `/stage/restore/`.
+Before inspecting or starting the restored workspace, run:
+
+```sh
+python3 /backup/worker.py restore-git-deletions /stage/restore/<drill>
+```
+
+This applies verified tracked-file tombstones without changing the recovered
+Git index. It rejects traversal, symlinks, untracked targets and directories;
+never point recovery tooling at production/user workspaces.
 
 A failed Job is the Kubernetes failure signal; no external alert destination is
 invented here. Before unattended activation, connect Job failure **and missing

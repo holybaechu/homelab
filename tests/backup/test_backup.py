@@ -38,7 +38,7 @@ class Journal:
 
 class Recovery(unittest.TestCase):
     def test_failure_restores_exact_counts_and_controls(self):
-        journal = Journal()
+        journal = Journal(dict(run='run', phase='preparing', replicas=[]))
         scales = []
         controls = [['flux-system', 'kustomization', 'apps', False]]
         def kube(*args, **kwargs):
@@ -80,7 +80,7 @@ class Recovery(unittest.TestCase):
         self.assertEqual(journal.state['replicas'], [])
 
     def test_success_restores_before_next_phase(self):
-        journal = Journal()
+        journal = Journal(dict(run='run', phase='preparing', replicas=[]))
         order = []
         with patch.object(controller, 'kube', return_value={'spec': {'replicas': 1}, 'metadata': {'generation': 1}, 'status': {'observedGeneration': 1, 'readyReplicas': 1}}), \
              patch.object(controller, 'controls_for', return_value=[]), \
@@ -90,6 +90,63 @@ class Recovery(unittest.TestCase):
             controller.capture(journal, 'run', 'n8n', [('homelab', 'n8n')])
         self.assertEqual(order, [0, 'capture', 1])
         self.assertEqual(journal.state['phase'], 'preparing')
+
+    def test_resumption_excludes_competitors_and_preserves_watchdog_intent(self):
+        for takeover in (False, True):
+            with self.subTest(watchdog=takeover):
+                journal = Journal(dict(run='run', phase='preparing', replicas=[]))
+                def kube(*args, **kwargs):
+                    if 'backup-watchdog' in args:
+                        return {'status': {'readyReplicas': 1}}
+                    if journal.state['phase'] in ('aborted', 'resuming'):
+                        with patch.object(controller, 'Journal', return_value=journal):
+                            with self.assertRaises(RuntimeError):
+                                controller.maintenance()
+                            with self.assertRaises(RuntimeError):
+                                controller.backup()
+                        if takeover:
+                            journal.state['phase'] = 'recovering'
+                    return {'spec': {'replicas': 1}, 'metadata': {'generation': 1},
+                            'status': {'readyReplicas': 1, 'observedGeneration': 1}}
+                with patch.object(controller, 'kube', side_effect=kube), \
+                     patch.object(controller, 'controls_for', return_value=[]), \
+                     patch.object(controller, 'scale'), patch.object(controller, 'wait_stopped'), \
+                     patch.object(controller, 'worker'):
+                    if takeover:
+                        with self.assertRaises(RuntimeError):
+                            controller.capture(journal, 'run', 'n8n', [('homelab', 'n8n')])
+                        self.assertEqual(journal.state['phase'], 'recovering')
+                        self.assertTrue(journal.state['replicas'])
+                    else:
+                        controller.capture(journal, 'run', 'n8n', [('homelab', 'n8n')])
+                        self.assertEqual(journal.state['phase'], 'preparing')
+
+    def test_backup_failure_leaves_watchdog_recovery_intent(self):
+        journal = Journal()
+        recovery = {}
+        def interrupted(*args, **kwargs):
+            journal.state.update(phase='recovering', deadline=0,
+                                 replicas=[['homelab', 'n8n', 2]], controls=[])
+            recovery.update(journal.read())
+            raise RuntimeError('Watchdog took over')
+        with patch.object(controller, 'Journal', return_value=journal), \
+             patch.object(controller, 'kube', return_value={'status': {'readyReplicas': 1}}), \
+             patch.object(controller, 'worker', side_effect=interrupted), \
+             patch.object(controller, 'scale') as scale:
+            with self.assertRaises(RuntimeError):
+                controller.backup()
+        self.assertEqual(journal.read(), recovery)
+        scale.assert_not_called()
+
+    def test_stale_owner_cannot_start_next_group(self):
+        journal = Journal(dict(run='other', phase='preparing', replicas=[]))
+        with patch.object(controller, 'kube', return_value={'spec': {'replicas': 1}}), \
+             patch.object(controller, 'controls_for', return_value=[]), \
+             patch.object(controller, 'scale') as scale:
+            with self.assertRaises(RuntimeError):
+                controller.capture(journal, 'old', 'n8n', [('homelab', 'n8n')])
+        scale.assert_not_called()
+        self.assertEqual(journal.state['run'], 'other')
 
 
 class Capture(unittest.TestCase):
@@ -111,6 +168,65 @@ class Capture(unittest.TestCase):
             self.assertEqual(source.read_bytes(), original)
             with closing(sqlite3.connect(target)) as restored:
                 self.assertEqual(restored.execute('SELECT value FROM sessions').fetchall(), [('committed',)])
+
+    @unittest.skipUnless(shutil.which('rsync'), 'rsync required')
+    def test_hermes_final_inventory_captures_new_wal_database(self):
+        source = self.root / 'source/hermes-data'
+        source.mkdir(parents=True)
+        (source / 'notes-wal').write_text('legitimate non-SQLite data')
+        connections = []
+        self.addCleanup(lambda: [db.close() for db in connections])
+        sync = worker.sync
+        calls = 0
+        def introduce(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                db = sqlite3.connect(source / 'new.sqlite')
+                connections.append(db)
+                db.execute('PRAGMA journal_mode=WAL')
+                db.execute('CREATE TABLE sessions (value TEXT)')
+                db.execute("INSERT INTO sessions VALUES ('new committed WAL')")
+                db.commit()
+            return sync(*args, **kwargs)
+        (self.root / 'capture').mkdir()
+        with patch.object(worker, 'SOURCES', source.parent), patch.object(worker, 'STAGE', self.root), \
+             patch.object(worker, 'sync', side_effect=introduce):
+            worker.copy_data('hermes-data', deadline=time.time() + 10)
+        target = self.root / 'capture/hermes-data'
+        self.assertFalse((target / 'new.sqlite-wal').exists())
+        self.assertFalse((target / 'new.sqlite-shm').exists())
+        with closing(sqlite3.connect(target / 'new.sqlite')) as db:
+            self.assertEqual(db.execute('SELECT value FROM sessions').fetchall(), [('new committed WAL',)])
+        self.assertEqual((target / 'notes-wal').read_text(), 'legitimate non-SQLite data')
+
+    @unittest.skipUnless(shutil.which('rsync'), 'rsync required')
+    def test_hermes_rejects_disappeared_or_retyped_final_database(self):
+        for mutation in ('delete', 'replace'):
+            with self.subTest(mutation=mutation):
+                source = self.root / mutation / 'hermes-data'
+                source.mkdir(parents=True)
+                with closing(sqlite3.connect(source / 'state')) as db:
+                    db.execute('CREATE TABLE sessions (value TEXT)')
+                    db.commit()
+                stage = self.root / ('stage-' + mutation)
+                (stage / 'capture').mkdir(parents=True)
+                sync = worker.sync
+                calls = 0
+                def mutate(*args, **kwargs):
+                    nonlocal calls
+                    result = sync(*args, **kwargs)
+                    calls += 1
+                    if calls == 2:
+                        (source / 'state').unlink()
+                        if mutation == 'replace':
+                            (source / 'state').write_text('not a database')
+                    return result
+                with patch.object(worker, 'SOURCES', source.parent), patch.object(worker, 'STAGE', stage), \
+                     patch.object(worker, 'sync', side_effect=mutate):
+                    with self.assertRaises((RuntimeError, FileNotFoundError)):
+                        worker.copy_data('hermes-data', deadline=time.time() + 10)
+                self.assertFalse((stage / 'valid').exists())
 
     def test_sqlite_deadline_does_not_replace_valid_copy(self):
         source, target = self.root / 'state.db', self.root / 'copy.db'
@@ -166,6 +282,61 @@ class Capture(unittest.TestCase):
         git('commit', '-m', 'unpublished fixture')
         with patch.object(worker, 'STAGE', self.root):
             self.assertEqual(worker.gitops_excludes(source, selected), [])
+
+    @unittest.skipUnless(shutil.which('rsync'), 'rsync required')
+    def test_git_deletion_tombstones_restore_staged_and_unstaged_deletions(self):
+        source = self.root / 'source/hermes-data'
+        repo = source / 'workspace'
+        repo.mkdir(parents=True)
+        def git(*args):
+            return subprocess.check_output(['git', '-C', str(repo), '-c', 'user.name=fixture',
+                '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', *args],
+                stderr=subprocess.PIPE)
+        git('init')
+        git('remote', 'add', 'origin', 'https://github.com/holybaechu/homelab.git')
+        for name in ('staged', 'unstaged', 'keep'):
+            (repo / name).write_text(name)
+        git('add', '.')
+        git('commit', '-m', 'fixture')
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+        git('rm', 'staged')
+        (repo / 'unstaged').unlink()
+        (self.root / 'capture').mkdir()
+        with patch.object(worker, 'STAGE', self.root), patch.object(worker, 'SOURCES', source.parent):
+            worker.copy_data('hermes-data', deadline=time.time() + 10)
+        manifest = json.loads((self.root / 'capture/hermes-repositories.json').read_text())
+        self.assertEqual(set(manifest[0]['deleted']), {'staged', 'unstaged'})
+        restored = self.root / 'restore/drill'
+        restored.mkdir(parents=True)
+        checkout = restored / 'hermes-data/workspace'
+        subprocess.check_call(['git', 'clone', '-q', str(repo), str(checkout)])
+        subprocess.check_call(['git', '-C', str(checkout), 'checkout', '-q', manifest[0]['commit']])
+        worker.command(['rsync', '-a', str(self.root / 'capture') + '/', str(restored) + '/'])
+        self.assertTrue((checkout / 'staged').exists())
+        self.assertTrue((checkout / 'unstaged').exists())
+        with patch.object(worker, 'STAGE', self.root):
+            worker.restore_git_deletions(restored)
+        self.assertFalse((checkout / 'staged').exists())
+        self.assertFalse((checkout / 'unstaged').exists())
+        self.assertEqual((checkout / 'keep').read_text(), 'keep')
+        status = subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain']).decode()
+        self.assertIn('D  staged', status)
+        self.assertIn(' D unstaged', status)
+        protected = self.root / 'protected'
+        protected.write_text('untouched')
+        for malicious in ('../protected', '/absolute', '.git/config', 'link/protected', 'untracked'):
+            with self.subTest(malicious=malicious):
+                (checkout / 'link').symlink_to(self.root, target_is_directory=True)
+                manifest[0]['deleted'] = [malicious]
+                (restored / 'hermes-repositories.json').write_text(json.dumps(manifest))
+                with patch.object(worker, 'STAGE', self.root):
+                    with self.assertRaises(ValueError):
+                        worker.restore_git_deletions(restored)
+                (checkout / 'link').unlink()
+                self.assertEqual(protected.read_text(), 'untouched')
+        with patch.object(worker, 'STAGE', self.root):
+            with self.assertRaises(ValueError):
+                worker.restore_git_deletions(source)
 
     def test_incomplete_namespace_transfer_cannot_upload(self):
         run = '20261108T000000Z-123456ab'

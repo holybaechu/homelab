@@ -101,9 +101,18 @@ def suspend(control, value):
     kube('-n', ns, 'patch', kind, name, '--type=merge', '-p', json.dumps({'spec': {'suspend': value}}))
 
 
-def restore(journal, state):
-    # Set invalid BEFORE resuming writers. A competing runner cannot commit this capture.
-    state = dict(state, phase='recovering')
+def transition(journal, run, phase, state):
+    current = journal.read()
+    if current.get('run') != run or current['phase'] != phase:
+        raise RuntimeError('Backup ownership or phase changed')
+    journal.write(state)
+
+
+def restore(journal, state, *, resume=False):
+    # Recovery invalidates capture; normal resumption retains the global owner.
+    if journal.read() != state:
+        raise RuntimeError('Backup recovery intent changed')
+    state = dict(state, phase='resuming' if resume else 'recovering')
     journal.write(state)
     failures = []
     for namespace, name, replicas in state['replicas']:
@@ -115,7 +124,9 @@ def restore(journal, state):
         raise RuntimeError('Replica restoration pending; watchdog will retry')
     for control in state.get('controls', []):
         suspend(control, control[3])
-    journal.write(dict(state, phase='aborted', replicas=[], controls=[]))
+    if not resume:
+        transition(journal, state['run'], 'recovering',
+                   dict(state, phase='aborted', replicas=[], controls=[]))
 
 
 def assert_capture(journal, run):
@@ -148,8 +159,7 @@ def capture(journal, run, group, targets):
         replicas.append([namespace, name, d['spec']['replicas']])
     state: dict[str, Any] = dict(run=run, phase='capture', deadline=time.time() + 420, replicas=replicas,
                  controls=controls_for(targets))
-    journal.read()
-    journal.write(state)
+    transition(journal, run, 'preparing', state)
     try:
         for control in state['controls']:
             suspend(control, True)
@@ -172,13 +182,16 @@ def capture(journal, run, group, targets):
         assert_capture(journal, run)
     except BaseException:
         current = journal.read()
-        if current.get('run') == run and current.get('replicas'):
+        if current.get('run') == run and current['phase'] == 'capture' and current.get('replicas'):
             restore(journal, current)
         raise
     # Restore the original counts before any upload, even if originally zero.
-    restore(journal, assert_capture(journal, run))
+    restore(journal, assert_capture(journal, run), resume=True)
     ready_deadline = min(time.time() + 90, state['deadline'] + 180)
     while True:
+        current = journal.read()
+        if current.get('run') != run or current['phase'] != 'resuming':
+            raise RuntimeError('Capture recovery started during readiness')
         ready = True
         for namespace, name, count in replicas:
             if not count:
@@ -192,8 +205,7 @@ def capture(journal, run, group, targets):
         if time.time() >= ready_deadline:
             raise TimeoutError('Apps did not become Ready within resumption budget')
         time.sleep(2)
-    journal.read()
-    journal.write(dict(run=run, phase='preparing', replicas=[]))
+    transition(journal, run, 'resuming', dict(run=run, phase='preparing', replicas=[]))
 
 
 def backup():
@@ -214,8 +226,7 @@ def backup():
         worker('homelab', 'capture', run, 'hermes', time.time() + 3500)
         for ns in NAMESPACES:
             worker(ns, 'seal', run)
-        journal.read()
-        journal.write(dict(run=run, phase='upload', replicas=[]))
+        transition(journal, run, 'preparing', dict(run=run, phase='upload', replicas=[]))
         failures = []
         for ns in ('identity', 'networking'):
             collect(ns)
@@ -227,14 +238,13 @@ def backup():
                 failures.append(destination)
         if failures:
             raise RuntimeError('One or more repositories did not complete')
-        journal.read()
-        journal.write(dict(run=run, phase='done', replicas=[]))
+        transition(journal, run, 'upload', dict(run=run, phase='done', replicas=[]))
     except BaseException:
         state = journal.read()
-        if state.get('replicas'):
+        if state.get('run') == run and state['phase'] in ('capture', 'resuming'):
             restore(journal, state)
-        else:
-            journal.write(dict(state, phase='failed'))
+        elif state.get('run') == run and state['phase'] in ('preparing', 'upload'):
+            transition(journal, run, state['phase'], dict(state, phase='failed'))
         raise
 
 
@@ -256,14 +266,14 @@ def maintenance():
     state = journal.read()
     if state['phase'] not in ('idle', 'aborted', 'done', 'failed') or state.get('replicas'):
         raise RuntimeError('Backup/recovery active; maintenance refused')
-    journal.write(dict(phase='maintenance', replicas=[]))
+    run = uuid.uuid4().hex
+    journal.write(dict(run=run, phase='maintenance', replicas=[]))
     try:
         # All snapshots reside in each single shared repository, independent of namespace.
         for destination in ('b2', 'ovh'):
             worker('homelab', 'maintain', destination, timeout=43200)
     finally:
-        journal.read()
-        journal.write(dict(phase='idle', replicas=[]))
+        transition(journal, run, 'maintenance', dict(phase='idle', replicas=[]))
 
 
 if __name__ == '__main__':

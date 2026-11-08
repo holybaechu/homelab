@@ -109,6 +109,48 @@ def literal_exclude(path):
     return '/' + ''.join('\\' + c if c in '\\*?[' else c for c in str(path))
 
 
+def safe_path(root, name):
+    path = Path(name)
+    if not name or path.is_absolute() or '..' in path.parts or '.git' in path.parts:
+        raise ValueError('Unsafe recovery path')
+    target = root / path
+    if any(p.is_symlink() for p in [target, *target.parents]):
+        raise ValueError('Symlink in recovery path')
+    if not target.resolve().is_relative_to(root.resolve()):
+        raise ValueError('Recovery path escapes root')
+    return target
+
+
+def restore_git_deletions(directory):
+    # Only explicitly isolated restores under staging; never source/workspace trees.
+    root = Path(directory)
+    isolated = STAGE / 'restore'
+    if root == isolated or not root.resolve().is_relative_to(isolated.resolve()):
+        raise ValueError('Expected an isolated restore below /stage/restore')
+    root = safe_path(isolated, str(root.relative_to(isolated)))
+    entries = json.loads((root / 'hermes-repositories.json').read_text())
+    removals = []
+    for entry in entries:
+        if entry['origin'] != 'https://github.com/holybaechu/homelab.git':
+            raise ValueError('Unapproved recovery origin')
+        repository = safe_path(root / 'hermes-data', entry['path'])
+        if not re.fullmatch(r'[0-9a-f]{40,64}', entry['commit']):
+            raise ValueError('Invalid recovery commit')
+        for name in entry.get('deleted', []):
+            if Path(name) == Path('.'):
+                raise ValueError('Invalid tombstone')
+            target = safe_path(repository, name)
+            tracked = command(['git', '--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-C', str(repository),
+                               'ls-tree', '-z', entry['commit'], '--', name])
+            if not tracked or tracked.split(b'\t', 1)[-1].rstrip(b'\0') != os.fsencode(name):
+                raise ValueError('Tombstone is not tracked at the recorded commit')
+            if target.is_dir():
+                raise ValueError('Refusing recursive tombstone deletion')
+            removals.append(target)
+    for target in removals:
+        target.unlink(missing_ok=True)
+
+
 def gitops_excludes(root, selected):
     excluded, recovery = [], []
     for directory, dirs, files in os.walk(selected, followlinks=False):
@@ -127,6 +169,7 @@ def gitops_excludes(root, selected):
                 '-c', 'safe.directory=*', '--git-dir=' + str(git), '--work-tree=' + str(root / relative)]
         def read(*args):
             return command([*base, *args])
+        repository_excludes = []
         try:
             if read('config', '--get', 'remote.origin.url').strip() != b'https://github.com/holybaechu/homelab.git':
                 continue
@@ -136,17 +179,25 @@ def gitops_excludes(root, selected):
             tracked = read('ls-files', '-z').split(b'\0')
             for name in tracked:
                 if name and name not in dirty:
-                    excluded.append(literal_exclude(relative / os.fsdecode(name)))
+                    repository_excludes.append(literal_exclude(relative / os.fsdecode(name)))
             status = read('status', '--porcelain=v1', '-z')
             # Preserve index, staged blobs and stash as recovery state when dirty.
             has_stash = subprocess.run([*base, 'rev-parse', '--verify', 'refs/stash'],
                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
             if not status and not has_stash:
-                excluded.append(literal_exclude(relative / '.git'))
+                repository_excludes.append(literal_exclude(relative / '.git'))
+            deleted = [os.fsdecode(p) for p in read(
+                'diff', '--no-ext-diff', '--no-textconv', '--no-renames', 'HEAD', '--diff-filter=D',
+                '--name-only', '-z').split(b'\0') if p]
+            for name in deleted:
+                path = safe_path(root / relative, name)
+                if path.exists():
+                    raise RuntimeError('Tracked deletion changed during inventory')
             recovery.append({'path': str(relative), 'commit': read('rev-parse', 'HEAD').decode().strip(),
-                             'origin': 'https://github.com/holybaechu/homelab.git'})
+                             'origin': 'https://github.com/holybaechu/homelab.git', 'deleted': deleted})
         except RuntimeError:
             continue
+        excluded.extend(repository_excludes)
         if '.git' in dirs:
             dirs.remove('.git')
     (STAGE / 'capture/hermes-repositories.json').write_text(json.dumps(recovery))
@@ -155,7 +206,7 @@ def gitops_excludes(root, selected):
 
 def copy_data(name, *, presync=False, deadline=None):
     source, target = SOURCES / name, STAGE / 'capture' / name
-    excludes = ['*-wal', '*-shm', '*.backup-partial'] if name in ('hermes-data', 'n8n-data', 'headscale') else []
+    excludes = ['*-wal', '*-shm', '*.backup-partial'] if name in ('n8n-data', 'headscale') else []
     databases = []
     if name == 'hermes-data':
         excludes += HERMES_EXCLUDES
@@ -163,10 +214,6 @@ def copy_data(name, *, presync=False, deadline=None):
         sync(source, target, excludes, presync=True)
         databases = sqlite_files(target)
         excludes += gitops_excludes(source, target)
-        excludes += [literal_exclude(p) for p in databases]
-        # Live main DB copies are not a valid backup; remove them before final sync.
-        for path in databases:
-            (target / path).unlink()
     elif name == 'n8n-data':
         databases = [Path('database.sqlite')]
         excludes += ['/database.sqlite']
@@ -177,8 +224,28 @@ def copy_data(name, *, presync=False, deadline=None):
         excludes += ['/.tmp/']
     sync(source, target, excludes, presync=presync)
     if not presync:
+        if name == 'hermes-data':
+            entries = json.loads((STAGE / 'capture/hermes-repositories.json').read_text())
+            for entry in entries:
+                repository = safe_path(target, entry['path'])
+                if any(safe_path(repository, p).exists() for p in entry['deleted']):
+                    raise RuntimeError('Tracked deletion changed during final sync')
+            final_databases = sqlite_files(target)
+            if any((target / p).exists() and p not in final_databases for p in databases):
+                raise RuntimeError('SQLite inventory changed incompatibly')
+            databases = final_databases
         for path in databases:
-            sqlite_backup(source / path, target / path, deadline)
+            original = safe_path(source, str(path))
+            identity = original.stat()
+            with original.open('rb') as handle:
+                if handle.read(16) != b'SQLite format 3\x00':
+                    raise RuntimeError('SQLite source changed during capture')
+            sqlite_backup(original, target / path, deadline)
+            after = original.stat()
+            if (identity.st_dev, identity.st_ino) != (after.st_dev, after.st_ino):
+                raise RuntimeError('SQLite source replaced during capture')
+            for suffix in ('-wal', '-shm'):
+                (target / (str(path) + suffix)).unlink(missing_ok=True)
     return databases
 
 
@@ -326,7 +393,8 @@ if __name__ == '__main__':
         with (STAGE / 'operation.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             {'prepare': prepare, 'capture': capture, 'upload': upload, 'publish': publish,
-             'maintain': maintain, 'seal': seal, 'restore-test': restore_test, 'init': initialize}[sys.argv[1]](*sys.argv[2:])
+             'maintain': maintain, 'seal': seal, 'restore-test': restore_test,
+             'restore-git-deletions': restore_git_deletions, 'init': initialize}[sys.argv[1]](*sys.argv[2:])
     except BaseException as error:
         print(f'Backup worker failed: {type(error).__name__}', file=sys.stderr)
         sys.exit(1)
