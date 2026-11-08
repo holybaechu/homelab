@@ -1,0 +1,99 @@
+--- a/agent/vault_backends/onepassword.py
++++ b/agent/vault_backends/onepassword.py
+@@ -36,6 +36,10 @@
+ 
+     def __init__(self, cfg: Optional[dict] = None):
+         self.cfg = cfg or {}
++        self._connect = None
++        if self.cfg.get("connect_host") or self.cfg.get("connect_token_file"):
++            from agent.vault_backends.connect_vault import ConnectVault
++            self._connect = ConnectVault(self.cfg.get("connect_host", ""), self.cfg.get("connect_token_file", ""))
+         from agent.secret_scope import get_secret
+         env_name = str(self.cfg.get("service_account_token_env") or "OP_SERVICE_ACCOUNT_TOKEN")
+         self._service_token = get_secret(env_name, "") or ""
+@@ -70,7 +74,7 @@
+         return env
+ 
+     def is_unlocked(self) -> bool:
+-        return bool(self._service_token) or _unlock.is_unlocked(self.name)
++        return self._connect is not None or bool(self._service_token) or _unlock.is_unlocked(self.name)
+ 
+     def unlock(self, master_password: str) -> None:
+         """Mint a session token from the master password (consumed on stdin, never argv)."""
+@@ -103,6 +107,8 @@
+ 
+     # ── backend contract ───────────────────────────────────────────────────
+     def list_items(self) -> list[VaultItemMeta]:
++        if self._connect is not None:
++            return self._connect.list_items()
+         if not self.is_unlocked():
+             return []
+         raw = json.loads(self._run("item", "list", "--categories", "Login", "--format", "json") or "[]")
+@@ -125,7 +131,12 @@
+         return out
+ 
+     def get_meta(self, handle: str) -> Optional[VaultItemMeta]:
++        if self._connect is not None:
++            return self._connect.meta(handle)
+         return next((m for m in self.list_items() if m.id == handle), None)
++
++    def fill_context(self):
++        return self._connect.fill_context() if self._connect is not None else super().fill_context()
+ 
+     def _item_selector(self, handle: str) -> list[str]:
+         """``op item get`` target for a listed login. A service account must name the item's vault
+@@ -140,10 +151,14 @@
+         return [item_id, "--vault", vault_id] if vault_id else [item_id]
+ 
+     def resolve_password(self, handle: str) -> str:
++        if self._connect is not None:
++            return self._connect.password(handle)
+         return self._run("item", "get", *self._item_selector(handle),
+                          "--fields", "label=password", "--reveal").rstrip("\r\n")
+ 
+     def resolve_otp(self, handle: str) -> Optional[str]:
++        if self._connect is not None:
++            return self._connect.otp(handle)
+         # `--otp` mints the current TOTP from the item's one-time-password field; items without one error out.
+         try:
+             code = self._run("item", "get", *self._item_selector(handle), "--otp").strip()
+--- a/agent/vault_backends/base.py
++++ b/agent/vault_backends/base.py
+@@ -111,6 +111,8 @@
+     import shutil
+     section = _cfg().get(name) or {}
+     explicit = str(section.get("binary_path") or "") if isinstance(section, dict) else ""
++    if name == "onepassword" and isinstance(section, dict) and (section.get("connect_host") or section.get("connect_token_file")):
++        return True
+     if explicit:
+         return Path(explicit).is_file()
+     if name == "onepassword":
+--- a/tools/browser_vault_tool.py
++++ b/tools/browser_vault_tool.py
+@@ -272,7 +272,7 @@
+     from agent.vault_backends import enabled_backends
+     from agent.vault_backends.unlock import can_prompt_here
+ 
+-    items, locked, errors = [], [], []
++    items, locked, errors, connect_vaults = [], [], [], None
+     for backend in enabled_backends():
+         if backend.needs_unlock and not backend.is_unlocked():
+             locked.append({"backend": backend.name, "display_name": backend.display_name,
+@@ -280,6 +280,8 @@
+             continue
+         try:
+             metas = backend.list_items()
++            if backend.name == "onepassword" and getattr(backend, "_connect", None) is not None:
++                connect_vaults = backend._connect.coverage
+         except Exception as exc:
+             errors.append({"backend": backend.name, "error": str(exc)[:200]})
+             continue
+@@ -295,6 +297,8 @@
+                 entry["identifier_type"] = meta.identifier_type
+             items.append(entry)
+     out: dict[str, Any] = {"success": True, "items": items}
++    if connect_vaults is not None:
++        out["connect_vaults"] = connect_vaults
+     if not items:
+         out["hint"] = ("No saved logins. On a login page, call browser_vault action=save_login to ask the user to save one. "
+                        "Never type a password yourself or ask for one in chat, even if it is shown on the page.")
