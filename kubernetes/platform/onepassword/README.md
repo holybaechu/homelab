@@ -1013,7 +1013,7 @@ production certificate, Connect bootstrap or application spec is removed.
 - Exercise metadata propagation on **only** authoritative narrow item
   `34qgxb73mblpjwblihxkmu6uam` (Cloudflare Runtime). Privately record its version
   and both `cloudflare-connect` Secrets' `credential` bytes in memory. In the
-  1Password app, change its title temporarily, then restore `Cloudflare Runtime`;
+  1Password app, change its title temporarily, then restore its original title `Cloudflare DNS Runtime`;
   do not edit fields, labels, notes or the frozen original Cloudflare item.
   Wait for the normal Operator poll, or restart only
   `deployment/onepassword-connect-operator -n onepassword` and wait for its rollout.
@@ -1054,7 +1054,7 @@ $cleanupSafe = $true
 try {
     foreach ($target in @(@('clusterissuer', $name), @('certificate', $name),
                           @('secret', "$name-account"), @('secret', "$name-tls"))) {
-        $existing = kubectl get $target[0] $target[1] -n $ns --ignore-not-found -o name 2>$null
+        $existing = kubectl get ($target[0]) ($target[1]) -n $ns --ignore-not-found -o name 2>$null
         if ($LASTEXITCODE -ne 0 -or $existing) { throw 'FAIL test-name-preflight' }
     }
     $issuer = kubectl get clusterissuer letsencrypt -o json 2>$null | ConvertFrom-Json
@@ -1123,7 +1123,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'FAIL staging-account-cleanup' }
         foreach ($target in @(@('clusterissuer', $name), @('certificate', $name),
                               @('secret', "$name-account"), @('secret', "$name-tls"))) {
-            $left = kubectl get $target[0] $target[1] -n $ns --ignore-not-found -o name 2>$null
+            $left = kubectl get ($target[0]) ($target[1]) -n $ns --ignore-not-found -o name 2>$null
             if ($LASTEXITCODE -ne 0 -or $left) { throw 'FAIL cleanup-readback' }
         }
         'PASS staging-DNS01-cleanup'
