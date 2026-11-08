@@ -57,35 +57,30 @@ for each item. No credential-copy script, browser extraction or secret output is
 needed. Never change a recipe or regenerate an initialized repository password.
 The OVH OpenStack password is deliberately not copied to the runtime item.
 
-The current agent has **no authorized writer**. The native browser vault is
-read/fill-only and Connect bootstrap remains read-only/confined. Leave
-`provision_runtime_credentials=false` until the user explicitly authorizes a local
-writer and the operator verifies it. A personal CLI login alone does not
-authenticate this provider: its supported choices are Connect, service account,
-or desktop SDK integration.
+The approved writer is the user's **Windows-local desktop SDK**, not an agent
+service account. The agent has no authorized writer. Connect remains read-only
+and unchanged. Leave `provision_runtime_credentials=false` until local SDK
+authentication and the remaining provisioning gates are verified. A personal CLI
+login alone does not authenticate this provider.
 
 1. Preferred local path: the user runs OpenTofu on their own computer with the
    supported 1Password desktop app, enables **Integrate with 1Password SDKs**
    (currently documented as requiring the beta app), sets nonsecret `OP_ACCOUNT`
    to the verified account name/ID and approves the native unlock prompt. Unset
    `OP_CONNECT_HOST`, `OP_CONNECT_TOKEN` and `OP_SERVICE_ACCOUNT_TOKEN` in that
-   process to avoid credential-source conflicts. This needs explicit user approval
-   but creates no automation token and shares no personal credentials with an AI.
-   If desktop integration is unavailable, stop for approval of a separate temporary
-   service-account writer using `OP_SERVICE_ACCOUNT_TOKEN`, with only
-   `Homelab:read_items,write_items`, a short expiry (for example 1 hour), no vault
-   creation or sharing grants. `write_items` includes item deletion as well as
-   creation/editing; it cannot be limited to these two item titles. Do not reuse
-   or broaden the runtime Connect token. This broader vault-wide authority must
-   be acknowledged explicitly. Revoke the temporary writer after verification.
+   process to avoid credential-source conflicts. This creates no automation token
+   and shares no personal credentials with an AI. If either local integration is
+   unavailable, stop; no service-account fallback or broader Connect token is
+   authorized. See the Windows handoff below for the separate CLI and SDK gates.
 2. Before enabling provisioning, privately verify the exact Homelab vault UUID
    (`onepassword_vault_id`) and exact-title collisions using the user's official
    CLI/client. The titles are `homelab-backup-b2` and `homelab-backup-ovh`.
    If an item already exists, stop: review/import its exact
    `vaults/<vault_id>/items/<item_id>` address and preserve existing field IDs and
    repository password; do not overwrite it with a generated recipe. New items
-   are safe only after absence has been verified. Additional provisioner key/item
-   titles need approval before creation.
+   are safe only after absence has been verified. The separate provisioner/recovery
+   title `homelab-backup-infrastructure` is approved in an existing private vault,
+   never the Operator-accessible Homelab vault.
 3. Establish independent state-passphrase recovery and provider bootstrap storage
    in 1Password **before** a real plan/import/apply. Inject provider environment
    variables privately using the user's authorized official `op run`/`op read`
@@ -140,6 +135,142 @@ with real credentials that list/read/write/delete on this bucket work, listing
 all buckets and access to an unrelated bucket fail, and bucket administration is
 denied before enabling restic. Do not use a failed scope check as a reason to
 broaden the policy.
+
+## Windows-local first handoff (read-only)
+
+This checkpoint prepares recovery and an encrypted **adoption plan only**. It
+never applies/imports state or creates credentials/items. The launcher suppresses
+provider diagnostics and decrypted JSON; it reports only resource addresses and
+actions. Windows runtime is **not yet exercised**; stop on failure, retain the
+private directory, and report only the failed stage, never raw errors or files.
+
+### One human prerequisite batch
+
+- Use native Windows PowerShell **7.4+** (`pwsh`, not Windows PowerShell 5.1 or
+  WSL), Git for Windows, official `op` CLI 2 and OpenTofu **1.13.2**. Verify their
+  official downloads/signatures. Use a trusted, non-recorded local terminal: no
+  PowerShell transcript, screen sharing, shell tracing or `TF_LOG`/`TF_CLI_ARGS*`.
+- In the Windows 1Password **beta** app, enable Windows Hello and Settings >
+  Developer > **Integrate with 1Password CLI**, then separately **Integrate with
+  1Password SDKs**. Approve the CLI's native prompt for `op whoami`. Later the
+  provider has its own SDK/native-unlock prompt, per process (authorization expires
+  after 10 minutes idle). CLI success does **not** establish SDK authentication;
+  this disabled-runtime plan may not start that provider at all. No remote agent
+  can approve either prompt for this laptop.
+- Privately verify the account ID (usable by both CLI and SDK), private recovery
+  vault UUID and Homelab runtime vault UUID in the app. Check exact titles in
+  both vaults. Reuse an existing `homelab-backup-infrastructure` only after
+  verifying its identity/fields; stop on duplicates. If either runtime title
+  exists, stop for adoption review; do not create runtime items manually.
+- In the private vault, use the app to save `homelab-backup-infrastructure` with
+  these **concealed, top-level custom fields** (no section). Secret values stay
+  on the laptop/in 1Password, not in commands, chat or `.tfvars`:
+
+  | Field label | Initial value / authority |
+  | --- | --- |
+  | `state-passphrase` | Newly generated independent random password, at least 32 characters; not a Talos/restic password. Save, lock/unlock, and verify recovery privately before planning. Keep independent secure recovery access, not solely this laptop or either managed bucket. |
+  | `b2-application-key-id`, `b2-application-key` | Read-only adoption key: only `listBuckets`, `readBucketEncryption`, `readBucketRetentions`, restricted to the existing bucket where supported. No `writeKeys` for this checkpoint. |
+  | `ovh-application-key`, `ovh-application-secret`, `ovh-consumer-key` | Existing-project GET-only credential using the paths above, endpoint `ovh-ca`. No activation, purchase or DELETE grants. |
+
+  If a credential has not been securely issued/saved, stop before the launch step;
+  do not invent placeholders as values or send secrets for an agent to copy.
+  Record nonsecret issuance/expiry metadata in that private item. Later bootstrap
+  may temporarily replace the B2 provider fields with the already approved,
+  short-lived `writeKeys`/`listKeys` authority; it is effectively account-wide,
+  must be revoked after bootstrap, and is **not needed now**. Runtime keys and
+  repository passwords are written directly by the provider, never copied by hand.
+
+### Prepare isolated sources and private references
+
+Run in a **fresh local `pwsh -NoProfile`**. Substitute only nonsecret placeholders.
+Choose an existing local checkout and the reviewed PR338 handoff commit SHA.
+Never stash, reset or clean that checkout. The detached worktree uses committed
+sources, not dirty files; stop rather than overwrite an existing destination.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
+$Repo = 'C:\path\to\homelab'
+$Revision = '<reviewed-PR338-handoff-commit-SHA>'
+$env:OP_ACCOUNT = '<verified-account-ID>'
+$RecoveryVault = '<private-vault-UUID>'
+$RecoveryItem = '<verified-homelab-backup-infrastructure-item-UUID>'
+foreach ($name in @('OP_CONNECT_HOST','OP_CONNECT_TOKEN','OP_SERVICE_ACCOUNT_TOKEN')) {
+    Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+}
+op whoami 1>$null 2>$null
+if ($LASTEXITCODE -ne 0) { throw 'CLI app authentication failed; stop.' }
+# Resolve locally after fetching the reviewed PR if necessary; never use dirty HEAD.
+$Commit = git -C $Repo rev-parse --verify "$Revision^{commit}" 2>$null
+if ($LASTEXITCODE -ne 0 -or $Commit -ne $Revision) { throw 'Reviewed commit unavailable; stop.' }
+$Existing = @(Get-ChildItem -LiteralPath $env:LOCALAPPDATA -Directory -Filter 'homelab-backup-*')
+if ($Existing.Count) { throw 'Prior backup handoff found; locate/recover it before starting again.' }
+$Base = Join-Path $env:LOCALAPPDATA ('homelab-backup-' + [guid]::NewGuid())
+$null = New-Item -ItemType Directory -Path $Base
+# Set a protected DACL before creating ANY credential references or artifacts.
+$acl = [System.Security.AccessControl.DirectorySecurity]::new()
+$acl.SetAccessRuleProtection($true, $false)
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+    $sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+$acl.AddAccessRule($rule)
+Set-Acl -LiteralPath $Base -AclObject $acl
+$Private = Join-Path $Base 'private'
+$Source = Join-Path $Base 'source'
+$null = New-Item -ItemType Directory -Path $Private
+# Never rerun against an existing state: this is first adoption only.
+git -C $Repo worktree add --detach $Source $Commit 1>$null 2>$null
+if ($LASTEXITCODE -ne 0) { throw 'Isolated worktree failed; stop.' }
+$Fields = [ordered]@{
+    TF_VAR_state_passphrase = 'state-passphrase'
+    B2_APPLICATION_KEY_ID = 'b2-application-key-id'
+    B2_APPLICATION_KEY = 'b2-application-key'
+    OVH_APPLICATION_KEY = 'ovh-application-key'
+    OVH_APPLICATION_SECRET = 'ovh-application-secret'
+    OVH_CONSUMER_KEY = 'ovh-consumer-key'
+}
+$References = foreach ($entry in $Fields.GetEnumerator()) {
+    '{0}=op://{1}/{2}/{3}' -f $entry.Key, $RecoveryVault, $RecoveryItem, $entry.Value
+}
+$EnvFile = Join-Path $Private 'references.env'
+$References | Set-Content -LiteralPath $EnvFile -Encoding utf8NoBOM
+```
+
+The `.env` contains **references only**, outside Git. The fresh ACL permits only
+this Windows user (administrators can still take ownership); use a local NTFS,
+BitLocker-protected location, not OneDrive/a shared drive. Both encrypted state
+(`backup.tfstate`, including future backups) and plan (`adoption.tfplan`), plus
+provider data, stay in `$Private`, never the checkout. Preserve this directory and
+its nonsecret source SHA/path for recovery. Before any rerun, locate existing
+state/plan and inspect the failure stage; never silently start with fresh state.
+
+### Run only after credential storage and read-only planning are authorized
+
+```powershell
+op run --env-file $EnvFile -- pwsh -NoProfile -File `
+    (Join-Path $Source 'infra\backup\Review-Adoption.ps1') -PrivateDirectory $Private
+if ($LASTEXITCODE -ne 0) { throw 'Adoption review failed; stop. No apply authorized.' }
+```
+
+`op run` resolves references only in its child process. Do not run `op read` to
+screen, dump item JSON/provider environments, use `--no-masking`, save decrypted
+plan JSON, or upload the encrypted artifacts to chat/CI. The launcher captures
+`tofu show` before parsing and checks its native exit code, so a failed producer
+cannot pass the review gate. Expected: only `b2_bucket.backup: no-op` with the
+exact import ID (plus the existing OVH project data read). A success **does not**
+prove SDK write access, active OVH service, or private bucket/runtime scope.
+
+**Stop here.** No B2 key is created and no runtime flag is enabled. OVH remains
+blocked until the existing project is activated on approved PAYG standard terms
+(no fixed/prepaid purchase), SGP v2 availability is verified, and a separate
+existing owner user is confirmed. If that owner is missing, obtain approval
+before creating it. Do not bypass the activation/payment error, create another
+project or auto-rename it. After activation the approved description is
+`homelab-backup`. A later reviewed provisioning plan must verify SDK authentication,
+Homelab vault UUID/title absence, expanded provider grants, exact plan settings
+and authorization **before** applying only that saved plan. Then verify direct
+item writes/runtime scope and revoke the temporary B2 bootstrap key. Leave the
+read-only Connect/Operator contract unchanged.
 
 ## Execution and review gates
 
@@ -200,6 +331,9 @@ tofu -chdir=infra/backup validate
 ```
 
 Sources: [1Password provider/authentication](https://developer.1password.com/docs/terraform/),
+[CLI app integration](https://developer.1password.com/docs/cli/app-integration/),
+[CLI environment injection](https://developer.1password.com/docs/cli/secrets-environment-variables/),
+[SDK desktop authorization](https://developer.1password.com/docs/sdks/desktop-app-integrations/),
 [1Password service-account scope](https://www.1password.dev/service-accounts/get-started),
 [OVH bucket/import schema](https://registry.terraform.io/providers/ovh/ovh/2.23.0/docs/resources/cloud_storage_object_bucket),
 [OVH project read](https://registry.terraform.io/providers/ovh/ovh/2.23.0/docs/data-sources/cloud_project),
