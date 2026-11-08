@@ -102,6 +102,21 @@ variable "scaleway_runtime_name" {
   }
 }
 
+variable "scaleway_admin_principals" {
+  type        = list(string)
+  default     = []
+  description = "Verified SCW user_id/application_id principals for the active provisioner and independent administrator/recovery access; human confirmation required."
+  validation {
+    condition = !(var.provision_scaleway && var.provision_runtime_credentials) || (
+      length(var.scaleway_admin_principals) > 0 && alltrue([
+        for principal in var.scaleway_admin_principals :
+        can(regex("^(user_id|application_id):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", principal))
+      ])
+    )
+    error_message = "Confirm explicit provisioner and independent recovery SCW principals before enabling Scaleway runtime provisioning."
+  }
+}
+
 provider "b2" {}
 
 provider "scaleway" {
@@ -183,11 +198,51 @@ resource "scaleway_iam_policy" "runtime" {
   lifecycle { prevent_destroy = true }
 }
 
+resource "scaleway_object_bucket_policy" "backup" {
+  count      = var.provision_scaleway && var.provision_runtime_credentials ? 1 : 0
+  bucket     = scaleway_object_bucket.backup[0].id
+  project_id = scaleway_account_project.backup[0].id
+  policy = jsonencode({
+    Version = "2023-04-17"
+    Statement = [
+      {
+        Sid       = "ProvisionerAndRecovery"
+        Effect    = "Allow"
+        Principal = { SCW = var.scaleway_admin_principals }
+        Action    = ["s3:*"]
+        Resource  = [scaleway_object_bucket.backup[0].name, "${scaleway_object_bucket.backup[0].name}/*"]
+      },
+      {
+        Sid       = "ResticBucket"
+        Effect    = "Allow"
+        Principal = { SCW = "application_id:${scaleway_iam_application.runtime[0].id}" }
+        Action    = ["s3:ListBucket", "s3:GetBucketLocation", "s3:ListBucketMultipartUploads"]
+        Resource  = [scaleway_object_bucket.backup[0].name]
+      },
+      {
+        Sid       = "ResticObjects"
+        Effect    = "Allow"
+        Principal = { SCW = "application_id:${scaleway_iam_application.runtime[0].id}" }
+        Action    = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+        Resource  = ["${scaleway_object_bucket.backup[0].name}/*"]
+      }
+    ]
+  })
+  depends_on = [scaleway_object_bucket_acl.backup]
+  lifecycle {
+    prevent_destroy = true
+    precondition {
+      condition     = !contains(var.scaleway_admin_principals, "application_id:${scaleway_iam_application.runtime[0].id}")
+      error_message = "The runtime application must never be an administrator/recovery principal."
+    }
+  }
+}
+
 resource "scaleway_iam_api_key" "runtime" {
   count              = var.provision_scaleway && var.provision_runtime_credentials ? 1 : 0
   application_id     = scaleway_iam_application.runtime[0].id
   default_project_id = scaleway_account_project.backup[0].id
   description        = var.scaleway_runtime_name
-  depends_on         = [scaleway_iam_policy.runtime, scaleway_object_bucket_acl.backup]
+  depends_on         = [scaleway_iam_policy.runtime, scaleway_object_bucket_acl.backup, scaleway_object_bucket_policy.backup]
   lifecycle { prevent_destroy = true }
 }

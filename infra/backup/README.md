@@ -19,7 +19,11 @@ The official Backblaze and Scaleway providers are pinned and checksummed in the 
   defaults, not teardown switches. Before enabling them, obtain account/billing
   verification, explicit provisioning authorization, and approved nonsecret inputs:
   `scaleway_organization_id`, `scaleway_project_name`, `scaleway_bucket_name`,
-  `scaleway_region`, `scaleway_runtime_name`, `scaleway_runtime_item_title`.
+  `scaleway_region`, `scaleway_runtime_name`, `scaleway_runtime_item_title`,
+  and `scaleway_admin_principals` (verified `user_id:<UUID>` /
+  `application_id:<UUID>` entries for the active provisioner and independent
+  administrator/recovery access). These principals are nonsecret but require
+  human identity/access confirmation; never guess them or include the runtime app.
   No Scaleway name or region is approved by this code; blank defaults fail closed
   when their provisioning gate is enabled.
 - OpenTofu owns a dedicated Scaleway project, private bucket/ACL and dedicated IAM
@@ -112,16 +116,45 @@ adopt unrelated composite items.
 | --- | --- |
 | B2 provider | `B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`. Read-only adoption plan: `listBuckets`, `readBucketEncryption`, `readBucketRetentions`. Bucket update additionally needs `writeBuckets`, `writeBucketEncryption` (do not grant retention writes for this configuration). Key creation/read needs `writeKeys`, `listKeys`. No direct `deleteBuckets`, `deleteFiles` or `deleteKeys` grants for routine provisioning. **`writeKeys` permits minting arbitrary keys and is effectively account-wide authority**, not bucket-scoped least privilege. Requires explicit approval, a short-lived operator-only bootstrap, and revocation after use. Never claim it is a narrow runtime key. |
 | B2 runtime | Only `listBuckets`, `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`, restricted by `bucket_ids` to the imported bucket. No account-wide bucket-name enumeration, bucket administration, retention bypass or key management. |
-| Scaleway provider | `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_DEFAULT_ORGANIZATION_ID` for an explicitly approved local bootstrap. Project creation needs organization-scoped `ProjectManager`; application/key and policy creation need `IAMApplicationManager` and `IAMPolicyManager`. Bucket/ACL creation needs `ObjectStorageBucketsWrite` plus read access in the dedicated project. These are consequential management grants, not runtime permissions: privately review exact API requirements, authorize temporarily, revoke afterwards. Never silently widen on failure. |
-| Scaleway runtime | Dedicated application, API key default project set explicitly; only `ObjectStorageReadOnly`, `ObjectStorageObjectsWrite`, `ObjectStorageObjectsDelete` on the single dedicated project. No bucket configuration/deletion, project or IAM management grants. |
+| Scaleway provider | `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_DEFAULT_ORGANIZATION_ID` for an explicitly approved local bootstrap. Project creation needs organization-scoped `ProjectManager`; application/key and policy creation need `IAMApplicationManager` and `IAMPolicyManager`. Bucket/ACL creation needs `ObjectStorageBucketsWrite` plus read access in the dedicated project; bucket-policy management additionally needs `ObjectStorageBucketPolicyFullAccess`. Verify these grants for the explicit provisioner/recovery principals. These are consequential management grants, not runtime permissions: privately review exact API requirements, authorize temporarily, revoke afterwards. Never silently widen on failure. |
+| Scaleway runtime | Dedicated application, API key default project set explicitly; `ObjectStorageReadOnly`, `ObjectStorageObjectsWrite`, `ObjectStorageObjectsDelete` on the single dedicated project, further restricted on the intended bucket by its policy below. No project or IAM management grants. |
 
-Scaleway IAM permission sets are **project-scoped, not bucket-only**. Read-only
-bucket listing and object read/write/delete extend to all buckets in that project.
-Keep the project dedicated to backups; do not place unrelated data there. Review
-other application memberships/policies and real multipart/list/read/write/delete
-behavior before activation. Verify bucket administration and other-project access
-are denied; do not claim listing all buckets inside this project is denied.
-Private ACLs are explicit; do not add public bucket policies or ACL grants.
+Scaleway IAM permission sets are **project-scoped, not bucket-only**. In particular,
+`ObjectStorageObjectsWrite` includes `PutObjectAcl`, `PutObjectLegalHold`,
+`PutObjectRetention` and `PutObjectLockConfiguration` (the last maps to
+`s3:PutBucketObjectLockConfiguration`). A private **bucket** ACL alone does not
+prevent public **object** ACLs or these configuration writes.
+
+The official bucket policy uses `2023-04-17`: actions require both an IAM grant
+and an explicit policy Allow; Deny statements are not the restriction mechanism.
+On this bucket, the runtime app may only list/get location/list multipart uploads,
+get/put/delete objects, abort multipart uploads and list parts. ACL, retention,
+legal-hold and bucket configuration actions are omitted. Resources use the bucket
+name and `name/*`, not AWS ARNs. The policy specifies the dedicated `project_id`
+and is installed after the private ACL, before any runtime API key is created.
+
+Installing a policy takes effect immediately and excludes every unlisted principal.
+Before enabling both flags, confirm `scaleway_admin_principals` includes the actual
+provisioner and independently recoverable administrator, with suitable IAM grants.
+Their explicit `s3:*` access is administrative, **not runtime authority**. One
+principal may cover both roles only after independent recovery is verified.
+The Organization owner can recover bucket policies, but that alone is not the
+provisioner/recovery access contract. Stop on an existing policy or uncertain
+identity; a policy write replaces the whole policy. Do not remove this policy,
+add public principals or weaken it after issuing runtime keys.
+
+Keep the project dedicated to backups; these restrictions do **not** protect
+arbitrary future unprotected buckets in the project, and project bucket listing
+is not claimed to be denied. Review other application memberships/policies.
+After an authorized apply, read back the exact bucket policy/private ACL, project,
+application and key scope with administrator credentials; verify retained
+provisioner/recovery access. Before activating jobs, use a disposable probe object
+to verify runtime list/location/get/put/delete and multipart operations, and verify
+ACL writes (including public object ACLs), retention/legal-hold/Object Lock,
+other bucket configuration and other-project access are denied. Perform any
+potentially effective negative probes only under a separately approved safe probe
+plan, never on repository data; do not enable Object Lock on the real bucket to
+test a denial. Offline tests do not establish cloud authorization.
 
 ## Windows-local first handoff (read-only)
 
@@ -273,6 +306,7 @@ tofu -chdir=infra/backup show -json "$BACKUP_PLAN" | jq -e '
       .address == "scaleway_account_project.backup[0]" or
       .address == "scaleway_object_bucket.backup[0]" or
       .address == "scaleway_object_bucket_acl.backup[0]" or
+      .address == "scaleway_object_bucket_policy.backup[0]" or
       .address == "scaleway_iam_application.runtime[0]" or
       .address == "scaleway_iam_policy.runtime[0]" or
       .address == "scaleway_iam_api_key.runtime[0]" or
@@ -310,6 +344,7 @@ export TF_VAR_state_passphrase="$(openssl rand -hex 32)"
 tofu -chdir=infra/backup fmt -check
 tofu -chdir=infra/backup init -backend=false -lockfile=readonly
 tofu -chdir=infra/backup validate
+python3 -m unittest discover -s tests -p test_backup_policy.py -v
 ```
 
 Sources: [1Password provider/authentication](https://developer.1password.com/docs/terraform/),
@@ -320,6 +355,9 @@ Sources: [1Password provider/authentication](https://developer.1password.com/doc
 [Scaleway bucket/import schema](https://registry.terraform.io/providers/scaleway/scaleway/2.91.0/docs/resources/object_bucket),
 [Scaleway provider releases](https://github.com/scaleway/terraform-provider-scaleway/releases),
 [Scaleway permission sets](https://www.scaleway.com/en/docs/iam/reference-content/permission-sets/),
+[Scaleway S3 action mapping](https://www.scaleway.com/en/docs/object-storage/reference-content/s3-iam-permissions-equivalence/),
+[Scaleway bucket policy semantics](https://www.scaleway.com/en/docs/object-storage/api-cli/bucket-policy/),
+[pinned bucket-policy resource](https://github.com/scaleway/terraform-provider-scaleway/blob/v2.91.0/docs/resources/object_bucket_policy.md),
 [Scaleway classes/endpoints](https://www.scaleway.com/en/docs/object-storage/concepts/),
 [Restic 0.19.1 S3 write handling](https://github.com/restic/restic/blob/v0.19.1/internal/backend/s3/s3.go),
 [B2 bucket](https://registry.terraform.io/providers/Backblaze/b2/0.14.1/docs/resources/bucket),
