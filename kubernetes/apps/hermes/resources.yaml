@@ -312,6 +312,8 @@ spec:
           args:
             - |
               /opt/hermes/.venv/bin/python /bootstrap/langfuse-configure-mcp.py
+              mkdir -p /opt/data/profiles/coder/plugins
+              ln -sfn /opt/langfuse/plugin /opt/data/profiles/coder/plugins/langfuse
               cd /opt/langfuse/plugin
               rm -f plugin.yaml plugin.yaml.pending
               source=https://raw.githubusercontent.com/NousResearch/hermes-official-plugins/83f0a896b3518c7131181838e340c9a80c79524d/langfuse
@@ -576,7 +578,11 @@ spec:
             - name: HERMES_LANGFUSE_BASE_URL
               value: http://langfuse.homelab.svc.cluster.local:3000
             - name: HERMES_LANGFUSE_CAPTURE
-              value: sanitized
+              value: metadata
+            - name: HERMES_LANGFUSE_MAX_CHARS
+              value: "2000"
+            - name: HERMES_LANGFUSE_MAX_DEPTH
+              value: "3"
             - name: HERMES_DASHBOARD
               value: "1"
             - name: HERMES_DASHBOARD_HOST

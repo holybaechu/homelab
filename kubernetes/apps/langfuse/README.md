@@ -29,10 +29,15 @@ Web, Worker and all four backends explicitly select its lowercase-hyphen keys;
 notes and the legacy `database-url` are not injected. Headless initialization creates
 the Homelab organization, Hermes project and API keys. The existing owner signs
 in through Authentik; bootstrap user credentials are no longer stored or injected.
-Public sign-up is disabled. The OSS deployment retains traces until manually
-deleted; automatic
-[retention](https://langfuse.com/docs/administration/data-retention) requires the
-self-hosted Enterprise edition.
+Public sign-up is disabled. The intended retention is **30 days for new traces**,
+including their observations, scores and media. This is a staged policy, not an
+effective TTL: the current OSS project has no retention configured and keeps data
+indefinitely. Automatic [retention](https://langfuse.com/docs/administration/data-retention)
+requires self-hosted Enterprise and applies to the whole project, including old
+history. Do not set project retention or add a deletion job to approximate a
+new-traces-only policy. A supported implementation must preserve existing history
+and stay scoped to Hermes; obtain a separate migration decision before enabling
+any policy that would expire historical data. No history is purged by this change.
 
 Authentik's Langfuse application grants access through the existing Personal
 group and admin entitlement. The native
@@ -44,14 +49,34 @@ Authentik. Preserve its configuration and the existing Langfuse user when
 restoring access. Do not create a replacement owner or regenerate the existing
 salt/encryption keys.
 
-Hermes uses the official catalog plugin at a fixed revision and the pinned SDK,
-with `HERMES_LANGFUSE_CAPTURE=sanitized` and sender attribution disabled.
-Questions, answers, system context and tool content can appear in traces after
-secret-pattern redaction and size limits. Names, email addresses and private
-notes can remain; this filter is not a general personal-information detector.
-Use `metadata` to omit content. Provider authentication and Discord tool logs
+Hermes uses the official catalog plugin at a fixed revision and the pinned SDK.
+The desired process-wide default is `HERMES_LANGFUSE_CAPTURE=metadata`, with sender
+attribution disabled: content is replaced by shapes/sizes while IDs, timings,
+usage and tool names remain. Command/file/full-conversation export is not enabled.
+`MAX_CHARS=2000` and `MAX_DEPTH=3` bound the plugin's content values during an
+explicit, temporary sanitized diagnostic process; they are not whole-trace byte
+quotas. Sanitized mode also limits collections and the message window, redacts
+secret patterns before truncation and replaces binary/media content. It is not a
+general PII detector. Do not enable `full` or broaden an ongoing conversation's
+capture for a retrospective question. Provider authentication and Discord tool logs
 continue through their existing paths. Missing plugin dependencies, keys or a
 failed backend disable/drop telemetry without stopping responses.
+
+The assistant and coder both enable the same prepared plugin and SDK; coder's
+plugin directory links to the pinned read-only runtime, not another telemetry
+implementation. `prepare-langfuse` scopes the two Operator project credentials
+and internal endpoint to coder through Hermes' protected native secret writer;
+the plugin's supported endpoint input is environment-based, including for routed
+profiles that deliberately cannot borrow the assistant's process credentials.
+Removal of either key clears both coder keys and the endpoint as well as the
+assistant's cached MCP header. No other profile receives credentials or mutations.
+
+New profiles do **not** implicitly inherit tracing from a traced parent. For a
+future authorized specialist, explicitly enable the same pinned plugin, provision
+its scoped project credentials/internal endpoint, keep attribution off and inherit
+the deployment's metadata capture policy. Do not clone unrelated persona, history,
+skills or credentials merely to gain tracing. Verify a real child generation and
+tool span after activation, not just `plugins.enabled`.
 
 This deployment supports text traces. MinIO is accessible only inside the cluster;
 direct browser media uploads and batch exports are not configured.
@@ -68,14 +93,23 @@ filtered tools.
 
 Ask, for example: “Find the ESO to 1Password Operator migration session and
 explain avoidable retries, separating necessary safety gates from wasted work.”
-Hermes can resolve the session ID with its local session search, then filter
+Service names are optional: questions about slow work, retries, token waste or
+delegation bottlenecks route through the owning Second Brain guidance. Start with
+the exact project/session/period and the smallest useful evidence; an adequate
+local answer needs no Langfuse call. Hermes can resolve the session ID with its local session search, then filter
 `listObservations` by `sessionId`. Inspect schemas first, use explicit time
 windows of at most 14 elapsed days, follow cursors, and fetch full payloads only
 for selected observations. Cite trace/observation IDs and distinguish measured
 latency from causal inference. Local transcripts are a separate fallback, not
 proof that Langfuse captured a session. Missing or truncated historical payloads
 cannot be reconstructed by enabling tracing now. Delegated work can have a
-separate session ID; inspect delegation metadata and local parent/child links.
+separate session ID. The official plugin creates a parent `Subagent` span whose
+`child_session_id` joins to the child's root `sessionId`; child traces are separate,
+not necessarily nested under the parent trace. Verify that join and the parent's
+span/root IDs by API readback. Historical routed child transcripts may live in
+the parent's shared gateway store with `profile_name=default`, even if coder's
+standalone database is empty. Follow explicit child IDs there before claiming no
+local records. Disabled tracing means missing telemetry, not missing local history.
 
 At startup, `prepare-langfuse` derives the Basic header from the same Operator
 project-key fields using Hermes' native secret writer. Only this derived secret
@@ -91,6 +125,44 @@ be activated with that CLI without restarting active conversations. Changes to
 the generated bootstrap ConfigMap/pod template should only be deployed after
 active tasks drain. Verify a real observation read, not just tool discovery;
 verify a later ordinary Hermes turn appears to check continuing ingestion.
+
+`hermes chat` on this image connects to the canonical gateway: shell environment
+overrides do not change that already-running owner's capture mode or secret scope.
+Read back `capture_mode` from a new root. Plugin hooks can reload without killing
+tasks, but cached failed initialization or an old secret scope can still prevent
+coder ingestion. A fresh native Hermes process verified both profiles with metadata
+capture; the existing gateway's coder detail remains unverified until a safe owner
+activation after tasks drain. The live gateway still reports sanitized capture;
+the metadata default and mounted routing guidance are staged for rollout, not live.
+
+## Outcome quality and operator evaluation
+
+Use `hermes_task_outcome_v1`, a categorical score with `failed=0`, `partial=0.5`,
+`success=1`. Define observable task acceptance criteria before execution. Success
+means all were verified; partial means a useful result with unmet criteria or
+coverage gaps; failed means no usable result or a safety violation. Normal task
+reports include verification evidence and remaining gaps. They are not automatically
+scored, and a completed tool/agent status alone is not quality evidence.
+
+An explicitly authorized operator can use the already-installed official SDK's
+`api.score_configs.create` and `api.scores.create` in the Hermes project, attaching
+the score to the parent delegation observation (`trace_id`, `observation_id`).
+Reuse the existing named config; record bounded acceptance criteria, verification
+method, assessor, parent/child session and trace IDs, and limitations in score
+metadata/comment. Use a stable score ID for an idempotent submission, then read
+that exact ID back. On this v4 events-only deployment, use
+`api.scores_v3.get_many_v3(id=score_id, fields="details,subject")` and
+`api.observations.get_many`; legacy trace/score reads return 404. Follow cursors.
+Do not add score writes to the assistant's MCP allowlist.
+
+The verified deterministic smoke score is operator-script evidence, not independent
+human ground truth or a general agent benchmark. Qualitative retrospective answers
+require explicit operator/human review against their cited evidence. Preserve later
+human corrections as separate annotations rather than overwriting the original
+assessment. No automatic LLM judge, scheduled evaluator or new external export is
+installed. Compare outcomes alongside root/delegation latency, generation usage,
+and available estimated costs. Model-price estimates are not actual subscription
+billing; unavailable costs stay unknown, never fabricated zero.
 
 ## Credentials and upgrades
 
