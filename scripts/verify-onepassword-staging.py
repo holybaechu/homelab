@@ -9,6 +9,19 @@ import sys
 
 
 CONTRACTS = {
+    "hermes-runtime-connect": {
+        "namespace": "homelab", "name": "hermes-runtime-connect",
+        "item_id": "rvmf543rf6sefjrqiu7csfa2ra",
+        "allowed": {"discord-bot-token", "discord-allowed-users", "discord-home-channel",
+                    "exa-api-key", "browser-use-api-key", "perplexity-api-key", "notesPlain"},
+        "sources": {
+            "hermes-discord": {"DISCORD_BOT_TOKEN": "discord-bot-token",
+                               "DISCORD_ALLOWED_USERS": "discord-allowed-users",
+                               "DISCORD_HOME_CHANNEL": "discord-home-channel"},
+            "hermes-web": {"EXA_API_KEY": "exa-api-key"},
+            "hermes-browser": {"BROWSER_USE_API_KEY": "browser-use-api-key"},
+        },
+    },
     "opencloud-connect": {
         "namespace": "homelab", "name": "opencloud-connect",
         "item_id": "kxywehnrosbeoxfby2ujyntdo4",
@@ -166,6 +179,14 @@ CONTRACTS = {
 VAULT = "3ryhjdiydkomgh3oxfl5yrg5j4"
 # Reviewed field IDs and section membership from the pre-edit metadata export.
 SOURCE_LABELS = {
+    "rvmf543rf6sefjrqiu7csfa2ra": ("Hermes Runtime", {
+        "op3m7hudiprbm63fk4wcxqglmi": ("discord-bot-token", None),
+        "fn446i6ddovmn7n4jcmck5afg4": ("discord-allowed-users", None),
+        "7ooupb36fhrns3ylsnros4fj6e": ("discord-home-channel", None),
+        "dhkzzpalgt33qdmvlm6knod72a": ("exa-api-key", None),
+        "52qljnwq55ysuf3hb2r4vxawni": ("browser-use-api-key", None),
+        "t4554lneydfcucvqsqjuck2zdi": ("perplexity-api-key", None),
+    }),
     "kxywehnrosbeoxfby2ujyntdo4": ("OpenCloud", {
         "username": ("username", None), "password": ("password", None),
     }),
@@ -242,6 +263,9 @@ SOURCE_LABELS = {
 def field_metadata(item_id, field_id):
     if field_id == "notesPlain":
         return "STRING", "NOTES"
+    if item_id == "rvmf543rf6sefjrqiu7csfa2ra" and field_id in {
+            "fn446i6ddovmn7n4jcmck5afg4", "7ooupb36fhrns3ylsnros4fj6e"}:
+        return "STRING", None
     if item_id == "fizdpxpyp5ommiouutzdlsgmnu":
         return ("SSHKEY" if field_id == "private_key" else "STRING"), None
     if item_id in {"x62vzi4s2sdnerrjev6pp5ndnu", "ioa2eqgh3qmg36ecdjvwx7bpo4"}:
@@ -389,12 +413,14 @@ def verify_source(source, replacement, contract):
     title, labels = SOURCE_LABELS[item_id]
     urls = source.get("urls") or []
     # Exact reviewed labels which Operator 1.12.1 skips, not arbitrary URLs.
+    empty_label_sources = {"77j3ul6ntreertxl3bjkdko4h4", "ioa2eqgh3qmg36ecdjvwx7bpo4",
+                           "6esl52kqp2arngw72jrteqdbge"}
     skipped_url = (
-        item_id in {"77j3ul6ntreertxl3bjkdko4h4", "d7ginmnpodzvevvb472v26jvmq",
+        item_id in empty_label_sources | {"d7ginmnpodzvevvb472v26jvmq",
                     "n2olk4p3ngumyuttl6b7itutba", "ztl6gih3jqixgb5xufbv4xq4bi"}
         and isinstance(urls, list)
         and len(urls) == 1 and isinstance(urls[0], dict)
-        and (urls[0].get("label") in (None, "") if item_id == "77j3ul6ntreertxl3bjkdko4h4"
+        and (urls[0].get("label") in (None, "") if item_id in empty_label_sources
              else urls[0].get("label") == "\uc6f9\uc0ac\uc774\ud2b8")
         and operator_key(urls[0].get("label") or "") == ""
         and isinstance(urls[0].get("href"), str) and bool(urls[0]["href"])
