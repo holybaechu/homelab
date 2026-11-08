@@ -67,6 +67,14 @@ spec:
               cp /opt/hermes/.venv/lib/python3.14/site-packages/browser_harness/run.py /opt/browser/run.py
               git -C /opt/browser apply --check /bootstrap/browser-cloud.patch
               git -C /opt/browser apply /bootstrap/browser-cloud.patch
+              cd /opt/hermes
+              sha256sum -c /bootstrap/browser-vault.sha256
+              mkdir -p /opt/browser/agent/vault_backends
+              mkdir -p /opt/browser/tools
+              cp agent/vault_backends/onepassword.py agent/vault_backends/base.py /opt/browser/agent/vault_backends/
+              cp tools/browser_vault_tool.py /opt/browser/tools/
+              git -C /opt/browser apply --check /bootstrap/browser-vault-connect.patch
+              git -C /opt/browser apply /bootstrap/browser-vault-connect.patch
               cp /bootstrap/qmd-index.yml /opt/data/qmd/config/index.yml
               touch /opt/homelab/services.py /opt/homelab/mcp_server.py
               chown 10000:10000 /opt/data /opt/data/workspace
@@ -638,6 +646,25 @@ spec:
               mountPath: /opt/hermes/.venv/lib/python3.14/site-packages/browser_harness/run.py
               subPath: run.py
               readOnly: true
+            - name: browser-runtime
+              mountPath: /opt/hermes/agent/vault_backends/onepassword.py
+              subPath: agent/vault_backends/onepassword.py
+              readOnly: true
+            - name: browser-runtime
+              mountPath: /opt/hermes/agent/vault_backends/base.py
+              subPath: agent/vault_backends/base.py
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/hermes/agent/vault_backends/connect_vault.py
+              subPath: connect_vault.py
+              readOnly: true
+            - name: browser-runtime
+              mountPath: /opt/hermes/tools/browser_vault_tool.py
+              subPath: tools/browser_vault_tool.py
+              readOnly: true
+            - name: browser-vault-credentials
+              mountPath: /var/run/hermes-browser-vault
+              readOnly: true
             - name: bootstrap
               mountPath: /opt/data/workspace/.hermes.md
               subPath: second-brain.md
@@ -842,6 +869,14 @@ spec:
           emptyDir: {}
         - name: browser-runtime
           emptyDir: {}
+        - name: browser-vault-credentials
+          secret:
+            secretName: hermes-browser-vault
+            optional: true
+            defaultMode: 0444
+            items:
+              - key: connect-token
+                path: connect-token
         - name: coder-runtime
           emptyDir: {}
         - name: coder-source

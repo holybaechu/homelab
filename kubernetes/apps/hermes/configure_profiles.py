@@ -9,6 +9,14 @@ from hermes_constants import get_hermes_home
 from utils import atomic_yaml_write
 
 
+def configure_browser_vault(config: dict) -> None:
+    config.setdefault("vault", {}).setdefault("onepassword", {}).update({
+        "enabled": True,
+        "connect_host": "http://onepassword-connect.onepassword.svc.cluster.local:8080",
+        "connect_token_file": "/var/run/hermes-browser-vault/connect-token",
+    })
+
+
 def reconcile(root: Path, bootstrap: Path) -> None:
     (root / "SOUL.md").write_text((bootstrap / "assistant-soul.md").read_text())
     if not profile_exists("coder"):
@@ -20,6 +28,7 @@ def reconcile(root: Path, bootstrap: Path) -> None:
     config = yaml.safe_load((coder / "config.yaml").read_text()) or {}
     config.setdefault("browser", {}).update(desired.pop("browser"))
     config.update(desired)
+    configure_browser_vault(config)
     atomic_yaml_write(coder / "config.yaml", config, sort_keys=False)
     (coder / "SOUL.md").write_text((bootstrap / "coder-soul.md").read_text())
     write_profile_meta(
@@ -30,6 +39,7 @@ def reconcile(root: Path, bootstrap: Path) -> None:
     )
 
     config = yaml.safe_load((root / "config.yaml").read_text()) or {}
+    configure_browser_vault(config)
     plugins = config.setdefault("plugins", {})
     enabled = plugins.setdefault("enabled", [])
     if "advanced-delegation" not in enabled:

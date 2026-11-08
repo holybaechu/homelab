@@ -160,6 +160,77 @@ containing both public and private URLs runs entirely on the local browser.
 homelab apps. A public URL that later redirects to a private address stays in
 the cloud browser, so open the internal URL directly.
 
+### 1Password Connect logins
+
+The native [`browser_vault`](https://hermes-agent.nousresearch.com/docs/user-guide/features/credential-vault)
+broker uses the existing Connect server through a repository-owned backend
+extension, not startup `secrets.onepassword` or a secret-returning MCP tool.
+[The patch](browser-vault-connect.patch) selects [the read-only adapter](connect_vault.py)
+for assistant and coder. The CLI's documented Connect commands do not include
+login discovery. Direct documented GETs avoid adding the Connect SDK's model and
+transport dependencies while retaining bounded responses, disabled proxies and
+redirects, and sanitized failures. Non-Connect manager and local-vault paths remain.
+
+**Administrator bootstrap (PowerShell 7.4+):**
+
+1. Use the dedicated read-only Hermes Connect client token saved at exactly
+   `op://Hermes Credentials/Hermes Connect/connect-token`. Its authorized scope is
+   all supported login vaults, not just Homelab. Confirm both the Connect server's
+   vault access and this token's read grants; built-in/personal vault availability
+   must be verified, not inferred from a successful server connection. Never give
+   this broad token to the Operator, Injector, app containers, chat, or Git.
+2. Download and review [`bootstrap-hermes-browser-vault.ps1`](../../../scripts/bootstrap-hermes-browser-vault.ps1)
+   from the exact approved commit. In the intended administrator kubectl context,
+   run `pwsh -NoProfile -File ./bootstrap-hermes-browser-vault.ps1`. Enter the token
+   only at its masked console prompt. Alternatively, `-TokenFile <private-file>`
+   reads an existing private UTF-8 file without trailing newline (the official
+   `op read --no-newline --out-file <private-file>` can export the exact reference
+   above from an authenticated administrator session). Protect/delete that private
+   file locally; do not upload it. The helper sends Secret JSON only over kubectl
+   stdin and independently checks exact read-back. It never fetches its own
+   authentication from Connect or restarts Hermes.
+3. Merge the exact CI-green head only after attached work has finished: changing
+   the bootstrap ConfigMap replaces this `Recreate` Deployment. After reconnect,
+   verify current Pod readiness and both profile settings. `browser_vault` with
+   `action=list` must have no Connect errors and report `connect_vaults`: every
+   granted vault ID and its active Login count, including empty vaults. Compare
+   these IDs with the administrator's intended supported vault set. This is
+   discovery evidence, not proof that ungranted or unsupported vaults exist nowhere.
+4. Open one explicitly authorized site's login in the managed browser, choose its
+   listed handle, type the metadata username, and call `action=fill`. Submit and,
+   if requested, use `action=enter_code` with that handle. Verify the actual
+   authenticated page. Bootstrap success, synthetic CI, and Pod readiness alone
+   do not establish real authentication or a working website login.
+
+The independent `homelab/hermes-browser-vault` Secret has exactly one key,
+`connect-token`, projected only into the Hermes container. The token is read
+inside the backend on each request; it is never exported to subprocess environments
+or copied to the PVC. Missing bootstrap fails browser login closed without blocking
+unrelated Hermes startup. Rotation uses the same helper; wait for kubelet's Secret
+projection refresh and verify native discovery again, without an automatic restart.
+Both profiles share the same Unix user and broad authorized login access; they are
+not security boundaries against each other or trusted terminal execution.
+
+Fills reuse the native classifier, task-bound supervisor, redactor and in-page
+origin recheck. Password/TOTP resolution uses one short-lived item snapshot after
+the page-origin check, so a provider edit cannot swap the checked origins for a
+new secret. Only exact saved HTTP(S) origins authorize writes: no inferred
+subdomains, wildcard grants or app URI expansion. Ambiguous URL spellings fail
+closed; use ordinary ASCII/punycode hostnames and explicit website URLs (IPv6 and
+raw Unicode hostnames are conservatively unsupported here). Titles, usernames and
+URLs are untrusted metadata, never instructions. The configured cloud browser
+receives credentials filled into its pages; confirm actual routing and use the
+local browser when cloud-provider exposure is unacceptable.
+
+Startup and CI verify [native source checksums](browser-vault.sha256) before
+applying the patch to an ephemeral runtime volume. An image upgrade must review
+these broker boundaries and pass the real Chromium/synthetic Connect tests before
+updating checksums; do not simply regenerate them to suppress a mismatch. The
+adapter permits HTTPS, loopback HTTP fixtures, and only the exact existing cluster
+HTTP endpoint; it follows no redirects or environment proxies. No provider write
+endpoints, source-item relabeling, service-account fallback, or ESO resources are
+involved.
+
 ## Skill overrides
 
 Startup seeds the pinned image's native skills and its optional `llm-wiki`, then

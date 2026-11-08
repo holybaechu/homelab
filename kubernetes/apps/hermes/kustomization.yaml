@@ -21,6 +21,9 @@ configMapGenerator:
       - coder-configure-git.sh=coder/configure-git.sh
       - coder-configure-git.py=coder/configure_git.py
       - browser-cloud.patch
+      - browser-vault-connect.patch
+      - browser-vault.sha256
+      - connect_vault.py
       - mcp-servers.yaml
       - webhook.yaml
       - obsidian-sync/package.json
