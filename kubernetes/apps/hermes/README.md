@@ -27,6 +27,11 @@ The existing Discord profile is displayed as `assistant`; its built-in ID stays
 `default` to preserve sessions, memory, and model authentication. Startup creates
 a blank `coder` profile and reconciles [coder.yaml](coder.yaml),
 [coder-soul.md](coder-soul.md), and the assistant's native profile delegation route.
+Startup also reconciles assistant's `model` selection and the `agent` inference
+settings in [config.yaml](config.yaml): `gpt-6.1-sol` through `openai-codex`,
+`xhigh` reasoning, and Fast (`service_tier: priority`). Coder's inference settings
+remain separate. Existing chats can retain session-specific overrides; start a
+new chat to use the profile defaults.
 Coder inherits the root Codex OAuth grant through Hermes's native fallback; keep
 its `auth.json` absent rather than copying rotating OAuth tokens.
 

@@ -39,6 +39,9 @@ def reconcile(root: Path, bootstrap: Path) -> None:
     )
 
     config = yaml.safe_load((root / "config.yaml").read_text()) or {}
+    assistant = yaml.safe_load((bootstrap / "config.yaml").read_text())
+    config.setdefault("model", {}).update(assistant["model"])
+    config.setdefault("agent", {}).update(assistant["agent"])
     configure_browser_vault(config)
     plugins = config.setdefault("plugins", {})
     enabled = plugins.setdefault("enabled", [])
