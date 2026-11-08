@@ -1045,95 +1045,48 @@ Run only after approving this bounded challenge. Requires the administrator's
 existing Kubernetes context, not the agent's denied ClusterIssuer/Secret reads.
 
 ```powershell
-$ErrorActionPreference = 'Stop'
-$name = 'eso-retirement-check'
-$ns = 'cert-manager'
-$issuerCreated = $false
-$certificateCreated = $false
-$cleanupSafe = $true
-try {
-    foreach ($target in @(@('clusterissuer', $name), @('certificate', $name),
-                          @('secret', "$name-account"), @('secret', "$name-tls"))) {
-        $existing = kubectl get ($target[0]) ($target[1]) -n $ns --ignore-not-found -o name 2>$null
-        if ($LASTEXITCODE -ne 0 -or $existing) { throw 'FAIL test-name-preflight' }
-    }
-    $issuer = kubectl get clusterissuer letsencrypt -o json 2>$null | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0) { throw 'FAIL issuer-read' }
-    $solvers = @($issuer.spec.acme.solvers)
-    if ($solvers.Count -ne 1 -or
-        $solvers[0].dns01.cloudflare.apiTokenSecretRef.name -ne 'cloudflare-connect' -or
-        $solvers[0].dns01.cloudflare.apiTokenSecretRef.key -ne 'credential' -or
-        @($solvers[0].selector.dnsZones).Count -ne 1 -or
-        $solvers[0].selector.dnsZones[0] -ne 'hchu.me') { throw 'FAIL issuer-projection' }
-    $testIssuer = @{
-        apiVersion = 'cert-manager.io/v1'; kind = 'ClusterIssuer'
-        metadata = @{name = $name}
-        spec = @{acme = @{
-            server = 'https://acme-staging-v02.api.letsencrypt.org/directory'
-            privateKeySecretRef = @{name = "$name-account"}; solvers = $solvers
-        }}
-    }
-    $cleanupSafe = $false
-    $testIssuer | ConvertTo-Json -Depth 20 | kubectl create -f - 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'FAIL staging-issuer-create; inspect unknown outcome before retry' }
-    $issuerCreated = $true
-    $cleanupSafe = $true
-    $certificate = @{
-        apiVersion = 'cert-manager.io/v1'; kind = 'Certificate'
-        metadata = @{name = $name; namespace = $ns}
-        spec = @{
-            secretName = "$name-tls"; dnsNames = @('eso-retirement-check.hchu.me')
-            issuerRef = @{name = $name; kind = 'ClusterIssuer'}
-        }
-    }
-    $cleanupSafe = $false
-    $certificate | ConvertTo-Json -Depth 20 | kubectl create -f - 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'FAIL test-certificate-create; inspect unknown outcome before retry' }
-    $certificateCreated = $true
-    $cleanupSafe = $true
-    kubectl wait certificate/$name -n $ns --for=condition=Ready --timeout=10m 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'FAIL fresh-staging-DNS01' }
-    $result = kubectl get certificate $name -n $ns -o json 2>$null | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or $result.status.revision -ne 1 -or
-        @($result.status.conditions | Where-Object { $_.type -eq 'Ready' -and $_.status -eq 'True' }).Count -ne 1) {
-        throw 'FAIL fresh-certificate-readback'
-    }
-    'PASS fresh-staging-DNS01 certificate-revision=1'
-} finally {
-    # Delete the Certificate first so cert-manager can clean up its ACME challenge.
-    if ($certificateCreated) {
-        kubectl delete certificate $name -n $ns --wait=true 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'FAIL test-certificate-cleanup' }
-        # Wait for owned Order/Challenge finalizers before deleting the issuer/account.
-        for ($attempt = 0; $attempt -lt 24; $attempt++) {
-            $remaining = kubectl get challenges.acme.cert-manager.io -n $ns -o json 2>$null | ConvertFrom-Json
-            if ($LASTEXITCODE -ne 0) { throw 'FAIL challenge-cleanup-read' }
-            $pending = @($remaining.items | Where-Object { $_.spec.issuerRef.name -eq $name }).Count
-            if (-not $pending) { break }
-            Start-Sleep -Seconds 5
-        }
-        if ($pending) { throw 'FAIL challenge-cleanup-pending; keep test issuer/account and inspect privately' }
-        kubectl delete secret "$name-tls" -n $ns --ignore-not-found --wait=true 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'FAIL temporary-secret-cleanup' }
-    }
-    if ($issuerCreated -and $cleanupSafe) {
-        kubectl delete clusterissuer $name --wait=true 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'FAIL staging-issuer-cleanup' }
-        kubectl delete secret "$name-account" -n $ns --ignore-not-found --wait=true 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'FAIL staging-account-cleanup' }
-        foreach ($target in @(@('clusterissuer', $name), @('certificate', $name),
-                              @('secret', "$name-account"), @('secret', "$name-tls"))) {
-            $left = kubectl get ($target[0]) ($target[1]) -n $ns --ignore-not-found -o name 2>$null
-            if ($LASTEXITCODE -ne 0 -or $left) { throw 'FAIL cleanup-readback' }
-        }
-        'PASS staging-DNS01-cleanup'
-    }
-    if (-not $cleanupSafe) {
-        'FAIL unknown-create-outcome; inspect only test resources before cleanup or retry'
-
-    }
-}
+git fetch origin chore/remove-eso-targets
+if ($LASTEXITCODE -ne 0) { throw 'FAIL DNS01-script-fetch; do not execute an older copy' }
+$probe = Join-Path $PWD 'eso-retirement-dns01.ps1'
+git show origin/chore/remove-eso-targets:scripts/verify-eso-dns01.ps1 | Set-Content -Encoding UTF8 $probe
+if ($LASTEXITCODE -ne 0) { throw 'FAIL DNS01-script-download; do not execute' }
+& $probe
 ```
+
+This downloads the maintained standalone script, replacing any older local file.
+Review it before execution. A browser-downloaded copy may need `Unblock-File`
+after review; do not weaken the execution policy globally. The pending retirement
+branch is intentional: target pruning must remain unmerged until this proof passes.
+After merge, use `origin/main` instead.
+
+The default run refuses **all** pre-existing test names. Each diagnostic identifies
+stage, scope, resource and fixed failure category: `name-collision` is different
+from nonzero kubectl exit, access/authentication/transport hints, or malformed JSON.
+Hints are classifications, not proof of the underlying account/network cause.
+The script executes the native kubectl application (not a PowerShell function or
+alias), captures its exit code directly, and never prints raw stderr or JSON.
+`& $probe -DiagnoseOnly` is read-only and cannot issue or clean up resources.
+
+For the administrator-reviewed leftover pair created at `2026-11-08T09:58:49Z`,
+use the same downloaded script with the explicit recovery option:
+
+```powershell
+& $probe -ResumeStagingPair
+```
+
+This is not general object adoption. Before any write, it requires that exact
+creation time, staging endpoint/account reference, the current production solver
+contract and complete solver equality. It reads only the account Secret's UID,
+creation time, owner references and deletion timestamp, requiring the reviewed
+ownerless, non-deleting account with the same creation time. It also requires no
+test Certificate/TLS Secret, no Certificate/Order/Challenge referencing the test
+issuer anywhere, and no other ClusterIssuer or cert-manager Issuer sharing its
+account. Any mismatch/read failure stops without deleting the existing pair.
+`-ResumeStagingPair -DiagnoseOnly` runs those guards without writes. A successful
+recovery run reuses the staging issuer/account, creates only the bounded test
+Certificate and performs the normal issuance and cleanup. Never use this option
+for a different leftover pair or change the timestamp guard to force acceptance.
+
 
 If cleanup reports pending challenges, keep the staging issuer/account until
 cert-manager removes the temporary TXT record. Inspect only fixed status/name

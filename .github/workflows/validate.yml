@@ -50,6 +50,7 @@ jobs:
           done
       - name: Check local-path storage and credential safeguards
         run: |
+          command -v pwsh
           python3 -m pip install cryptography==50.0.2
           python3 -m unittest discover -s tests -v
       - name: Validate native Kubernetes schemas
