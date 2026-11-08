@@ -4,6 +4,7 @@
 A passing inventory is NOT authentication, refresh, or rollback-closure approval.
 Run before pruning; retain the printed metadata as the deletion allowlist.
 """
+import argparse
 import json
 import subprocess
 import sys
@@ -102,7 +103,7 @@ def owner_matches(metadata, kind, uid, name):
         for owner in metadata.get("ownerReferences", []))
 
 
-def main():
+def main(phase="retained"):
     failures = 0
 
     def check(ok, label):
@@ -124,7 +125,9 @@ def main():
         available = {g["name"]: g for g in groups["groups"]}
         for group in sorted(GROUPS):
             definition = available.get(group)
-            check(definition is not None, group + " installed")
+            check((definition is None) if phase == "complete" else
+                  (phase == "uninstalled" or definition is not None),
+                  group + (" absent" if phase == "complete" else " discovery"))
             if not definition:
                 continue
             resources = {}
@@ -149,7 +152,11 @@ def main():
                     meta = entry["metadata"]
                     ns = meta.get("namespace", "")
                     print(f"INFO instance {group}/{name} {ns}/{meta['name']}")
-                    if group == "external-secrets.io" and name == "externalsecrets":
+                    if phase != "retained":
+                        check(phase == "targets-removed" and group == "external-secrets.io"
+                              and name == "clustersecretstores" and meta["name"] == "onepassword",
+                              "only-reviewed-store-remains" if phase == "targets-removed" else "empty-ESO-kind")
+                    elif group == "external-secrets.io" and name == "externalsecrets":
                         spec = entry["spec"]
                         target = spec.get("target", {}).get("name", meta["name"])
                         pair = (ns, target)
@@ -166,7 +173,8 @@ def main():
                     else:
                         check(group == "external-secrets.io" and name == "clustersecretstores"
                               and meta["name"] == "onepassword", "reviewed-store-or-empty-kind")
-        check(live == expected, f"retained-target-set actual={len(live)} expected={len(expected)}")
+        if phase == "retained":
+            check(live == expected, f"retained-target-set actual={len(live)} expected={len(expected)}")
 
     for ns, items in ITEMS.items():
         for name, item_id in items.items():
@@ -198,6 +206,13 @@ def main():
             if entry["kind"] == "ReplicaSet" and entry["spec"].get("replicas", 1) == 0:
                 continue
             meta = entry["metadata"]
+            if phase != "retained" and entry["kind"] in {"Deployment", "StatefulSet"}:
+                desired = entry["spec"].get("replicas", 1)
+                status = entry.get("status", {})
+                check(status.get("observedGeneration") == meta["generation"]
+                      and status.get("readyReplicas", 0) == desired
+                      and status.get("updatedReplicas", 0) == desired,
+                      f"workload-ready {entry['kind']} {meta.get('namespace', '')}/{meta['name']}")
             ns = "cert-manager" if entry["kind"] == "ClusterIssuer" else meta.get("namespace", "")
             refs = old_references(entry.get("spec", {}), ns)
             for key, value in meta.get("annotations", {}).items():
@@ -215,7 +230,8 @@ def main():
 
     chart_kinds = ["customresourcedefinitions", "deployments", "services", "serviceaccounts",
                    "roles", "rolebindings", "clusterroles", "clusterrolebindings",
-                   "validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+                   "validatingwebhookconfigurations", "mutatingwebhookconfigurations",
+                   "helmreleases.helm.toolkit.fluxcd.io", "helmrepositories.source.toolkit.fluxcd.io"]
     for kind in chart_kinds:
         data = read("chart ownership " + kind, "get", kind, "-A", "-o", "json")
         if data is None:
@@ -225,12 +241,44 @@ def main():
             annotations = meta.get("annotations", {})
             eso = (annotations.get("meta.helm.sh/release-name") == "external-secrets"
                    and annotations.get("meta.helm.sh/release-namespace") == "external-secrets")
+            eso = eso or (meta["name"] == "external-secrets" and (
+                (entry["kind"] == "HelmRelease" and meta.get("namespace") == "external-secrets")
+                or (entry["kind"] == "HelmRepository" and meta.get("namespace") == "flux-system")))
             crd = entry["kind"] == "CustomResourceDefinition" and entry["spec"]["group"] in GROUPS
+            if phase in {"uninstalled", "complete"} and (eso or crd):
+                check(phase == "uninstalled" and crd,
+                      f"retired-chart-object-absent {entry['kind']} {meta.get('namespace', '')}/{meta['name']}")
             if eso or crd:
                 print(f"INFO retirement-resource {entry['kind']} {meta.get('namespace', '')}/{meta['name']}")
+    if phase != "retained":
+        for kind, ns, name in [("helmrelease", "external-secrets", "reloader"),
+                               ("deployment", "external-secrets", "reloader-reloader")]:
+            obj = read("preserved-reloader", "get", kind, name, "-n", ns, "-o", "json")
+            if obj is not None:
+                status, meta = obj.get("status", {}), obj["metadata"]
+                ready = (status.get("observedGeneration") == meta["generation"]
+                         and not meta.get("deletionTimestamp"))
+                if kind == "helmrelease":
+                    ready = ready and any(c.get("type") == "Ready" and c.get("status") == "True"
+                                          for c in status.get("conditions", []))
+                else:
+                    ready = ready and status.get("readyReplicas", 0) == obj["spec"].get("replicas", 1)
+                check(ready, "preserved-reloader " + kind)
+        flux = read("Flux readiness", "get", "kustomizations.kustomize.toolkit.fluxcd.io",
+                    "-n", "flux-system", "-o", "json")
+        if flux is not None:
+            check(bool(flux["items"]) and all(
+                not o["spec"].get("suspend", False) and any(
+                    c.get("type") == "Ready" and c.get("status") == "True"
+                    and c.get("observedGeneration") == o["metadata"]["generation"]
+                    for c in o.get("status", {}).get("conditions", []))
+                for o in flux["items"]), "Flux-kustomizations-ready")
     print("INFO no-writes; authentication/refresh evidence and rollback closure remain separate gates")
     return bool(failures)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--phase", choices=("retained", "targets-removed", "uninstalled", "complete"),
+                        default="retained")
+    sys.exit(main(parser.parse_args().phase))

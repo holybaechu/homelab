@@ -4,7 +4,6 @@ namespace: homelab
 resources:
   - onepassword.yaml
   - resources.yaml
-  - secrets.yaml
 configMapGenerator:
   - name: hermes-bootstrap
     files:
