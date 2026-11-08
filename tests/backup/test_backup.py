@@ -141,12 +141,14 @@ class Capture(unittest.TestCase):
         git('init')
         git('remote', 'add', 'origin', 'https://github.com/holybaechu/homelab.git')
         (repo / 'clean').write_text('authoritative')
+        (repo / 'a*').write_text('authoritative literal wildcard')
         (repo / 'changed').write_text('original')
         git('add', '.')
         git('commit', '-m', 'fixture')
         git('update-ref', 'refs/remotes/origin/main', 'HEAD')
         (repo / 'changed').write_text('uncommitted recovery')
         (repo / 'untracked').write_text('private workspace')
+        (repo / 'abc').write_text('must not be excluded as a wildcard match')
         selected = self.root / 'capture/hermes-data'
         shutil.copytree(source, selected)
         with patch.object(worker, 'STAGE', self.root):
@@ -155,10 +157,38 @@ class Capture(unittest.TestCase):
         self.assertNotIn('/workspace/changed', excludes)
         self.assertNotIn('/workspace/untracked', excludes)
         self.assertNotIn('/workspace/.git', excludes)
+        if shutil.which('rsync'):
+            filtered = self.root / 'filtered'
+            worker.sync(source, filtered, excludes)
+            self.assertTrue((filtered / 'workspace/abc').exists())
+            self.assertFalse((filtered / 'workspace/a*').exists())
         git('add', '.')
         git('commit', '-m', 'unpublished fixture')
         with patch.object(worker, 'STAGE', self.root):
             self.assertEqual(worker.gitops_excludes(source, selected), [])
+
+    def test_endpoint_mismatch_is_rejected_before_credentials_are_read(self):
+        root = self.root / 'ovh'
+        root.mkdir()
+        (root / 'repository').write_text('s3:https://s3.sgp.perf.cloud.ovh.net/homelab-backup-ovh')
+        (root / 'region').write_text('sgp')
+        with patch.object(worker, 'REPOSITORIES', self.root):
+            with self.assertRaisesRegex(RuntimeError, 'approved target'):
+                worker.repository('ovh')
+
+    @unittest.skipUnless(shutil.which('rsync'), 'rsync required')
+    def test_projected_original_keys_are_materialized_not_dangling_links(self):
+        source, target = self.root / 'projected', self.root / 'recovery'
+        (source / '..version/n8n').mkdir(parents=True)
+        (source / '..version/n8n/encryption_key').write_text('synthetic-original-key')
+        (source / '..data').symlink_to('..version')
+        (source / 'n8n').mkdir()
+        (source / 'n8n/encryption_key').symlink_to('../..data/n8n/encryption_key')
+        worker.sync(source, target, ['/..*'], dereference=True)
+        key = target / 'n8n/encryption_key'
+        self.assertFalse(key.is_symlink())
+        self.assertEqual(key.read_text(), 'synthetic-original-key')
+        self.assertFalse((target / '..data').exists())
 
     def test_native_producer_timeout_is_failure(self):
         with self.assertRaises(subprocess.TimeoutExpired):

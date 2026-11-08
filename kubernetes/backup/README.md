@@ -50,7 +50,10 @@ Workers have stable Pod names for resource-name-bound exec permissions. The
 watchdog cannot exec, mount sources, read Secrets or create workloads. Neither
 service account can exec application Pods, delete PVCs/PVs, read Secrets or create
 Jobs/Pods. The runner can scale only the named writers and suspend only
-`apps`, `identity`, `access` and the Authentik HelmRelease. Root can read source
+`apps`, `identity`, `access` and the Authentik HelmRelease. A fail-closed admission
+policy bounds those two identities to changing only `spec.suspend`, preserving
+other spec fields and operator metadata; Flux controller identities are unaffected.
+Root can read source
 ownership/xattrs, but source PVCs are mounted read-only; capabilities are limited
 to local staging metadata preservation.
 
@@ -98,7 +101,13 @@ B2 is fixed to the verified private bucket `homelab-backup-b2`, endpoint
 `s3.us-west-004.backblazeb2.com`, region `us-west-004`; SSE-B2 is supplementary to
 restic encryption, not a replacement. Fill `BACKUP_OVH_REPOSITORY` and
 `BACKUP_OVH_REGION` only after verifying the private `homelab-backup-ovh` bucket's
-Singapore One-Zone IA endpoint, signing region and storage-class behavior. Use
+Singapore One-Zone IA endpoint, signing region and storage-class behavior. The
+required modern endpoint is `s3:https://s3.sgp.io.cloud.ovh.net/homelab-backup-ovh`,
+region `sgp`. [OVH's current mapping](https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-location)
+requires an explicit `STANDARD_IA` write class on this `.io` endpoint; the worker
+sets it for OVH commands (including metadata, whose short lifetimes still incur
+the minimum duration). The legacy `.perf` endpoint maps that class differently
+and is rejected, rather than silently storing at the wrong tier. Use
 bucket-root repositories, no invented project prefixes. Both providers need
 bucket-scoped list/get/put/delete operations for restic, not account-wide access.
 Do not enable Object Lock/retention incompatible with restic deletion.
@@ -121,12 +130,16 @@ OVH One-Zone IA has a 30-day minimum duration and retrieval/request costs.
    credentials outside this cluster.
 3. With parent approval, unsuspend only Flux `backup`; keep both CronJobs
    suspended. Verify the three workers, watchdog, explicit source mounts,
-   least-privilege RBAC, existing app keys and stage capacity. Local-path requests
+   least-privilege RBAC, the Deny admission binding and empty policy type-check
+   warnings, existing app keys and stage capacity. Standalone CEL tests do not
+   replace API-server admission/read-back verification. Local-path requests
    do not reserve/enforce a quota; staging shares the same disk, is not a backup,
    and contains mode-restricted plaintext. Retain PVCs when removing this layer.
 4. From an authorized administrator, initialize **each verified empty target**
    explicitly using the worker's projected files and `worker.repository()`
-   environment. `restic init` is deliberately not an automatic fallback after a
+   environment: `kubectl -n homelab exec backup-worker-0 -c worker -- python3
+   /backup/worker.py init b2` (then `init ovh`). Each prints only its repository ID.
+   `restic init` is deliberately not an automatic fallback after a
    failed repository read. Never initialize a substitute repository on an auth,
    endpoint or network failure; verify the distinct repository IDs afterwards.
 5. With parent approval for the first capture outage, create a Job from

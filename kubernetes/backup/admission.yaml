@@ -1,0 +1,52 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: backup-suspend-only
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [kustomize.toolkit.fluxcd.io]
+        apiVersions: [v1]
+        operations: [UPDATE]
+        resources: [kustomizations]
+        resourceNames: [apps, identity, access]
+      - apiGroups: [helm.toolkit.fluxcd.io]
+        apiVersions: [v2]
+        operations: [UPDATE]
+        resources: [helmreleases]
+        resourceNames: [authentik]
+  matchConditions:
+    - name: backup-identity
+      expression: >-
+        request.userInfo.username in
+        ['system:serviceaccount:homelab:backup-runner',
+         'system:serviceaccount:homelab:backup-watchdog']
+  validations:
+    - expression: >-
+        has(object.spec.suspend) && object.spec.suspend in [true, false] &&
+        object.spec.all(k, k == 'suspend' ||
+          (k in oldObject.spec && object.spec[k] == oldObject.spec[k])) &&
+        oldObject.spec.all(k, k == 'suspend' ||
+          (k in object.spec && object.spec[k] == oldObject.spec[k]))
+      message: Backup identities may change only spec.suspend on the selected GitOps resources
+    - expression: >-
+        object.metadata.name == oldObject.metadata.name &&
+        object.metadata.namespace == oldObject.metadata.namespace &&
+        has(object.metadata.labels) == has(oldObject.metadata.labels) &&
+        (!has(object.metadata.labels) || object.metadata.labels == oldObject.metadata.labels) &&
+        has(object.metadata.annotations) == has(oldObject.metadata.annotations) &&
+        (!has(object.metadata.annotations) || object.metadata.annotations == oldObject.metadata.annotations) &&
+        has(object.metadata.finalizers) == has(oldObject.metadata.finalizers) &&
+        (!has(object.metadata.finalizers) || object.metadata.finalizers == oldObject.metadata.finalizers) &&
+        has(object.metadata.ownerReferences) == has(oldObject.metadata.ownerReferences) &&
+        (!has(object.metadata.ownerReferences) || object.metadata.ownerReferences == oldObject.metadata.ownerReferences)
+      message: Backup identities must preserve resource identity and operator metadata
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: backup-suspend-only
+spec:
+  policyName: backup-suspend-only
+  validationActions: [Deny]

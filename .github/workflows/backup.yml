@@ -18,6 +18,9 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Verify exact suspend-only admission CEL
+        working-directory: tests/backup/admission
+        run: go test -v ./...
       - run: docker build -t backup-test kubernetes/backup
       - name: Exercise capture recovery and real local restic restore
         run: |

@@ -15,6 +15,7 @@ import time
 STAGE = Path('/stage')
 SOURCES = Path('/source')
 SECRETS = Path('/recovery')
+REPOSITORIES = Path('/repositories')
 DATA = {
     'opencloud': ['opencloud-config', 'opencloud-data'],
     'immich': ['immich-media'],
@@ -104,6 +105,10 @@ def postgres(group, target):
             command([f'/usr/lib/postgresql/{major}/bin/{program}', *flags], env=env, stdout=output)
 
 
+def literal_exclude(path):
+    return '/' + ''.join('\\' + c if c in '\\*?[' else c for c in str(path))
+
+
 def gitops_excludes(root, selected):
     excluded, recovery = [], []
     for directory, dirs, files in os.walk(selected, followlinks=False):
@@ -131,13 +136,13 @@ def gitops_excludes(root, selected):
             tracked = read('ls-files', '-z').split(b'\0')
             for name in tracked:
                 if name and name not in dirty:
-                    excluded.append('/' + str(relative / os.fsdecode(name)))
+                    excluded.append(literal_exclude(relative / os.fsdecode(name)))
             status = read('status', '--porcelain=v1', '-z')
             # Preserve index, staged blobs and stash as recovery state when dirty.
             has_stash = subprocess.run([*base, 'rev-parse', '--verify', 'refs/stash'],
                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
             if not status and not has_stash:
-                excluded.append('/' + str(relative / '.git'))
+                excluded.append(literal_exclude(relative / '.git'))
             recovery.append({'path': str(relative), 'commit': read('rev-parse', 'HEAD').decode().strip(),
                              'origin': 'https://github.com/holybaechu/homelab.git'})
         except RuntimeError:
@@ -158,7 +163,7 @@ def copy_data(name, *, presync=False, deadline=None):
         sync(source, target, excludes, presync=True)
         databases = sqlite_files(target)
         excludes += gitops_excludes(source, target)
-        excludes += ['/' + str(p) for p in databases]
+        excludes += [literal_exclude(p) for p in databases]
         # Live main DB copies are not a valid backup; remove them before final sync.
         for path in databases:
             (target / path).unlink()
@@ -229,24 +234,39 @@ def seal(run):
 def repository(destination):
     if destination not in ('b2', 'ovh'):
         raise ValueError('Unknown destination')
-    root = Path('/repositories') / destination
+    root = REPOSITORIES / destination
+    url, region = (root / 'repository').read_text().strip(), (root / 'region').read_text().strip()
+    expected = {'b2': ('s3:https://s3.us-west-004.backblazeb2.com/homelab-backup-b2', 'us-west-004'),
+                'ovh': ('s3:https://s3.sgp.io.cloud.ovh.net/homelab-backup-ovh', 'sgp')}
+    if (url, region) != expected[destination]:
+        raise RuntimeError('Repository endpoint/region differs from approved target')
     return dict(os.environ,
-                RESTIC_REPOSITORY=(root / 'repository').read_text().strip(),
+                RESTIC_REPOSITORY=url,
                 RESTIC_PASSWORD_FILE=str(root / 'restic-password'),
                 AWS_ACCESS_KEY_ID=(root / 'access-key-id').read_text().strip(),
                 AWS_SECRET_ACCESS_KEY=(root / 'secret-access-key').read_text().strip(),
-                AWS_DEFAULT_REGION=(root / 'region').read_text().strip(),
+                AWS_DEFAULT_REGION=region,
                 RESTIC_CACHE_DIR='/stage/restic-cache/' + destination)
+
+
+def restic(destination, args, timeout=3600):
+    # OVH's .io endpoint maps STANDARD_IA to the approved 1-AZ IA tier.
+    options = ['-o', 's3.storage-class=STANDARD_IA'] if destination == 'ovh' else []
+    return command(['restic', *options, *args], env=repository(destination), timeout=timeout)
+
+
+def initialize(destination):
+    restic(destination, ['init'])
+    print(json.loads(restic(destination, ['cat', 'config']))['id'])
 
 
 def upload(run, destination):
     ensure_run(run)
     if (STAGE / 'valid').read_text() != run:
         raise RuntimeError('Unsealed capture')
-    env = repository(destination)
     # Initialization is an explicit operator action, never an error fallback.
-    output = command(['restic', 'backup', '--json', '--host', 'homelab-' + os.environ['NAMESPACE'],
-                      '--tag', 'pending', '--tag', run, str(STAGE / 'capture')], env=env, timeout=43200)
+    output = restic(destination, ['backup', '--json', '--host', 'homelab-' + os.environ['NAMESPACE'],
+                                  '--tag', 'pending', '--tag', run, str(STAGE / 'capture')], timeout=43200)
     summaries = [json.loads(line) for line in output.splitlines()]
     snapshot = next(s['snapshot_id'] for s in reversed(summaries) if s.get('message_type') == 'summary')
     (STAGE / ('uploaded-' + destination)).write_text(snapshot)
@@ -259,17 +279,16 @@ def publish(run, destination, snapshot):
         raise ValueError('Invalid snapshot')
     if (STAGE / ('uploaded-' + destination)).read_text() != snapshot:
         raise RuntimeError('Snapshot does not belong to completed upload')
-    command(['restic', 'tag', '--add', 'complete', '--remove', 'pending', snapshot], env=repository(destination))
+    restic(destination, ['tag', '--add', 'complete', '--remove', 'pending', snapshot])
 
 
 def restore_test(destination):
     import tempfile
-    env = repository(destination)
     with tempfile.TemporaryDirectory(prefix='restore-test-', dir=STAGE) as directory:
-        command(['restic', 'restore', 'latest', '--tag', 'complete', '--verify',
+        restic(destination, ['restore', 'latest', '--tag', 'complete', '--verify',
                  '--include', str(STAGE / 'capture/n8n-data/database.sqlite'),
                  '--include', str(STAGE / 'capture/recovery/n8n/encryption_key'),
-                 '--target', directory], env=env)
+                 '--target', directory])
         root = Path(directory) / (STAGE / 'capture').relative_to('/')
         with closing(sqlite3.connect((root / 'n8n-data/database.sqlite').as_uri() + '?mode=ro', uri=True)) as db:
             if db.execute('PRAGMA integrity_check').fetchone() != ('ok',):
@@ -282,11 +301,10 @@ def restore_test(destination):
 
 
 def maintain(destination):
-    env = repository(destination)
-    command(['restic', 'forget', '--tag', 'complete', '--group-by', 'host,paths',
-             '--keep-daily', '7', '--keep-weekly', '4', '--keep-monthly', '6'], env=env)
-    command(['restic', 'prune', '--max-repack-size', '0'], env=env, timeout=43200)
-    command(['restic', 'check'], env=env, timeout=43200)
+    restic(destination, ['forget', '--tag', 'complete', '--group-by', 'host,paths',
+                         '--keep-daily', '7', '--keep-weekly', '4', '--keep-monthly', '6'])
+    restic(destination, ['prune', '--max-repack-size', '0'], timeout=43200)
+    restic(destination, ['check'], timeout=43200)
 
 
 if __name__ == '__main__':
@@ -296,7 +314,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGALRM, expired)
     try:
         {'prepare': prepare, 'capture': capture, 'upload': upload, 'publish': publish,
-         'maintain': maintain, 'seal': seal, 'restore-test': restore_test}[sys.argv[1]](*sys.argv[2:])
+         'maintain': maintain, 'seal': seal, 'restore-test': restore_test, 'init': initialize}[sys.argv[1]](*sys.argv[2:])
     except BaseException as error:
         print(f'Backup worker failed: {type(error).__name__}', file=sys.stderr)
         sys.exit(1)
