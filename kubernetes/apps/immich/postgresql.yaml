@@ -49,8 +49,8 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: immich
-                  key: DB_PASSWORD
+                  name: immich-connect
+                  key: database-password
             - name: POSTGRES_INITDB_ARGS
               value: --data-checksums
             - name: PGDATA
