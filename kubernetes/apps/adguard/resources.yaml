@@ -53,6 +53,8 @@ metadata:
   name: adguard
   annotations:
     reloader.stakater.com/auto: "true"
+    secret.reloader.stakater.com/reload: adguard-connect
+    configmap.reloader.stakater.com/reload: adguard-config-staging
 spec:
   replicas: 1
   strategy:
@@ -77,6 +79,26 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
+        - name: render-config
+          image: python:3.15.2-alpine3.23
+          command: [python3, /templates/render.py]
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: render-templates
+              mountPath: /templates
+              readOnly: true
+            - name: source-credentials
+              mountPath: /credentials
+              readOnly: true
+            - name: rendered-config
+              mountPath: /desired
         - name: initialize-config
           image: docker.io/library/busybox:1.38.0
           command: [sh, -ec]
@@ -99,7 +121,7 @@ spec:
             capabilities:
               drop: [ALL]
           volumeMounts:
-            - name: desired
+            - name: rendered-config
               mountPath: /desired
               readOnly: true
             - name: state
@@ -154,10 +176,21 @@ spec:
               mountPath: /certs
               readOnly: true
       volumes:
-        - name: desired
+        - name: rendered-config
+          emptyDir:
+            medium: Memory
+        - name: render-templates
+          configMap:
+            name: adguard-config-staging
+        - name: source-credentials
           secret:
-            secretName: adguard-credentials
+            secretName: adguard-connect
             defaultMode: 0440
+            items:
+              - key: username
+                path: username
+              - key: password-hash
+                path: password-hash
         - name: state
           persistentVolumeClaim:
             claimName: adguard-state
