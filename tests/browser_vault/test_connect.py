@@ -117,7 +117,7 @@ class ConnectTests(unittest.TestCase):
         cls.cfg = {"connect_host": cls.url, "connect_token_file": str(cls.token_file), "enabled": True}
         (ROOT / "home/config.yaml").write_text(json.dumps({"vault": {"onepassword": cls.cfg}}))
         cls.item = {"id": ITEM, "vault": {"id": V1}, "category": "LOGIN", "title": "Synthetic Login",
-                    "urls": [{"href": cls.url + "/login"}, {"href": "https://example.com:443/"}],
+                    "urls": [{"href": cls.url + "/login"}, {"href": "HTTPS://EXAMPLE.com:443/login?next=%2Faccount"}],
                     "fields": [{"purpose": "USERNAME", "value": "synthetic@example.com"},
                                {"purpose": "PASSWORD", "value": PASSWORD},
                                {"type": "OTP", "value": SEED}]}
@@ -223,6 +223,8 @@ class ConnectTests(unittest.TestCase):
 
     def test_url_canonicalization_rejects_parser_ambiguities(self):
         self.assertEqual(origin("https://EXAMPLE.com:443/path"), "https://example.com")
+        self.assertEqual(origin("https://EXAMPLE.com:443/login?next=%2Faccount"), "https://example.com")
+        self.assertEqual(origin("https://example.com/\uB85C\uADF8\uC778"), "https://example.com")
         for value in ("https://example.com\\@evil.com", "https://example.com%2fevil", "https://user@example.com", "https://example.com\n", "http://127.1", "http://2130706433", "https://example.com.", "https://example..com", "https://[::1]/"):
             with self.assertRaises(Exception):
                 origin(value)

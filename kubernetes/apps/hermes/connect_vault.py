@@ -45,7 +45,7 @@ class NoRedirect(HTTPRedirectHandler):
 def origin(value):
     # Reject URL spellings on which Python and the browser URL parser disagree.
     require(isinstance(value, str) and len(value) <= 8192, "invalid_url")
-    require(not any(ord(c) <= 32 or ord(c) >= 127 or c in "\\%" for c in value), "invalid_url")
+    require(not any(ord(c) <= 32 or c == "\\" for c in value), "invalid_url")
     parts = urlsplit(value)
     require(parts.scheme in ("http", "https") and parts.hostname and
             not parts.username and not parts.password and "[" not in parts.netloc, "invalid_url")
@@ -156,7 +156,7 @@ class ConnectVault:
         try:
             for url in item.get("urls", []):
                 href = url.get("href")
-                if isinstance(href, str) and not href.startswith(("http://", "https://")):
+                if isinstance(href, str) and urlsplit(href).scheme not in ("http", "https"):
                     continue  # Native app URLs do not authorize a browser origin.
                 bound = origin(href)
                 if bound not in origins:
