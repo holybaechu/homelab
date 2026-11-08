@@ -151,9 +151,11 @@ OVH One-Zone IA has a 30-day minimum duration and retrieval/request costs.
    perform full application restores into isolated PVCs/services (never production
    volumes). Only then unsuspend daily and maintenance CronJobs in Git.
 
-Daily backup starts at **04:00 Asia/Seoul**. Maintenance is monthly at 12:00 on
-the first, under the same journal lock: retain **7 daily / 4 weekly / 6 monthly**,
-prune without repacking existing packs, then metadata `check`. This avoids daily
+Daily backup starts at **04:00 Asia/Seoul**. After each successful publication,
+`forget` retains **7 daily / 4 weekly / 6 monthly** restore points without pruning
+data. Maintenance is monthly at 12:00 on the first, under the same journal lock:
+reapply retention, prune without repacking existing packs, then metadata `check`.
+This avoids daily
 IA rewrite/retrieval churn. It is not a full data scrub; schedule an approved
 paid full/subset read check when needed. Pending/unpublished snapshots are never
 valid restore points and are not automatically forgotten; inspect and remove

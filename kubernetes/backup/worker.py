@@ -284,6 +284,7 @@ def publish(run, destination, snapshot):
     if (STAGE / ('uploaded-' + destination)).read_text() != snapshot:
         raise RuntimeError('Snapshot does not belong to completed upload')
     restic(destination, ['tag', '--add', 'complete', '--remove', 'pending', snapshot])
+    forget(destination)
 
 
 def restore_test(destination):
@@ -304,9 +305,13 @@ def restore_test(destination):
     print('Isolated n8n SQLite restore and original-key presence verified')
 
 
-def maintain(destination):
+def forget(destination):
     restic(destination, ['forget', '--tag', 'complete', '--group-by', 'host,paths',
                          '--keep-daily', '7', '--keep-weekly', '4', '--keep-monthly', '6'])
+
+
+def maintain(destination):
+    forget(destination)
     restic(destination, ['prune', '--max-repack-size', '0'], timeout=43200)
     restic(destination, ['check'], timeout=43200)
 
