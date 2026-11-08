@@ -41,6 +41,8 @@ metadata:
   name: qbittorrent
   annotations:
     reloader.stakater.com/auto: "true"
+    secret.reloader.stakater.com/reload: qbittorrent-connect
+    configmap.reloader.stakater.com/reload: qbittorrent-config-staging
 spec:
   replicas: 1
   strategy:
@@ -60,6 +62,26 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
+        - name: render-config
+          image: python:3.15.2-alpine3.23
+          command: [python3, /templates/render.py]
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: render-templates
+              mountPath: /templates
+              readOnly: true
+            - name: source-credentials
+              mountPath: /credentials
+              readOnly: true
+            - name: rendered-config
+              mountPath: /desired
         - name: merge-config
           image: python:3.15.2-alpine3.23
           command: [python3, /templates/merge.py]
@@ -75,7 +97,7 @@ spec:
             - name: templates
               mountPath: /templates
               readOnly: true
-            - name: credentials
+            - name: rendered-config
               mountPath: /credentials
               readOnly: true
             - name: state
@@ -149,10 +171,21 @@ spec:
         - name: templates
           configMap:
             name: qbittorrent-config
-        - name: credentials
+        - name: rendered-config
+          emptyDir:
+            medium: Memory
+        - name: render-templates
+          configMap:
+            name: qbittorrent-config-staging
+        - name: source-credentials
           secret:
-            secretName: qbittorrent-credentials
+            secretName: qbittorrent-connect
             defaultMode: 0440
+            items:
+              - key: username
+                path: username
+              - key: password-hash
+                path: password-hash
         - name: state
           persistentVolumeClaim:
             claimName: qbittorrent-state
