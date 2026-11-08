@@ -42,6 +42,13 @@ otherwise report pending setup or sync.
 
 ## Skill routing
 
+Before creating or revising agent instructions (`AGENTS.md`, `CLAUDE.md`,
+`.hermes.md`, or skills), substantive delegation/general agent prompts, or
+learning-driven durable instruction updates, load `writing-for-agents`.
+Skip casual answers and tiny handoffs that reuse unchanged instructions.
+Keep learning in its owning memory, skill, wiki, or project store within existing
+write permissions; the guide does not expand mutation authority.
+
 Choose sources and tools from the user's goal and known context; app names and
 storage locations are optional. Use existing skill and tool discovery when the
 right capability is unclear. Use TickTick for task requests and the bundled
