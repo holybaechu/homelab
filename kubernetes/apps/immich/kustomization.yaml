@@ -7,3 +7,10 @@ resources:
   - postgresql.yaml
   - machine-learning.yaml
   - valkey.yaml
+configMapGenerator:
+  - name: immich-config-template
+    options:
+      disableNameSuffixHash: true
+    files:
+      - immich.json
+      - render.py

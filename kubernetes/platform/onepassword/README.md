@@ -248,20 +248,73 @@ The shared `hermes-langfuse` target remains on ESO and Hermes is unchanged.
 Six of the 23 target contracts now use Operator replacements; all 23 ESO targets
 remain for rollback or active consumers. Operator auto-restart remains off.
 
-### Immich staging only
+### Consolidated remaining-source gate
 
-`homelab/immich-connect` stages the existing Immich item by its reviewed vault/item
-IDs, with no consumers and Operator auto-restart disabled. Server, PostgreSQL
-and Hermes retain their ESO references and restart policies. This is not another
-migrated target or an administrative parity PASS; current labels, credential
-bytes and replacement readiness still require independent verification.
+Consumer-free Operator replacements now also stage Authentik, Immich, AdGuard,
+qBittorrent and Obsidian. Identity has separate Zipline, Immich and Langfuse
+replacements for Authentik's blueprint inputs; Headscale's replacement already
+exists there. No workload references, database credentials, entrypoints, PVCs or
+restart policies change during staging. The Hermes bootstrap ConfigMap is
+unchanged. No additional target is migrated until its administrative gate passes.
 
-The existing ESO `immich` target remains necessary for both `DB_PASSWORD` and
-JSON-escaped OIDC configuration with Flux substitutions. The six-target checker
-above does not cover this staged item or its JSON template. Do not switch either
-server or database until its lowercase-hyphen source labels, complete credential
-parity and equivalent safe config rendering have been verified. Preserve all
-current configuration fields and keep the Hermes API key out of those containers.
+Perform these **five ESO-only source edits in one administrative batch**, using
+the official app's in-place label editor and the exact existing field IDs in the
+inventory below: Immich's three custom fields, Authentik's email/secret/database
+fields, AdGuard and qBittorrent's password-hash fields, and Obsidian's three custom
+fields. Preserve IDs, values, types, sections, URLs and history; do not recreate
+fields or apply JSON templates. These sources have no live Operator consumers.
+Do **not** rename MySQL/n8n yet: those require the separate protected sequence.
+
+After the new manifests reconcile and the Operator observes the edits, run one
+read-only gate from the authenticated administrative Windows checkout:
+
+```powershell
+git fetch origin main
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - authentik-connect immich-connect adguard-connect qbittorrent-connect obsidian-connect
+```
+
+Return only PASS/FAIL/INFO output. Each check continues independently after a
+failure; denied/missing reads are failures, never a reason to grant the agent
+Secret access. Matching versions with differing bytes still require private
+investigation; do not regenerate credentials. If the Operator version is stale,
+use the documented Operator-only refresh, then rerun this same batch.
+
+The checks cover these **seven** existing ESO targets, without authorizing an
+immediate Hermes restart:
+
+| Check | Exact existing contract compared |
+| --- | --- |
+| `authentik-connect` | `authentik-postgresql` plus all eight `authentik-env` keys, checking source metadata/bytes and ownership for each of its five source items in `identity` |
+| `immich-connect` | `immich` database bytes and the entire parsed JSON config, including the exact OIDC string; also `hermes-immich` API-key bytes |
+| `adguard-connect` | Complete `adguard-credentials` file bytes, including validated username/bcrypt hash and cluster substitutions |
+| `qbittorrent-connect` | Complete `qbittorrent-credentials` file bytes, including validated username/PBKDF2 hash |
+| `obsidian-connect` | `hermes-obsidian` token bytes and all source fields, including unused vault identity/encryption fields |
+
+App-local stdlib renderers are staged separately from the live template
+ConfigMaps. They reuse the existing AdGuard/qBittorrent templates, reject invalid
+credentials and unknown expressions, preserve JSON quoting, and write private
+files. Immich's public template retains every current config field and Flux
+substitution; its renderer JSON-escapes the exact UTF-8 OIDC credential without
+newline conversion. These are not new secret controllers and do not receive
+Connect tokens. The checker does not execute ConfigMap code on the administrator's
+machine. AdGuard/qBittorrent comparisons are byte-exact; Immich compares the full
+JSON object because safe JSON whitespace/escaping can differ without changing
+configuration or credential bytes.
+
+These renderers are **not yet mounted in live workloads**. After PASS, cut over
+AdGuard's desired-file input without changing its UI-edit-preserving initializer;
+keep qBittorrent's merge.py and root/s6 startup. Immich needs a private emptyDir
+rendering init before server startup and explicit database-key mappings in both
+server and PostgreSQL. Project only each consumer's required keys. Keep Hermes
+last even when its staged Obsidian/Immich comparisons pass.
+
+The reviewed metadata for Authentik, AdGuard and qBittorrent contains one localized
+website URL label (`웹사이트`) whose Operator key is empty. The checker permits
+only that exact label for those exact items (or no URL), with a nonempty href,
+no files and complete source/replacement key/byte equality. It never prints the
+URL, accepts no arbitrary skipped labels and does not permit extra Secret keys.
+Cloudflare and the token-bearing Hermes source remain blocked as described below;
+staging or a seven-contract gate is not full ESO retirement.
 
 ### Cloudflare stays on ESO
 
@@ -316,8 +369,8 @@ JSON and credential bytes remain in captured subprocess memory, never output or
 files. Each PASS checks:
 
 - Source vault/item/title and exact field IDs, labels, types, purposes and section
-  membership against reviewed metadata; no added files or URLs except the single
-  reviewed Operator-skipped empty-label Langfuse URL described below.
+  membership against reviewed metadata; no files or unreviewed URLs. The exact
+  Operator-skipped Langfuse and localized website labels are described above/below.
 - Every current nonempty source field, including Zipline's Hermes token and
   optional notes, against the replacement's exact key set and UTF-8 bytes.
 - Operator ownership UID, source path, Ready status, and the existing ESO target's
@@ -407,8 +460,9 @@ If versions match but ESO bytes differ, inspect item history and ESO freshness
 privately before any cutover. Share only PASS/FAIL/INFO lines, not CLI or
 Kubernetes JSON. This agent cannot read Secrets or
 OnePasswordItems; do not broaden RBAC or bypass it with pods/exec. No arguments
-checks six eligible targets, including the already-cut-over MySQL and n8n
-contracts, which retain their Kubernetes-only comparison.
+checks all eleven eligible staged checks, including the already-cut-over MySQL
+and n8n contracts, which retain their Kubernetes-only comparison. The five new
+checks require the consolidated source-label batch above before they can pass.
 
 | Namespace | Eligible staged replacement | Existing ESO target |
 | --- | --- | --- |
@@ -504,9 +558,10 @@ stop if a built-in label cannot be edited. Manual PowerShell personal-account
 sign-in is `Invoke-Expression "$(op signin)"`; the audit rejects Connect overrides
 without changing them. Return sanitized diagnostics only, never raw CLI output.
 
-The four ESO templates still need app-local safe renderers; signing still needs
-the verified OpenSSH transform. Neither a relabel nor Injector alone resolves
-those contracts or rotation.
+AdGuard, qBittorrent and Immich have staged app-local safe renderers, not live
+cutovers. The n8n import template still needs its narrow Perplexity source and
+safe JSON rendering; signing still needs the verified OpenSSH transform.
+Neither a relabel nor Injector alone resolves those contracts or rotation.
 
 ## Cutover, refresh and rollback
 

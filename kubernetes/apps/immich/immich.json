@@ -1,0 +1,22 @@
+{
+  "backup": {"database": {"enabled": false}},
+  "ffmpeg": {"accel": "nvenc", "accelDecode": true},
+  "machineLearning": {
+    "enabled": true,
+    "urls": ["http://immich-machine-learning:3003"]
+  },
+  "oauth": {
+    "enabled": true,
+    "autoLaunch": true,
+    "autoRegister": true,
+    "buttonText": "Authentik",
+    "issuerUrl": "https://auth.${DOMAIN}/application/o/immich/",
+    "clientId": "homelab-immich",
+    "scope": "openid profile email immich_roles"
+  },
+  "passwordLogin": {"enabled": false},
+  "server": {
+    "externalDomain": "https://photos.${DOMAIN}",
+    "publicUsers": false
+  }
+}

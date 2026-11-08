@@ -55,6 +55,40 @@ CONTRACTS = {
             "op://Homelab/Zipline/mq3jr7zyvy5zyff2zzpz7zrmgq": "hermes-api-token",
         },
     },
+    "adguard-connect": {
+        "namespace": "networking", "name": "adguard-connect",
+        "item_id": "n2olk4p3ngumyuttl6b7itutba",
+        "allowed": {"username", "password", "password-hash", "notesPlain"},
+        "sources": {},
+        "rendered": ("adguard-credentials", "adguard-config-staging", "AdGuardHome.yaml"),
+    },
+    "qbittorrent-connect": {
+        "namespace": "homelab", "name": "qbittorrent-connect",
+        "item_id": "ztl6gih3jqixgb5xufbv4xq4bi",
+        "allowed": {"username", "password", "password-hash", "notesPlain"},
+        "sources": {},
+        "rendered": ("qbittorrent-credentials", "qbittorrent-config-staging", "managed.conf"),
+    },
+    "immich-connect": {
+        "namespace": "homelab", "name": "immich-connect",
+        "item_id": "ltncwd5wyxwknf5xfqwxraqmtm",
+        "allowed": {"database-password", "oidc-client-secret", "hermes-api-key", "notesPlain"},
+        "sources": {"hermes-immich": {"IMMICH_API_KEY": "hermes-api-key"}},
+        "immich_config": True,
+    },
+    "authentik-connect": {
+        "namespace": "identity", "name": "authentik-connect",
+        "item_id": "d7ginmnpodzvevvb472v26jvmq",
+        "allowed": {"username", "password", "email", "secret-key", "database-password", "notesPlain"},
+        "sources": {"authentik-postgresql": {"POSTGRES_PASSWORD": "database-password"}},
+        "authentik_env": True,
+    },
+    "obsidian-connect": {
+        "namespace": "homelab", "name": "obsidian-connect",
+        "item_id": "3galz5zqqwdrqoj2mjk4wcxfdy",
+        "allowed": {"auth-token", "vault-password", "vault-name", "notesPlain"},
+        "sources": {"hermes-obsidian": {"OBSIDIAN_AUTH_TOKEN": "auth-token"}},
+    },
     "langfuse-connect": {
         "namespace": "homelab", "name": "langfuse-connect",
         "item_id": "77j3ul6ntreertxl3bjkdko4h4",
@@ -78,6 +112,29 @@ CONTRACTS = {
 VAULT = "3ryhjdiydkomgh3oxfl5yrg5j4"
 # Reviewed field IDs and section membership from the pre-edit metadata export.
 SOURCE_LABELS = {
+    "n2olk4p3ngumyuttl6b7itutba": ("AdGuard Home", {
+        "username": ("username", None), "password": ("password", None),
+        "vu2pnknisjne6k4t5sh5laxf3e": ("password-hash", "add more"),
+    }),
+    "ztl6gih3jqixgb5xufbv4xq4bi": ("qBittorrent", {
+        "username": ("username", None), "password": ("password", None),
+        "t25w4tvxducf5bqt5owlk4mvjy": ("password-hash", "add more"),
+    }),
+    "ltncwd5wyxwknf5xfqwxraqmtm": ("Immich", {
+        "trytrwmlxrksnvjujdd57hqk7a": ("database-password", None),
+        "sf4ch3lie57owvqxdwvl3cl6he": ("oidc-client-secret", None),
+        "kpjesisize67f6kdidzwdhrriq": ("hermes-api-key", None),
+    }),
+    "d7ginmnpodzvevvb472v26jvmq": ("authentik [Admin]", {
+        "username": ("username", None), "password": ("password", None),
+        "c6t67ly54dysrlik57ft332464": ("email", "add more"),
+        "pinyekye2iau23hchko7js763a": ("secret-key", "add more"),
+        "fhw4wuych7l2y5fs62p5leldtm": ("database-password", "add more"),
+    }),
+    "3galz5zqqwdrqoj2mjk4wcxfdy": ("Obsidian Sync", {
+        "auth_token": ("auth-token", None), "vault_password": ("vault-password", None),
+        "vault_name": ("vault-name", None),
+    }),
     "vyenqrf6ko2aficwt3dyaao2de": ("Headscale", {
         "3u3ughywinbmkybgdopzodjnxy": ("oidc-client-secret", "add more"),
         "biwyjxnpkpvmrmy42ffpt45fpe": ("gateway-auth-key", "add more"),
@@ -101,6 +158,22 @@ SOURCE_LABELS = {
         "oidc_client_secret": ("oidc-client-secret", None),
     }),
 }
+
+
+def field_metadata(item_id, field_id):
+    if field_id == "notesPlain":
+        return "STRING", "NOTES"
+    if item_id in {"d7ginmnpodzvevvb472v26jvmq", "n2olk4p3ngumyuttl6b7itutba",
+                   "ztl6gih3jqixgb5xufbv4xq4bi"}:
+        if field_id == "username":
+            return "STRING", "USERNAME"
+        if field_id == "password":
+            return "CONCEALED", "PASSWORD"
+        if field_id == "c6t67ly54dysrlik57ft332464":
+            return "EMAIL", None
+    if item_id == "3galz5zqqwdrqoj2mjk4wcxfdy" and field_id == "vault_name":
+        return "STRING", None
+    return "CONCEALED", None
 
 
 def operator_key(label):
@@ -180,12 +253,12 @@ def source_metadata_summary(source, contract):
         field = matches[0]
         section_id = (field.get("section") or {}).get("id")
         indexes = [str(i) for i, s in enumerate(sections) if s["id"] == section_id]
-        notes = field_id == "notesPlain"
+        expected_type, expected_purpose = field_metadata(item_id, field_id)
         lines.append(f"field={field_id} " + " ".join(
             f"{key}-match={str(match).lower()}" for key, match in (
                 ("label", field.get("label") == label),
-                ("type", field.get("type") == ("STRING" if notes else "CONCEALED")),
-                ("purpose", field.get("purpose") == ("NOTES" if notes else None)),
+                ("type", field.get("type") == expected_type),
+                ("purpose", field.get("purpose") == expected_purpose),
                 ("section", section_id == expected_section))) +
             f" section-present={str(section_id is not None).lower()} "
             f"section-index={','.join(indexes) or 'none'}")
@@ -196,11 +269,14 @@ def verify_source(source, replacement, contract):
     item_id = contract["item_id"]
     title, labels = SOURCE_LABELS[item_id]
     urls = source.get("urls") or []
-    # Only this reviewed Langfuse URL is skipped by Operator 1.12.1.
+    # Exact reviewed labels which Operator 1.12.1 skips, not arbitrary URLs.
     skipped_url = (
-        item_id == "77j3ul6ntreertxl3bjkdko4h4" and isinstance(urls, list)
+        item_id in {"77j3ul6ntreertxl3bjkdko4h4", "d7ginmnpodzvevvb472v26jvmq",
+                    "n2olk4p3ngumyuttl6b7itutba", "ztl6gih3jqixgb5xufbv4xq4bi"}
+        and isinstance(urls, list)
         and len(urls) == 1 and isinstance(urls[0], dict)
-        and urls[0].get("label") in (None, "")
+        and (urls[0].get("label") in (None, "") if item_id == "77j3ul6ntreertxl3bjkdko4h4"
+             else urls[0].get("label") == "\uc6f9\uc0ac\uc774\ud2b8")
         and operator_key(urls[0].get("label") or "") == ""
         and isinstance(urls[0].get("href"), str) and bool(urls[0]["href"])
     )
@@ -221,11 +297,12 @@ def verify_source(source, replacement, contract):
     for field_id, field in fields.items():
         label, section = labels.get(field_id, ("notesPlain", None))
         notes = field_id == "notesPlain"
+        expected_type, expected_purpose = field_metadata(item_id, field_id)
         if field["label"] != label:
             raise CheckFailure(f"source-label field={field_id} expected-label={label}")
-        if field["type"] != ("STRING" if notes else "CONCEALED"):
+        if field["type"] != expected_type:
             raise CheckFailure(f"source-field-type field={field_id}")
-        if field.get("purpose") != ("NOTES" if notes else None):
+        if field.get("purpose") != expected_purpose:
             raise CheckFailure(f"source-field-purpose field={field_id}")
         if (field.get("section") or {}).get("id") != section:
             raise CheckFailure(f"source-field-section field={field_id}")
@@ -312,6 +389,68 @@ def verify(item, replacement, sources, contract):
                                    f"Secret/{source_name} key={old_key} replacement-key={new_key}")
 
 
+def verify_authentik_env(original, replacements):
+    projections = {
+        "AUTHENTIK_SECRET_KEY": ("authentik-connect", "secret-key"),
+        "AUTHENTIK_POSTGRESQL__PASSWORD": ("authentik-connect", "database-password"),
+        "AUTHENTIK_BOOTSTRAP_EMAIL": ("authentik-connect", "email"),
+        "AUTHENTIK_BOOTSTRAP_PASSWORD": ("authentik-connect", "password"),
+        "HEADSCALE_OIDC_CLIENT_SECRET": ("headscale-connect", "oidc-client-secret"),
+        "ZIPLINE_OIDC_CLIENT_SECRET": ("zipline-connect", "oidc-client-secret"),
+        "IMMICH_OIDC_CLIENT_SECRET": ("immich-connect", "oidc-client-secret"),
+        "LANGFUSE_OIDC_CLIENT_SECRET": ("langfuse-connect", "oidc-client-secret"),
+    }
+    old = decode_data(original)
+    if set(old) != set(projections):
+        raise CheckFailure("eso-keys Secret/authentik-env")
+    for key, (name, replacement_key) in projections.items():
+        value = decode_data(replacements[name])[replacement_key]
+        if not value or value != old[key]:
+            raise CheckFailure(f"eso-replacement-bytes Secret/authentik-env key={key}")
+
+
+def verify_rendered_config(replacement, original, template, contract):
+    _, _, key = contract["rendered"]
+    old, new = decode_data(original), decode_data(replacement)
+    if set(old) != {key}:
+        raise CheckFailure("eso-rendered-keys")
+    username = new["username"].decode("utf-8")
+    password_hash = new["password-hash"].decode("utf-8")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", username):
+        raise CheckFailure("rendered-username-invalid")
+    adguard = key == "AdGuardHome.yaml"
+    pattern = (r"\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}" if adguard else
+               r"@ByteArray\([A-Za-z0-9+/]{22}==:[A-Za-z0-9+/]{86}==\)")
+    if not re.fullmatch(pattern, password_hash):
+        raise CheckFailure("rendered-password-hash-invalid")
+    text = template["data"][key]
+    start = "schema_version: 34\n" if adguard else "[Preferences]\n"
+    body = text[text.index(start):]
+    body = body.replace("{{ .username | toJson }}" if adguard else "{{ .username }}",
+                        json.dumps(username) if adguard else username)
+    body = body.replace("{{ .password_hash | toJson }}", json.dumps(password_hash))
+    if "{{" in body or "}}" in body or body.encode("utf-8") != old[key]:
+        raise CheckFailure("eso-rendered-config-bytes")
+
+
+def verify_immich_config(replacement, original, template):
+    old = decode_data(original)
+    new = decode_data(replacement)
+    if set(old) != {"DB_PASSWORD", "immich.json"}:
+        raise CheckFailure("eso-keys Secret/immich")
+    if not new.get("database-password") or old["DB_PASSWORD"] != new["database-password"]:
+        raise CheckFailure("eso-replacement-bytes Secret/immich key=DB_PASSWORD")
+    config = json.loads(template["data"]["immich.json"])
+    if not isinstance(config.get("oauth"), dict) or "clientSecret" in config["oauth"]:
+        raise CheckFailure("immich-public-template-invalid")
+    secret = new["oidc-client-secret"].decode("utf-8")
+    if not secret:
+        raise CheckFailure("immich-oidc-empty")
+    config["oauth"]["clientSecret"] = secret
+    if json.loads(old["immich.json"]) != config:
+        raise CheckFailure("immich-config-content")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checks", nargs="*", metavar="CHECK",
@@ -381,6 +520,45 @@ def main(argv=None):
         sources = {n: attempt(f"read Kubernetes/{namespace}/Secret/{n}",
                               read_resource, "secret", n, namespace)
                    for n in contract["sources"]}
+        if contract.get("authentik_env"):
+            original = attempt("read Kubernetes/identity/Secret/authentik-env",
+                               read_resource, "secret", "authentik-env", namespace)
+            replacements = {name: replacement}
+            for child in ("headscale-oidc", "zipline-connect", "immich-connect", "langfuse-connect"):
+                child_contract = {**CONTRACTS[child], "namespace": namespace, "sources": {}}
+                child_name = child_contract["name"]
+                child_item = attempt(f"read Kubernetes/identity/OnePasswordItem/{child_name}",
+                                     read_resource, "onepassworditem", child_name, namespace)
+                child_secret = attempt(f"read Kubernetes/identity/Secret/{child_name}",
+                                       read_resource, "secret", child_name, namespace)
+                child_source = attempt(f"read 1Password/Item/{child_contract['item_id']}",
+                                       read_source, child_contract["item_id"])
+                replacements[child_name] = child_secret
+                if child_item is not None and child_secret is not None:
+                    attempt(f"verify Kubernetes/identity/OnePasswordItem/{child_name}",
+                            verify, child_item, child_secret, {}, child_contract)
+                if child_source is not None and child_secret is not None:
+                    attempt(f"verify 1Password/Item/{child_contract['item_id']}+identity/Secret/{child_name}",
+                            verify_source, child_source, child_secret, child_contract)
+            if original is not None and all(s is not None for s in replacements.values()):
+                attempt("verify complete-authentik-env", verify_authentik_env, original, replacements)
+        if contract.get("rendered"):
+            old_name, template_name, _ = contract["rendered"]
+            original = attempt(f"read Kubernetes/{namespace}/Secret/{old_name}",
+                               read_resource, "secret", old_name, namespace)
+            template = attempt(f"read Kubernetes/{namespace}/ConfigMap/{template_name}",
+                               read_resource, "configmap", template_name, namespace)
+            if replacement is not None and original is not None and template is not None:
+                attempt("verify complete-rendered-config", verify_rendered_config,
+                        replacement, original, template, contract)
+        if contract.get("immich_config"):
+            original = attempt("read Kubernetes/homelab/Secret/immich",
+                               read_resource, "secret", "immich", namespace)
+            template = attempt("read Kubernetes/homelab/ConfigMap/immich-config-template",
+                               read_resource, "configmap", "immich-config-template", namespace)
+            if replacement is not None and original is not None and template is not None:
+                attempt("verify immich database+complete-config",
+                        verify_immich_config, replacement, original, template)
         source = None
         has_source = contract["item_id"] in SOURCE_LABELS
         if has_source:
