@@ -143,7 +143,7 @@ class StagingVerificationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "eso-replacement-bytes"):
                     staging.verify_composite(original, changed, contract)
                 del changed[child]["data"][field]
-                with self.assertRaisesRegex(ValueError, "eso-replacement-bytes"):
+                with self.assertRaisesRegex(ValueError, "replacement-missing-keys"):
                     staging.verify_composite(original, changed, contract)
 
     def test_operator_normalization_preserves_case_and_skips_korean_only(self):
@@ -456,6 +456,57 @@ class StagingVerificationTests(unittest.TestCase):
             source["urls"].append(copy.deepcopy(source["urls"][0]))
             with self.assertRaisesRegex(ValueError, "source-identity-or-extra-content"):
                 staging.verify_source(source, replacement, contract)
+
+    def test_missing_render_inputs_are_key_failures_not_byte_or_schema_failures(self):
+        for name in ("adguard-connect", "qbittorrent-connect"):
+            contract = staging.CONTRACTS[name]
+            key = contract["rendered"][2]
+            with self.assertRaisesRegex(staging.CheckFailure, "replacement-missing-keys.*password-hash"):
+                staging.verify_rendered_config({"data": {"username": "dXNlcg=="}},
+                                               {"data": {key: ""}}, {}, contract)
+        with self.assertRaisesRegex(staging.CheckFailure, "replacement-missing-keys.*database-password"):
+            staging.verify_immich_config({"data": {}},
+                                         {"data": {"DB_PASSWORD": "", "immich.json": ""}}, {})
+        projections = {"AUTHENTIK_SECRET_KEY", "AUTHENTIK_POSTGRESQL__PASSWORD",
+                       "AUTHENTIK_BOOTSTRAP_EMAIL", "AUTHENTIK_BOOTSTRAP_PASSWORD",
+                       "HEADSCALE_OIDC_CLIENT_SECRET", "ZIPLINE_OIDC_CLIENT_SECRET",
+                       "IMMICH_OIDC_CLIENT_SECRET", "LANGFUSE_OIDC_CLIENT_SECRET"}
+        with self.assertRaisesRegex(staging.CheckFailure, "replacement-missing-keys.*secret-key"):
+            staging.verify_authentik_env({"data": dict.fromkeys(projections, "")},
+                                         {"authentik-connect": {"data": {}}})
+
+    def test_signing_representation_diagnostics_preserve_strict_bytes_without_key_output(self):
+        contract = staging.CONTRACTS["signing-connect"]
+        for header, kind in (("PRIVATE KEY", "pkcs8"), ("OPENSSH PRIVATE KEY", "openssh"),
+                             ("ENCRYPTED PRIVATE KEY", "encrypted-pkcs8"),
+                             ("RSA PRIVATE KEY", "pkcs1-rsa"), ("EC PRIVATE KEY", "sec1-ec"),
+                             ("PRIVATE_UNKNOWN", "unrecognized")):
+            source, replacement = self.source_fixture(contract)
+            raw = f"-----BEGIN {header}-----\nPRIVATE_BODY\n".encode()
+            next(f for f in source["fields"] if f["id"] == "private_key")["value"] = raw.decode()
+            replacement["data"]["private-key"] = base64.b64encode(raw).decode()
+            output = "\n".join(staging.source_metadata_summary(source, contract))
+            self.assertIn("private-key-format=" + kind, output)
+            self.assertNotIn("PRIVATE", output)
+            transformed = b"-----BEGIN OPENSSH PRIVATE KEY-----\nPRIVATE_REFERENCE\n"
+            with patch.object(staging.subprocess, "run", return_value=staging.subprocess.CompletedProcess([], 0, transformed)):
+                with self.assertRaisesRegex(staging.CheckFailure, "source-reference-bytes") as caught:
+                    staging.verify_references(replacement, contract)
+            self.assertIn("replacement-format=" + kind + " reference-format=openssh", str(caught.exception))
+            self.assertNotIn("PRIVATE", str(caught.exception))
+
+    def test_date_shapes_in_source_only_diagnostics_do_not_relax_incident_gate(self):
+        contract = staging.CONTRACTS["cloudflare-dns"]
+        for value, shape in ((None, "null"), ("", "empty-string"), ("0", "nonempty-string"),
+                             (0, "number-zero"), (1, "number-nonzero"), (False, "other")):
+            source, replacement = self.source_fixture(contract)
+            field = next(f for f in source["fields"] if f["id"] == "validFrom")
+            field["value"] = value
+            self.assertIn("field=validFrom value-shape=" + shape,
+                          staging.source_metadata_summary(source, contract))
+            if value not in (None, ""):
+                with self.assertRaises(staging.CheckFailure):
+                    staging.verify_source(source, replacement, contract)
 
     def test_selected_check_uses_its_namespace(self):
         with patch.object(staging, "read_resource", return_value={}) as read:

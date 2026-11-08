@@ -417,6 +417,54 @@ parity does not prove the not-yet-created Operator replacement, native browser
 capability, application authentication or rotation. Keep Hermes last and every
 working ESO target until those independent cutover requirements pass.
 
+### Independent source-shape and signing diagnosis
+
+A missing relabeled field is not evidence that a database credential changed.
+The checker reports `replacement-missing-keys` before rendering or comparing
+Immich database bytes, Authentik projections and composite/rendered files. After
+completing the eleven in-place labels across the five ESO-only sources above,
+verify their Operator replacements and parity; an app edit alone is not a PASS.
+Do not rotate credentials in response to missing keys. Existing MySQL, Headscale,
+Zipline and Langfuse passes remain independent of these failures.
+
+For GitHub/n8n `source-identity-or-extra-content` and signing representation
+failures, use the existing **source-only** inspection, with no Kubernetes reads.
+This also inspects current Cloudflare DATE shapes without requiring a Connect
+write token or making any mutation:
+
+```powershell
+git fetch origin main
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - --source-metadata github-connect n8n-connect signing-connect cloudflare-dns
+$metadataExit = $LASTEXITCODE
+git show origin/main:scripts/prepare-hermes-runtime.py | mise x python@3 -- python -
+$previewExit = $LASTEXITCODE
+Write-Output "INFO diagnostic-batch: metadata-exit=$metadataExit runtime-preview-exit=$previewExit"
+```
+
+Return only INFO/FAIL output. Identity match flags and anonymous URL/section
+metadata distinguish extra source content from an identity mismatch; do not
+allowlist an unknown URL or delete it merely to pass. DATE output classifies
+absence/null/empty/nonempty/zero without showing the value; zero or nonempty
+values are **not** recovered dates. Label reversion and a stale Operator version
+do not establish a history restore. Cloudflare still requires the private
+history review and separately approved recovery below.
+
+Signing metadata identifies only its private-key container format. A signing
+reference-byte failure additionally reports replacement/reference formats; it
+never prints private/public key values, fingerprints, sizes or digests. Header
+classification is diagnostic, not cryptographic validation or a parity PASS.
+Do not equate different serializations or add a guessed converter: require the
+actual source representation first, then evaluate an app-local maintained
+serialization library against the unchanged OpenSSH reference and retained ESO
+contract. All existing exact-byte checks remain strict in the meantime.
+
+`runtime-item-missing` at `runtime-discovery` means the narrow item does not yet
+exist, not that its values failed parity. The batch above runs the next safe
+**creation preview**, not `--verify-consumers` or `--apply`. Only after that preview
+passes and the new-source contract is explicitly approved should the separate
+creation step above run. Broad-token relocation/replacement and revocation remain
+independent requirements before app-scoped Connect token distribution.
+
 ### Cloudflare preservation incident: mutations disabled
 
 The real label-attribute PATCH reached the server, but its response failed

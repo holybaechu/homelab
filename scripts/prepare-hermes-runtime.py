@@ -177,8 +177,9 @@ def main(argv=None):
         print(f"PASS hermes-runtime: six-field source bytes verified; item-id={item_id}; broad token excluded")
         print("INFO hermes-runtime: no consumer cutover or token revocation; broad-token trust gate remains")
         return 0
-    except (Blocked, subprocess.SubprocessError, OSError, ValueError, KeyError, TypeError, AttributeError, KeyboardInterrupt):
-        print(f"FAIL hermes-runtime: stage={stage} outcome={'unknown-create-inspect-before-retry' if attempted else 'no-writes'}", file=sys.stderr)
+    except (Blocked, subprocess.SubprocessError, OSError, ValueError, KeyError, TypeError, AttributeError, KeyboardInterrupt) as error:
+        category = str(error) if isinstance(error, Blocked) else "execution-or-response-error"
+        print(f"FAIL hermes-runtime: stage={stage} category={category} outcome={'unknown-create-inspect-before-retry' if attempted else 'no-writes'}", file=sys.stderr)
         return 1
 
 
