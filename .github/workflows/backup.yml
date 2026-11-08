@@ -18,6 +18,9 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7.0.1
+      - uses: jdx/mise-action@v5.2.6
+        with:
+          install_args: go
       - name: Verify exact suspend-only admission CEL
         working-directory: tests/backup/admission
         run: go test -v ./...

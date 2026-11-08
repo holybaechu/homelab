@@ -313,8 +313,11 @@ if __name__ == '__main__':
         raise TimeoutError('Local capture deadline exceeded')
     signal.signal(signal.SIGALRM, expired)
     try:
-        {'prepare': prepare, 'capture': capture, 'upload': upload, 'publish': publish,
-         'maintain': maintain, 'seal': seal, 'restore-test': restore_test, 'init': initialize}[sys.argv[1]](*sys.argv[2:])
+        import fcntl
+        with (STAGE / 'operation.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            {'prepare': prepare, 'capture': capture, 'upload': upload, 'publish': publish,
+             'maintain': maintain, 'seal': seal, 'restore-test': restore_test, 'init': initialize}[sys.argv[1]](*sys.argv[2:])
     except BaseException as error:
         print(f'Backup worker failed: {type(error).__name__}', file=sys.stderr)
         sys.exit(1)
