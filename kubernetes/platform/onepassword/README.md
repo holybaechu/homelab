@@ -248,6 +248,21 @@ The shared `hermes-langfuse` target remains on ESO and Hermes is unchanged.
 Six of the 23 target contracts now use Operator replacements; all 23 ESO targets
 remain for rollback or active consumers. Operator auto-restart remains off.
 
+### Immich staging only
+
+`homelab/immich-connect` stages the existing Immich item by its reviewed vault/item
+IDs, with no consumers and Operator auto-restart disabled. Server, PostgreSQL
+and Hermes retain their ESO references and restart policies. This is not another
+migrated target or an administrative parity PASS; current labels, credential
+bytes and replacement readiness still require independent verification.
+
+The existing ESO `immich` target remains necessary for both `DB_PASSWORD` and
+JSON-escaped OIDC configuration with Flux substitutions. The six-target checker
+above does not cover this staged item or its JSON template. Do not switch either
+server or database until its lowercase-hyphen source labels, complete credential
+parity and equivalent safe config rendering have been verified. Preserve all
+current configuration fields and keep the Hermes API key out of those containers.
+
 ### Cloudflare stays on ESO
 
 Cloudflare DNS's built-in `credential` label remains `자격 증명` and is uneditable
