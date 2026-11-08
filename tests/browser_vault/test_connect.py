@@ -164,6 +164,12 @@ class ConnectTests(unittest.TestCase):
         refusal = tool._handle_vault({"action": "fill", "handle": self.handle})
         self.assertEqual(json.loads(refusal)["error_type"], "backend_unavailable")
         self.assert_safe(refusal)
+        self.srv.status = 200
+        with patch.dict(os.environ, {"HTTP_PROXY": self.other_url, "http_proxy": self.other_url,
+                                     "HTTPS_PROXY": self.other_url, "https_proxy": self.other_url,
+                                     "NO_PROXY": "", "no_proxy": ""}):
+            self.assertEqual(len(self.adapter.list_items()), 1)
+        self.assertEqual(len(self.other.paths), before)
 
     def test_missing_or_partial_bootstrap_never_falls_back(self):
         from agent.vault_backends.onepassword import OnePasswordLoginBackend
