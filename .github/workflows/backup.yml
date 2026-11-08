@@ -1,0 +1,47 @@
+name: backup
+on:
+  pull_request:
+    paths: [kubernetes/backup/**, tests/backup/**, .github/workflows/backup.yml]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified tooling image (does not deploy or run production backups)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: docker build -t backup-test kubernetes/backup
+      - name: Exercise capture recovery and real local restic restore
+        run: |
+          docker run --rm --entrypoint python3 \
+            -v "$PWD:/repo:ro" -w /repo backup-test \
+            -m unittest discover -s tests/backup -v
+      - name: Exercise PostgreSQL 14 and 18 logical restores
+        run: |
+          for major in 14 18; do
+            docker network create "backup-$major"
+            docker run -d --name "postgres-$major" --network "backup-$major" \
+              -e POSTGRES_HOST_AUTH_METHOD=trust "postgres:$major" > /dev/null
+            docker run --rm --network "backup-$major" --entrypoint python3 \
+              -v "$PWD:/repo:ro" -w /repo backup-test \
+              tests/backup/postgres_restore.py "$major" "postgres-$major"
+          done
+      - name: Publish only on explicit operator dispatch
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/${{ github.repository }}:backup-${{ github.sha }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+          docker tag backup-test "$IMAGE"
+          docker push "$IMAGE"
+          docker pull "$IMAGE"
+          docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE"
