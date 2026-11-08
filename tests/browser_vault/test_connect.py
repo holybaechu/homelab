@@ -326,6 +326,82 @@ class ConnectTests(unittest.TestCase):
             self.assertIn("failed to provide a session", error)
             local.assert_not_called()
 
+    def test_native_origin_failure_is_not_a_missing_code_field(self):
+        from agent.vault_backends.onepassword import OnePasswordLoginBackend
+        task = "synthetic-no-browser-context"
+        with patch.object(OnePasswordLoginBackend, "resolve_password", side_effect=AssertionError("must not resolve")), patch.object(
+                OnePasswordLoginBackend, "resolve_otp", side_effect=AssertionError("must not resolve")), patch.object(
+                tool, "_eval_js_secret", side_effect=AssertionError("must not write")), patch(
+                "agent.vault_backends.unlock.get_code_prompt_callback", side_effect=AssertionError("must not prompt")):
+            for args in ({"action": "enter_code"}, {"action": "enter_code", "handle": self.handle},
+                         {"action": "fill", "handle": self.handle}, {"action": "save_login"}):
+                with self.subTest(action=args["action"], saved="handle" in args):
+                    result = json.loads(tool._handle_vault(args, task_id=task))
+                    self.assertFalse(result["success"])
+                    self.assertEqual(result.get("error_type"), "origin_unavailable", result)
+                    self.assertEqual(result["origin_status"], "no_supervisor")
+                    connection = result["connection"]
+                    self.assertFalse(connection["session_present"])
+                    self.assertFalse(connection["supervisor_present"])
+                    self.assertIsNone(connection["active"])
+                    self.assertNotIn(task, json.dumps(result))
+
+    def test_native_origin_failures_are_typed_and_do_not_echo_transport(self):
+        from types import SimpleNamespace
+        from tools.browser_supervisor import CDPSupervisor, SUPERVISOR_REGISTRY
+        from tools import browser_session, browser_use_cli
+        task = "synthetic-origin-failure"
+        sentinel = "synthetic-private-endpoint-query-header-credential-input"
+        sup = CDPSupervisor(task, "ws://127.0.0.1/" + sentinel)
+        # Exercise evaluate_runtime's real inactive and missing-page refusals.
+        cases = [("inactive", None, False, None),
+                 ("no_page_session", SimpleNamespace(is_running=lambda: True), True, None),
+                 ("transport_failed", SimpleNamespace(is_running=lambda: True), True, sentinel)]
+        with patch.object(tool, "_focus_bound_origin", return_value=None), patch.object(
+                SUPERVISOR_REGISTRY, "get", return_value=sup):
+            for category, loop, active, page in cases:
+                sup._loop, sup._active, sup._page_session_id = loop, active, page
+                with self.subTest(category=category):
+                    # For the transport case use the bridge's returned-error contract, which may quote URLs.
+                    if category == "transport_failed":
+                        with patch.object(sup, "evaluate_runtime", return_value={"ok": False, "error": sentinel}):
+                            result = tool._handle_vault({"action": "enter_code"}, task_id=task)
+                    else:
+                        result = tool._handle_vault({"action": "enter_code"}, task_id=task)
+                    self.assertTrue(sentinel not in result, "unsafe native failure output")
+                    parsed = json.loads(result)
+                    self.assertEqual(parsed["origin_status"], category)
+                    self.assertEqual(parsed["connection"]["page_session_present"], bool(page))
+            with patch.object(sup, "evaluate_runtime", side_effect=RuntimeError(sentinel)):
+                result = tool._handle_vault({"action": "enter_code"}, task_id=task)
+                self.assertEqual(json.loads(result)["origin_status"], "transport_failed")
+                self.assertTrue(sentinel not in result, "unsafe raised-error output")
+        plugin = SimpleNamespace(name=sentinel, evaluate=lambda *args, **kw: (_ for _ in ()).throw(RuntimeError(sentinel)))
+        with patch.object(tool, "_page_backend", return_value=plugin), patch.object(tool, "_focus_bound_origin", return_value=None):
+            result = tool._handle_vault({"action": "enter_code"}, task_id=task)
+            self.assertTrue(sentinel not in result, "unsafe plugin failure output")
+            self.assertTrue(json.loads(result)["connection"]["plugin_backend_present"])
+            self.assertEqual(json.loads(result)["origin_status"], "transport_failed")
+        with patch.object(tool, "_page_backend", return_value=SimpleNamespace(evaluate=lambda *args, **kw: "about:blank")), patch.object(
+                tool, "_focus_bound_origin", return_value=None):
+            result = json.loads(tool._handle_vault({"action": "enter_code"}, task_id=task))
+            self.assertEqual(result["origin_status"], "invalid_origin")
+        # An attach failure with a known endpoint differs from no task session, without raw logging.
+        endpoint = "ws://127.0.0.1/devtools/browser/synthetic?token=" + sentinel
+        with patch.object(browser_session, "session_for_task", return_value={"cdp_url": endpoint}), patch.object(
+                SUPERVISOR_REGISTRY, "get_or_start", side_effect=RuntimeError(sentinel)):
+            with self.assertLogs(tool.logger, level="DEBUG") as logs:
+                result = tool._handle_vault({"action": "enter_code"}, task_id=task)
+            self.assertEqual(json.loads(result)["origin_status"], "transport_failed")
+            self.assertTrue(sentinel not in result + str(logs.output), "unsafe attach failure output")
+            attached = browser_use_cli._attach_vault_supervisor({"BU_CDP_WS": endpoint}, task)
+            self.assertEqual(attached["attach_status"], "attach_failed")
+            self.assertTrue(sentinel not in json.dumps(attached), "unsafe browser_exec attach output")
+        unknown = tool._connection_metadata(task, supervisor=object())
+        self.assertIsNone(unknown["active"])
+        self.assertIsNone(unknown["page_session_present"])
+        self.assertEqual(browser_use_cli._attach_vault_supervisor({}, task)["attach_status"], "no_endpoint")
+
     def test_native_chromium_fill_otp_redaction_mismatch_and_navigation(self):
         from tools.browser_supervisor import SUPERVISOR_REGISTRY
         from tools.browser_cdp_tool import _redact_cdp_output
@@ -376,9 +452,19 @@ class ConnectTests(unittest.TestCase):
             self.assertEqual(env.get("BU_CDP_WS") or env.get("BU_CDP_URL"), endpoint)
             self.assertNotEqual(browser_session._active_sessions[task]["session_key"],
                                 browser_session._active_sessions["bu-named-synthetic-named"]["session_key"])
-            browser_use_cli._attach_vault_supervisor(env, task)
+            self.assertEqual(driven["browser_vault_connection"]["attach_status"], "attached")
             sup = SUPERVISOR_REGISTRY.get(task)
             self.assertIsNotNone(sup)
+            self.assertEqual(tool._eval_js(task, "window.location.href")["connection"]["task_fingerprint"],
+                             driven["browser_vault_connection"]["task_fingerprint"])
+            self.assertNotEqual(tool._connection_metadata("synthetic-other-session")["task_fingerprint"],
+                                driven["browser_vault_connection"]["task_fingerprint"])
+            with patch.object(sup, "evaluate_runtime", return_value={"ok": False, "error": TOKEN + PASSWORD}):
+                refused = json.loads(tool._handle_vault({"action": "enter_code"}, task_id=task))
+            self.assertEqual(refused["origin_status"], "transport_failed")
+            self.assertEqual(refused["connection"]["task_fingerprint"],
+                             driven["browser_vault_connection"]["task_fingerprint"])
+            self.assert_safe(json.dumps(refused))
             self.assertEqual(sup.cdp_url, endpoint)
             for _ in range(50):
                 if sup.evaluate_runtime("!!document.querySelector('input[type=password]')").get("result"):
@@ -406,6 +492,8 @@ class ConnectTests(unittest.TestCase):
             evaluate("document.querySelector('[name=username]').value = 'synthetic@example.com'; document.querySelector('button').click()")
             time.sleep(0.3)
             self.assertTrue(evaluate("document.title").endswith("logged-in-synthetic"))
+            no_field = json.loads(tool._handle_vault({"action": "enter_code"}, task_id=task))
+            self.assertEqual(no_field["error_type"], "no_code_field")
             # The provider changes its saved origins after precheck: the in-context
             # fresh snapshot must refuse before password resolution or any write.
             evaluate("location.href = " + json.dumps(self.url + "/login"))

@@ -257,6 +257,32 @@ sessions; Browser Use creation failures refuse instead of falling back to anothe
 browser. The direct provider retains the existing Korean proxy country. Deployment
 replaces existing harness-only sessions, so reopen the authorized login page after
 restart before filling; discovery alone does not prove a supervised page exists.
+
+Origin-evaluation failures return `error_type=origin_unavailable` rather than
+claiming that no code field exists. `origin_status` is one of `no_supervisor`,
+`inactive`, `no_page_session`, `transport_failed`, or `invalid_origin`.
+The existing error result includes an allowlisted `connection` object: plugin
+backend, supervisor and task-session presence; session-CDP presence; and supervisor
+loop/thread/active/page-session booleans. `null` means unavailable evidence, not
+false. No endpoints, page URLs, source identities or exception messages are included.
+`browser_exec` includes `browser_vault_connection` from its existing attach dispatch,
+with `attach_status=attached|attach_failed|no_endpoint`. Compare its
+`task_fingerprint` with the vault error's fingerprint to check canonical task-key
+parity; matching fingerprints do not prove that the same tab or browser is selected.
+These observations do not create sessions or add focus, inspection or attachment
+operations; existing native focus/on-demand attachment behavior remains unchanged.
+
+This is diagnostic/error-contract support, not a verified repair of the live
+parent-task origin failure. After a separately reviewed deployment, reproduce the
+existing failing native `browser_vault` call with `{"action":"enter_code"}` (no
+handle) in that same parent conversation and inspect its typed refusal before any
+credential operation. Do not create another browser or reattach a supervisor just
+for diagnosis. If origin evaluation succeeds, normal code-field classification
+and prompt rules still apply: stop before requesting or entering a real code.
+The Discord gateway's manual `vault.code` prompt is supported only by the local
+viewer/detached path; this change adds no plaintext-code handling or new prompt
+transport.
+
 Password/TOTP resolution uses one short-lived item snapshot after
 the page-origin check, so a provider edit cannot swap the checked origins for a
 new secret. Only exact saved HTTP(S) origins authorize writes: no inferred
