@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$DiagnoseOnly, [switch]$ResumeStagingPair)
+param([switch]$DiagnoseOnly, [switch]$ResumeStagingPair, [switch]$CleanupOnly)
 
 $ErrorActionPreference = 'Stop'
 $name = 'eso-retirement-check'
@@ -7,6 +7,7 @@ $ns = 'cert-manager'
 $issuerCreated = $false
 $certificateCreated = $false
 $cleanupSafe = $true
+if ($CleanupOnly) { $ResumeStagingPair = $true }
 try {
     $kubectl = (Get-Command kubectl -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 } catch { throw 'FAIL stage=kubectl-discovery category=application-not-found' }
@@ -14,7 +15,7 @@ try {
 function Invoke-Kubectl {
     param([string]$Stage, [string[]]$Arguments, [string]$InputJson)
     # Arguments are internal fixed resource names/flags, never credentials or user input.
-    if (@($Arguments | Where-Object { $_ -notmatch '^[a-zA-Z0-9./=,:_-]+$' }).Count) {
+    if (@($Arguments | Where-Object { $_ -notmatch '^[a-zA-Z0-9./=,:_\[\]*-]+$' }).Count) {
         throw "FAIL stage=$Stage category=invalid-internal-argument"
     }
     $start = New-Object System.Diagnostics.ProcessStartInfo
@@ -60,6 +61,36 @@ function Read-KubectlJson {
         if ($null -eq $result -or $result -is [array] -or $result -isnot [pscustomobject]) { throw 'not-object' }
     } catch { throw "FAIL stage=$Stage category=invalid-json-object" }
     return $result
+}
+
+function Assert-ResourceList {
+    param($List, [string]$ItemKind, [string]$ApiVersion, [string]$Stage, [string]$Namespace)
+    $itemsProperty = $List.PSObject.Properties['items']
+    if ($List.kind -notin @('List', "${ItemKind}List") -or
+        ($List.kind -eq 'List' -and $List.apiVersion -cne 'v1') -or
+        ($List.kind -ne 'List' -and $List.apiVersion -cne $ApiVersion) -or
+        $null -eq $itemsProperty -or $itemsProperty.Value -isnot [array]) {
+        throw "FAIL stage=$Stage category=invalid-list; keep test issuer/account"
+    }
+    foreach ($item in $itemsProperty.Value) {
+        if ($item -isnot [pscustomobject] -or $item.kind -cne $ItemKind -or
+            $item.apiVersion -cne $ApiVersion -or -not $item.metadata.name -or
+            ($ItemKind -ne 'ClusterIssuer' -and -not $item.metadata.namespace) -or
+            ($Namespace -and $item.metadata.namespace -cne $Namespace) -or
+            ($ItemKind -in @('Certificate', 'Order', 'Challenge') -and -not $item.spec.issuerRef.name)) {
+            throw "FAIL stage=$Stage category=invalid-list-item; keep test issuer/account"
+        }
+    }
+}
+
+function Remove-ReviewedResource {
+    param([string]$Kind, [string]$ResourceName, [string]$Uid, [string]$Uri)
+    if ($Uid -notmatch '^[0-9a-f-]{36}$') { throw 'FAIL stage=cleanup/uid category=invalid-identity' }
+    $options = @{apiVersion = 'v1'; kind = 'DeleteOptions'; preconditions = @{uid = $Uid}} | ConvertTo-Json -Compress
+    $null = Invoke-Kubectl -Stage "cleanup/uid-delete/$Kind" -Arguments @('delete', '--raw', $Uri, '-f', '-') -InputJson $options
+    $arguments = @('wait', "$Kind/$ResourceName", '--for=delete', '--timeout=2m')
+    if ($Kind -ne 'clusterissuer') { $arguments += @('-n', $ns) }
+    $null = Invoke-Kubectl -Stage "cleanup/deletion-wait/$Kind" -Arguments $arguments
 }
 
 function Assert-TestNamesAbsent {
@@ -118,15 +149,48 @@ try {
             throw 'FAIL stage=resume/account-contract category=unreviewed-pair'
         }
         foreach ($kind in @('certificate', 'secret')) {
+            if ($CleanupOnly -and $kind -eq 'secret') { continue }
             $absentName = if ($kind -eq 'certificate') { $name } else { "$name-tls" }
             $found = Invoke-Kubectl -Stage "resume/absent/$kind" -Arguments @('get', $kind, $absentName, '-n', $ns, '--ignore-not-found', '-o', 'name')
             if (-not [string]::IsNullOrWhiteSpace($found)) { throw "FAIL stage=resume/absent/$kind category=name-collision" }
         }
+        if ($CleanupOnly) {
+            if ($existingIssuer.metadata.uid -notmatch '^[0-9a-f-]{36}$') {
+                throw 'FAIL stage=cleanup/issuer-uid category=invalid-identity'
+            }
+            $tlsUid = $null
+            $tls = Invoke-Kubectl -Stage 'cleanup/tls-metadata' -Arguments @('get', 'secret', "$name-tls", '-n', $ns, '--ignore-not-found', '-o', 'custom-columns=UID:.metadata.uid,CREATED:.metadata.creationTimestamp,OWNERAPI:.metadata.ownerReferences[*].apiVersion,OWNERKIND:.metadata.ownerReferences[*].kind,OWNERNAME:.metadata.ownerReferences[*].name,OWNERUID:.metadata.ownerReferences[*].uid,DELETING:.metadata.deletionTimestamp,TYPE:.type', '--no-headers')
+            if (-not [string]::IsNullOrWhiteSpace($tls)) {
+                $tlsParts = $tls.Trim() -split '\s+'
+                $ownerless = $tlsParts.Count -eq 8 -and
+                    @($tlsParts[2..5] | Where-Object { $_ -cne '<none>' }).Count -eq 0
+                $testOwner = $tlsParts.Count -eq 8 -and $tlsParts[2] -ceq 'cert-manager.io/v1' -and
+                    $tlsParts[3] -ceq 'Certificate' -and $tlsParts[4] -ceq $name -and
+                    $tlsParts[5] -match '^[0-9a-f-]{36}$'
+                if ($tlsParts.Count -ne 8 -or $tlsParts[0] -notmatch '^[0-9a-f-]{36}$' -or
+                    $tlsParts[1] -notmatch '^2026-11-08T[0-9:]+Z$' -or
+                    $tlsParts[1] -clt '2026-11-08T09:58:49Z' -or
+                    (-not $ownerless -and -not $testOwner) -or
+                    $tlsParts[6] -cne '<none>' -or $tlsParts[7] -cne 'kubernetes.io/tls') {
+                    throw 'FAIL stage=cleanup/tls-contract category=unreviewed-output; keep test resources'
+                }
+                $tlsUid = $tlsParts[0]
+            }
+        }
         foreach ($kind in @('certificates.cert-manager.io', 'orders.acme.cert-manager.io', 'challenges.acme.cert-manager.io', 'clusterissuers.cert-manager.io', 'issuers.cert-manager.io')) {
             $list = Read-KubectlJson -Stage "resume/references/$kind" -Arguments @('get', $kind, '-A', '-o', 'json')
-            if ($null -eq $list.items -or $list.kind -notmatch 'List$') { throw 'FAIL stage=resume/references category=invalid-list' }
+            $itemKind = switch ($kind) {
+                'certificates.cert-manager.io' { 'Certificate' }
+                'orders.acme.cert-manager.io' { 'Order' }
+                'challenges.acme.cert-manager.io' { 'Challenge' }
+                'clusterissuers.cert-manager.io' { 'ClusterIssuer' }
+                'issuers.cert-manager.io' { 'Issuer' }
+            }
+            $apiVersion = if ($itemKind -in @('Order', 'Challenge')) { 'acme.cert-manager.io/v1' } else { 'cert-manager.io/v1' }
+            Assert-ResourceList -List $list -ItemKind $itemKind -ApiVersion $apiVersion -Stage 'resume/references'
             foreach ($item in $list.items) {
                 if ($item.spec.issuerRef.name -eq $name -or
+                    ($CleanupOnly -and $item.kind -eq 'Certificate' -and $item.metadata.namespace -eq $ns -and $item.spec.secretName -eq "$name-tls") -or
                     ($item.spec.acme.privateKeySecretRef.name -eq "$name-account" -and
                      (($item.kind -eq 'ClusterIssuer' -and $item.metadata.uid -ne $existingIssuer.metadata.uid) -or
                       ($item.kind -eq 'Issuer' -and $item.metadata.namespace -eq $ns)))) {
@@ -138,6 +202,11 @@ try {
     }
     if ($DiagnoseOnly) {
         'PASS DNS01-read-only-preflight; no resources created'
+        return
+    }
+    if ($CleanupOnly) {
+        $issuerCreated = $true
+        'PASS cleanup-only-preflight no-certificate-created=true'
         return
     }
     $testIssuer = @{
@@ -176,26 +245,35 @@ try {
     'PASS fresh-staging-DNS01 certificate-revision=1'
 } finally {
     # Preserve issuer/account until cert-manager has removed the temporary TXT record.
-    if ($certificateCreated) {
-        $null = Invoke-Kubectl -Stage 'test-certificate-cleanup' -Arguments @('delete', 'certificate', $name, '-n', $ns, '--wait=true')
+    if ($certificateCreated -or ($CleanupOnly -and $issuerCreated)) {
+        if ($certificateCreated) {
+            $null = Invoke-Kubectl -Stage 'test-certificate-cleanup' -Arguments @('delete', 'certificate', $name, '-n', $ns, '--wait=true')
+        }
         for ($attempt = 0; $attempt -lt 24; $attempt++) {
             $pending = 0
-            foreach ($resource in @(@('challenges.acme.cert-manager.io', 'ChallengeList'), @('orders.acme.cert-manager.io', 'OrderList'))) {
+            foreach ($resource in @(@('challenges.acme.cert-manager.io', 'Challenge'), @('orders.acme.cert-manager.io', 'Order'))) {
                 $remaining = Read-KubectlJson -Stage "challenge-cleanup-read/$($resource[0])" -Arguments @('get', $resource[0], '-n', $ns, '-o', 'json')
-                if ($remaining.kind -ne $resource[1] -or $null -eq $remaining.items) {
-                    throw 'FAIL stage=challenge-cleanup-read category=invalid-list; keep test issuer/account'
-                }
+                Assert-ResourceList -List $remaining -ItemKind $resource[1] -ApiVersion 'acme.cert-manager.io/v1' -Stage 'challenge-cleanup-read' -Namespace $ns
                 $pending += @($remaining.items | Where-Object { $_.spec.issuerRef.name -eq $name }).Count
             }
             if (-not $pending) { break }
             Start-Sleep -Seconds 5
         }
         if ($pending) { throw 'FAIL stage=challenge-cleanup category=pending; keep test issuer/account and inspect privately' }
-        $null = Invoke-Kubectl -Stage 'temporary-secret-cleanup' -Arguments @('delete', 'secret', "$name-tls", '-n', $ns, '--ignore-not-found', '--wait=true')
+        if ($CleanupOnly) {
+            if ($tlsUid) { Remove-ReviewedResource -Kind 'secret' -ResourceName "$name-tls" -Uid $tlsUid -Uri "/api/v1/namespaces/$ns/secrets/$name-tls" }
+        } else {
+            $null = Invoke-Kubectl -Stage 'temporary-secret-cleanup' -Arguments @('delete', 'secret', "$name-tls", '-n', $ns, '--ignore-not-found', '--wait=true')
+        }
     }
     if ($issuerCreated -and $cleanupSafe) {
-        $null = Invoke-Kubectl -Stage 'staging-issuer-cleanup' -Arguments @('delete', 'clusterissuer', $name, '--wait=true')
-        $null = Invoke-Kubectl -Stage 'staging-account-cleanup' -Arguments @('delete', 'secret', "$name-account", '-n', $ns, '--ignore-not-found', '--wait=true')
+        if ($CleanupOnly) {
+            Remove-ReviewedResource -Kind 'clusterissuer' -ResourceName $name -Uid $existingIssuer.metadata.uid -Uri "/apis/cert-manager.io/v1/clusterissuers/$name"
+            Remove-ReviewedResource -Kind 'secret' -ResourceName "$name-account" -Uid $parts[0] -Uri "/api/v1/namespaces/$ns/secrets/$name-account"
+        } else {
+            $null = Invoke-Kubectl -Stage 'staging-issuer-cleanup' -Arguments @('delete', 'clusterissuer', $name, '--wait=true')
+            $null = Invoke-Kubectl -Stage 'staging-account-cleanup' -Arguments @('delete', 'secret', "$name-account", '-n', $ns, '--ignore-not-found', '--wait=true')
+        }
         Assert-TestNamesAbsent -Stage 'cleanup-readback'
         'PASS staging-DNS01-cleanup'
     }

@@ -1087,6 +1087,26 @@ recovery run reuses the staging issuer/account, creates only the bounded test
 Certificate and performs the normal issuance and cleanup. Never use this option
 for a different leftover pair or change the timestamp guard to force acceptance.
 
+If issuance already printed `PASS fresh-staging-DNS01` but cleanup failed after
+deleting the Certificate, **do not issue another certificate**. Download the updated
+script again, then run:
+
+```powershell
+& $probe -CleanupOnly
+```
+
+This requires the reviewed staging pair and an absent test Certificate. It checks
+fresh metadata, rejects any remaining issuer/account consumers or Certificate
+using the test TLS output, and validates both generic Kubernetes `List` and typed
+Order/Challenge lists. Missing/null/non-array `items` or malformed entries are
+failures, not empty lists. A leftover TLS Secret must be absent or a same-day TLS
+output created no earlier than the reviewed staging pair, with no owners or only
+the test Certificate owner. It deletes only the reviewed temporary TLS output,
+issuer and account using server-enforced UID preconditions, waits for deletion,
+and reads back all four exact test names as absent. A changed UID stops cleanup;
+there is no forced finalizer removal or automatic retry. `-CleanupOnly -DiagnoseOnly`
+checks the same preflight without writes. Accept the existing issuance PASS and
+require `PASS staging-DNS01-cleanup` before activating ESO target pruning.
 
 If cleanup reports pending challenges, keep the staging issuer/account until
 cert-manager removes the temporary TXT record. Inspect only fixed status/name
