@@ -15,7 +15,7 @@ kind: Deployment
 metadata:
   name: hermes
   annotations:
-    secret.reloader.stakater.com/reload: hermes-runtime-connect,n8n-connect,langfuse-connect,hermes-coder-git,immich-connect,obsidian-connect,opencloud-connect,zipline-connect,qbittorrent-connect
+    secret.reloader.stakater.com/reload: hermes-runtime-connect,n8n-connect,langfuse-connect,github-connect,signing-connect,immich-connect,obsidian-connect,opencloud-connect,zipline-connect,qbittorrent-connect
 spec:
   replicas: 1
   strategy:
@@ -62,6 +62,7 @@ spec:
               mkdir -p /opt/data/coder-tools/mise /opt/data/coder-tools/cache /opt/data/coder-tools/config
               chown 10000:10000 /opt/coder /opt/coder/bin /opt/coder-credentials
               chown 10000:10000 /opt/data/coder-tools /opt/data/coder-tools/mise /opt/data/coder-tools/cache /opt/data/coder-tools/config
+              chmod 700 /opt/coder-credentials
               /bin/sh /bootstrap/coder-configure-git.sh
               cp /opt/hermes/.venv/lib/python3.14/site-packages/browser_harness/run.py /opt/browser/run.py
               git -C /opt/browser apply --check /bootstrap/browser-cloud.patch
@@ -844,9 +845,21 @@ spec:
         - name: coder-runtime
           emptyDir: {}
         - name: coder-source
-          secret:
-            secretName: hermes-coder-git
+          projected:
             defaultMode: 0400
+            sources:
+              - secret:
+                  name: github-connect
+                  items:
+                    - key: credential
+                      path: github-token
+              - secret:
+                  name: signing-connect
+                  items:
+                    - key: private-key
+                      path: signing-key
+                    - key: public-key
+                      path: signing-public-key
         - name: coder-credentials
           emptyDir:
             medium: Memory
