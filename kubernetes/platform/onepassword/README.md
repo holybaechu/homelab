@@ -904,6 +904,24 @@ as the future rotation authority, then run the same command with `--apply`:
 git show origin/main:scripts/prepare-cloudflare-runtime.py | mise x python@3 -- python - --recovery-confirmed --apply
 ```
 
+For a failure at `stage=source-get`, do not retry apply or creation preview.
+Use this source-only diagnostic instead:
+
+```powershell
+git fetch origin main
+git show origin/main:scripts/prepare-cloudflare-runtime.py | mise x python@3 -- python - --recovery-confirmed --diagnose-source
+```
+
+This performs only the original source GET and strict validation: no item list,
+creation (including dry-run), or Kubernetes reads. Failures distinguish CLI exit
+codes with fixed HTTP/auth/access/desktop-lock hints, timeout, execution, invalid
+JSON, encoding and schema errors without printing raw output or exception text.
+Hints are not a proven root cause. Check `op whoami` privately if an account-auth
+hint appears; reauthenticate the intended personal account if needed (PowerShell:
+`Invoke-Expression "$(op signin)"`), then rerun only the source diagnostic. Do not
+supply a Connect write token. A successful source diagnostic is not a creation or
+consumer parity PASS. Share only its fixed diagnostic lines, never raw CLI output.
+
 An exact-title search includes archived items, rejects ambiguity and verifies an
 existing item instead of creating another. Apply creates at most once, verifies
 the returned item and a fresh read-back, compares the entire original source
