@@ -20,7 +20,6 @@ jobs:
     env:
       TF_IN_AUTOMATION: "1"
       TF_INPUT: "0"
-      TF_CLI_CONFIG_FILE: ${{ runner.temp }}/providers.tfrc
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: jdx/mise-action@v5.2.6
@@ -56,7 +55,8 @@ jobs:
           # OpenTofu independently checks this packed mirror against the unchanged lockfile.
           # https://opentofu.org/docs/cli/config/config-file/#explicit-installation-method-configuration
           printf 'provider_installation {\n  filesystem_mirror {\n    path = "%s"\n    include = ["registry.opentofu.org/siderolabs/talos"]\n  }\n  direct {\n    exclude = ["registry.opentofu.org/siderolabs/talos"]\n  }\n}\n' \
-            "$RUNNER_TEMP/provider-mirror" > "$TF_CLI_CONFIG_FILE"
+            "$RUNNER_TEMP/provider-mirror" > "$RUNNER_TEMP/providers.tfrc"
+          printf 'TF_CLI_CONFIG_FILE=%s\n' "$RUNNER_TEMP/providers.tfrc" >> "$GITHUB_ENV"
       - name: Validate OpenTofu configuration
         env:
           TF_DATA_DIR: ${{ runner.temp }}/tofu-providers
