@@ -101,7 +101,7 @@
 +        except Exception:
 +            supervisor_present = None
 +    out = {"task_fingerprint": hashlib.sha256(task_id.encode()).hexdigest()[:16],
-+           "plugin_backend_present": page is not None,
++           "plugin_backend_present": None,
 +           "supervisor_present": supervisor_present,
 +           "session_present": None, "session_cdp_present": None,
 +           "loop_running": None, "thread_alive": None, "active": None,
@@ -160,8 +160,8 @@
 +        evaluation_raised = True
 +        result = {}
 +    connection = _connection_metadata(task_id, page=page, supervisor=supervisor)
-+    if not page_known:
-+        connection["plugin_backend_present"] = None
++    if page_known:
++        connection["plugin_backend_present"] = page is not None
 +    succeeded = result.get("success") if page is not None else result.get("ok")
 +    if succeeded:
 +        return {"success": True, "result": result.get("result"), "connection": connection}

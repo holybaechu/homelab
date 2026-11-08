@@ -346,6 +346,27 @@ class ConnectTests(unittest.TestCase):
                     self.assertIsNone(connection["active"])
                     self.assertNotIn(task, json.dumps(result))
 
+    def test_plugin_backend_presence_is_unknown_until_eval_observes_it(self):
+        from types import SimpleNamespace
+        from tools import browser_use_cli
+        task = "synthetic-plugin-observation"
+        plugin = SimpleNamespace(evaluate=lambda *args, **kwargs: "https://example.com")
+        with patch.object(tool, "_page_backend", return_value=plugin) as lookup:
+            attached = browser_use_cli._attach_vault_supervisor({}, task)
+            self.assertIsNone(attached["plugin_backend_present"])
+            lookup.assert_not_called()
+            evaluated = tool._eval_js(task, "window.location.href")
+            self.assertTrue(evaluated["success"])
+            self.assertIs(evaluated["connection"]["plugin_backend_present"], True)
+            self.assertEqual(attached["task_fingerprint"], evaluated["connection"]["task_fingerprint"])
+        with patch.object(tool, "_page_backend", return_value=None), patch.object(
+                tool, "_ensure_supervisor", return_value=None):
+            evaluated = tool._eval_js(task, "window.location.href")
+            self.assertIs(evaluated["connection"]["plugin_backend_present"], False)
+        with patch.object(tool, "_page_backend", side_effect=RuntimeError("synthetic lookup failure")):
+            evaluated = tool._eval_js(task, "window.location.href")
+            self.assertIsNone(evaluated["connection"]["plugin_backend_present"])
+
     def test_native_origin_failures_are_typed_and_do_not_echo_transport(self):
         from types import SimpleNamespace
         from tools.browser_supervisor import CDPSupervisor, SUPERVISOR_REGISTRY
