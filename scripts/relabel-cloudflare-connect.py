@@ -129,6 +129,7 @@ def main(argv=None):
         category = str(error) if isinstance(error, Refused) else "execution-or-response-error"
         if isinstance(error, urllib.error.HTTPError):
             category = f"http-status-{int(error.code)}"
+            error.close()
         print(f"FAIL cloudflare-label: stage={stage} category={category} outcome={state}; inspect item history privately", file=sys.stderr)
         return 1
     print("PASS cloudflare-label: label-only PATCH response and GET verified; consumer parity not checked")
