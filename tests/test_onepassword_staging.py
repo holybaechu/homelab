@@ -114,6 +114,7 @@ class StagingVerificationTests(unittest.TestCase):
         fields.append({"id": "notesPlain", "label": contract.get("notes_label", "notesPlain"), "type": "STRING",
                        "purpose": "NOTES", "value": ""})
         source = {"id": item_id, "vault": {"id": staging.VAULT}, "title": title,
+                  **({"category": contract["category"]} if "category" in contract else {}),
                   "fields": fields, "sections": [{"id": section} for section in
                    sorted({s for _, s in labels.values() if s})]}
         replacement = {"data": {staging.operator_key(f["label"]):
@@ -206,23 +207,78 @@ class StagingVerificationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             staging.verify_source(source, replacement, contract)
 
-    def test_cloudflare_current_localized_labels_and_nonempty_dates_block_cutover(self):
+    def test_cloudflare_runtime_is_narrow_and_original_is_get_only(self):
+        from test_cloudflare_runtime_source import source_fixture
+
         for name in ("cloudflare-dns", "cloudflare-ddns"):
             contract = staging.CONTRACTS[name]
             source, replacement = self.source_fixture(contract)
             staging.verify_source(source, replacement, contract)
-            credential = next(f for f in source["fields"] if f["id"] == "credential")
-            credential["label"] = "\uc790\uaca9 \uc99d\uba85"
-            with self.assertRaisesRegex(ValueError, "source-label"):
-                staging.verify_source(source, replacement, contract)
-            credential["label"] = "credential"
+            for mutate in (
+                lambda x: x.update(category="API_CREDENTIAL"),
+                lambda x: x.update(id="x62vzi4s2sdnerrjev6pp5ndnu"),
+                lambda x: x["fields"][0].update(label="\uc790\uaca9 \uc99d\uba85"),
+                lambda x: x["fields"][1].update(value="PRIVATE_NOTES"),
+                lambda x: x["fields"].append({"id": "expires", "type": "DATE"}),
+                lambda x: x.update(urls=[{"label": "", "href": "PRIVATE_URL"}]),
+            ):
+                changed = copy.deepcopy(source)
+                mutate(changed)
+                with self.assertRaises(ValueError):
+                    staging.verify_source(changed, replacement, contract)
+            original = source_fixture()
+            original["fields"][2]["value"] = source["fields"][0]["value"]
+            before = copy.deepcopy(original)
+            staging.verify_cloudflare_rollback(original, replacement)
+            self.assertEqual(original, before)
             for date_id in ("validFrom", "expires"):
-                field = next(f for f in source["fields"] if f["id"] == date_id)
-                for value in ("PRIVATE_DATE", " ", "0"):
+                field = next(f for f in original["fields"] if f["id"] == date_id)
+                for value in ("PRIVATE_DATE", " ", "0", "", None, 0):
                     field["value"] = value
-                    with self.assertRaisesRegex(ValueError, "source-date-not-unset"):
-                        staging.verify_source(source, replacement, contract)
-                field["value"] = ""
+                    with self.assertRaisesRegex(ValueError, "rollback-source-date-present"):
+                        staging.verify_cloudflare_rollback(original, replacement)
+                del field["value"]
+            original["fields"][2]["value"] += "changed"
+            with self.assertRaisesRegex(ValueError, "rollback-source-replacement-bytes"):
+                staging.verify_cloudflare_rollback(original, replacement)
+
+    def test_cloudflare_batch_checks_both_namespaces_and_blocks_original_drift(self):
+        from test_cloudflare_runtime_source import source_fixture
+
+        source, replacement = self.source_fixture(staging.CONTRACTS["cloudflare-dns"])
+        original = source_fixture()
+        original["fields"][2]["value"] = source["fields"][0]["value"]
+        reads = []
+
+        def read(kind, name, namespace):
+            reads.append((kind, name, namespace))
+            if kind == "onepassworditem":
+                return {**self.item, "metadata": {"name": name, "uid": namespace},
+                        "spec": {"itemPath": f"vaults/{staging.VAULT}/items/{source['id']}"}}
+            if name == "cloudflare-connect":
+                return {**replacement, "metadata": {
+                    "ownerReferences": [{"apiVersion": "onepassword.com/v1", "kind": "OnePasswordItem",
+                                         "name": name, "uid": namespace}],
+                    "annotations": {"operator.1password.io/item-path": f"vaults/{staging.VAULT}/items/{source['id']}"}}}
+            key = "api-token" if namespace == "cert-manager" else "CLOUDFLARE_API_TOKEN"
+            return {"data": {key: replacement["data"]["credential"]}}
+
+        for drift in (False, True):
+            checked_original = copy.deepcopy(original)
+            if drift:
+                checked_original["fields"][2]["label"] = "credential"
+            with (patch.object(staging, "read_resource", side_effect=read),
+                  patch.object(staging, "read_source", side_effect=lambda item_id:
+                      source if item_id == source["id"] else checked_original),
+                  contextlib.redirect_stdout(io.StringIO()) as out,
+                  contextlib.redirect_stderr(io.StringIO()) as err):
+                self.assertEqual(staging.main(["cloudflare-dns", "cloudflare-ddns"]), int(drift))
+            self.assertEqual(out.getvalue().count("PASS "), 0 if drift else 2)
+            self.assertNotIn("PRIVATE", out.getvalue() + err.getvalue())
+            if drift:
+                self.assertEqual(err.getvalue().count("category=rollback-source-metadata"), 2)
+        self.assertIn(("secret", "cloudflare-dns", "cert-manager"), reads)
+        self.assertIn(("secret", "cloudflare-ddns", "homelab"), reads)
 
     def test_source_read_failures_are_sanitized_and_never_write(self):
         with patch.object(staging.subprocess, "run", side_effect=ValueError("PRIVATE_VALUE")) as run, \
@@ -515,8 +571,8 @@ class StagingVerificationTests(unittest.TestCase):
             self.assertIn("replacement-format=" + kind + " reference-format=openssh", str(caught.exception))
             self.assertNotIn("PRIVATE", str(caught.exception))
 
-    def test_date_shapes_in_source_only_diagnostics_do_not_relax_incident_gate(self):
-        contract = staging.CONTRACTS["cloudflare-dns"]
+    def test_date_shapes_in_source_only_diagnostics(self):
+        contract = staging.CONTRACTS["github-connect"]
         for value, shape in ((None, "null"), ("", "empty-string"), ("0", "nonempty-string"),
                              (0, "number-zero"), (1, "number-nonzero"), (False, "other")):
             source, replacement = self.source_fixture(contract)
