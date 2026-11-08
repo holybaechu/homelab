@@ -40,6 +40,29 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
+        - name: render-workflow-credentials
+          image: docker.n8n.io/n8nio/n8n:2.46.6
+          command: [node, /renderer/render-credentials.cjs]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: credential-source
+              mountPath: /credentials
+              readOnly: true
+            - name: credential-renderer
+              mountPath: /renderer
+              readOnly: true
+            - name: credentials
+              mountPath: /config
         - name: import-workflow-credentials
           image: docker.n8n.io/n8nio/n8n:2.46.6
           command: [n8n, "import:credentials", --input=/run/secrets/n8n/credentials.json]
@@ -172,8 +195,26 @@ spec:
         - name: cache
           emptyDir: {}
         - name: credentials
-          secret:
-            secretName: n8n-hermes-credentials
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: credential-renderer
+          configMap:
+            name: n8n-credentials-staging
+        - name: credential-source
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: n8n-connect
+                  items:
+                    - key: hermes_webhook_secret
+                      path: webhook-secret
+              - secret:
+                  name: hermes-runtime-connect
+                  items:
+                    - key: perplexity-api-key
+                      path: perplexity-api-key
 ---
 apiVersion: v1
 kind: Service
