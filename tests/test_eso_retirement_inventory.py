@@ -111,5 +111,76 @@ class RetirementInventoryTests(unittest.TestCase):
         self.assertTrue(all(args[0] == "get" for args in calls))
 
 
+class PostPruneTests(unittest.TestCase):
+    def run_phase(self, phase, leftover=None, installed=True, stale=False):
+        def fixture(*args):
+            if args == ("get", "--raw", "/apis"):
+                return {"groups": [{"name": group,
+                                    "preferredVersion": {"groupVersion": group + "/v1"},
+                                    "versions": [{"groupVersion": group + "/v1"}]}
+                                   for group in inventory.GROUPS] if installed else []}
+            if "--raw" in args:
+                return {"resources": [{"name": "clustersecretstores", "namespaced": False,
+                                       "verbs": ["list"]}]}
+            if args[1].endswith(".external-secrets.io"):
+                entries = []
+                if phase == "targets-removed" and args[1] == "clustersecretstores.external-secrets.io":
+                    entries.append({"metadata": {"name": "onepassword"}})
+                if leftover == "instance":
+                    entries.append({"metadata": {"name": "unexpected"}})
+                return {"items": entries}
+            if args[1] == "onepassworditem":
+                ns, name = args[4], args[2]
+                return {"metadata": {"uid": name},
+                        "spec": {"itemPath": f"vaults/{inventory.VAULT}/items/{inventory.ITEMS[ns][name]}"},
+                        "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
+            if args[1] == "secret":
+                return {"ownerReferences": [{"uid": args[2], "name": args[2],
+                                             "kind": "OnePasswordItem", "apiVersion": "onepassword.com/v1"}]}
+            if args[1] == "clusterissuers.cert-manager.io":
+                return {"items": [{"kind": "ClusterIssuer", "metadata": {"name": "letsencrypt"},
+                                   "spec": {"acme": {"solvers": [{"dns01": {"cloudflare": {
+                                       "apiTokenSecretRef": {"name": "cloudflare-connect", "key": "credential"}}}}]}}}]}
+            if args[1] in {"helmrelease", "deployment"}:
+                return {"metadata": {"name": args[2], "generation": 2}, "spec": {"replicas": 1},
+                        "status": {"observedGeneration": 1 if stale else 2, "readyReplicas": 1,
+                                   "conditions": [{"type": "Ready", "status": "True"}]}}
+            if args[1] == "kustomizations.kustomize.toolkit.fluxcd.io" and "-n" in args:
+                return {"items": [{"metadata": {"generation": 2}, "spec": {},
+                                   "status": {"conditions": [{"type": "Ready", "status": "True",
+                                                               "observedGeneration": 2}]}}]}
+            if args[1] == "helmreleases.helm.toolkit.fluxcd.io" and leftover == "release":
+                return {"items": [{"kind": "HelmRelease", "metadata": {
+                    "name": "external-secrets", "namespace": "external-secrets"}, "spec": {}}]}
+            if args[1] == "validatingwebhookconfigurations" and leftover == "webhook":
+                return {"items": [{"kind": "ValidatingWebhookConfiguration", "metadata": {
+                    "name": "secretstore-validate", "annotations": {
+                        "meta.helm.sh/release-name": "external-secrets",
+                        "meta.helm.sh/release-namespace": "external-secrets"}}}]}
+            return {"items": []}
+
+        output = io.StringIO()
+        with patch.object(inventory, "kubectl", side_effect=fixture), contextlib.redirect_stdout(output):
+            failed = inventory.main(phase)
+        return failed, output.getvalue()
+
+    def test_post_prune_phases_pass_with_only_expected_remaining_resources(self):
+        for phase, installed in (("targets-removed", True), ("uninstalled", True),
+                                 ("uninstalled", False), ("complete", False)):
+            with self.subTest(phase=phase, installed=installed):
+                failed, output = self.run_phase(phase, installed=installed)
+                self.assertFalse(failed, output)
+                self.assertIn("PASS preserved-reloader deployment", output)
+                self.assertIn("PASS Flux-kustomizations-ready", output)
+
+    def test_remaining_instances_or_chart_resources_and_stale_reloader_block(self):
+        for phase, leftover in (("targets-removed", "instance"), ("uninstalled", "instance"),
+                                ("uninstalled", "release"), ("uninstalled", "webhook")):
+            with self.subTest(phase=phase, leftover=leftover):
+                self.assertTrue(self.run_phase(phase, leftover=leftover)[0])
+        self.assertTrue(self.run_phase("complete", installed=True)[0])
+        self.assertTrue(self.run_phase("complete", installed=False, stale=True)[0])
+
+
 if __name__ == "__main__":
     unittest.main()

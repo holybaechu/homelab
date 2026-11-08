@@ -1,19 +1,3 @@
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: cloudflare-ddns
-spec:
-  refreshInterval: ${SECRET_REFRESH_INTERVAL}
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: onepassword
-  target:
-    name: cloudflare-ddns
-  data:
-    - secretKey: CLOUDFLARE_API_TOKEN
-      remoteRef:
-        key: ${CLOUDFLARE_TOKEN_REF}
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

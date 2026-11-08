@@ -25,6 +25,38 @@ jobs:
       - uses: jdx/mise-action@v5.2.6
         with:
           install_args: opentofu flux2 kustomize kubeconform yq ${{ inputs.talos && 'talosctl jq' || '' }}
+      - name: Prepare verified Talos provider mirror
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(yq -p hcl -er '.provider."registry.opentofu.org/siderolabs/talos".version' infra/talos/.terraform.lock.hcl)
+          platform=$(tofu version -json | yq -p json -er '.platform')
+          package="terraform-provider-talos_${version}_${platform}.zip"
+          sums="terraform-provider-talos_${version}_SHA256SUMS"
+          assets="$RUNNER_TEMP/talos-assets"
+          mirror="$RUNNER_TEMP/provider-mirror/registry.opentofu.org/siderolabs/talos"
+          mkdir -p "$assets" "$mirror"
+          # gh uses GitHub's asset API, avoiding the failing /releases/download edge route.
+          gh release download "v$version" --repo siderolabs/terraform-provider-talos \
+            --pattern "$package" --pattern "$sums" --pattern "$sums.sig" --dir "$assets"
+          curl --fail --silent --show-error --location \
+            "https://registry.opentofu.org/v1/providers/siderolabs/talos/$version/download/${platform/_/\/}" \
+            --output "$assets/registry.json"
+          yq -p json -er '.signing_keys.gpg_public_keys[].ascii_armor' "$assets/registry.json" > "$assets/keys.asc"
+          export GNUPGHOME="$RUNNER_TEMP/talos-gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          gpg --batch --import "$assets/keys.asc" > /dev/null 2>&1
+          if ! gpg --batch --verify "$assets/$sums.sig" "$assets/$sums" > /dev/null 2>&1; then
+            echo 'Talos provider checksum signature verification failed' >&2
+            exit 1
+          fi
+          (cd "$assets" && sha256sum --check --ignore-missing "$sums")
+          mv "$assets/$package" "$mirror/"
+          # OpenTofu independently checks this packed mirror against the unchanged lockfile.
+          # https://opentofu.org/docs/cli/config/config-file/#explicit-installation-method-configuration
+          printf 'provider_installation {\n  filesystem_mirror {\n    path = "%s"\n    include = ["registry.opentofu.org/siderolabs/talos"]\n  }\n  direct {\n    exclude = ["registry.opentofu.org/siderolabs/talos"]\n  }\n}\n' \
+            "$RUNNER_TEMP/provider-mirror" > "$RUNNER_TEMP/providers.tfrc"
+          printf 'TF_CLI_CONFIG_FILE=%s\n' "$RUNNER_TEMP/providers.tfrc" >> "$GITHUB_ENV"
       - name: Validate OpenTofu configuration
         env:
           TF_DATA_DIR: ${{ runner.temp }}/tofu-providers
@@ -34,6 +66,21 @@ jobs:
           tofu -chdir=infra/talos fmt -check
           tofu -chdir=infra/talos init -backend=false -lockfile=readonly
           tofu -chdir=infra/talos validate
+      - name: Prepare official Flux bootstrap bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bootstrap="$RUNNER_TEMP/bootstrap"
+          mkdir -p "$bootstrap"
+          cp kubernetes/bootstrap/kustomization.yaml "$bootstrap/"
+          version=$(yq -er '.resources[0] | split("?ref=")[1]' "$bootstrap/kustomization.yaml")
+          while read -r resource; do
+            [[ "$resource" == https://github.com/fluxcd/flux2/manifests/*"?ref=$version" ]]
+          done < <(yq -r '.resources[]' "$bootstrap/kustomization.yaml")
+          # The release bundle is byte-identical to these upstream bases; keep the authored overlay.
+          gh release download "$version" --repo fluxcd/flux2 --pattern manifests.tar.gz --dir "$bootstrap"
+          tar -xzf "$bootstrap/manifests.tar.gz" -C "$bootstrap"
+          yq -i '.resources |= map(sub(".*/", "") | sub("\\?ref=.*", ".yaml"))' "$bootstrap/kustomization.yaml"
       - name: Build and substitute Kubernetes configuration
         run: |
           while IFS=$'\t' read -r key value; do
@@ -41,7 +88,9 @@ jobs:
           done < <(yq -N -r '.data | to_entries | .[] | [.key, .value] | @tsv' kubernetes/clusters/homelab/{settings,onepassword}.yaml)
           mkdir -p "$RUNNER_TEMP/rendered"
           for path in bootstrap clusters/homelab platform/controllers platform/onepassword platform/config identity apps access; do
-            if [[ "$path" == bootstrap || "$path" == clusters/homelab ]]; then
+            if [[ "$path" == bootstrap ]]; then
+              kustomize build "$RUNNER_TEMP/bootstrap" >> "$RUNNER_TEMP/rendered/authored.yaml"
+            elif [[ "$path" == clusters/homelab ]]; then
               kustomize build "kubernetes/$path" >> "$RUNNER_TEMP/rendered/authored.yaml"
             else
               kustomize build "kubernetes/$path" | flux envsubst --strict >> "$RUNNER_TEMP/rendered/authored.yaml"
@@ -50,6 +99,7 @@ jobs:
           done
       - name: Check local-path storage and credential safeguards
         run: |
+          command -v pwsh
           python3 -m pip install cryptography==50.0.2
           python3 -m unittest discover -s tests -v
       - name: Validate native Kubernetes schemas

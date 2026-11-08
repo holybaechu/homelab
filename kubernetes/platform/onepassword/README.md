@@ -986,107 +986,178 @@ merely to migrate, or continue rotating the frozen original/ESO copy. Exercise a
 safe metadata-only refresh/reload without writing the original; a real provider
 rotation needs a coordinated Cloudflare credential change and rollback plan.
 
-### Final ESO retirement gates
+### Ordered ESO retirement
 
-Do not remove ESO in the Cloudflare preparation/staging PR. In a separate cleanup,
-require all of the following in order:
+The administrator inventory accepted on this migration covers exactly 23 old
+Secret targets, 20 Ready/path/owner-verified replacement items, one
+`ClusterSecretStore/onepassword`, and no other instances in either ESO API group.
+Its retirement allowlist contains 25 CRDs, three Deployments, one Service, three
+ServiceAccounts, one Role/RoleBinding, five ClusterRoles, two ClusterRoleBindings
+and two validating webhooks. Do not repeat the pre-removal inventory or previously
+accepted byte parity just to advance the next phase. A newly discovered resource
+or changed consumer requires review, not broad deletion.
 
-The rendered inventory is the 23 `(namespace, target)` pairs in the contract
-table above, not the number of checker names. Repository removal scope is
-`platform/config/secrets.yaml`, `identity/secrets.yaml`, `access/secrets.yaml`,
-app `secrets.yaml` files for Hermes/n8n/MySQL/Langfuse, and only the ExternalSecret
-documents in app `resources.yaml` for AdGuard/qBittorrent/Immich/Zipline/DDNS
-(all paths under `kubernetes/`). Remove their Kustomize resource entries only
-when a file becomes empty; preserve workloads, templates and unrelated objects.
-Then remove the ESO-only documents in `platform/controllers/releases.yaml` and
-`clusters/homelab/sources.yaml`, the ExternalSecret rule in
-`apps/kustomizeconfig.yaml`, and unused ESO-only `*_REF`/vault settings from
-`clusters/homelab/onepassword.yaml`. Preserve infrastructure references such as
-`TALOS_STATE_PASSPHRASE_REF` and `HERMES_TALOSCONFIG_REF`, and keep shared refresh
-settings still used by Operator. Update the obsolete ESO guidance in `AGENTS.md`
-with the final Operator contract; do not delete useful security safeguards.
+**Do not merge target pruning until DNS01, refresh and recovery/rollback closure
+below are accepted.** `creationPolicy: Owner` means Kubernetes garbage collection
+can remove all 23 old Secrets when their ExternalSecrets are pruned;
+`deletionPolicy: Retain` does not protect against owner deletion. Replacement
+Secrets have different names and OnePasswordItem owners. No PVC, namespace,
+production certificate, Connect bootstrap or application spec is removed.
 
-Before deletion, run this single read-only inventory in the administrator's
-existing Kubernetes context (no 1Password CLI reads are needed):
+#### Decisive remaining checks
+
+- Existing accepted source/byte/ownership and application authentication evidence
+  remains usable. Do not rotate database passwords, encryption/signing keys or
+  production TLS just to demonstrate migration. DDNS's authenticated read and
+  healthy projections do not establish DNS write access.
+- Exercise metadata propagation on **only** authoritative narrow item
+  `34qgxb73mblpjwblihxkmu6uam` (Cloudflare Runtime). Privately record its version
+  and both `cloudflare-connect` Secrets' `credential` bytes in memory. In the
+  1Password app, change its title temporarily, then restore its original title `Cloudflare DNS Runtime`;
+  do not edit fields, labels, notes or the frozen original Cloudflare item.
+  Wait for the normal Operator poll, or restart only
+  `deployment/onepassword-connect-operator -n onepassword` and wait for its rollout.
+  Privately verify a newer source version is recorded in both Secrets'
+  `operator.1password.io/item-version` annotations, both items remain Ready and
+  both credentials are unchanged. Report only `PASS metadata-refresh` or a fixed
+  failure category. Data-unchanged refresh need not restart production consumers;
+  this proves propagation, not a production credential rotation.
+- Privately confirm recoverability using existing encrypted backups/1Password
+  history plus Git commit `6f43609833f03d6598e6adf17211a4c886bbe70e` (the complete
+  former templates/references). No additional 23-Secret plaintext export is
+  required if the existing recovery set covers the original database/encryption
+  identities, signing material and composite inputs. Preserve existing PVC/data
+  backups and independent Connect bootstrap recovery. The repository configures
+  no automatic MySQL/Langfuse data backup; this retirement does not alter their
+  PVCs or justify a disruptive new cold backup. If an irreplaceable contract is
+  missing from existing encrypted recovery, cover only that gap before pruning.
+  Confirm once: **the old-target rollback window is closed, recovery is available,
+  and deletion of the 23 obsolete Owner-managed Secrets is approved.** Do not
+  revoke or delete source items/history as part of this approval.
+
+For a fresh DNS01 proof, use the following isolated administrator batch in
+PowerShell. It copies only the reviewed solver from the existing issuer, uses
+Let's Encrypt **staging**, a distinct account/Certificate/Secret, and requests
+only `eso-retirement-check.hchu.me`. It never changes `letsencrypt`, `hchu-me`,
+`hchu-me-tls`, the wildcard, DDNS records or the credential. The temporary ACME
+TXT write is the intended test; no arbitrary provider DNS API probe is needed.
+Run only after approving this bounded challenge. Requires the administrator's
+existing Kubernetes context, not the agent's denied ClusterIssuer/Secret reads.
 
 ```powershell
-git fetch origin main
-git show origin/main:scripts/inventory-eso-retirement.py | mise x python@3 -- python -
+git fetch origin chore/remove-eso-targets
+if ($LASTEXITCODE -ne 0) { throw 'FAIL DNS01-script-fetch; do not execute an older copy' }
+$probe = Join-Path $PWD 'eso-retirement-dns01.ps1'
+git show origin/chore/remove-eso-targets:scripts/verify-eso-dns01.ps1 | Set-Content -Encoding UTF8 $probe
+if ($LASTEXITCODE -ne 0) { throw 'FAIL DNS01-script-download; do not execute' }
+& $probe
 ```
 
-Return its fixed PASS/FAIL/INFO output only. It discovers every served resource
-kind in both ESO API groups, reconciles live targets against the exact 23-target
-set, checks retained Secret owner UIDs/policies, and checks all 20 replacement
-items' Ready/path/Secret-owner metadata. It also checks live consumer references
-(including ClusterIssuer, Helm and Flux interfaces) and inventories Helm-owned
-controller/webhook/RBAC objects and both groups' CRDs. Secret query **output**
-selects metadata only (kubectl still requires normal Secret-read permission);
-no Secret values, digests, raw JSON or exception bodies are printed or persisted.
-It cannot prove authentication, byte parity, refresh,
-backup availability, unused token scope or rollback closure. The accepted
-administrative parity results remain valid evidence; do not repeat them merely
-to run this inventory. A denied/incomplete read fails closed. Unknown resources
-require review, not automatic deletion. This is a bounded inventory of the known
-consumer interfaces, not proof that an unknown controller outside those
-interfaces cannot reference a Secret; review any non-repository consumers too.
+This downloads the maintained standalone script, replacing any older local file.
+Review it before execution. A browser-downloaded copy may need `Unblock-File`
+after review; do not weaken the execution policy globally. The pending retirement
+branch is intentional: target pruning must remain unmerged until this proof passes.
+After merge, use `origin/main` instead.
 
-The agent cannot list ESO resources, Secret owners, ClusterIssuers or CRDs.
-The administrator must privately discover **both** API groups with
-`kubectl api-resources --api-group=external-secrets.io` and
-`kubectl api-resources --api-group=generators.external-secrets.io`, inventory every
-discovered resource cluster-wide (including generators, push and cluster-push
-resources), and inspect owner/deletion metadata without publishing Secret data.
-Inventory controller/webhook Deployments, Services, admission webhooks,
-ServiceAccounts and Role/ClusterRole bindings by the actual Helm release metadata;
-no repo-authored RBAC match does not establish that chart-created RBAC is absent.
-Do not delete either API group's CRDs until all of its instances and consumers
-are exhaustively accounted for. Keep inventories private; only names/counts,
-policy/ownership flags and fixed verification results need be shared.
+The default run refuses **all** pre-existing test names. Each diagnostic identifies
+stage, scope, resource and fixed failure category: `name-collision` is different
+from nonzero kubectl exit, access/authentication/transport hints, or malformed JSON.
+Hints are classifications, not proof of the underlying account/network cause.
+The script executes the native kubectl application (not a PowerShell function or
+alias), captures its exit code directly, and never prints raw stderr or JSON.
+`& $probe -DiagnoseOnly` is read-only and cannot issue or clean up resources.
 
-1. An administrator inventories all live ExternalSecrets and namespaced/cluster
-   stores (including outside the rendered set) and reconciles them against all
-   23 rendered targets. Confirm zero old-target consumer references, including
-   ClusterIssuer `apiTokenSecretRef`, Helm `existingSecret`, projected volumes,
-   init renderers and Flux substitution dependencies. Agent read denial is not
-   evidence that the live inventory is empty.
-2. Every replacement passes Ready, exact item identity and owner UID/key-set/byte
-   gates. Verify real consumer authentication and controlled refresh/rotation,
-   preserving database/encryption identities, MySQL's coordinated SQL procedure,
-   n8n's import contract and all PVCs. A safe metadata-only refresh of an
-   authoritative narrow item and verified Operator synchronization/reload can
-   exercise propagation without rotating production credentials. Do not mutate
-   the frozen original Cloudflare item, rotate database/encryption credentials
-   just for migration, or mistake an existing Ready certificate for a DNS01 test
-   with the new Secret. Use an actual new DNS01 Order/Challenge and resulting
-   Ready Certificate, or explicitly retain DNS01 as unverified; a read-only
-   provider token check alone cannot prove DNS write permission. Record any
-   missing integration evidence as
-   unverified and block retirement; healthy startup alone is insufficient. Keep
-   Hermes native browser Connect compatibility as a separate unresolved gate;
-   startup secret migration neither fixes it nor authorizes a token fallback.
-3. Close the rollback window under the authorized full-retirement scope only
-   after the preceding gates pass; no new per-application migration approval is
-   needed. Privately verify a recoverable encrypted backup of the retiring
-   contracts before deletion, with bounded retention and no plaintext export to
-   Git/logs. Inspect every original Secret's owner references and ESO
-   creation/deletion policy. With `Owner`, pruning an
-   ExternalSecret can delete its Secret; do not adopt an old target into Operator
-   or delete namespace/PVC/TLS resources. Remove only reviewed obsolete
-   ExternalSecrets, then read back that live set empty and replacements healthy
-   before removing the stores. Do not remove the controller/CRDs first.
-4. Remove ESO's store definitions and bootstrap-token dependency, HelmRelease,
-   HelmRepository, chart-created RBAC/webhook resources and obsolete reference/
-   Kustomize nameReference rules. `external-secrets` also owns Reloader's namespace:
-   preserve that namespace and Reloader HelmRelease/source/RBAC. Preserve
-   Connect's independent out-of-band bootstrap and Operator RBAC.
-5. Inventory **all** installed ESO CRDs/custom-resource instances before deleting
-   reviewed ESO CRDs: Helm may retain CRDs after uninstall, and deleting a CRD
-   deletes its instances cluster-wide. Verify no live ESO instances, controller,
-   webhook, chart RBAC or obsolete Git/Flux dependencies remain; confirm all Flux
-   Kustomizations Ready and replacement consumers healthy after pruning. Revoke
-   the now-unused ESO service-account token only after confirming no other user
-   shares it. Never print bootstrap credentials or delete shared token storage by
-   assumption. Keep original 1Password items/history for deliberate archival.
+For the administrator-reviewed leftover pair created at `2026-11-08T09:58:49Z`,
+use the same downloaded script with the explicit recovery option:
+
+```powershell
+& $probe -ResumeStagingPair
+```
+
+This is not general object adoption. Before any write, it requires that exact
+creation time, staging endpoint/account reference, the current production solver
+contract and complete solver equality. It reads only the account Secret's UID,
+creation time, owner references and deletion timestamp, requiring the reviewed
+ownerless, non-deleting account with the same creation time. It also requires no
+test Certificate/TLS Secret, no Certificate/Order/Challenge referencing the test
+issuer anywhere, and no other ClusterIssuer or cert-manager Issuer sharing its
+account. Any mismatch/read failure stops without deleting the existing pair.
+`-ResumeStagingPair -DiagnoseOnly` runs those guards without writes. A successful
+recovery run reuses the staging issuer/account, creates only the bounded test
+Certificate and performs the normal issuance and cleanup. Never use this option
+for a different leftover pair or change the timestamp guard to force acceptance.
+
+If issuance already printed `PASS fresh-staging-DNS01` but cleanup failed after
+deleting the Certificate, **do not issue another certificate**. Download the updated
+script again, then run:
+
+```powershell
+& $probe -CleanupOnly
+```
+
+This requires the reviewed staging pair and an absent test Certificate. It checks
+fresh metadata, rejects any remaining issuer/account consumers or Certificate
+using the test TLS output, and validates both generic Kubernetes `List` and typed
+Order/Challenge lists. Missing/null/non-array `items` or malformed entries are
+failures, not empty lists. A leftover TLS Secret must be absent or a same-day TLS
+output created no earlier than the reviewed staging pair, with no owners or only
+the test Certificate owner. It deletes only the reviewed temporary TLS output,
+issuer and account using server-enforced UID preconditions, waits for deletion,
+and reads back all four exact test names as absent. A changed UID stops cleanup;
+there is no forced finalizer removal or automatic retry. `-CleanupOnly -DiagnoseOnly`
+checks the same preflight without writes. Accept the existing issuance PASS and
+require `PASS staging-DNS01-cleanup` before activating ESO target pruning.
+
+If cleanup reports pending challenges, keep the staging issuer/account until
+cert-manager removes the temporary TXT record. Inspect only fixed status/name
+metadata; do not paste provider errors or Secret contents. A failed create has
+an unknown outcome: inspect these exact test names before retrying; never delete
+an unrelated pre-existing object. DNS01 acceptance requires both issuance and
+cleanup, not merely a previously Ready production certificate.
+
+#### Ordered activation and checkpoints
+
+1. Merge the **target-pruning** change only after the preceding acceptance and
+   rollback closure. Reconcile source `homelab`, then `platform-config`, `identity`,
+   `apps`, `access` in namespace `flux-system`. ESO's controller/store remain up.
+   This phase removes only the 23 ExternalSecrets and empty-file Kustomize entries.
+   Read the newly empty live set, replacements and health with the post-prune mode
+   (not the old pre-removal checker):
+
+   ```powershell
+   git fetch origin main
+   git show origin/main:scripts/inventory-eso-retirement.py | mise x python@3 -- python - --phase targets-removed
+   if ($LASTEXITCODE -ne 0) { throw 'Stop before controller/store removal' }
+   ```
+
+2. Only after that checkpoint passes, merge the **controller/store retirement**
+   change. Reconcile `homelab`, `platform-config` and `controllers`; wait for
+   HelmRelease `external-secrets` to disappear. It removes the store/bootstrap
+   dependency, ESO chart and exclusive HelmRepository, obsolete reference settings
+   and nameReference rule. Preserve namespace `external-secrets`, HelmRelease
+   `reloader`, its Stakater source/RBAC, and all OnePasswordItem/Connect resources.
+
+3. Run `--phase uninstalled`. It requires **every discovered instance kind in both
+   ESO API groups empty**, no ESO HelmRelease/repository/controller/webhook/RBAC,
+   all replacement ownership/Ready checks, Reloader and current workloads/Flux
+   Ready. Missing API groups are allowed here because Helm may already have
+   removed some CRDs. If a Helm-kept CRD remains, delete only the reviewed empty
+   CRD names from the accepted inventory; never delete a whole namespace or use
+   a broad label/group deletion. Stop on new/unknown CRDs or instances.
+
+4. Run `--phase complete` after CRD deletion. It additionally requires **both ESO
+   API groups absent** and no remaining ESO-owned chart objects. Revoke the old
+   ESO-only service-account token after confirming no other client shares it,
+   then delete only `external-secrets/onepassword-token`; keep independent Connect
+   server credentials/operator token. Privately verify that exact token Secret
+   absent afterward. Original 1Password source items/history remain recovery
+   material; Cloudflare Runtime remains the sole Cloudflare rotation authority.
+
+The phases are read-only administrator checks; they never print values/digests or
+perform deletion. Share fixed PASS/FAIL/INFO results only. They do not repeat
+source value comparisons or prove fresh application authentication/rotation.
+Hermes native browser Connect incompatibility remains separate; retirement must
+not add a service-account fallback, token-bearing shim or redaction bypass.
 
 ## Cutover, refresh and rollback
 
