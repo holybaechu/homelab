@@ -628,18 +628,69 @@ def verify_signing_identity(raw, reference, public):
     if (private_key_format(raw) != "pkcs8"
             or private_key_format(reference) != "openssh"):
         raise CheckFailure("signing-container-format")
-    key = s.load_pem_private_key(raw, password=None)
-    old = s.load_ssh_private_key(reference, password=None)
-    encoded = key.private_bytes(s.Encoding.PEM, s.PrivateFormat.OpenSSH, s.NoEncryption())
-    converted = s.load_ssh_private_key(encoded, password=None)
+    try:
+        key = s.load_pem_private_key(raw, password=None)
+    except Exception:
+        raise CheckFailure("signing-source-private-invalid") from None
+    try:
+        old = s.load_ssh_private_key(reference, password=None)
+    except Exception:
+        raise CheckFailure("signing-reference-private-invalid") from None
+    try:
+        encoded = key.private_bytes(s.Encoding.PEM, s.PrivateFormat.OpenSSH, s.NoEncryption())
+        converted = s.load_ssh_private_key(encoded, password=None)
+    except Exception:
+        raise CheckFailure("signing-conversion-invalid") from None
     private = lambda k: k.private_bytes(s.Encoding.DER, s.PrivateFormat.PKCS8, s.NoEncryption())
     if private(key) != private(old) or private(key) != private(converted):
         raise CheckFailure("signing-private-identity")
-    supplied_public = s.load_ssh_public_key(public)
+    try:
+        supplied_public = s.load_ssh_public_key(public)
+    except Exception:
+        raise CheckFailure("signing-public-invalid") from None
     public_bytes = lambda k: k.public_bytes(s.Encoding.DER, s.PublicFormat.SubjectPublicKeyInfo)
     if public_bytes(supplied_public) != public_bytes(key.public_key()):
         raise CheckFailure("signing-public-identity")
     return encoded
+
+
+def verify_retained_signing(original, replacements, reference):
+    required = {"github-token", "signing-key"}
+    if set(original) != required:
+        raise CheckFailure("retained-key-set")
+    if not reference:
+        raise CheckFailure("retained-reference-empty")
+    if not original["signing-key"] or original["signing-key"] != reference:
+        raise CheckFailure("retained-signing-reference-bytes")
+    if (not original["github-token"]
+            or original["github-token"] != replacements["github-connect"]["credential"]):
+        raise CheckFailure("retained-github-credential-bytes")
+
+
+def signing_retained_diagnostics(original, replacements, reference):
+    required = {"github-token", "signing-key"}
+    signing = replacements["signing-connect"]
+    raw, public = signing["private-key"], signing["public-key"]
+    retained = original.get("signing-key", b"")
+    print("INFO signing-conversion: retained-keys " + key_summary(required, original, required))
+    print(f"INFO signing-conversion: source-format={private_key_format(raw)} "
+          f"reference-format={private_key_format(reference)} "
+          f"retained-format={private_key_format(retained)}")
+    print(f"INFO signing-conversion: retained-reference-bytes-match={bool(reference) and retained == reference} "
+          f"retained-github-bytes-match={bool(original.get('github-token')) and original.get('github-token') == replacements['github-connect']['credential']}")
+    # Identity evidence explains a byte failure; it never overrides the strict gate.
+    categories = {"signing-container-format", "signing-source-private-invalid",
+                  "signing-reference-private-invalid", "signing-conversion-invalid",
+                  "signing-private-identity", "signing-public-invalid", "signing-public-identity"}
+    for label, candidate in (("reference", reference), ("retained", retained)):
+        category = "private-public-match"
+        try:
+            verify_signing_identity(raw, candidate, public)
+        except CheckFailure as error:
+            category = str(error) if str(error) in categories else "identity-check-failed"
+        except Exception:
+            category = "identity-check-failed"
+        print(f"INFO signing-conversion: {label}-identity={category}")
 
 
 def signing_conversion_gate():
@@ -657,21 +708,31 @@ def signing_conversion_gate():
             verify(item, replacement, {}, contract)
             verify_source(source, replacement, contract)
             replacements[name] = decode_data(replacement)
-        stage = "retained-contract"
+        stage = "read-retained-secret"
         original = decode_data(read_resource("secret", "hermes-coder-git", "homelab"))
+        stage = "read-openssh-reference"
         reference = next(iter(CONTRACTS["signing-connect"]["references"]))
         result = subprocess.run(["op", "read", "--no-newline", reference],
                                 stdin=subprocess.DEVNULL, capture_output=True, check=True)
-        if (set(original) != {"github-token", "signing-key"}
-                or not result.stdout or original["signing-key"] != result.stdout
-                or original["github-token"] != replacements["github-connect"]["credential"]):
-            raise CheckFailure("retained-reference-bytes")
+        stage = "retained-contract"
+        try:
+            verify_retained_signing(original, replacements, result.stdout)
+        except CheckFailure:
+            signing_retained_diagnostics(original, replacements, result.stdout)
+            raise
         stage = "conversion-identity"
         verify_signing_identity(replacements["signing-connect"]["private-key"], result.stdout,
                                 replacements["signing-connect"]["public-key"])
-    except Exception:
-        # Library/CLI errors may embed key data; expose only fixed execution stages.
-        print(f"FAIL signing-conversion: stage={stage} no-writes", file=sys.stderr)
+    except Exception as error:
+        # Library/CLI errors may embed key data; never expose raw exception text.
+        category = "validation-failed"
+        if isinstance(error, CheckFailure):
+            category = str(error)
+        elif isinstance(error, subprocess.CalledProcessError):
+            category = "command-failed"
+        elif isinstance(error, (ImportError, FileNotFoundError)):
+            category = "dependency-unavailable"
+        print(f"FAIL signing-conversion: stage={stage} category={category} no-writes", file=sys.stderr)
         return 1
     print("PASS signing-conversion: Ready, ownership, source metadata/raw bytes, "
           "retained GitHub/OpenSSH bytes, private/public identity and OpenSSH conversion; "
