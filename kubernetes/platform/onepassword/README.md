@@ -386,30 +386,34 @@ personal session; authenticated creation and consumer verification were instead
 completed by the administrator. The exact new item is
 `rvmf543rf6sefjrqiu7csfa2ra`; its six field values, fresh source/readback and four
 retained ESO contracts (including the full n8n import JSON) passed independently.
-`hermes-runtime-connect` now stages this exact item through the existing Operator,
-with automatic restarts disabled. The new Operator replacement still needs its
-own ownership/Ready/source/byte gate before mounting it:
+The new `hermes-runtime-connect` replacement also passed its administrator
+ownership/Ready/source-metadata/source/replacement/ESO-byte gate. Its six keys
+exclude the broad Connect token. Hermes explicitly selects only its five required
+runtime keys (plus the home channel for free-response routing), the n8n webhook,
+and the two Langfuse project keys. Obsidian and Immich sidecars select only their
+parity-verified `auth-token` and `hermes-api-key`. The Langfuse keys retain their
+existing optional behavior. No app receives whole-item `envFrom` or a Connect
+token; Git signing and the services credential files retain ESO pending their
+independent remaining gates. Reloader observes the new explicit source Secrets.
 
-```powershell
-git fetch origin main
-git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - hermes-runtime-connect
-```
+**Coordinated activation:** this Hermes template uses `Recreate` and terminates
+attached agent work. Keep its cutover PR unmerged until code, CI, n8n rollout
+verification and a durable PR handoff are complete. Merge that PR only after the
+attached task has returned. Flux then performs the restart automatically; no
+separate `rollout restart` is needed. After reconnecting, verify the observed
+Deployment generation, updated/ready/available replicas, every live Pod projection,
+sidecar readiness, Obsidian's `/opt/data/obsidian/headless/ready`, and authenticated
+integration use. TCP readiness alone does not verify Discord, Immich or Langfuse
+authentication. Retain all existing ESO targets for rollback.
 
-This does not repeat the creation gate. It verifies the newly reconciled
-replacement, all six source keys and three directly mapped ESO targets. The
-separately passed n8n JSON gate covers the fourth target. No Hermes Pod-template
-or existing ESO reference changes are made by this staging step.
-
-Until the consolidated cutover, the original six fields remain the active ESO
-source and the new item is a verified fork, not an independently rotated source.
-Freeze edits across both during this short transition. At cutover, switch the six
-shared `*_REF` settings to the new item ID and unchanged field IDs (no `add more`
-section), including Perplexity's n8n reference, and switch the runtime projections
-together. Then `Hermes Runtime` is authoritative for future rotations: update it,
-verify Operator parity and application reload/import, and retire the original six
-fields only after the rollback window is closed. Never silently maintain two
-independently rotated copies. Keep the helper's original-source comparison only
-as a migration gate, not the ongoing rotation procedure.
+At that coordinated cutover, all six shared `*_REF` settings switch to the new
+item ID and unchanged field IDs (no `add more` section), including Perplexity's
+n8n reference. `Hermes Runtime` becomes authoritative for rotations: update only
+that item, verify Operator parity and application reload/import, and retire the
+original six source fields only after the rollback window is explicitly closed.
+Keep the original copies unchanged until then; they are rollback evidence, not
+independently managed credentials. The helper's original-source comparison is
+only a migration gate, not the ongoing rotation procedure.
 
 No app receives a Connect token: projected Operator Secrets need no additional
 vault or client token. The separate token-storage-vault task is canceled. A future

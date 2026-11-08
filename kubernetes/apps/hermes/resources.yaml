@@ -15,7 +15,7 @@ kind: Deployment
 metadata:
   name: hermes
   annotations:
-    secret.reloader.stakater.com/reload: hermes-discord,hermes-web,hermes-browser,hermes-webhook,hermes-langfuse,hermes-coder-git,hermes-immich,hermes-obsidian,hermes-services
+    secret.reloader.stakater.com/reload: hermes-runtime-connect,n8n-connect,langfuse-connect,hermes-coder-git,immich-connect,obsidian-connect,hermes-services
 spec:
   replicas: 1
   strategy:
@@ -474,26 +474,56 @@ spec:
           # Preserve the official entrypoint: s6 starts as root, initializes
           # storage, then drops gateway/dashboard processes to UID 10000.
           args: [gateway, run]
-          envFrom:
-            - secretRef:
-                name: hermes-discord
-            - secretRef:
-                name: hermes-web
-            - secretRef:
-                name: hermes-browser
-            - secretRef:
-                name: hermes-webhook
-            - secretRef:
-                name: hermes-langfuse
-                optional: true
           env:
+            - name: DISCORD_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-runtime-connect
+                  key: discord-bot-token
+            - name: DISCORD_ALLOWED_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-runtime-connect
+                  key: discord-allowed-users
+            - name: DISCORD_HOME_CHANNEL
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-runtime-connect
+                  key: discord-home-channel
+            - name: EXA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-runtime-connect
+                  key: exa-api-key
+            - name: BROWSER_USE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-runtime-connect
+                  key: browser-use-api-key
+            - name: WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-connect
+                  key: hermes_webhook_secret
+            - name: HERMES_LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-connect
+                  key: hermes-project-public-key
+                  optional: true
+            - name: HERMES_LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-connect
+                  key: hermes-project-secret-key
+                  optional: true
             - name: TZ
               value: ${TIME_ZONE}
             - name: DISCORD_FREE_RESPONSE_CHANNELS
               valueFrom:
                 secretKeyRef:
-                  name: hermes-discord
-                  key: DISCORD_HOME_CHANNEL
+                  name: hermes-runtime-connect
+                  key: discord-home-channel
             - name: DISCORD_AUTO_THREAD
               value: "true"
             - name: DISCORD_FREE_RESPONSE_AUTO_THREAD
@@ -639,8 +669,8 @@ spec:
             - name: IMMICH_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: hermes-immich
-                  key: IMMICH_API_KEY
+                  name: immich-connect
+                  key: hermes-api-key
             - name: MCP_HOST
               value: 127.0.0.1
             - name: MCP_PORT
@@ -701,8 +731,8 @@ spec:
             - name: OBSIDIAN_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: hermes-obsidian
-                  key: OBSIDIAN_AUTH_TOKEN
+                  name: obsidian-connect
+                  key: auth-token
           securityContext:
             runAsUser: 10000
             runAsGroup: 10000
