@@ -109,9 +109,9 @@ class StagingVerificationTests(unittest.TestCase):
                    "type": staging.field_metadata(item_id, field_id)[0],
                    "purpose": staging.field_metadata(item_id, field_id)[1],
                    "section": {"id": section} if section else None,
-                   "value": label + '\n"\\\u0000'}
+                   "value": "" if staging.field_metadata(item_id, field_id)[0] == "DATE" else label + '\n"\\\u0000'}
                   for field_id, (label, section) in labels.items()]
-        fields.append({"id": "notesPlain", "label": "notesPlain", "type": "STRING",
+        fields.append({"id": "notesPlain", "label": contract.get("notes_label", "notesPlain"), "type": "STRING",
                        "purpose": "NOTES", "value": ""})
         source = {"id": item_id, "vault": {"id": staging.VAULT}, "title": title,
                   "fields": fields, "sections": [{"id": section} for section in
@@ -137,7 +137,10 @@ class StagingVerificationTests(unittest.TestCase):
             with self.subTest(contract=contract["name"], namespace=contract["namespace"]):
                 source, replacement = self.source_fixture(contract)
                 staging.verify_source(source, replacement, contract)
-                self.assertEqual(set(replacement["data"]), contract["allowed"] - {"notesPlain"})
+                omitted = {contract.get("notes_label", "notesPlain")}
+                omitted.update(label for field_id, (label, _) in staging.SOURCE_LABELS[contract["item_id"]][1].items()
+                               if staging.field_metadata(contract["item_id"], field_id)[0] == "DATE")
+                self.assertEqual(set(replacement["data"]), contract["allowed"] - omitted)
                 for mapping in contract["sources"].values():
                     for new_key in mapping.values():
                         self.assertIn(new_key, replacement["data"])
@@ -168,15 +171,23 @@ class StagingVerificationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             staging.verify_source(source, replacement, contract)
 
-    def test_cloudflare_explicit_checks_block_before_reads(self):
+    def test_cloudflare_current_localized_labels_and_nonempty_dates_block_cutover(self):
         for name in ("cloudflare-dns", "cloudflare-ddns"):
-            with patch.object(staging, "read_resource") as read, \
-                    contextlib.redirect_stderr(io.StringIO()):
-                with self.assertRaises(SystemExit) as error:
-                    staging.main([name])
-                self.assertEqual(error.exception.code, 2)
-                read.assert_not_called()
-        self.assertFalse({"cloudflare-dns", "cloudflare-ddns"} & staging.CONTRACTS.keys())
+            contract = staging.CONTRACTS[name]
+            source, replacement = self.source_fixture(contract)
+            staging.verify_source(source, replacement, contract)
+            credential = next(f for f in source["fields"] if f["id"] == "credential")
+            credential["label"] = "\uc790\uaca9 \uc99d\uba85"
+            with self.assertRaisesRegex(ValueError, "source-label"):
+                staging.verify_source(source, replacement, contract)
+            credential["label"] = "credential"
+            for date_id in ("validFrom", "expires"):
+                field = next(f for f in source["fields"] if f["id"] == date_id)
+                for value in ("PRIVATE_DATE", " ", "0"):
+                    field["value"] = value
+                    with self.assertRaisesRegex(ValueError, "source-date-not-unset"):
+                        staging.verify_source(source, replacement, contract)
+                field["value"] = ""
 
     def test_source_read_failures_are_sanitized_and_never_write(self):
         with patch.object(staging.subprocess, "run", side_effect=ValueError("PRIVATE_VALUE")) as run, \
