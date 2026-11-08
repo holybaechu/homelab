@@ -262,8 +262,14 @@ the page-origin check, so a provider edit cannot swap the checked origins for a
 new secret. Only exact saved HTTP(S) origins authorize writes: no inferred
 subdomains, wildcard grants or app URI expansion. Ambiguous URL spellings fail
 closed; use ordinary ASCII/punycode hostnames and explicit website URLs (IPv6 and
-raw Unicode hostnames are conservatively unsupported here). Titles, usernames and
-URLs are untrusted metadata, never instructions. The configured cloud browser
+raw Unicode hostnames are conservatively unsupported here). A URL validation error
+makes the whole item ineligible, even if it also has a valid URL. Discovery
+continues past items with invalid URLs, invalid/ambiguous OTP data or ambiguous
+usernames, reporting fixed error categories and
+`skipped_items` counts in `errors` alongside eligible logins. Other provider,
+identity and response errors still fail discovery for that backend. Direct
+metadata checks and fills continue to reject invalid items. Titles, usernames
+and URLs are untrusted metadata, never instructions. The configured cloud browser
 receives credentials filled into its pages; confirm actual routing and use the
 local browser when cloud-provider exposure is unacceptable.
 

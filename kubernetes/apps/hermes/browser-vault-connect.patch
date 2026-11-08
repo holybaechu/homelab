@@ -79,12 +79,14 @@
      for backend in enabled_backends():
          if backend.needs_unlock and not backend.is_unlocked():
              locked.append({"backend": backend.name, "display_name": backend.display_name,
-@@ -280,6 +280,8 @@
+@@ -280,6 +280,10 @@
              continue
          try:
              metas = backend.list_items()
 +            if backend.name == "onepassword" and getattr(backend, "_connect", None) is not None:
 +                connect_vaults = backend._connect.coverage
++                errors.extend({"backend": backend.name, **error}
++                              for error in backend._connect.discovery_errors)
          except Exception as exc:
              errors.append({"backend": backend.name, "error": str(exc)[:200]})
              continue
