@@ -105,7 +105,7 @@ class RuntimeSourceTests(unittest.TestCase):
         failure = subprocess.CalledProcessError(1, ["op"], output=b"PRIVATE", stderr=b"PRIVATE")
         status, output, calls = self.run_main([source, [], failure], ["--apply"])
         self.assertEqual(status, 1)
-        self.assertIn("stage=create outcome=unknown-create-inspect-before-retry", output)
+        self.assertIn("stage=create category=execution-or-response-error outcome=unknown-create-inspect-before-retry", output)
         self.assertEqual(calls.call_count, 3)
         status, output, _ = self.run_main([failure], ["--apply"])
         self.assertIn("outcome=no-writes", output)
@@ -115,8 +115,9 @@ class RuntimeSourceTests(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(helper.main(["--apply"]), 1)
             calls.assert_not_called()
-        status, _, calls = self.run_main([source_fixture(), []], ["--verify-consumers"])
+        status, output, calls = self.run_main([source_fixture(), []], ["--verify-consumers"])
         self.assertEqual(status, 1)
+        self.assertIn("stage=runtime-discovery category=runtime-item-missing outcome=no-writes", output)
         self.assertEqual(calls.call_count, 2)
 
     def test_complete_n8n_json_and_retained_consumer_parity(self):

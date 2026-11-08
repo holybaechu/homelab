@@ -297,6 +297,33 @@ def read_source(item_id):
     return source
 
 
+def value_shape(field):
+    value = field.get("value")
+    return ("absent" if "value" not in field else "null" if value is None else
+            "empty-string" if value == "" else "nonempty-string" if isinstance(value, str) else
+            "number-zero" if type(value) in (int, float) and value == 0 else
+            "number-nonzero" if type(value) in (int, float) else "other")
+
+
+def private_key_format(value):
+    if not value:
+        return "empty"
+    for header, kind in ((b"-----BEGIN OPENSSH PRIVATE KEY-----", "openssh"),
+                         (b"-----BEGIN PRIVATE KEY-----", "pkcs8"),
+                         (b"-----BEGIN ENCRYPTED PRIVATE KEY-----", "encrypted-pkcs8"),
+                         (b"-----BEGIN RSA PRIVATE KEY-----", "pkcs1-rsa"),
+                         (b"-----BEGIN EC PRIVATE KEY-----", "sec1-ec")):
+        if value.startswith(header + b"\n") or value.startswith(header + b"\r\n"):
+            return kind
+    return "unrecognized"
+
+
+def require_replacement_keys(data, keys, name):
+    missing = set(keys) - set(data)
+    if missing:
+        raise CheckFailure(f"replacement-missing-keys Secret/{name} keys=" + ",".join(sorted(missing)))
+
+
 def source_metadata_summary(source, contract):
     """Fixed structural diagnostics, never arbitrary source strings or values."""
     item_id = contract["item_id"]
@@ -348,6 +375,12 @@ def source_metadata_summary(source, contract):
                 ("section", section_id == expected_section))) +
             f" section-present={str(section_id is not None).lower()} "
             f"section-index={','.join(indexes) or 'none'}")
+        if expected_type == "DATE":
+            lines.append(f"field={field_id} value-shape={value_shape(field)}")
+        if expected_type == "SSHKEY":
+            value = field.get("value")
+            shape = private_key_format(value.encode("utf-8")) if isinstance(value, str) else "invalid-type"
+            lines.append(f"field={field_id} private-key-format={shape}")
     return lines
 
 
@@ -423,7 +456,11 @@ def verify_references(replacement, contract):
             stdin=subprocess.DEVNULL, capture_output=True, check=True,
         )
         if not result.stdout or result.stdout != data.get(key):
-            raise CheckFailure(f"source-reference-bytes key={key}")
+            detail = ""
+            if contract["name"] == "signing-connect":
+                detail = (f" replacement-format={private_key_format(data.get(key))}"
+                          f" reference-format={private_key_format(result.stdout)}")
+            raise CheckFailure(f"source-reference-bytes key={key}" + detail)
 
 
 def read_resource(kind, name, namespace):
@@ -495,7 +532,9 @@ def verify_authentik_env(original, replacements):
     if set(old) != set(projections):
         raise CheckFailure("eso-keys Secret/authentik-env")
     for key, (name, replacement_key) in projections.items():
-        value = decode_data(replacements[name])[replacement_key]
+        data = decode_data(replacements[name])
+        require_replacement_keys(data, {replacement_key}, name)
+        value = data[replacement_key]
         if not value or value != old[key]:
             raise CheckFailure(f"eso-replacement-bytes Secret/authentik-env key={key}")
 
@@ -506,7 +545,9 @@ def verify_composite(original, replacements, contract):
     if set(old) != set(projections):
         raise CheckFailure(f"eso-keys Secret/{name}")
     for key, (replacement, field) in projections.items():
-        value = decode_data(replacements[replacement]).get(field)
+        data = decode_data(replacements[replacement])
+        require_replacement_keys(data, {field}, replacement)
+        value = data[field]
         if not value or value != old[key]:
             raise CheckFailure(f"eso-replacement-bytes Secret/{name} key={key}")
 
@@ -516,6 +557,7 @@ def verify_rendered_config(replacement, original, template, contract):
     old, new = decode_data(original), decode_data(replacement)
     if set(old) != {key}:
         raise CheckFailure("eso-rendered-keys")
+    require_replacement_keys(new, {"username", "password-hash"}, contract["name"])
     username = new["username"].decode("utf-8")
     password_hash = new["password-hash"].decode("utf-8")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", username):
@@ -540,6 +582,7 @@ def verify_immich_config(replacement, original, template):
     new = decode_data(replacement)
     if set(old) != {"DB_PASSWORD", "immich.json"}:
         raise CheckFailure("eso-keys Secret/immich")
+    require_replacement_keys(new, {"database-password", "oidc-client-secret"}, "immich-connect")
     if not new.get("database-password") or old["DB_PASSWORD"] != new["database-password"]:
         raise CheckFailure("eso-replacement-bytes Secret/immich key=DB_PASSWORD")
     config = json.loads(template["data"]["immich.json"])
