@@ -5,3 +5,9 @@ resources:
   - resources.yaml
   - secrets.yaml
   - onepassword.yaml
+configMapGenerator:
+  - name: n8n-credentials-staging
+    files:
+      - render-credentials.cjs
+    options:
+      disableNameSuffixHash: true

@@ -121,6 +121,31 @@ class StagingVerificationTests(unittest.TestCase):
                                 for f in fields if f["value"]}}
         return source, replacement
 
+    def test_composite_contracts_reject_extra_keys_missing_values_and_byte_drift(self):
+        for contract in staging.CONTRACTS.values():
+            if not contract.get("composite"):
+                continue
+            name, projections = contract["composite"]
+            replacements = {}
+            original = {"data": {}}
+            for key, (child, field) in projections.items():
+                value = base64.b64encode((key + '\r\n"\\\\').encode()).decode()
+                replacements.setdefault(child, {"data": {}})["data"][field] = value
+                original["data"][key] = value
+            staging.verify_composite(original, replacements, contract)
+            changed = copy.deepcopy(original)
+            changed["data"]["extra"] = ""
+            with self.assertRaisesRegex(ValueError, "eso-keys"):
+                staging.verify_composite(changed, replacements, contract)
+            for key, (child, field) in projections.items():
+                changed = copy.deepcopy(replacements)
+                changed[child]["data"][field] = base64.b64encode(b"different").decode()
+                with self.assertRaisesRegex(ValueError, "eso-replacement-bytes"):
+                    staging.verify_composite(original, changed, contract)
+                del changed[child]["data"][field]
+                with self.assertRaisesRegex(ValueError, "eso-replacement-bytes"):
+                    staging.verify_composite(original, changed, contract)
+
     def test_operator_normalization_preserves_case_and_skips_korean_only(self):
         for label, key in (("PostgreSQL Password", "PostgreSQL-Password"),
                            ("Hermes API token", "Hermes-API-token"),
@@ -138,7 +163,7 @@ class StagingVerificationTests(unittest.TestCase):
                 source, replacement = self.source_fixture(contract)
                 staging.verify_source(source, replacement, contract)
                 omitted = {contract.get("notes_label", "notesPlain")}
-                omitted.update(label for field_id, (label, _) in staging.SOURCE_LABELS[contract["item_id"]][1].items()
+                omitted.update(staging.operator_key(label) for field_id, (label, _) in staging.SOURCE_LABELS[contract["item_id"]][1].items()
                                if staging.field_metadata(contract["item_id"], field_id)[0] == "DATE")
                 self.assertEqual(set(replacement["data"]), contract["allowed"] - omitted)
                 for mapping in contract["sources"].values():
