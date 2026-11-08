@@ -5,6 +5,7 @@ import copy
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 
@@ -90,11 +91,12 @@ def verify(before, after):
     expected = copy.deepcopy(before)
     for field in expected["fields"]:
         field["label"] = FIELDS[field["id"]][1]
+    actual = copy.deepcopy(after)
     # Only Connect's documented item revision/timestamp are server-owned changes.
-    for item in (expected, after := copy.deepcopy(after)):
+    for item in (expected, actual):
         item.pop("version", None)
         item.pop("updatedAt", None)
-    if expected != after:
+    if expected != actual:
         raise Refused("non-label-change-or-stale-readback")
 
 
@@ -121,10 +123,13 @@ def main(argv=None):
         verify(before, response)
         stage = "source-readback"
         verify(before, client.request("GET"))
-    except Exception:
+    except Exception as error:
         # HTTP errors, JSON schemas and exceptions can carry secrets or entire item bodies.
         state = "unknown-after-patch-attempt" if submitted else "no-write-attempted"
-        print(f"FAIL cloudflare-label: stage={stage} outcome={state}; inspect item history privately", file=sys.stderr)
+        category = str(error) if isinstance(error, Refused) else "execution-or-response-error"
+        if isinstance(error, urllib.error.HTTPError):
+            category = f"http-status-{int(error.code)}"
+        print(f"FAIL cloudflare-label: stage={stage} category={category} outcome={state}; inspect item history privately", file=sys.stderr)
         return 1
     print("PASS cloudflare-label: label-only PATCH response and GET verified; consumer parity not checked")
     return 0

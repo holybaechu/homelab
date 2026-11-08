@@ -96,10 +96,14 @@ class CloudflarePatchTests(unittest.TestCase):
             self.assertEqual(client.request.call_count, 1)
 
     def test_patch_failure_is_unknown_and_never_retried(self):
-        status, output, client = self.run_main([fixture(), OSError("PRIVATE_ERROR")], ["--apply"])
-        self.assertEqual(status, 1)
-        self.assertIn("stage=patch outcome=unknown-after-patch-attempt", output)
-        self.assertEqual(client.request.call_count, 2)
+        errors = (OSError("PRIVATE_ERROR"), helper.urllib.error.HTTPError(
+            "PRIVATE_URL", 403, "PRIVATE_ERROR", {}, io.BytesIO(b"PRIVATE_BODY")))
+        for error in errors:
+            status, output, client = self.run_main([fixture(), error], ["--apply"])
+            self.assertEqual(status, 1)
+            self.assertIn("stage=patch", output)
+            self.assertIn("outcome=unknown-after-patch-attempt", output)
+            self.assertEqual(client.request.call_count, 2)
 
     def test_real_http_transport_sends_only_reviewed_label_payload(self):
         requests = []
