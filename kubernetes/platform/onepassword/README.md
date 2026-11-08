@@ -506,20 +506,22 @@ to another serialization of the same key; this new identity gate does **not**
 relax the default exact-byte checks. No keys, fingerprints or digests are printed
 or written, and a PASS does not mount a converter or switch Git credentials.
 
-Run the two outstanding non-Cloudflare gates together from the authenticated
-administrator context (a disposable venv keeps the package out of the checkout):
+The administrator's services composite gate has passed, including OpenCloud,
+Zipline and qBittorrent source metadata and bytes; it is independent of signing.
+The signing gate failed at `retained-contract`, before conversion. Its diagnostic
+rerun distinguishes the required retained key set, GitHub credential bytes and
+exact captured OpenSSH-reference bytes. On a retained failure, INFO also reports
+fixed source/reference/retained formats and private/public identity categories.
+An identity match explains a byte mismatch but does **not** waive it; missing or
+extra keys, parse failures, unrelated private/public keys and byte drift stay
+blocked. Only reviewed key names and unreviewed-key counts are shown.
+
+Reuse the existing administrator venv and `$signingPython`; no reinstall or venv
+recreation is needed (the Windows junction-path warning was not an install failure):
 
 ```powershell
 git fetch origin main
-$signingVenv = Join-Path $env:TEMP 'homelab-signing-check'
-mise x python@3 -- python -m venv $signingVenv
-$signingPython = Join-Path $signingVenv 'Scripts/python.exe'
-& $signingPython -m pip install cryptography==50.0.2
 git show origin/main:scripts/verify-onepassword-staging.py | & $signingPython - --signing-conversion
-$signingExit = $LASTEXITCODE
-git show origin/main:scripts/verify-onepassword-staging.py | & $signingPython - opencloud-connect
-$servicesExit = $LASTEXITCODE
-Write-Output "INFO remaining-gates: signing-exit=$signingExit services-exit=$servicesExit"
 ```
 
 Return only PASS/FAIL/INFO. The agent cannot run these privileged reads; local

@@ -1,3 +1,4 @@
+import base64
 import contextlib
 import importlib.util
 import io
@@ -68,7 +69,67 @@ class SigningConversionTests(unittest.TestCase):
             with contextlib.redirect_stderr(output):
                 self.assertEqual(staging.main(["--signing-conversion"]), 1)
         self.assertEqual(output.getvalue(),
-                         "FAIL signing-conversion: stage=read-github-connect no-writes\n")
+                         "FAIL signing-conversion: stage=read-github-connect category=validation-failed no-writes\n")
+
+    def test_retained_contract_distinguishes_key_set_reference_and_github(self):
+        replacements = {"github-connect": {"credential": b"test-token"}}
+        original = {"github-token": b"test-token", "signing-key": b"test-reference"}
+        staging.verify_retained_signing(original, replacements, b"test-reference")
+        cases = [({"signing-key": b"test-reference"}, b"test-reference", "retained-key-set"),
+                 ({**original, "PRIVATE_VALUE": b"unknown"}, b"test-reference", "retained-key-set"),
+                 (original, b"", "retained-reference-empty"),
+                 (original, b"different", "retained-signing-reference-bytes"),
+                 ({**original, "github-token": b"different"}, b"test-reference", "retained-github-credential-bytes")]
+        for retained, reference, category in cases:
+            with self.subTest(category=category):
+                with self.assertRaisesRegex(staging.CheckFailure, "^" + category + "$"):
+                    staging.verify_retained_signing(retained, replacements, reference)
+
+    def test_same_identity_byte_drift_is_diagnosed_but_never_passes_gate(self):
+        raw, reference, public = representations(ed25519.Ed25519PrivateKey.generate())
+        replacements = {"github-connect": {"credential": b"test-token"},
+                        "signing-connect": {"private-key": raw, "public-key": public}}
+        retained = {"github-token": b"test-token", "signing-key": reference + b"\n",
+                    "PRIVATE_VALUE": b"unreviewed"}
+        resources = {name: {"data": {k: base64.b64encode(v).decode() for k, v in data.items()}}
+                     for name, data in {**replacements, "hermes-coder-git": retained}.items()}
+        output, errors = io.StringIO(), io.StringIO()
+        with (patch.object(staging, "read_resource", side_effect=lambda kind, name, ns: resources[name]),
+              patch.object(staging, "read_source", return_value={}),
+              patch.object(staging, "verify"), patch.object(staging, "verify_source"),
+              patch.object(staging.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, reference)) as command,
+              contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors)):
+            self.assertEqual(staging.main(["--signing-conversion"]), 1)
+        self.assertIn("category=retained-key-set", errors.getvalue())
+        self.assertIn("unreviewed-count=1", output.getvalue())
+        self.assertIn("retained-reference-bytes-match=False", output.getvalue())
+        self.assertIn("reference-identity=private-public-match", output.getvalue())
+        self.assertIn("retained-identity=private-public-match", output.getvalue())
+        self.assertNotIn("PRIVATE_VALUE", output.getvalue() + errors.getvalue())
+        self.assertNotIn(reference.decode(), output.getvalue() + errors.getvalue())
+        self.assertEqual(command.call_count, 1)
+        self.assertEqual(command.call_args.args[0][:3], ["op", "read", "--no-newline"])
+        retained.pop("PRIVATE_VALUE")
+        with self.assertRaisesRegex(staging.CheckFailure, "retained-signing-reference-bytes"):
+            staging.verify_retained_signing(retained, replacements, reference)
+
+    def test_identity_diagnostics_distinguish_private_public_and_parser_failures(self):
+        raw, reference, public = representations(ed25519.Ed25519PrivateKey.generate())
+        _, other_reference, other_public = representations(ed25519.Ed25519PrivateKey.generate())
+        cases = [(other_reference, public, "signing-private-identity"),
+                 (reference, other_public, "signing-public-identity"),
+                 (b"-----BEGIN OPENSSH PRIVATE KEY-----\nPRIVATE_VALUE", public,
+                  "signing-reference-private-invalid"),
+                 (reference, b"PRIVATE_VALUE", "signing-public-invalid")]
+        for candidate, supplied_public, category in cases:
+            replacements = {"github-connect": {"credential": b"test-token"},
+                            "signing-connect": {"private-key": raw, "public-key": supplied_public}}
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                staging.signing_retained_diagnostics(
+                    {"github-token": b"test-token", "signing-key": candidate}, replacements, reference)
+            self.assertIn("retained-identity=" + category, output.getvalue())
+            self.assertNotIn("PRIVATE_VALUE", output.getvalue())
 
 
 if __name__ == "__main__":
