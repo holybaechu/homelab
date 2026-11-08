@@ -25,10 +25,6 @@ data:
   TIME_ZONE: Asia/Seoul
   DOMAIN: hchu.me
   DATA_PATH: /var/mnt/homelab
-  ONEPASSWORD_VAULT: Homelab
-  # Four refresh cycles per day leave headroom under the 1,000-request daily
-  # account limit, including SDK name lookups and deployment retries.
-  SECRET_REFRESH_INTERVAL: 6h
   QBT_NODE_PORT: "31435"
   # Paths of the migrated Spaces inside the opencloud-data claim.
   OPENCLOUD_PUBLIC_SUBPATH: storage/users/projects/0f1266bd-8113-4beb-8f1b-02affee9adda/public

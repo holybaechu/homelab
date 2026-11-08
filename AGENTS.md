@@ -41,17 +41,19 @@ readable scripts, and easy maintenance by one person.
 - Use 1Password as the source of truth for app credentials, API tokens, OIDC client
   secrets, database passwords, and the Talos state passphrase. Reuse existing items
   and fields in the configured vault before creating new ones.
-- Keep only item/field references in
-  `kubernetes/clusters/homelab/onepassword.yaml`. Follow the existing `*_REF` pattern:
-  Flux substitutes the reference into an `ExternalSecret` using
-  `secretStoreRef.name: onepassword`; workloads consume the resulting Kubernetes Secret.
-- Follow `kubernetes/platform/config/secrets.yaml` for the shared 1Password SDK
-  store. Keep its service-account token in the separate `onepassword-token` Secret
-  in `external-secrets`; never commit token values or generated Secret contents.
+- Keep only references in `kubernetes/clusters/homelab/onepassword.yaml`.
+  Flux substitutes `*_CONNECT_ITEM_PATH` into official `OnePasswordItem` resources;
+  workloads project explicit keys from differently named Operator-owned Secrets.
+  Preserve infrastructure `*_REF` values; do not reintroduce ESO or implicit adoption.
+- Follow `kubernetes/platform/onepassword/README.md` for the independent Connect
+  bootstrap, scoped read-only Operator token, ownership and recovery contracts.
+  Never commit token values/generated Secret contents or bootstrap Connect through
+  its own Operator. Reloader stays in `external-secrets`; preserve that namespace.
 - Verify exact item, section, and field paths. Use item or field IDs when required
   by names or custom fields, following existing references rather than guessing labels.
-- Respect the configured secret refresh interval and SDK cache. Avoid unnecessary
-  1Password reads or extra stores for individual apps.
+- Respect Operator's configured polling interval and existing per-app Reloader
+  policies. Avoid unnecessary 1Password reads, global restarts or database/key
+  rotations merely to validate propagation.
 - When CLI access is needed, use the existing `op` authentication and inspect only
   what the task needs. Keep secret values out of terminal output, logs, diffs,
   documentation, and commit messages; use references or placeholders in examples.

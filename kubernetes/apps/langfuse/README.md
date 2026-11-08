@@ -70,13 +70,13 @@ ClickHouse, Redis and MinIO reload their configured credentials on restart.
 
 The administrative metadata and exact source/replacement/ESO byte gate passed
 before cutover. Reloader keeps observing the explicitly referenced replacement;
-Operator auto-restart stays disabled. Keep ESO's `langfuse-env` for rollback and
-its field-ID references unchanged. To roll back, restore the Secret names and
-key mappings in **both** `release.yaml` and `resources.yaml` together, without
-changing credentials or storage. Hermes independently projects the two
-`hermes-project-*` keys from `langfuse-connect`, retaining the optional project-key
-behavior. Its coordinated cutover leaves ESO's `hermes-langfuse` for rollback;
-see the [Hermes activation boundary](../../platform/onepassword/README.md#remaining-hermes-n8n-and-signing-source-batch).
+Operator auto-restart stays disabled. The obsolete `langfuse-env` and
+`hermes-langfuse` ESO targets are removed. Recovery requires the
+[retirement recovery set](../../platform/onepassword/README.md#ordered-eso-retirement)
+before restoring Secret names/key mappings in **both** `release.yaml` and
+`resources.yaml`; never change credentials or storage just to revert a source.
+Hermes independently projects the two `hermes-project-*` keys from
+`langfuse-connect`, retaining the optional project-key behavior.
 
 Web and Worker must use the same release. Back up data before upgrades because
 startup runs database migrations; an older image may not support the migrated

@@ -35,8 +35,9 @@ it never clears or overwrites an existing Git identity. A partial init failure
 requires a fresh Pod/emptyDir after fixing the cause, not deletion of PVC data.
 Tokens and private keys are not copied to the PVC or Git. Profiles share one
 container and Unix user, so these mounts are not an isolation boundary between
-profiles. The original `hermes-coder-git` ESO target remains for rollback; revert
-the projection, initializer and Reloader references together.
+profiles. The obsolete `hermes-coder-git` ESO target is removed. Recovery requires
+the [retirement recovery set](../../../platform/onepassword/README.md#ordered-eso-retirement)
+before reverting the projection, initializer and Reloader references together.
 
 For rotation, update the existing 1Password fields and respect the Operator's
 six-hour poll. Reloader watches both replacement Secrets and restarts the Pod, then

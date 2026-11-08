@@ -1,10 +1,21 @@
 # 1Password Connect, Operator and Injector
 
 This layer uses the official [Connect/Operator and Injector charts](https://github.com/1Password/connect-helm-charts).
-Its Flux Kustomization is active after out-of-band bootstrap. MySQL and n8n's
-environment use verified Operator replacements; the ESO SDK store still serves
-the remaining consumers. Keep ESO running until every
-consumer below has moved and its replacement has been verified.
+Its Flux Kustomization is active after independent out-of-band bootstrap. All
+23 former ESO consumer contracts use Operator replacements. ESO targets, store,
+controller and chart source are removed in ordered stages; remaining Helm-kept
+CRDs and the unused ESO token require the administrator's
+[final checkpoint](#ordered-eso-retirement). Reloader and its `external-secrets`
+namespace are retained.
+
+The source-relabel, parity and per-app cutover sections below are **historical
+migration/recovery references**, not commands to rerun after rollback closure.
+The accepted parity/inventory results are not repeated. To recover a former ESO
+contract, use Git commit `6f43609833f03d6598e6adf17211a4c886bbe70e` and the existing
+private encrypted recovery set; an old Secret name alone is no longer a rollback.
+Current rotation uses authoritative items, explicit key projections, six-hour
+Operator polling and each app's existing Reloader policy. Do not rotate the
+frozen original Cloudflare item or revive ESO for routine refresh.
 
 Connect is an internal ClusterIP service at
 `http://onepassword-connect.onepassword.svc.cluster.local:8080`; it has no ingress.
@@ -1158,6 +1169,76 @@ perform deletion. Share fixed PASS/FAIL/INFO results only. They do not repeat
 source value comparisons or prove fresh application authentication/rotation.
 Hermes native browser Connect incompatibility remains separate; retirement must
 not add a service-account fallback, token-bearing shim or redaction bypass.
+
+After phase 2 has actually reconciled, this single administrator PowerShell batch
+performs the final empty-instance gate, deletes only the accepted remaining CRDs,
+and reads back final readiness/API absence. It does **not** delete tokens or source
+items. Run with no concurrent ESO writers; any failed read or unfamiliar CRD stops
+before deletion. The phase-2 PR must not be activated before the `targets-removed`
+checkpoint has passed.
+
+```powershell
+git fetch origin main
+if ($LASTEXITCODE -ne 0) { throw 'FAIL fetch' }
+git show origin/main:scripts/inventory-eso-retirement.py | mise x python@3 -- python - --phase uninstalled
+if ($LASTEXITCODE -ne 0) { throw 'Stop; ESO instances/chart/health not clear' }
+$reviewed = @(
+    'acraccesstokens.generators.external-secrets.io'
+    'beyondtrustworkloadcredentialsdynamicsecrets.generators.external-secrets.io'
+    'cloudsmithaccesstokens.generators.external-secrets.io'
+    'clusterexternalsecrets.external-secrets.io'
+    'clustergenerators.generators.external-secrets.io'
+    'clusterpushsecrets.external-secrets.io'
+    'clustersecretstores.external-secrets.io'
+    'ecrauthorizationtokens.generators.external-secrets.io'
+    'externalsecrets.external-secrets.io'
+    'fakes.generators.external-secrets.io'
+    'gcraccesstokens.generators.external-secrets.io'
+    'generatorstates.generators.external-secrets.io'
+    'githubaccesstokens.generators.external-secrets.io'
+    'gitlabdeploytokens.generators.external-secrets.io'
+    'grafanas.generators.external-secrets.io'
+    'mfas.generators.external-secrets.io'
+    'passwords.generators.external-secrets.io'
+    'pushsecrets.external-secrets.io'
+    'quayaccesstokens.generators.external-secrets.io'
+    'secretstores.external-secrets.io'
+    'sshkeys.generators.external-secrets.io'
+    'stssessiontokens.generators.external-secrets.io'
+    'uuids.generators.external-secrets.io'
+    'vaultdynamicsecrets.generators.external-secrets.io'
+    'webhooks.generators.external-secrets.io'
+)
+$resources = kubectl get crd -o json 2>$null | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'FAIL CRD-read' }
+$remaining = @($resources.items | Where-Object {
+    $_.spec.group -in @('external-secrets.io', 'generators.external-secrets.io')
+} | ForEach-Object { $_.metadata.name })
+if (@($remaining | Where-Object { $_ -notin $reviewed }).Count) { throw 'FAIL unknown-CRD; no deletions' }
+if ($remaining.Count) {
+    kubectl delete crd $remaining --wait=true --timeout=120s 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'FAIL CRD-deletion; inspect partial outcome before retry' }
+}
+git show origin/main:scripts/inventory-eso-retirement.py | mise x python@3 -- python - --phase complete
+if ($LASTEXITCODE -ne 0) { throw 'FAIL retirement-readback' }
+'PASS ESO-API-chart-retirement Reloader-preserved (token-revocation remains separate)'
+```
+
+Then revoke the ESO-only 1Password service-account token in the administrator's
+existing 1Password session, **only after** privately confirming that identity has
+no other clients. If it is shared, remove ESO's stored copy but preserve the
+shared identity until its remaining clients are deliberately migrated. Do not
+revoke Connect credentials or the Operator token. After confirming the appropriate
+revocation/shared-client decision, remove the obsolete bootstrap copy and read it
+back by exact name without displaying its data:
+
+```powershell
+kubectl delete secret onepassword-token -n external-secrets --ignore-not-found --wait=true 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'FAIL obsolete-bootstrap-delete' }
+$left = kubectl get secret onepassword-token -n external-secrets --ignore-not-found -o name 2>$null
+if ($LASTEXITCODE -ne 0 -or $left) { throw 'FAIL obsolete-bootstrap-readback' }
+'PASS obsolete-ESO-bootstrap-absent'
+```
 
 ## Cutover, refresh and rollback
 
