@@ -69,8 +69,13 @@ explicit Operator Secret projections and need no Connect token.
 The [pinned Operator 1.12.1 Secret builder](https://github.com/1Password/onepassword-operator/blob/v1.12.1/pkg/kubernetessecrets/kubernetes_secrets_builder.go)
 copies whole items, not selected field IDs. It preserves ASCII case, trims
 leading/trailing invalid characters and replaces internal invalid runs with
-hyphens. It also considers files and URL labels; meaningful URL keys or label
-collisions can change Secret contents. Keep existing labels, field IDs, types,
+hyphens; it does not lowercase labels. Korean-only labels produce no key, and
+mixed-language labels can collapse to the same ASCII key. Editable source labels
+use lowercase English words separated by hyphens, not snake_case; keep the exact
+keys selected by existing consumers. Built-ins such as `notesPlain` are explicit
+exceptions, not permission to recreate fields. It also considers files and URL
+labels; meaningful URL keys or label collisions can change Secret contents.
+Keep existing labels, field IDs, types,
 sections, attachments, dates and passkeys intact. Do not use item JSON round-trip
 edits or Connect field PATCH to relabel: real preservation checks failed.
 
@@ -105,13 +110,15 @@ one-time migration tools.
 
 ### Authoritative narrow items
 
-`Hermes Runtime` is the authority for its six fields (three Discord fields, Exa,
-Browser Use and Perplexity), identified by `HERMES_RUNTIME_CONNECT_ITEM_PATH`.
+`Hermes Runtime` (`rvmf543rf6sefjrqiu7csfa2ra`) is the authority for its six
+fields (three Discord fields, Exa, Browser Use and Perplexity), identified by
+`HERMES_RUNTIME_CONNECT_ITEM_PATH`.
 Update only those current fields. The original `Hermes Agent` copies/history are
 recovery material, not independently managed credentials. Never synchronize that
 original whole item: it contains a broader browser-vault token.
 
-`Cloudflare DNS Runtime`, selected by `CLOUDFLARE_CONNECT_ITEM_PATH`, is the sole
+`Cloudflare DNS Runtime` (`34qgxb73mblpjwblihxkmu6uam`), selected by
+`CLOUDFLARE_CONNECT_ITEM_PATH`, is the sole
 Cloudflare rotation authority. It contains only the credential and empty notes.
 The original Cloudflare item was privately reviewed and restored after the DATE
 preservation incident; keep it frozen, do not relabel/PATCH it or materialize
@@ -172,37 +179,30 @@ scope; never source it through its own Connect dependency. Stored token referenc
 do not prove active use. Privately identify all clients before moving/revoking
 any broad token; deleting its field is not revocation.
 
-## Ordered ESO retirement
+## Recovery
 
-This is a recovery reference, not a procedure to rerun accepted migration gates.
-The old-target rollback window was explicitly closed and removal of all 23
-Owner-managed targets approved. `deletionPolicy: Retain` did not protect their
-Secrets from owner garbage collection. Existing encrypted recovery plus Git
-commit `6f43609833f03d6598e6adf17211a4c886bbe70e` preserves former templates and
-source references. Migration helpers and historical instructions are recoverable
-from commit `11a635b0731548112b99959ba52f4ba416d16b26`, not maintained runtime tools.
-Do not rerun creation, relabeling, staging issuance or already accepted parity.
+ESO retirement is complete: both API groups and the obsolete chart source and
+bootstrap Secret are absent. The administrator confirmed the ESO-only token was
+exclusive and revoked. Do not repeat CRD deletion, token revocation or accepted
+migration gates. One-time tools remain available in Git history at
+`11a635b0731548112b99959ba52f4ba416d16b26`, not as maintained operational tools.
 
-Recovery must restore the exact original database/encryption/signing identities,
-composite inputs and independent Connect bootstrap before reverting projections,
-initializers and Reloader references together. An old Secret name alone is not a
-rollback. Do not recreate credentials, rely on implicit adoption, export redundant
-plaintext Secret backups or remove source item history. Preserve PVC/data backups,
-production TLS and Talos credentials. This repository does not configure automatic
-MySQL/Langfuse data backups; follow owning storage/recovery guides.
+For routine recovery, restore the independent Kubernetes bootstrap Secrets from
+securely retained Connect server credentials and its scoped client token, then
+reconcile Connect/Operator and verify actual authentication and item ownership.
+Never use a OnePasswordItem to recover its own bootstrap.
 
-The root Flux Kustomization intentionally has `prune: false` to protect shared
-resources/namespaces. Removing a root-owned source from Git therefore does not
-delete it live; retire only the exact obsolete HelmRepository explicitly after
-checking no remaining release consumes it. Never enable root-wide pruning merely
-to remove an orphan. Do not delete `external-secrets`: Reloader still lives there.
-Its Stakater source/RBAC, Connect bootstrap, Operator items, TLS and PVCs remain.
+Disaster recovery must preserve exact database/encryption/signing identities,
+composite inputs, PVCs, production TLS and Talos credentials. Existing encrypted
+recovery and Git commit `6f43609833f03d6598e6adf17211a4c886bbe70e` retain the former
+source references/templates if historical reconstruction is explicitly needed;
+an old Secret name alone is not a rollback. Do not recreate credentials, rely on
+implicit adoption, export redundant plaintext backups or delete original item
+history. This repository does not configure automatic MySQL/Langfuse data backups;
+follow the owning storage/recovery guides.
 
-Final retirement requires an administrator's fresh exhaustive empty-instance and
-uninstalled gate, deletion of only reviewed empty ESO CRDs, then discovery of both
-ESO API groups absent plus replacement ownership/Ready, workload/Flux health and
-Reloader preservation. Unknown kinds or failed reads stop deletion. Retire the old
-ESO-only service-account token only after privately confirming no other clients;
-if shared, preserve it until those clients migrate. Delete only ESO's obsolete
-`external-secrets/onepassword-token` copy and verify that exact name absent.
-Kubernetes absence cannot itself prove 1Password token revocation.
+Root Flux deliberately has `prune: false` to protect shared resources/namespaces.
+Removing a root-owned resource from Git is not proof of live deletion. Do not
+enable root-wide pruning to remove an orphan. Keep `external-secrets` and its
+Reloader release, Stakater source and RBAC; the namespace name is not an ESO
+controller dependency.
