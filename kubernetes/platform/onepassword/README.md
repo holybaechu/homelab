@@ -421,9 +421,10 @@ working ESO target until those independent cutover requirements pass.
 
 A missing relabeled field is not evidence that a database credential changed.
 The checker reports `replacement-missing-keys` before rendering or comparing
-Immich database bytes, Authentik projections and composite/rendered files. Finish
-only the eleven pending in-place labels across the five ESO-only sources above;
-do not rotate credentials in response to missing keys. Existing MySQL, Headscale,
+Immich database bytes, Authentik projections and composite/rendered files. After
+completing the eleven in-place labels across the five ESO-only sources above,
+verify their Operator replacements and parity; an app edit alone is not a PASS.
+Do not rotate credentials in response to missing keys. Existing MySQL, Headscale,
 Zipline and Langfuse passes remain independent of these failures.
 
 For GitHub/n8n `source-identity-or-extra-content` and signing representation
