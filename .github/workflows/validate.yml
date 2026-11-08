@@ -66,6 +66,21 @@ jobs:
           tofu -chdir=infra/talos fmt -check
           tofu -chdir=infra/talos init -backend=false -lockfile=readonly
           tofu -chdir=infra/talos validate
+      - name: Prepare official Flux bootstrap bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bootstrap="$RUNNER_TEMP/bootstrap"
+          mkdir -p "$bootstrap"
+          cp kubernetes/bootstrap/kustomization.yaml "$bootstrap/"
+          version=$(yq -er '.resources[0] | split("?ref=")[1]' "$bootstrap/kustomization.yaml")
+          while read -r resource; do
+            [[ "$resource" == https://github.com/fluxcd/flux2/manifests/*"?ref=$version" ]]
+          done < <(yq -r '.resources[]' "$bootstrap/kustomization.yaml")
+          # The release bundle is byte-identical to these upstream bases; keep the authored overlay.
+          gh release download "$version" --repo fluxcd/flux2 --pattern manifests.tar.gz --dir "$bootstrap"
+          tar -xzf "$bootstrap/manifests.tar.gz" -C "$bootstrap"
+          yq -i '.resources |= map(sub(".*/", "") | sub("\\?ref=.*", ".yaml"))' "$bootstrap/kustomization.yaml"
       - name: Build and substitute Kubernetes configuration
         run: |
           while IFS=$'\t' read -r key value; do
@@ -73,7 +88,9 @@ jobs:
           done < <(yq -N -r '.data | to_entries | .[] | [.key, .value] | @tsv' kubernetes/clusters/homelab/{settings,onepassword}.yaml)
           mkdir -p "$RUNNER_TEMP/rendered"
           for path in bootstrap clusters/homelab platform/controllers platform/onepassword platform/config identity apps access; do
-            if [[ "$path" == bootstrap || "$path" == clusters/homelab ]]; then
+            if [[ "$path" == bootstrap ]]; then
+              kustomize build "$RUNNER_TEMP/bootstrap" >> "$RUNNER_TEMP/rendered/authored.yaml"
+            elif [[ "$path" == clusters/homelab ]]; then
               kustomize build "kubernetes/$path" >> "$RUNNER_TEMP/rendered/authored.yaml"
             else
               kustomize build "kubernetes/$path" | flux envsubst --strict >> "$RUNNER_TEMP/rendered/authored.yaml"
