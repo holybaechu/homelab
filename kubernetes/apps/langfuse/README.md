@@ -56,6 +56,42 @@ failed backend disable/drop telemetry without stopping responses.
 This deployment supports text traces. MinIO is accessible only inside the cluster;
 direct browser media uploads and batch exports are not configured.
 
+## Ask Hermes about past sessions
+
+The assistant connects to Langfuse's native project MCP endpoint with an explicit
+allowlist of observation/schema and metrics reads. No prompt, score, dataset or
+other write tools are exposed. This is a client tool restriction, not a read-only
+API key: the existing project keys still authorize ingestion. The official
+Agent Skill/CLI is an alternative for shell workflows; the native MCP avoids a
+second package installation and gives the assistant directly discoverable,
+filtered tools.
+
+Ask, for example: “Find the ESO to 1Password Operator migration session and
+explain avoidable retries, separating necessary safety gates from wasted work.”
+Hermes can resolve the session ID with its local session search, then filter
+`listObservations` by `sessionId`. Inspect schemas first, use explicit time
+windows of at most 14 elapsed days, follow cursors, and fetch full payloads only
+for selected observations. Cite trace/observation IDs and distinguish measured
+latency from causal inference. Local transcripts are a separate fallback, not
+proof that Langfuse captured a session. Missing or truncated historical payloads
+cannot be reconstructed by enabling tracing now. Delegated work can have a
+separate session ID; inspect delegation metadata and local parent/child links.
+
+At startup, `prepare-langfuse` derives the Basic header from the same Operator
+project-key fields using Hermes' native secret writer. Only this derived secret
+is stored in the assistant's protected `.env`; Git holds its environment
+reference. Removal of either project key removes the cached header. Reloader
+refreshes it on the normal Secret-triggered pod restart. The internal request
+preserves the public `Host` for Langfuse's MCP host validation; credentials and
+observations stay on the existing in-cluster service path. Do not expose that
+HTTP endpoint outside the cluster or disable host validation.
+
+The MCP list is reconciled through `hermes config set` at startup and can also
+be activated with that CLI without restarting active conversations. Changes to
+the generated bootstrap ConfigMap/pod template should only be deployed after
+active tasks drain. Verify a real observation read, not just tool discovery;
+verify a later ordinary Hermes turn appears to check continuing ingestion.
+
 ## Credentials and upgrades
 
 Keep the original salt and encryption key in 1Password: replacing them can make

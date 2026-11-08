@@ -36,6 +36,7 @@ configMapGenerator:
       - langfuse-requirements.txt=langfuse/requirements.txt
       - langfuse-plugin.sha256=langfuse/plugin.sha256
       - langfuse-runtime.pth=langfuse/runtime.pth
+      - langfuse-configure-mcp.py=langfuse/configure_mcp.py
       - services.py=integrations/services.py
       - mcp_server.py=integrations/mcp_server.py
       - homelab-skill.md=integrations/SKILL.md

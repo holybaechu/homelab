@@ -311,6 +311,7 @@ spec:
           command: [/bin/sh, -ec]
           args:
             - |
+              /opt/hermes/.venv/bin/python /bootstrap/langfuse-configure-mcp.py
               cd /opt/langfuse/plugin
               rm -f plugin.yaml plugin.yaml.pending
               source=https://raw.githubusercontent.com/NousResearch/hermes-official-plugins/83f0a896b3518c7131181838e340c9a80c79524d/langfuse
@@ -324,6 +325,21 @@ spec:
               else
                 echo 'Langfuse tracing unavailable; Hermes can continue.' >&2
               fi
+          env:
+            - name: HERMES_HOME
+              value: /opt/data
+            - name: HERMES_LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-connect
+                  key: hermes-project-public-key
+                  optional: true
+            - name: HERMES_LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-connect
+                  key: hermes-project-secret-key
+                  optional: true
           securityContext:
             runAsUser: 10000
             runAsGroup: 10000
@@ -339,6 +355,8 @@ spec:
             limits:
               memory: 256Mi
           volumeMounts:
+            - name: data
+              mountPath: /opt/data
             - name: langfuse-runtime
               mountPath: /opt/langfuse
             - name: bootstrap

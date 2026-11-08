@@ -113,6 +113,12 @@ existing TickTick record.
 
 ## Service workflows
 
+For retrospective agent/session analysis, use the read-only Langfuse MCP tools.
+Resolve session IDs with session history when needed; inspect observation/filter
+schemas, narrow time windows and session filters, follow pagination, and fetch
+only relevant payloads. Cite trace evidence, separate necessary safety gates
+from avoidable retries, and label local-transcript fallback or missing traces.
+
 Load `homelab-services` when finding OpenCloud files, sharing files or short links,
 searching Immich photos, or managing qBittorrent downloads. Continue through
 the existing wiki and TickTick workflows when the request includes notes or tasks.
