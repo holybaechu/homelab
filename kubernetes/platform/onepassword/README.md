@@ -319,6 +319,104 @@ URL, accepts no arbitrary skipped labels and does not permit extra Secret keys.
 Cloudflare's real API adaptation and the token-bearing Hermes source remain
 blocked as described below; staging or a nine-contract gate is not full ESO retirement.
 
+### Remaining Hermes, n8n and signing source batch
+
+Three additional consumer-free Operator items stage `opencloud-connect`,
+`github-connect` and `signing-connect`. Their source labels require **no edits**:
+Operator 1.12.1 already maps `public key` / `private key` / `key type` to
+`public-key` / `private-key` / `key-type`, and GitHub's `valid from` to `valid-from`.
+The checker retains those actual labels and original field IDs. Do not rename
+built-ins just for normalization, touch meaningful dates or regenerate signing
+keys. The signing gate independently captures the unchanged
+`op://Homelab/fizdpxpyp5ommiouutzdlsgmnu/private_key?ssh-format=openssh`
+reference and requires exact replacement bytes. If the raw Operator value differs
+from that OpenSSH transform, the gate fails; no guessed conversion is applied.
+
+The OpenCloud gate combines its two fields with existing Zipline/qBittorrent
+replacements and compares **all five** `hermes-services` keys. The GitHub gate
+combines GitHub/signing replacements and compares both `hermes-coder-git` keys.
+Each child still needs its own source metadata, ownership, Ready and full-key/byte
+checks. Langfuse also compares both `hermes-langfuse` keys. n8n now checks its
+reviewed source metadata as well as `n8n-env` and `hermes-webhook`; its current
+underscore labels remain unchanged until the protected live-source sequence.
+
+The n8n credential renderer is staged in an **unmounted** ConfigMap. It uses the
+Node standard library already present in n8n's pinned image, retains credential
+IDs/names/types/header names and JSON-escapes exact UTF-8 values, including CRLF,
+BOM and literal substitution syntax. It rejects invalid UTF-8/empty values and
+creates its private output exclusively. The existing import init, encryption key,
+entrypoint, PVC and Reloader policy are not changed.
+
+Hermes's original item contains a broader Connect token, so it must **never** be
+synchronized whole. The administrator-only
+`scripts/prepare-hermes-runtime.py` constructs a new `Hermes Runtime` Secure Note
+from exactly six reviewed source field IDs: the three Discord fields, Exa,
+Browser Use and Perplexity. It constructs a fresh allowlisted template in memory;
+original notes, broad token, sections, URLs and attachments are not copied.
+The official `op item create -` receives UTF-8 JSON through captured stdin, never
+arguments/files/logs. This is creation of a new narrow item, not a JSON edit of
+an existing item. It does not move, delete or modify the original item. New
+runtime labels are already lowercase-hyphenated; the six field IDs are retained.
+
+Use the authenticated personal CLI session, not a Connect/service-account
+override. This default is **preview only** and never writes:
+
+```powershell
+git fetch origin main
+git show origin/main:scripts/prepare-hermes-runtime.py | mise x python@3 -- python -
+```
+
+After privately reviewing that preview and explicitly approving this separate
+non-Cloudflare creation, create the narrow item once:
+
+```powershell
+git show origin/main:scripts/prepare-hermes-runtime.py | mise x python@3 -- python - --apply
+```
+
+The helper requires exact metadata/bytes in the create result, fresh item GET,
+and fresh original-source GET. It prints only sanitized status and the new item
+ID. An existing exactly matching runtime item is read back instead of creating
+a duplicate; conflicting/duplicate titles fail. Any attempted create failure has
+unknown outcome: inspect privately before retrying; there are no automatic
+retries. Do not run with concurrent source edits. This agent has no authenticated
+personal session: its actual preview execution stopped at `source-get` with
+`outcome=no-writes`; local dummy tests are not a real API creation PASS.
+
+Creating the narrow item does **not** resolve vault trust. Before distributing
+any Homelab Connect token, provision a replacement broad token in an explicitly
+separate vault outside infrastructure/app Connect grants, securely update its
+out-of-band Hermes bootstrap at the final approved restart, verify access and
+**revoke the original broad token** stored in Homelab. Merely moving/copying its
+value leaves the old token valid and is insufficient. Do not add a service-account
+fallback or claim native browser login discovery works: the pinned backend still
+requires its separately verified authentication/listing/OTP capability. The new
+item ID must be reviewed and wired into source references plus its Operator
+manifest in a subsequent GitOps change; no placeholder path is deployed.
+
+After staged manifests reconcile and the narrow item exists, this is the complete
+read-only administrator batch (all requested checks continue independently):
+
+```powershell
+git fetch origin main
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python -
+$operatorGateExit = $LASTEXITCODE
+git show origin/main:scripts/prepare-hermes-runtime.py | mise x python@3 -- python - --verify-consumers
+$runtimeGateExit = $LASTEXITCODE
+Write-Output "INFO batch: operator-exit=$operatorGateExit runtime-exit=$runtimeGateExit"
+```
+
+The sixteen Operator checks cover **19 distinct existing ESO targets**. The
+runtime check covers the other **four** (`hermes-discord`, `hermes-web`,
+`hermes-browser`, `n8n-hermes-credentials`), comparing six source values and the
+complete parsed n8n import JSON plus its original field-ID webhook source.
+Together these account for all **23** contracts; they do not claim all pass.
+Cloudflare must remain FAIL pending recovery; unrelated passes remain usable.
+Missing runtime source, denied reads and source drift are explicit failures.
+Return only PASS/FAIL/INFO, never raw JSON or credentials. Runtime-source/ESO
+parity does not prove the not-yet-created Operator replacement, native browser
+capability, application authentication or rotation. Keep Hermes last and every
+working ESO target until those independent cutover requirements pass.
+
 ### Cloudflare preservation incident: mutations disabled
 
 The real label-attribute PATCH reached the server, but its response failed
@@ -506,8 +604,8 @@ If versions match but ESO bytes differ, inspect item history and ESO freshness
 privately before any cutover. Share only PASS/FAIL/INFO lines, not CLI or
 Kubernetes JSON. This agent cannot read Secrets or
 OnePasswordItems; do not broaden RBAC or bypass it with pods/exec. No arguments
-checks all thirteen eligible staged checks, including the already-cut-over MySQL
-and n8n contracts, which retain their Kubernetes-only comparison. The seven newer
+checks all sixteen staged checks. MySQL retains its Kubernetes-only comparison;
+n8n also validates the reviewed source metadata and bytes. The seven earlier
 checks require the consolidated source-label batch above before they can pass.
 
 | Namespace | Eligible staged replacement | Existing ESO target |
@@ -539,20 +637,22 @@ fit the convention where they have those English labels.
 The three staged sources above use their latest reported labels. The remaining
 inventory and proposed in-place label changes are below; each left-hand token is
 an existing **field ID**, not a proposed new field. Do not bulk-rename yet.
+Parenthesized old labels come from the last reviewed metadata export, not a fresh
+authenticated read. Match field IDs and current labels privately before editing.
 
 | Source | Existing field ID → target label | Coordination |
 | --- | --- | --- |
 | MySQL Temporary | `ovcwlzwylqyjgsnrpk3amvl36q` → `root-password` | Live Operator consumer: use the protected sequence below |
 | n8n | `encryption_key` → `encryption-key`; `hermes_webhook_secret` → `hermes-webhook-secret`; `owner_password_hash` → `owner-password-hash` | Live server and import-init projections; webhook/template consumers retain ID references |
-| AdGuard Home | `vu2pnknisjne6k4t5sh5laxf3e` → `password-hash` | Preserve validated bcrypt config rendering and initializer |
-| qBittorrent | `t25w4tvxducf5bqt5owlk4mvjy` → `password-hash` | Preserve PBKDF2 config merge and root/s6 startup |
-| Immich | `trytrwmlxrksnvjujdd57hqk7a` → `database-password`; `sf4ch3lie57owvqxdwvl3cl6he` → `oidc-client-secret`; `kpjesisize67f6kdidzwdhrriq` → `hermes-api-key` | Preserve DB/server equality, OIDC JSON and MCP interface |
-| Obsidian Sync | `auth_token` → `auth-token`; `vault_password` → `vault-password`; `vault_name` → `vault-name` | Preserve vault identity/encryption; do not project unused fields |
-| authentik [Admin] | `pinyekye2iau23hchko7js763a` → `secret-key`; `fhw4wuych7l2y5fs62p5leldtm` → `database-password`; `c6t67ly54dysrlik57ft332464` → `email` | Shared chart server/worker/blueprint and database contracts |
+| AdGuard Home | `vu2pnknisjne6k4t5sh5laxf3e` (`비밀번호 해시`) → `password-hash` | Preserve validated bcrypt config rendering and initializer |
+| qBittorrent | `t25w4tvxducf5bqt5owlk4mvjy` (`비밀번호 해시`) → `password-hash` | Preserve PBKDF2 config merge and root/s6 startup |
+| Immich | `trytrwmlxrksnvjujdd57hqk7a` (`데이터베이스 비밀번호`) → `database-password`; `sf4ch3lie57owvqxdwvl3cl6he` (`OIDC 클라이언트 시크릿`) → `oidc-client-secret`; `kpjesisize67f6kdidzwdhrriq` (`Hermes API 키`) → `hermes-api-key` | Preserve DB/server equality, OIDC JSON and MCP interface |
+| Obsidian Sync | `auth_token` (`인증 토큰`) → `auth-token`; `vault_password` (`보관함 암호화 비밀번호`) → `vault-password`; `vault_name` (`보관함 이름`) → `vault-name` | Preserve vault identity/encryption; do not project unused fields |
+| authentik [Admin] | `pinyekye2iau23hchko7js763a` (`시크릿 키`) → `secret-key`; `fhw4wuych7l2y5fs62p5leldtm` (`데이터베이스 비밀번호`) → `database-password`; `c6t67ly54dysrlik57ft332464` (`이메일`) → `email` | Shared chart server/worker/blueprint and database contracts |
 | Hermes Agent | `op3m7hudiprbm63fk4wcxqglmi` → `discord-bot-token`; `fn446i6ddovmn7n4jcmck5afg4` → `discord-allowed-users`; `7ooupb36fhrns3ylsnros4fj6e` → `discord-home-channel`; `dhkzzpalgt33qdmvlm6knod72a` → `exa-api-key`; `52qljnwq55ysuf3hb2r4vxawni` → `browser-use-api-key`; `t4554lneydfcucvqsqjuck2zdi` → `perplexity-api-key`; `dxraaqrzo4qi6p3swaak5ebyue` → `onepassword-access-token` | Hermes last; never synchronize this whole item or distribute a token that can read its broad token |
 | OpenCloud | `username`, `password` already conform | No custom-field rename needed; preserve Hermes services interface |
-| Hermes Coder Signing | `public_key` → `public-key`; `private_key` → `private-key`; `key_type` → `key-type` | Built-ins: only if official app supports label-only edits; preserve OpenSSH transform and key bytes |
-| GitHub Hermes | `validFrom` → `valid-from` | Built-in: only if editable without setting a date; otherwise record exception; other English fields already conform |
+| Hermes Coder Signing | `public_key` (`public key`) → Operator `public-key`; `private_key` (`private key`) → Operator `private-key`; `key_type` (`key type`) → Operator `key-type` | Already normalized; do not edit built-ins; preserve OpenSSH transform and key bytes |
+| GitHub Hermes | `validFrom` (`valid from`) → Operator `valid-from` | Already normalized; do not edit built-in dates |
 | Cloudflare DNS | `username` → `username`; `credential` → `credential`; `type` → `type`; `filename` → `filename`; `validFrom` → `valid-from`; `expires` → `expires`; `hostname` → `hostname`; `notesPlain` → `notes-plain` | Mutations disabled after real PATCH materialized dates; use GET-only incident inspection and separately approved recovery, keeping ESO active |
 | Every source | `notesPlain` → `notes-plain` | Built-in: confirm label-only editability; until then retain `notesPlain` as an explicit exception, including in checkers |
 
@@ -604,10 +704,10 @@ stop if a built-in label cannot be edited. Manual PowerShell personal-account
 sign-in is `Invoke-Expression "$(op signin)"`; the audit rejects Connect overrides
 without changing them. Return sanitized diagnostics only, never raw CLI output.
 
-AdGuard, qBittorrent and Immich have staged app-local safe renderers, not live
-cutovers. The n8n import template still needs its narrow Perplexity source and
-safe JSON rendering; signing still needs the verified OpenSSH transform.
-Neither a relabel nor Injector alone resolves those contracts or rotation.
+AdGuard, qBittorrent, Immich and n8n have staged app-local safe renderers, not live
+cutovers. n8n still needs its narrow Perplexity source created and wired; signing
+requires the actual administrative OpenSSH byte gate to pass. Neither a relabel
+nor Injector alone resolves those contracts or rotation.
 
 ## Cutover, refresh and rollback
 

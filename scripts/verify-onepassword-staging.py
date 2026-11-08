@@ -9,6 +9,42 @@ import sys
 
 
 CONTRACTS = {
+    "opencloud-connect": {
+        "namespace": "homelab", "name": "opencloud-connect",
+        "item_id": "kxywehnrosbeoxfby2ujyntdo4",
+        "allowed": {"username", "password", "notesPlain"}, "sources": {},
+        "composite": ("hermes-services", {
+            "OPENCLOUD_USERNAME": ("opencloud-connect", "username"),
+            "OPENCLOUD_APP_TOKEN": ("opencloud-connect", "password"),
+            "ZIPLINE_TOKEN": ("zipline-connect", "hermes-api-token"),
+            "QBITTORRENT_USERNAME": ("qbittorrent-connect", "username"),
+            "QBITTORRENT_PASSWORD": ("qbittorrent-connect", "password"),
+        }),
+    },
+    "github-connect": {
+        "namespace": "homelab", "name": "github-connect",
+        "item_id": "ioa2eqgh3qmg36ecdjvwx7bpo4",
+        "allowed": {"username", "credential", "type", "filename", "valid-from",
+                    "expires", "hostname", "notesPlain"}, "sources": {},
+        "required_fields": {"credential"},
+        "composite": ("hermes-coder-git", {
+            "github-token": ("github-connect", "credential"),
+            "signing-key": ("signing-connect", "private-key"),
+        }),
+    },
+    "signing-connect": {
+        "namespace": "homelab", "name": "signing-connect",
+        "item_id": "fizdpxpyp5ommiouutzdlsgmnu",
+        "allowed": {"public-key", "private-key", "key-type", "fingerprint", "notesPlain"},
+        "sources": {},
+        "references": {
+            "op://Homelab/fizdpxpyp5ommiouutzdlsgmnu/private_key?ssh-format=openssh": "private-key",
+        },
+        "composite": ("hermes-coder-git", {
+            "github-token": ("github-connect", "credential"),
+            "signing-key": ("signing-connect", "private-key"),
+        }),
+    },
     "cloudflare-dns": {
         "namespace": "cert-manager", "name": "cloudflare-connect",
         "item_id": "x62vzi4s2sdnerrjev6pp5ndnu",
@@ -37,6 +73,7 @@ CONTRACTS = {
         "item_id": "6esl52kqp2arngw72jrteqdbge",
         "allowed": {"username", "password", "notesPlain", "encryption_key",
                     "hermes_webhook_secret", "owner_password_hash"},
+        "required_fields": {"username", "encryption_key", "hermes_webhook_secret", "owner_password_hash"},
         "sources": {
             "n8n-env": {
                 "N8N_ENCRYPTION_KEY": "encryption_key",
@@ -118,6 +155,9 @@ CONTRACTS = {
             "AUTH_AUTHENTIK_CLIENT_SECRET": "oidc-client-secret",
             "LANGFUSE_INIT_PROJECT_PUBLIC_KEY": "hermes-project-public-key",
             "LANGFUSE_INIT_PROJECT_SECRET_KEY": "hermes-project-secret-key",
+        }, "hermes-langfuse": {
+            "HERMES_LANGFUSE_PUBLIC_KEY": "hermes-project-public-key",
+            "HERMES_LANGFUSE_SECRET_KEY": "hermes-project-secret-key",
         }},
     },
 }
@@ -126,6 +166,25 @@ CONTRACTS = {
 VAULT = "3ryhjdiydkomgh3oxfl5yrg5j4"
 # Reviewed field IDs and section membership from the pre-edit metadata export.
 SOURCE_LABELS = {
+    "kxywehnrosbeoxfby2ujyntdo4": ("OpenCloud", {
+        "username": ("username", None), "password": ("password", None),
+    }),
+    "ioa2eqgh3qmg36ecdjvwx7bpo4": ("GitHub Hermes", {
+        "username": ("username", None), "credential": ("credential", None),
+        "type": ("type", None), "filename": ("filename", None),
+        "validFrom": ("valid from", None), "expires": ("expires", None),
+        "hostname": ("hostname", None),
+    }),
+    "fizdpxpyp5ommiouutzdlsgmnu": ("Hermes Coder Signing", {
+        "public_key": ("public key", None), "private_key": ("private key", None),
+        "key_type": ("key type", None), "fingerprint": ("fingerprint", None),
+    }),
+    "6esl52kqp2arngw72jrteqdbge": ("n8n", {
+        "username": ("username", None), "password": ("password", None),
+        "encryption_key": ("encryption_key", None),
+        "hermes_webhook_secret": ("hermes_webhook_secret", None),
+        "owner_password_hash": ("owner_password_hash", None),
+    }),
     "x62vzi4s2sdnerrjev6pp5ndnu": ("Cloudflare DNS", {
         "username": ("username", None), "credential": ("credential", None),
         "type": ("type", None), "filename": ("filename", None),
@@ -183,10 +242,13 @@ SOURCE_LABELS = {
 def field_metadata(item_id, field_id):
     if field_id == "notesPlain":
         return "STRING", "NOTES"
-    if item_id == "x62vzi4s2sdnerrjev6pp5ndnu":
+    if item_id == "fizdpxpyp5ommiouutzdlsgmnu":
+        return ("SSHKEY" if field_id == "private_key" else "STRING"), None
+    if item_id in {"x62vzi4s2sdnerrjev6pp5ndnu", "ioa2eqgh3qmg36ecdjvwx7bpo4"}:
         return ({"credential": "CONCEALED", "type": "MENU", "validFrom": "DATE", "expires": "DATE"}
                 .get(field_id, "STRING")), None
     if item_id in {"d7ginmnpodzvevvb472v26jvmq", "n2olk4p3ngumyuttl6b7itutba",
+                   "kxywehnrosbeoxfby2ujyntdo4", "6esl52kqp2arngw72jrteqdbge",
                    "ztl6gih3jqixgb5xufbv4xq4bi"}:
         if field_id == "username":
             return "STRING", "USERNAME"
@@ -335,7 +397,8 @@ def verify_source(source, replacement, contract):
         keys.add(key)
         value = field.get("value", "")
         required = field_id in contract.get("required_fields", set(labels))
-        if value is None and not required and item_id == "x62vzi4s2sdnerrjev6pp5ndnu":
+        if value is None and not required and item_id in {
+                "x62vzi4s2sdnerrjev6pp5ndnu", "ioa2eqgh3qmg36ecdjvwx7bpo4"}:
             value = ""
         if item_id == "x62vzi4s2sdnerrjev6pp5ndnu" and expected_type == "DATE" and value:
             raise CheckFailure(f"source-date-not-unset field={field_id}")
@@ -435,6 +498,17 @@ def verify_authentik_env(original, replacements):
         value = decode_data(replacements[name])[replacement_key]
         if not value or value != old[key]:
             raise CheckFailure(f"eso-replacement-bytes Secret/authentik-env key={key}")
+
+
+def verify_composite(original, replacements, contract):
+    name, projections = contract["composite"]
+    old = decode_data(original)
+    if set(old) != set(projections):
+        raise CheckFailure(f"eso-keys Secret/{name}")
+    for key, (replacement, field) in projections.items():
+        value = decode_data(replacements[replacement]).get(field)
+        if not value or value != old[key]:
+            raise CheckFailure(f"eso-replacement-bytes Secret/{name} key={key}")
 
 
 def verify_rendered_config(replacement, original, template, contract):
@@ -547,6 +621,31 @@ def main(argv=None):
         sources = {n: attempt(f"read Kubernetes/{namespace}/Secret/{n}",
                               read_resource, "secret", n, namespace)
                    for n in contract["sources"]}
+        if contract.get("composite"):
+            old_name, projections = contract["composite"]
+            original = attempt(f"read Kubernetes/{namespace}/Secret/{old_name}",
+                               read_resource, "secret", old_name, namespace)
+            replacements = {name: replacement}
+            for child in sorted({target for target, _ in projections.values()} - {name}):
+                child_contract = CONTRACTS[child]
+                child_item = attempt(f"read Kubernetes/{namespace}/OnePasswordItem/{child}",
+                                     read_resource, "onepassworditem", child, namespace)
+                child_secret = attempt(f"read Kubernetes/{namespace}/Secret/{child}",
+                                       read_resource, "secret", child, namespace)
+                child_source = attempt(f"read 1Password/Item/{child_contract['item_id']}",
+                                       read_source, child_contract["item_id"])
+                replacements[child] = child_secret
+                if child_item is not None and child_secret is not None:
+                    attempt(f"verify Kubernetes/{namespace}/OnePasswordItem/{child}",
+                            verify, child_item, child_secret, {}, {**child_contract, "sources": {}})
+                if child_source is not None and child_secret is not None:
+                    attempt(f"verify 1Password/Item/{child_contract['item_id']}+Secret/{child}",
+                            verify_source, child_source, child_secret, child_contract)
+                    if child_contract.get("references"):
+                        attempt(f"verify source-reference/{child_contract['item_id']}",
+                                verify_references, child_secret, child_contract)
+            if original is not None and all(s is not None for s in replacements.values()):
+                attempt(f"verify complete-{old_name}", verify_composite, original, replacements, contract)
         if contract.get("authentik_env"):
             original = attempt("read Kubernetes/identity/Secret/authentik-env",
                                read_resource, "secret", "authentik-env", namespace)
