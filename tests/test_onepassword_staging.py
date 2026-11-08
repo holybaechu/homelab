@@ -105,7 +105,9 @@ class StagingVerificationTests(unittest.TestCase):
     def source_fixture(self, contract) -> tuple[dict, dict]:
         item_id = contract["item_id"]
         title, labels = staging.SOURCE_LABELS[item_id]
-        fields = [{"id": field_id, "label": label, "type": "CONCEALED",
+        fields = [{"id": field_id, "label": label,
+                   "type": staging.field_metadata(item_id, field_id)[0],
+                   "purpose": staging.field_metadata(item_id, field_id)[1],
                    "section": {"id": section} if section else None,
                    "value": label + '\n"\\\u0000'}
                   for field_id, (label, section) in labels.items()]
@@ -136,8 +138,9 @@ class StagingVerificationTests(unittest.TestCase):
                 source, replacement = self.source_fixture(contract)
                 staging.verify_source(source, replacement, contract)
                 self.assertEqual(set(replacement["data"]), contract["allowed"] - {"notesPlain"})
-                for old_key, new_key in contract["sources"][next(iter(contract["sources"]))].items():
-                    self.assertIn(new_key, replacement["data"])
+                for mapping in contract["sources"].values():
+                    for new_key in mapping.values():
+                        self.assertIn(new_key, replacement["data"])
                 replacement["data"][next(iter(replacement["data"]))] = base64.b64encode(b"changed").decode()
                 with self.assertRaises(ValueError):
                     staging.verify_source(source, replacement, contract)
@@ -402,6 +405,21 @@ class StagingVerificationTests(unittest.TestCase):
         resources.assert_not_called()
         self.assertEqual(err.getvalue().count("category=invalid-response-schema"), 2)
         self.assertNotIn("PRIVATE", err.getvalue())
+
+    def test_reviewed_localized_website_urls_are_skipped_without_extra_keys(self):
+        for name in ("authentik-connect", "adguard-connect", "qbittorrent-connect"):
+            contract = staging.CONTRACTS[name]
+            source, replacement = self.source_fixture(contract)
+            source["urls"] = [{"label": "\uc6f9\uc0ac\uc774\ud2b8", "href": "PRIVATE_URL"}]
+            staging.verify_source(source, replacement, contract)
+            for label in ("", "website", "\uc6f9\uc0ac\uc774\ud2b8 other", "password"):
+                changed = copy.deepcopy(source)
+                changed["urls"][0]["label"] = label
+                with self.assertRaisesRegex(ValueError, "source-identity-or-extra-content"):
+                    staging.verify_source(changed, replacement, contract)
+            source["urls"].append(copy.deepcopy(source["urls"][0]))
+            with self.assertRaisesRegex(ValueError, "source-identity-or-extra-content"):
+                staging.verify_source(source, replacement, contract)
 
     def test_selected_check_uses_its_namespace(self):
         with patch.object(staging, "read_resource", return_value={}) as read:
