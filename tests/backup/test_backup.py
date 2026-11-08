@@ -349,14 +349,57 @@ class Capture(unittest.TestCase):
                 worker.upload(run, 'b2')
         restic.assert_not_called()
 
-    def test_endpoint_mismatch_is_rejected_before_credentials_are_read(self):
-        root = self.root / 'ovh'
+    def test_scaleway_endpoint_validation_precedes_credentials(self):
+        root = self.root / 'scaleway'
         root.mkdir()
-        (root / 'repository').write_text('s3:https://s3.sgp.perf.cloud.ovh.net/homelab-backup-ovh')
-        (root / 'region').write_text('sgp')
+        (root / 'bucket').write_text('fixture-backup')
+        for url, region in [
+                ('s3:https://s3.sgp.io.cloud.ovh.net/fixture-backup', 'fr-par'),
+                ('s3:https://s3.fr-par.scw.cloud/fixture-backup', 'nl-ams'),
+                ('s3:https://s3.fr-par.scw.cloud/another-bucket', 'fr-par'),
+                ('s3:https://s3.fr-par.scw.cloud/fixture-backup/prefix', 'fr-par'),
+                ('s3:http://s3.fr-par.scw.cloud/fixture-backup', 'fr-par'),
+                ('REQUIRED_VERIFIED_SCALEWAY_S3_REPOSITORY', 'REQUIRED_REGION')]:
+            with self.subTest(url=url, region=region):
+                (root / 'repository').write_text(url)
+                (root / 'region').write_text(region)
+                with patch.object(worker, 'REPOSITORIES', self.root):
+                    with self.assertRaisesRegex(RuntimeError, 'approved target'):
+                        worker.repository('scaleway')
+
+    def test_scaleway_approved_regional_repository(self):
+        root = self.root / 'scaleway'
+        root.mkdir()
+        for name, value in [('bucket', 'fixture-backup'), ('access-key-id', 'fixture-id'),
+                            ('secret-access-key', 'fixture-secret')]:
+            (root / name).write_text(value)
+        for region in ('fr-par', 'nl-ams', 'pl-waw'):
+            with self.subTest(region=region):
+                url = f's3:https://s3.{region}.scw.cloud/fixture-backup'
+                (root / 'repository').write_text(url)
+                (root / 'region').write_text(region)
+                with patch.object(worker, 'REPOSITORIES', self.root):
+                    env = worker.repository('scaleway')
+                self.assertEqual(env['RESTIC_REPOSITORY'], url)
+                self.assertEqual(env['AWS_DEFAULT_REGION'], region)
+                self.assertEqual(env['RESTIC_PASSWORD_FILE'], str(root / 'restic-password'))
+        (root / 'bucket').write_text('REQUIRED_APPROVED_BUCKET')
         with patch.object(worker, 'REPOSITORIES', self.root):
             with self.assertRaisesRegex(RuntimeError, 'approved target'):
-                worker.repository('ovh')
+                worker.repository('scaleway')
+
+    def test_scaleway_storage_class_applies_to_every_command_not_b2(self):
+        for destination in ('scaleway', 'b2'):
+            for operation in ('init', 'backup', 'tag', 'forget', 'prune', 'check', 'restore'):
+                with self.subTest(destination=destination, operation=operation):
+                    with patch.object(worker, 'repository', return_value={}) as repository, \
+                         patch.object(worker, 'command') as command:
+                        worker.restic(destination, [operation], timeout=123)
+                    expected = ['restic']
+                    if destination == 'scaleway':
+                        expected += ['-o', 's3.storage-class=ONEZONE_IA']
+                    command.assert_called_once_with([*expected, operation], env={}, timeout=123)
+                    repository.assert_called_once_with(destination)
 
     @unittest.skipUnless(shutil.which('rsync'), 'rsync required')
     def test_projected_original_keys_are_materialized_not_dangling_links(self):
@@ -410,7 +453,7 @@ class Capture(unittest.TestCase):
         (source / 'uploads').mkdir()
         (source / 'uploads/body').write_bytes(b'fixture-upload')
         repo_ids = []
-        for destination in ('b2', 'ovh'):
+        for destination in ('b2', 'scaleway'):
             env = dict(os.environ, RESTIC_REPOSITORY=str(self.root / destination), RESTIC_PASSWORD='fixture-' + destination,
                        RESTIC_CACHE_DIR=str(self.root / ('cache-' + destination)))
             def restic(*args):

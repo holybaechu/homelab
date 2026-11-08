@@ -83,12 +83,12 @@ the encrypted backup. Never replace them with fresh generated keys on restore.
 ## Activation and credentials
 
 The existing official 1Password Operator must own `backup-b2-connect` and
-`backup-ovh-connect` in `homelab`. Each new **separate** source item needs exactly
+`backup-scaleway-connect` in `homelab`. Each new **separate** source item needs exactly
 these lowercase field labels/Secret keys (no broad Connect token):
 
 | Key | Meaning |
 | --- | --- |
-| `access-key-id` | Bucket-scoped S3 application/user access ID |
+| `access-key-id` | B2 bucket-scoped or Scaleway dedicated-project application access ID |
 | `secret-access-key` | Corresponding S3 secret |
 | `restic-password` | Independent securely generated repository password; retain outside the cluster for disaster recovery |
 
@@ -101,25 +101,38 @@ or rotate an original encryption key to make a missing projection work.
 
 B2 is fixed to the verified private bucket `homelab-backup-b2`, endpoint
 `s3.us-west-004.backblazeb2.com`, region `us-west-004`; SSE-B2 is supplementary to
-restic encryption, not a replacement. Fill `BACKUP_OVH_REPOSITORY` and
-`BACKUP_OVH_REGION` only after verifying the private `homelab-backup-ovh` bucket's
-Singapore One-Zone IA endpoint, signing region and storage-class behavior. The
-required modern endpoint is `s3:https://s3.sgp.io.cloud.ovh.net/homelab-backup-ovh`,
-region `sgp`. [OVH's current mapping](https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-location)
-requires an explicit `STANDARD_IA` write class on this `.io` endpoint; the worker
-sets it for OVH commands (including metadata, whose short lifetimes still incur
-the minimum duration). The legacy `.perf` endpoint maps that class differently
-and is rejected, rather than silently storing at the wrong tier. Use
-bucket-root repositories, no invented project prefixes. Both providers need
-bucket-scoped list/get/put/delete operations for restic, not account-wide access.
-Do not enable Object Lock/retention incompatible with restic deletion.
+restic encryption, not a replacement. Scaleway region, dedicated project, bucket,
+application/key and item names are **pending approval**; no OVH names are reused.
+Set `BACKUP_SCALEWAY_BUCKET`, `BACKUP_SCALEWAY_REGION` and
+`BACKUP_SCALEWAY_REPOSITORY` only after verifying the actual private bucket.
+Use `s3:https://s3.<region>.scw.cloud/<approved-bucket>` at the bucket root;
+the worker rejects mismatched endpoints, paths, regions and unresolved inputs.
+The supported regional allowlist is `fr-par`, `nl-ams`, `pl-waw`; verify
+Standard One Zone availability in the selected region before provisioning.
+
+[Scaleway Standard One Zone](https://www.scaleway.com/en/docs/object-storage/concepts/#storage-class)
+uses the API token `ONEZONE_IA`, **not** `STANDARD_IA` or `STANDARD`.
+The worker passes `s3.storage-class=ONEZONE_IA` to every Scaleway restic command,
+including init, config, keys, locks, indexes, snapshots and data pack writes.
+Restic 0.19.1 treats only GLACIER/DEEP_ARCHIVE as metadata exceptions; ONEZONE_IA
+is applied to all saves. Verify returned classes with real credentials before
+activation; local tests do not prove cloud storage behavior.
+
+B2 runtime credentials remain bucket-scoped. Scaleway uses a dedicated IAM
+application with project-scoped `ObjectStorageReadOnly`,
+`ObjectStorageObjectsWrite` and `ObjectStorageObjectsDelete`, without bucket
+administration or IAM rights. This is **not bucket-only access**: isolate backups
+in a dedicated project, and verify both allowed restic/multipart operations and
+rejected bucket administration/other-project access. Do not enable Object Lock
+or retention incompatible with restic deletion.
 
 No lifecycle rule may expire current objects: old restic packs can still be
 referenced by recent snapshots. B2 currently keeps all versions; restic deletes
 can leave billed hidden versions. Review a **hidden/noncurrent-only** deletion
 rule separately with the provider owner, with no upload-age hiding/expiry of
 current objects. Do not apply such a rule without that safety review.
-OVH One-Zone IA has a 30-day minimum duration and retrieval/request costs.
+Review current Scaleway Standard One Zone minimum-duration, retrieval and request
+pricing with the approved region before activation.
 
 1. Run CI's `backup` workflow. Publish its verified tooling image only through an
    explicitly approved `workflow_dispatch` with `publish=true`; this publishes
@@ -140,7 +153,7 @@ OVH One-Zone IA has a 30-day minimum duration and retrieval/request costs.
 4. From an authorized administrator, initialize **each verified empty target**
    explicitly using the worker's projected files and `worker.repository()`
    environment: `kubectl -n homelab exec backup-worker-0 -c worker -- python3
-   /backup/worker.py init b2` (then `init ovh`). Each prints only its repository ID.
+   /backup/worker.py init b2` (then `init scaleway`). Each prints only its repository ID.
    `restic init` is deliberately not an automatic fallback after a
    failed repository read. Never initialize a substitute repository on an auth,
    endpoint or network failure; verify the distinct repository IDs afterwards.
@@ -172,7 +185,7 @@ integrity/schema, then deletes only that isolated directory:
 
 ```sh
 kubectl -n homelab exec backup-worker-0 -c worker -- python3 /backup/worker.py restore-test b2
-kubectl -n homelab exec backup-worker-0 -c worker -- python3 /backup/worker.py restore-test ovh
+kubectl -n homelab exec backup-worker-0 -c worker -- python3 /backup/worker.py restore-test scaleway
 ```
 
 This is more than `restic check`, but does not prove n8n credential decryption or

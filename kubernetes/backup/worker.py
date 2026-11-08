@@ -252,7 +252,7 @@ def copy_data(name, *, presync=False, deadline=None):
 def prepare(run):
     STAGE.mkdir(exist_ok=True)
     (STAGE / 'run').write_text(run)
-    for marker in ['valid', 'uploaded-b2', 'uploaded-ovh']:
+    for marker in ['valid', 'uploaded-b2', 'uploaded-scaleway']:
         (STAGE / marker).unlink(missing_ok=True)
     for group, names in DATA.items():
         if group == 'hermes':
@@ -299,13 +299,18 @@ def seal(run):
 
 
 def repository(destination):
-    if destination not in ('b2', 'ovh'):
+    if destination not in ('b2', 'scaleway'):
         raise ValueError('Unknown destination')
     root = REPOSITORIES / destination
     url, region = (root / 'repository').read_text().strip(), (root / 'region').read_text().strip()
-    expected = {'b2': ('s3:https://s3.us-west-004.backblazeb2.com/homelab-backup-b2', 'us-west-004'),
-                'ovh': ('s3:https://s3.sgp.io.cloud.ovh.net/homelab-backup-ovh', 'sgp')}
-    if (url, region) != expected[destination]:
+    expected = ('s3:https://s3.us-west-004.backblazeb2.com/homelab-backup-b2', 'us-west-004')
+    if destination == 'scaleway':
+        bucket = (root / 'bucket').read_text().strip()
+        if (region not in ('fr-par', 'nl-ams', 'pl-waw') or
+                not re.fullmatch(r'[a-z0-9][a-z0-9-]{1,61}[a-z0-9]', bucket)):
+            raise RuntimeError('Repository endpoint/region differs from approved target')
+        expected = (f's3:https://s3.{region}.scw.cloud/{bucket}', region)
+    if (url, region) != expected:
         raise RuntimeError('Repository endpoint/region differs from approved target')
     return dict(os.environ,
                 RESTIC_REPOSITORY=url,
@@ -317,8 +322,8 @@ def repository(destination):
 
 
 def restic(destination, args, timeout=3600):
-    # OVH's .io endpoint maps STANDARD_IA to the approved 1-AZ IA tier.
-    options = ['-o', 's3.storage-class=STANDARD_IA'] if destination == 'ovh' else []
+    # ONEZONE_IA is Scaleway Standard One Zone, including repository metadata.
+    options = ['-o', 's3.storage-class=ONEZONE_IA'] if destination == 'scaleway' else []
     return command(['restic', *options, *args], env=repository(destination), timeout=timeout)
 
 

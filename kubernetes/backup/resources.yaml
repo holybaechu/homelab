@@ -24,10 +24,10 @@ spec:
 apiVersion: onepassword.com/v1
 kind: OnePasswordItem
 metadata:
-  name: backup-ovh-connect
+  name: backup-scaleway-connect
   namespace: homelab
 spec:
-  itemPath: ${BACKUP_OVH_CONNECT_ITEM_PATH}
+  itemPath: ${BACKUP_SCALEWAY_CONNECT_ITEM_PATH}
 ---
 apiVersion: v1
 kind: Service
@@ -195,14 +195,14 @@ spec:
                     - key: restic-password
                       path: b2/restic-password
               - secret:
-                  name: backup-ovh-connect
+                  name: backup-scaleway-connect
                   items:
                     - key: access-key-id
-                      path: ovh/access-key-id
+                      path: scaleway/access-key-id
                     - key: secret-access-key
-                      path: ovh/secret-access-key
+                      path: scaleway/secret-access-key
                     - key: restic-password
-                      path: ovh/restic-password
+                      path: scaleway/restic-password
               - configMap:
                   name: backup-repositories
                   items:
@@ -210,10 +210,12 @@ spec:
                       path: b2/repository
                     - key: b2-region
                       path: b2/region
-                    - key: ovh-repository
-                      path: ovh/repository
-                    - key: ovh-region
-                      path: ovh/region
+                    - key: scaleway-repository
+                      path: scaleway/repository
+                    - key: scaleway-region
+                      path: scaleway/region
+                    - key: scaleway-bucket
+                      path: scaleway/bucket
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -459,8 +461,9 @@ metadata:
 data:
   b2-repository: s3:https://s3.us-west-004.backblazeb2.com/homelab-backup-b2
   b2-region: us-west-004
-  ovh-repository: ${BACKUP_OVH_REPOSITORY}
-  ovh-region: ${BACKUP_OVH_REGION}
+  scaleway-repository: ${BACKUP_SCALEWAY_REPOSITORY}
+  scaleway-region: ${BACKUP_SCALEWAY_REGION}
+  scaleway-bucket: ${BACKUP_SCALEWAY_BUCKET}
 ---
 apiVersion: v1
 kind: ConfigMap
