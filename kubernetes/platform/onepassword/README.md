@@ -379,19 +379,48 @@ ID. An existing exactly matching runtime item is read back instead of creating
 a duplicate; conflicting/duplicate titles fail. Any attempted create failure has
 unknown outcome: inspect privately before retrying; there are no automatic
 retries. Do not run with concurrent source edits. This agent has no authenticated
-personal session: its actual preview execution stopped at `source-get` with
-`outcome=no-writes`; local dummy tests are not a real API creation PASS.
+personal session; authenticated creation and consumer verification were instead
+completed by the administrator. The exact new item is
+`rvmf543rf6sefjrqiu7csfa2ra`; its six field values, fresh source/readback and four
+retained ESO contracts (including the full n8n import JSON) passed independently.
+`hermes-runtime-connect` now stages this exact item through the existing Operator,
+with automatic restarts disabled. The new Operator replacement still needs its
+own ownership/Ready/source/byte gate before mounting it:
 
-Creating the narrow item does **not** resolve vault trust. Before distributing
-any Homelab Connect token, provision a replacement broad token in an explicitly
-separate vault outside infrastructure/app Connect grants, securely update its
-out-of-band Hermes bootstrap at the final approved restart, verify access and
-**revoke the original broad token** stored in Homelab. Merely moving/copying its
-value leaves the old token valid and is insufficient. Do not add a service-account
-fallback or claim native browser login discovery works: the pinned backend still
-requires its separately verified authentication/listing/OTP capability. The new
-item ID must be reviewed and wired into source references plus its Operator
-manifest in a subsequent GitOps change; no placeholder path is deployed.
+```powershell
+git fetch origin main
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - hermes-runtime-connect
+```
+
+This does not repeat the creation gate. It verifies the newly reconciled
+replacement, all six source keys and three directly mapped ESO targets. The
+separately passed n8n JSON gate covers the fourth target. No Hermes Pod-template
+or existing ESO reference changes are made by this staging step.
+
+Until the consolidated cutover, the original six fields remain the active ESO
+source and the new item is a verified fork, not an independently rotated source.
+Freeze edits across both during this short transition. At cutover, switch the six
+shared `*_REF` settings to the new item ID and unchanged field IDs (no `add more`
+section), including Perplexity's n8n reference, and switch the runtime projections
+together. Then `Hermes Runtime` is authoritative for future rotations: update it,
+verify Operator parity and application reload/import, and retire the original six
+fields only after the rollback window is closed. Never silently maintain two
+independently rotated copies. Keep the helper's original-source comparison only
+as a migration gate, not the ongoing rotation procedure.
+
+No app receives a Connect token: projected Operator Secrets need no additional
+vault or client token. The separate token-storage-vault task is canceled. A future
+Hermes-only Connect token must be provisioned directly out of band into a dedicated
+Kubernetes bootstrap Secret **after** native browser compatibility is resolved;
+it must not be fetched through its own Connect dependency. Keep the existing
+Connect server credentials and infrastructure Operator bootstrap Secrets intact.
+The pinned native backend's authentication/listing/OTP blocker remains unresolved;
+no service-account fallback, credential shim or weakened redaction is allowed.
+Do not automatically move or revoke the original broad token. First privately
+identify its consumers and validate any authorized replacement, then revoke the
+old client token in 1Password integration administration; deleting its source
+field is not revocation. Never share token values or distribute a broad token to
+applications. A stored source reference alone proves no active token use.
 
 After staged manifests reconcile and the narrow item exists, this is the complete
 read-only administrator batch (all requested checks continue independently):
@@ -405,15 +434,16 @@ $runtimeGateExit = $LASTEXITCODE
 Write-Output "INFO batch: operator-exit=$operatorGateExit runtime-exit=$runtimeGateExit"
 ```
 
-The sixteen Operator checks cover **19 distinct existing ESO targets**. The
-runtime check covers the other **four** (`hermes-discord`, `hermes-web`,
-`hermes-browser`, `n8n-hermes-credentials`), comparing six source values and the
-complete parsed n8n import JSON plus its original field-ID webhook source.
-Together these account for all **23** contracts; they do not claim all pass.
+The seventeen Operator checks cover **22 distinct existing ESO targets**. The
+runtime helper compares six source values and four targets (`hermes-discord`,
+`hermes-web`, `hermes-browser`, `n8n-hermes-credentials`), including the complete
+parsed n8n import JSON plus its original field-ID webhook source. Three targets
+overlap the Operator gate; their union accounts for all **23** contracts, not 26.
+Coverage does not claim every gate passes.
 Cloudflare must remain FAIL pending recovery; unrelated passes remain usable.
 Missing runtime source, denied reads and source drift are explicit failures.
 Return only PASS/FAIL/INFO, never raw JSON or credentials. Runtime-source/ESO
-parity does not prove the not-yet-created Operator replacement, native browser
+parity does not prove the staged Operator replacement, native browser
 capability, application authentication or rotation. Keep Hermes last and every
 working ESO target until those independent cutover requirements pass.
 
@@ -458,12 +488,11 @@ actual source representation first, then evaluate an app-local maintained
 serialization library against the unchanged OpenSSH reference and retained ESO
 contract. All existing exact-byte checks remain strict in the meantime.
 
-`runtime-item-missing` at `runtime-discovery` means the narrow item does not yet
-exist, not that its values failed parity. The batch above runs the next safe
-**creation preview**, not `--verify-consumers` or `--apply`. Only after that preview
-passes and the new-source contract is explicitly approved should the separate
-creation step above run. Broad-token relocation/replacement and revocation remain
-independent requirements before app-scoped Connect token distribution.
+`runtime-item-missing` at `runtime-discovery` identifies a missing or inaccessible
+item, not a credential mismatch. Creation and source/consumer parity have now
+passed for the exact item above; do not repeat creation or treat the earlier
+preview as the latest gate. The next new gate is its Operator replacement check.
+No app-scoped Connect token distribution is needed for these projections.
 
 ### Cloudflare preservation incident: mutations disabled
 
@@ -628,9 +657,10 @@ against replacement bytes with a captured `op read --no-newline`. A missing or
 changed reference fails even if metadata and the app's two ESO keys pass.
 Do not recreate fields, change values or edit source JSON to satisfy the checker.
 
-Langfuse's reviewed metadata has exactly one empty-label URL with a nonempty
+Langfuse, GitHub Hermes and n8n each have reviewed metadata with one empty-label
+URL with a nonempty
 href and an empty normalized Operator key, with no field-key collision. Operator
-1.12.1 skips it before copying fields. Only this source may have that single
+1.12.1 skips it before copying fields. Only these exact sources may have that single
 empty-label URL; nonempty labels (even those normalizing to empty), multiple
 URLs, files and any extra replacement key remain blocked. The href is never
 displayed or copied by this check. Exact reviewed field metadata and complete
@@ -652,7 +682,7 @@ If versions match but ESO bytes differ, inspect item history and ESO freshness
 privately before any cutover. Share only PASS/FAIL/INFO lines, not CLI or
 Kubernetes JSON. This agent cannot read Secrets or
 OnePasswordItems; do not broaden RBAC or bypass it with pods/exec. No arguments
-checks all sixteen staged checks. MySQL retains its Kubernetes-only comparison;
+checks all seventeen staged checks. MySQL retains its Kubernetes-only comparison;
 n8n also validates the reviewed source metadata and bytes. The seven earlier
 checks require the consolidated source-label batch above before they can pass.
 

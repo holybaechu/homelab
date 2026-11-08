@@ -173,6 +173,16 @@ class StagingVerificationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     staging.verify_source(source, replacement, contract)
 
+    def test_runtime_source_rejects_broad_token_even_when_replacement_matches(self):
+        contract = staging.CONTRACTS["hermes-runtime-connect"]
+        source, replacement = self.source_fixture(contract)
+        source["fields"].append({"id": "dxraaqrzo4qi6p3swaak5ebyue",
+                                 "label": "onepassword-access-token", "type": "CONCEALED",
+                                 "value": "PRIVATE_TEST_ONLY"})
+        replacement["data"]["onepassword-access-token"] = base64.b64encode(b"PRIVATE_TEST_ONLY").decode()
+        with self.assertRaisesRegex(staging.CheckFailure, "source-field-ids"):
+            staging.verify_source(source, replacement, contract)
+
     def test_source_drift_uri_labels_and_extra_content_fail_closed(self):
         contract = staging.CONTRACTS["zipline-connect"]
         source, replacement = self.source_fixture(contract)
@@ -381,11 +391,16 @@ class StagingVerificationTests(unittest.TestCase):
         self.assertNotIn("PRIVATE", output)
         self.assertNotIn("PASS", output)
 
-    def test_langfuse_skipped_url_requires_strict_source_and_replacement_parity(self):
-        contract = staging.CONTRACTS["langfuse-connect"]
+    def test_reviewed_empty_url_requires_strict_source_and_replacement_parity(self):
+        for name in ("langfuse-connect", "github-connect", "n8n-connect"):
+            with self.subTest(contract=name):
+                self.check_skipped_url_parity(staging.CONTRACTS[name])
+
+    def check_skipped_url_parity(self, contract):
         source, replacement = self.source_fixture(contract)
         source["urls"] = [{"label": "", "href": "PRIVATE_URL"}]
         staging.verify_source(source, replacement, contract)
+        key = next(iter(replacement["data"]))
         for mutate in (
             lambda s, r: s["urls"].append(copy.deepcopy(s["urls"][0])),
             lambda s, r: s["urls"][0].update(href=""),
@@ -396,8 +411,8 @@ class StagingVerificationTests(unittest.TestCase):
             lambda s, r: s["fields"].append(copy.deepcopy(s["fields"][0])),
             lambda s, r: r["data"].update({"": base64.b64encode(b"PRIVATE_URL").decode()}),
             lambda s, r: r["data"].update({"PRIVATE_KEY": base64.b64encode(b"PRIVATE_URL").decode()}),
-            lambda s, r: r["data"].pop("salt"),
-            lambda s, r: r["data"].update(salt=base64.b64encode(b"changed\n").decode()),
+            lambda s, r: r["data"].pop(key),
+            lambda s, r: r["data"].update({key: base64.b64encode(b"changed\n").decode()}),
         ):
             changed_source, changed_replacement = copy.deepcopy((source, replacement))
             mutate(changed_source, changed_replacement)
@@ -410,15 +425,20 @@ class StagingVerificationTests(unittest.TestCase):
             staging.verify_source(other_source, other_replacement, zipline)
 
     def test_url_diagnostics_hide_labels_and_values_and_reject_unreviewed_urls(self):
-        contract = staging.CONTRACTS["langfuse-connect"]
+        for name in ("langfuse-connect", "github-connect", "n8n-connect"):
+            with self.subTest(contract=name):
+                self.check_url_diagnostics(staging.CONTRACTS[name])
+
+    def check_url_diagnostics(self, contract):
         source, replacement = self.source_fixture(contract)
+        key = next(iter(replacement["data"]))
         for label, empty, collision, reviewed in (
             ("", True, False, False),
             ("PRIVATE_LABEL", False, False, False),
             (" ", True, False, False),
             ("\uc790\uaca9", True, False, False),
-            ("salt", False, True, True),
-            (" salt ", False, True, True),
+            (key, False, True, True),
+            (" " + key + " ", False, True, True),
         ):
             source["urls"] = [{"label": label, "href": "PRIVATE_URL"}]
             output = "\n".join(staging.source_metadata_summary(source, contract))
