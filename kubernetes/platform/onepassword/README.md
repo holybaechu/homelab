@@ -238,8 +238,15 @@ to `CORE_SECRET` and `OAUTH_OIDC_CLIENT_SECRET`. Its Hermes API token is not
 injected. The existing Reloader auto policy observes the replacement; the image
 entrypoint, single-writer strategy, PGlite database and upload PVCs are unchanged.
 Keep `zipline-env` on ESO for rollback: restore its original `envFrom` and remove
-the two explicit projections together. Langfuse still uses ESO pending its own
-administrative parity PASS. Operator auto-restart remains off.
+the two explicit projections together. Langfuse's administrative metadata and
+exact source/replacement/ESO byte gate has also passed. Its Web, Worker and four
+backends now explicitly select `langfuse-connect` keys through the pinned chart's
+Secret interfaces and backend environment mappings. No whole-item mount or
+`envFrom` is used; `database-url` and notes remain unprojected. Keep `langfuse-env`
+on ESO for rollback, restoring names and keys in both Langfuse manifests together.
+The shared `hermes-langfuse` target remains on ESO and Hermes is unchanged.
+Six of the 23 target contracts now use Operator replacements; all 23 ESO targets
+remain for rollback or active consumers. Operator auto-restart remains off.
 
 ### Cloudflare stays on ESO
 
@@ -370,7 +377,7 @@ displayed or copied by this check. Exact reviewed field metadata and complete
 source/replacement/ESO byte parity are still required; matching item versions
 alone is insufficient. No source edits or URL deletion are needed.
 
-Before Langfuse cutover, fetch and run the updated read-only checker in the
+For future Langfuse revalidation, fetch and run the read-only checker in the
 administrator's authenticated Windows checkout, returning only PASS/FAIL/INFO:
 
 ```powershell
@@ -378,7 +385,8 @@ git fetch origin main
 git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - langfuse-connect
 ```
 
-Langfuse remains on ESO until that independent check passes.
+The independent Langfuse check passed before its consumer cutover; rerun it
+before any future source-label or key-contract change.
 
 If versions match but ESO bytes differ, inspect item history and ESO freshness
 privately before any cutover. Share only PASS/FAIL/INFO lines, not CLI or

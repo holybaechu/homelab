@@ -79,8 +79,8 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: langfuse-env
-                  key: POSTGRES_PASSWORD
+                  name: langfuse-connect
+                  key: postgresql-password
           securityContext:
             runAsUser: 999
             runAsGroup: 999
@@ -121,8 +121,8 @@ spec:
             - name: CLICKHOUSE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: langfuse-env
-                  key: CLICKHOUSE_PASSWORD
+                  name: langfuse-connect
+                  key: clickhouse-password
           securityContext:
             runAsUser: 101
             runAsGroup: 101
@@ -132,7 +132,7 @@ spec:
               drop: [ALL]
           startupProbe:
             exec: &clickhouse-probe
-              command: [wget, --quiet, --output-document=/dev/null, http://127.0.0.1:8123/ping]
+              command: [wget, --quiet, --output-document=/dev/null, 'http://127.0.0.1:8123/ping']
             failureThreshold: 60
             periodSeconds: 5
           readinessProbe:
@@ -173,8 +173,8 @@ spec:
             - name: REDIS_AUTH
               valueFrom:
                 secretKeyRef:
-                  name: langfuse-env
-                  key: REDIS_AUTH
+                  name: langfuse-connect
+                  key: redis-auth
           securityContext:
             runAsUser: 999
             runAsGroup: 999
@@ -214,8 +214,8 @@ spec:
             - name: MINIO_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: langfuse-env
-                  key: MINIO_ROOT_PASSWORD
+                  name: langfuse-connect
+                  key: minio-root-password
             - name: MC_HOST_local
               value: http://$(MINIO_ROOT_USER):$(MINIO_ROOT_PASSWORD)@127.0.0.1:9090
           securityContext:

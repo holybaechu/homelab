@@ -55,18 +55,18 @@ spec:
             - ALL
       salt:
         secretKeyRef:
-          name: langfuse-env
-          key: SALT
+          name: langfuse-connect
+          key: salt
       encryptionKey:
         secretKeyRef:
-          name: langfuse-env
-          key: ENCRYPTION_KEY
+          name: langfuse-connect
+          key: encryption-key
       nextauth:
         url: https://langfuse.${DOMAIN}
         secret:
           secretKeyRef:
-            name: langfuse-env
-            key: NEXTAUTH_SECRET
+            name: langfuse-connect
+            key: nextauth-secret
       features:
         telemetryEnabled: false
         signUpDisabled: true
@@ -100,8 +100,8 @@ spec:
         - name: AUTH_AUTHENTIK_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
-              name: langfuse-env
-              key: AUTH_AUTHENTIK_CLIENT_SECRET
+              name: langfuse-connect
+              key: oidc-client-secret
         - name: AUTH_AUTHENTIK_ISSUER
           value: https://auth.${DOMAIN}/application/o/langfuse
         - name: AUTH_AUTHENTIK_ALLOW_ACCOUNT_LINKING
@@ -121,13 +121,13 @@ spec:
         - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
           valueFrom:
             secretKeyRef:
-              name: langfuse-env
-              key: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+              name: langfuse-connect
+              key: hermes-project-public-key
         - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: langfuse-env
-              key: LANGFUSE_INIT_PROJECT_SECRET_KEY
+              name: langfuse-connect
+              key: hermes-project-secret-key
         - name: LANGFUSE_INGESTION_QUEUE_PROCESSING_CONCURRENCY
           value: "2"
         - name: LANGFUSE_OTEL_INGESTION_QUEUE_PROCESSING_CONCURRENCY
@@ -147,9 +147,9 @@ spec:
       auth:
         username: langfuse
         database: langfuse
-        existingSecret: langfuse-env
+        existingSecret: langfuse-connect
         secretKeys:
-          userPasswordKey: POSTGRES_PASSWORD
+          userPasswordKey: postgresql-password
     clickhouse:
       deploy: false
       host: langfuse-backends
@@ -158,8 +158,8 @@ spec:
       database: default
       auth:
         username: langfuse
-        existingSecret: langfuse-env
-        existingSecretKey: CLICKHOUSE_PASSWORD
+        existingSecret: langfuse-connect
+        existingSecretKey: clickhouse-password
       cluster:
         enabled: false
     redis:
@@ -168,8 +168,8 @@ spec:
       port: 6379
       auth:
         username: null
-        existingSecret: langfuse-env
-        existingSecretPasswordKey: REDIS_AUTH
+        existingSecret: langfuse-connect
+        existingSecretPasswordKey: redis-auth
       tls:
         enabled: false
     s3:
@@ -182,8 +182,8 @@ spec:
         value: langfuse
       secretAccessKey:
         secretKeyRef:
-          name: langfuse-env
-          key: MINIO_ROOT_PASSWORD
+          name: langfuse-connect
+          key: minio-root-password
       eventUpload:
         prefix: events/
       mediaUpload:

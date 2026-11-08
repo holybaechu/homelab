@@ -24,8 +24,9 @@ budgets together.
 
 ## Setup and capture
 
-External Secrets reads the existing `LANGFUSE_*_REF` fields from
-`kubernetes/clusters/homelab/onepassword.yaml`. Headless initialization creates
+The 1Password Operator synchronizes the existing item into `langfuse-connect`.
+Web, Worker and all four backends explicitly select its lowercase-hyphen keys;
+notes and the legacy `database-url` are not injected. Headless initialization creates
 the Homelab organization, Hermes project and API keys. The existing owner signs
 in through Authentik; bootstrap user credentials are no longer stored or injected.
 Public sign-up is disabled. The OSS deployment retains traces until manually
@@ -66,6 +67,14 @@ Project API keys are also creation-time settings; changing `LANGFUSE_INIT_*`
 does not rotate existing records. Change them in Langfuse and update 1Password
 to match.
 ClickHouse, Redis and MinIO reload their configured credentials on restart.
+
+The administrative metadata and exact source/replacement/ESO byte gate passed
+before cutover. Reloader keeps observing the explicitly referenced replacement;
+Operator auto-restart stays disabled. Keep ESO's `langfuse-env` for rollback and
+its field-ID references unchanged. To roll back, restore the Secret names and
+key mappings in **both** `release.yaml` and `resources.yaml` together, without
+changing credentials or storage. Hermes still consumes the separate ESO-owned
+`hermes-langfuse` project-key Secret; this cutover does not restart or migrate it.
 
 Web and Worker must use the same release. Back up data before upgrades because
 startup runs database migrations; an older image may not support the migrated
