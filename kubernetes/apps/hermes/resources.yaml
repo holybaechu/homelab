@@ -71,8 +71,10 @@ spec:
               sha256sum -c /bootstrap/browser-vault.sha256
               mkdir -p /opt/browser/agent/vault_backends
               mkdir -p /opt/browser/tools
+              mkdir -p /opt/browser/plugins/browser/browser_use
               cp agent/vault_backends/onepassword.py agent/vault_backends/base.py /opt/browser/agent/vault_backends/
-              cp tools/browser_vault_tool.py /opt/browser/tools/
+              cp tools/browser_vault_tool.py tools/browser_use_cli.py tools/browser_session.py /opt/browser/tools/
+              cp plugins/browser/browser_use/provider.py /opt/browser/plugins/browser/browser_use/
               git -C /opt/browser apply --check /bootstrap/browser-vault-connect.patch
               git -C /opt/browser apply /bootstrap/browser-vault-connect.patch
               cp /bootstrap/qmd-index.yml /opt/data/qmd/config/index.yml
@@ -667,6 +669,18 @@ spec:
             - name: browser-runtime
               mountPath: /opt/hermes/tools/browser_vault_tool.py
               subPath: tools/browser_vault_tool.py
+              readOnly: true
+            - name: browser-runtime
+              mountPath: /opt/hermes/tools/browser_use_cli.py
+              subPath: tools/browser_use_cli.py
+              readOnly: true
+            - name: browser-runtime
+              mountPath: /opt/hermes/tools/browser_session.py
+              subPath: tools/browser_session.py
+              readOnly: true
+            - name: browser-runtime
+              mountPath: /opt/hermes/plugins/browser/browser_use/provider.py
+              subPath: plugins/browser/browser_use/provider.py
               readOnly: true
             - name: browser-vault-credentials
               mountPath: /var/run/hermes-browser-vault
