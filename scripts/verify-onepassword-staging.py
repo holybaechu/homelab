@@ -60,17 +60,19 @@ CONTRACTS = {
     },
     "cloudflare-dns": {
         "namespace": "cert-manager", "name": "cloudflare-connect",
-        "item_id": "x62vzi4s2sdnerrjev6pp5ndnu",
-        "allowed": {"notes-plain", "username", "credential", "type", "filename", "valid-from", "expires", "hostname"},
+        "item_id": "34qgxb73mblpjwblihxkmu6uam",
+        "allowed": {"credential"},
         "sources": {"cloudflare-dns": {"api-token": "credential"}},
-        "notes_label": "notes-plain", "required_fields": {"credential"},
+        "required_fields": {"credential"}, "cloudflare_rollback": True,
+        "category": "SECURE_NOTE", "empty_notes": True,
     },
     "cloudflare-ddns": {
         "namespace": "homelab", "name": "cloudflare-connect",
-        "item_id": "x62vzi4s2sdnerrjev6pp5ndnu",
-        "allowed": {"notes-plain", "username", "credential", "type", "filename", "valid-from", "expires", "hostname"},
+        "item_id": "34qgxb73mblpjwblihxkmu6uam",
+        "allowed": {"credential"},
         "sources": {"cloudflare-ddns": {"CLOUDFLARE_API_TOKEN": "credential"}},
-        "notes_label": "notes-plain", "required_fields": {"credential"},
+        "required_fields": {"credential"}, "cloudflare_rollback": True,
+        "category": "SECURE_NOTE", "empty_notes": True,
     },
     "mysql-connect": {
         "namespace": "homelab", "name": "mysql-connect",
@@ -206,11 +208,8 @@ SOURCE_LABELS = {
         "hermes_webhook_secret": ("hermes_webhook_secret", None),
         "owner_password_hash": ("owner_password_hash", None),
     }),
-    "x62vzi4s2sdnerrjev6pp5ndnu": ("Cloudflare DNS", {
-        "username": ("username", None), "credential": ("credential", None),
-        "type": ("type", None), "filename": ("filename", None),
-        "validFrom": ("valid-from", None), "expires": ("expires", None),
-        "hostname": ("hostname", None),
+    "34qgxb73mblpjwblihxkmu6uam": ("Cloudflare DNS Runtime", {
+        "credential": ("credential", None),
     }),
     "n2olk4p3ngumyuttl6b7itutba": ("AdGuard Home", {
         "username": ("username", None), "password": ("password", None),
@@ -427,6 +426,7 @@ def verify_source(source, replacement, contract):
     )
     if (source["id"] != item_id or source["vault"]["id"] != VAULT
             or source["title"] != title or source.get("files")
+            or (contract.get("category") and source.get("category") != contract["category"])
             or (urls and not skipped_url)):
         raise CheckFailure("source-identity-or-extra-content")
     fields = {f["id"]: f for f in source["fields"]}
@@ -455,6 +455,8 @@ def verify_source(source, replacement, contract):
             raise CheckFailure("source-key-empty-or-collision")
         keys.add(key)
         value = field.get("value", "")
+        if contract.get("empty_notes") and field_id == "notesPlain" and value != "":
+            raise CheckFailure("source-notes-not-empty")
         required = field_id in contract.get("required_fields", set(labels))
         if value is None and not required and item_id in {
                 "x62vzi4s2sdnerrjev6pp5ndnu", "ioa2eqgh3qmg36ecdjvwx7bpo4"}:
@@ -472,6 +474,37 @@ def verify_source(source, replacement, contract):
     if expected != actual:
         different = sorted(key for key in expected if expected[key] != actual[key])
         raise CheckFailure("source-replacement-bytes keys=" + ",".join(different))
+
+
+def verify_cloudflare_rollback(source, replacement):
+    # GET-only recovered legacy contract; never normalize or write its DATE fields.
+    metadata = {
+        "notesPlain": ("notesPlain", "STRING", "NOTES"),
+        "username": ("\uc0ac\uc6a9\uc790\uba85", "STRING", None),
+        "credential": ("\uc790\uaca9 \uc99d\uba85", "CONCEALED", None),
+        "type": ("\uc720\ud615", "MENU", None),
+        "filename": ("\ud30c\uc77c \uc774\ub984", "STRING", None),
+        "validFrom": ("\ucde8\ub4dd\uc77c", "DATE", None),
+        "expires": ("\ub9cc\ub8cc\uc77c", "DATE", None),
+        "hostname": ("\ud638\uc2a4\ud2b8 \uc774\ub984", "STRING", None),
+    }
+    if (source["id"] != "x62vzi4s2sdnerrjev6pp5ndnu" or source["vault"]["id"] != VAULT
+            or source["title"] != "Cloudflare DNS" or source.get("category") != "API_CREDENTIAL"
+            or source.get("sections") or source.get("files") or source.get("urls")):
+        raise CheckFailure("rollback-source-identity-or-content")
+    fields = {f["id"]: f for f in source["fields"]}
+    if len(fields) != len(source["fields"]) or set(fields) != set(metadata):
+        raise CheckFailure("rollback-source-field-ids")
+    for field_id, (label, kind, purpose) in metadata.items():
+        field = fields[field_id]
+        if (field.get("label") != label or field.get("type") != kind
+                or field.get("purpose") != purpose or field.get("section")):
+            raise CheckFailure(f"rollback-source-metadata field={field_id}")
+        if kind == "DATE" and "value" in field:
+            raise CheckFailure(f"rollback-source-date-present field={field_id}")
+    value = fields["credential"].get("value")
+    if not isinstance(value, str) or not value or decode_data(replacement) != {"credential": value.encode("utf-8")}:
+        raise CheckFailure("rollback-source-replacement-bytes")
 
 
 def verify_references(replacement, contract):
@@ -938,6 +971,12 @@ def main(argv=None):
             if contract.get("references"):
                 attempt("verify source-reference/" + contract['item_id'],
                         verify_references, replacement, contract)
+        if contract.get("cloudflare_rollback"):
+            original = attempt("read 1Password/Item/x62vzi4s2sdnerrjev6pp5ndnu",
+                               read_source, "x62vzi4s2sdnerrjev6pp5ndnu")
+            if original is not None and replacement is not None:
+                attempt("verify recovered-rollback-source", verify_cloudflare_rollback,
+                        original, replacement)
         if errors:
             failed = True
             for error in errors:

@@ -129,7 +129,7 @@ duplicates are not a replacement for the existing source of truth.
 | identity | `headscale-oidc` | `client-secret` file referenced by Headscale's config |
 | networking | `headscale-gateway` | `authkey`; preserve gateway identity/state and Tailscale entrypoint |
 | networking | `adguard-credentials` | Rendered `AdGuardHome.yaml`; strict username/bcrypt validation, JSON quoting, cluster substitutions, UI-edit-preserving initializer and TLS mount |
-| homelab | `cloudflare-ddns` | `CLOUDFLARE_API_TOKEN`; Injector candidate only with verified `/bin/ddns` entrypoint and rotation trigger |
+| homelab | `cloudflare-ddns` | `CLOUDFLARE_API_TOKEN`; explicit Operator key, unchanged image entrypoint and Reloader policy |
 | homelab | `zipline-env` | `CORE_SECRET`, `OAUTH_OIDC_CLIENT_SECRET`; explicit Operator keys, unchanged image entrypoint and Reloader policy |
 | homelab | `immich` | `DB_PASSWORD` for both server and PostgreSQL, plus JSON-escaped OIDC `immich.json` and all current config fields |
 | homelab | `qbittorrent-credentials` | Rendered `managed.conf`; strict username/PBKDF2 validation and JSON quoting; retain merge.py, torrent state and root/s6 startup |
@@ -287,7 +287,7 @@ immediate Hermes restart:
 
 | Check | Exact existing contract compared |
 | --- | --- |
-| `cloudflare-dns`, `cloudflare-ddns` | Blocked on the real DATE preservation incident; keep exact `api-token` / `CLOUDFLARE_API_TOKEN` bytes and existing ESO consumers |
+| `cloudflare-dns`, `cloudflare-ddns` | Narrow runtime item staged after verified recovery/creation; both namespace parity gates required before switching existing ESO consumers |
 | `authentik-connect` | `authentik-postgresql` plus all eight `authentik-env` keys, checking source metadata/bytes and ownership for each of its five source items in `identity` |
 | `immich-connect` | `immich` database bytes and the entire parsed JSON config, including the exact OIDC string; also `hermes-immich` API-key bytes |
 | `adguard-connect` | Complete `adguard-credentials` file bytes, including validated username/bcrypt hash and cluster substitutions |
@@ -317,8 +317,8 @@ website URL label (`웹사이트`) whose Operator key is empty. The checker perm
 only that exact label for those exact items (or no URL), with a nonempty href,
 no files and complete source/replacement key/byte equality. It never prints the
 URL, accepts no arbitrary skipped labels and does not permit extra Secret keys.
-Cloudflare's real API adaptation and the token-bearing Hermes source remain
-blocked as described below; staging or a nine-contract gate is not full ESO retirement.
+Cloudflare's final consumer cutovers still require both namespace parity gates
+below; staging or a nine-contract gate is not full ESO retirement.
 
 ### Remaining Hermes, n8n and signing source batch
 
@@ -885,8 +885,13 @@ both retained ESO targets before attempting creation. No credentials enter argv,
 files or displayed output. It requires the administrator's existing personal CLI
 session and Kubernetes Secret read access; agent RBAC is not widened.
 
-On the administrator's Windows checkout (preserving unrelated local edits), run
-the default read-only creation preview:
+**Creation is complete:** the administrator's real creation PASS verified narrow
+item `34qgxb73mblpjwblihxkmu6uam`, unchanged original source and both retained ESO
+credential bytes. Personal CLI sign-in resolved the earlier source-get failure.
+Do not repeat creation, recovery confirmation or diagnostics for that resolved
+failure. The commands below document recovery/creation only, not the next gate.
+
+The original administrative read-only creation preview was:
 
 ```powershell
 git fetch origin main
@@ -930,15 +935,40 @@ that fails has an **unknown outcome**: inspect privately before any rerun; do no
 assume nothing was written. A preview is not an authenticated creation or staging
 PASS. Return only fixed PASS/FAIL diagnostics and the nonsecret new item ID.
 
-After that real administrative PASS, use the returned ID in a separate staging PR:
-update `CLOUDFLARE_CONNECT_ITEM_PATH` and both Cloudflare contracts in
-`verify-onepassword-staging.py` to the new exact item identity/title and two-field
-metadata (`credential`, empty `notesPlain`; no DATE fields). Keep the original
-`CLOUDFLARE_TOKEN_REF` and both ESO objects unchanged for rollback. Reconcile the
-two existing `cloudflare-connect` OnePasswordItems without changing consumers,
-then require a fresh administrative gate for both namespaces: Ready, exact
-itemPath/owner UID, complete replacement key set, new-item/source bytes, and
-retained ESO bytes. Source metadata or Flux inventory alone does not prove this.
+`CLOUDFLARE_CONNECT_ITEM_PATH` and both checker contracts now select that exact
+narrow item. The two existing `cloudflare-connect` OnePasswordItems in
+`cert-manager` and `homelab` are consumer-free staging resources; Operator
+auto-restart remains disabled. The original `CLOUDFLARE_TOKEN_REF`, both ESO
+objects and active consumer references remain unchanged.
+
+After Flux applies staging to both namespaces, run this **one read-only batch**
+from the administrator's existing personal CLI/Kubernetes context:
+
+```powershell
+git fetch origin main
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - cloudflare-dns cloudflare-ddns
+```
+
+Require both PASS lines. Each namespace independently checks Ready, exact
+itemPath and owner UID, the complete singleton replacement key set `credential`,
+runtime identity/title/category and exact field IDs/labels/types, empty notes,
+no sections/files/URLs/DATE fields, source-to-replacement bytes and retained ESO
+bytes. It also GET-validates the original Korean metadata and strictly absent
+DATE values against replacement bytes; it does not expect the unsafe old English
+labels or mutate either item. No values, raw JSON or digests are displayed.
+Flux inventory proves application of staging, not Secret readiness or byte parity.
+
+The prepared final consumer PR changes only:
+
+- ClusterIssuer `letsencrypt`: `apiTokenSecretRef` becomes
+  `cloudflare-connect/credential` in cert-manager's existing cluster-resource
+  namespace, preserving ACME account, DNS zone selector and TLS Secret interface.
+- DDNS: replace `envFrom: cloudflare-ddns` with explicit
+  `CLOUDFLARE_API_TOKEN` from `cloudflare-connect/credential`, preserving all host
+  names, zone/domain settings, entrypoint, security context and existing Reloader.
+
+Do not merge that PR until this batch passes. Keep both ESO targets during the
+rollback window. No application Connect token is needed.
 
 Freeze both copies through the rollback window. Only after these gates, switch
 cert-manager's explicit `apiTokenSecretRef` to `cloudflare-connect/credential`
@@ -948,11 +978,44 @@ authenticated DDNS update, plus a deliberate safe item refresh/reload exercise.
 After both cutovers, the narrow item is the **sole rotation authority**; the
 original is frozen rollback material, not a second editable source. Coordinate
 any rotation with rollback retirement; do not leave a silently diverging duplicate.
+Future provider credential changes update only this narrow item's `credential`
+and the same two Operator projections together; do not regenerate a credential
+merely to migrate, or continue rotating the frozen original/ESO copy. Exercise a
+safe metadata-only refresh/reload without writing the original; a real provider
+rotation needs a coordinated Cloudflare credential change and rollback plan.
 
 ### Final ESO retirement gates
 
 Do not remove ESO in the Cloudflare preparation/staging PR. In a separate cleanup,
 require all of the following in order:
+
+The rendered inventory is the 23 `(namespace, target)` pairs in the contract
+table above, not the number of checker names. Repository removal scope is
+`platform/config/secrets.yaml`, `identity/secrets.yaml`, `access/secrets.yaml`,
+app `secrets.yaml` files for Hermes/n8n/MySQL/Langfuse, and only the ExternalSecret
+documents in app `resources.yaml` for AdGuard/qBittorrent/Immich/Zipline/DDNS
+(all paths under `kubernetes/`). Remove their Kustomize resource entries only
+when a file becomes empty; preserve workloads, templates and unrelated objects.
+Then remove the ESO-only documents in `platform/controllers/releases.yaml` and
+`clusters/homelab/sources.yaml`, the ExternalSecret rule in
+`apps/kustomizeconfig.yaml`, and unused ESO-only `*_REF`/vault settings from
+`clusters/homelab/onepassword.yaml`. Preserve infrastructure references such as
+`TALOS_STATE_PASSPHRASE_REF` and `HERMES_TALOSCONFIG_REF`, and keep shared refresh
+settings still used by Operator. Update the obsolete ESO guidance in `AGENTS.md`
+with the final Operator contract; do not delete useful security safeguards.
+
+The agent cannot list ESO resources, Secret owners, ClusterIssuers or CRDs.
+The administrator must privately discover **both** API groups with
+`kubectl api-resources --api-group=external-secrets.io` and
+`kubectl api-resources --api-group=generators.external-secrets.io`, inventory every
+discovered resource cluster-wide (including generators, push and cluster-push
+resources), and inspect owner/deletion metadata without publishing Secret data.
+Inventory controller/webhook Deployments, Services, admission webhooks,
+ServiceAccounts and Role/ClusterRole bindings by the actual Helm release metadata;
+no repo-authored RBAC match does not establish that chart-created RBAC is absent.
+Do not delete either API group's CRDs until all of its instances and consumers
+are exhaustively accounted for. Keep inventories private; only names/counts,
+policy/ownership flags and fixed verification results need be shared.
 
 1. An administrator inventories all live ExternalSecrets and namespaced/cluster
    stores (including outside the rendered set) and reconciles them against all
