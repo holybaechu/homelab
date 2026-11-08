@@ -622,13 +622,76 @@ def verify_immich_config(replacement, original, template):
         raise CheckFailure("immich-config-content")
 
 
+def verify_signing_identity(raw, reference, public):
+    from cryptography.hazmat.primitives import serialization as s
+
+    if (private_key_format(raw) != "pkcs8"
+            or private_key_format(reference) != "openssh"):
+        raise CheckFailure("signing-container-format")
+    key = s.load_pem_private_key(raw, password=None)
+    old = s.load_ssh_private_key(reference, password=None)
+    encoded = key.private_bytes(s.Encoding.PEM, s.PrivateFormat.OpenSSH, s.NoEncryption())
+    converted = s.load_ssh_private_key(encoded, password=None)
+    private = lambda k: k.private_bytes(s.Encoding.DER, s.PrivateFormat.PKCS8, s.NoEncryption())
+    if private(key) != private(old) or private(key) != private(converted):
+        raise CheckFailure("signing-private-identity")
+    supplied_public = s.load_ssh_public_key(public)
+    public_bytes = lambda k: k.public_bytes(s.Encoding.DER, s.PublicFormat.SubjectPublicKeyInfo)
+    if public_bytes(supplied_public) != public_bytes(key.public_key()):
+        raise CheckFailure("signing-public-identity")
+    return encoded
+
+
+def signing_conversion_gate():
+    stage = "dependency"
+    try:
+        import cryptography  # Only this opt-in gate requires the serialization library.
+        replacements = {}
+        for name in ("github-connect", "signing-connect"):
+            contract = CONTRACTS[name]
+            stage = "read-" + name
+            item = read_resource("onepassworditem", name, "homelab")
+            replacement = read_resource("secret", name, "homelab")
+            source = read_source(contract["item_id"])
+            stage = "verify-" + name
+            verify(item, replacement, {}, contract)
+            verify_source(source, replacement, contract)
+            replacements[name] = decode_data(replacement)
+        stage = "retained-contract"
+        original = decode_data(read_resource("secret", "hermes-coder-git", "homelab"))
+        reference = next(iter(CONTRACTS["signing-connect"]["references"]))
+        result = subprocess.run(["op", "read", "--no-newline", reference],
+                                stdin=subprocess.DEVNULL, capture_output=True, check=True)
+        if (set(original) != {"github-token", "signing-key"}
+                or not result.stdout or original["signing-key"] != result.stdout
+                or original["github-token"] != replacements["github-connect"]["credential"]):
+            raise CheckFailure("retained-reference-bytes")
+        stage = "conversion-identity"
+        verify_signing_identity(replacements["signing-connect"]["private-key"], result.stdout,
+                                replacements["signing-connect"]["public-key"])
+    except Exception:
+        # Library/CLI errors may embed key data; expose only fixed execution stages.
+        print(f"FAIL signing-conversion: stage={stage} no-writes", file=sys.stderr)
+        return 1
+    print("PASS signing-conversion: Ready, ownership, source metadata/raw bytes, "
+          "retained GitHub/OpenSSH bytes, private/public identity and OpenSSH conversion; "
+          "no writes or consumer cutover")
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checks", nargs="*", metavar="CHECK",
                         help="check names; default: all staged replacements")
     parser.add_argument("--source-metadata", action="store_true",
                         help="read only 1Password structure; no Kubernetes or byte checks")
+    parser.add_argument("--signing-conversion", action="store_true",
+                        help="read-only PKCS8/OpenSSH identity gate; requires cryptography")
     args = parser.parse_args(argv)
+    if args.signing_conversion:
+        if args.source_metadata or args.checks:
+            parser.error("--signing-conversion cannot be combined with other checks")
+        return signing_conversion_gate()
     if args.source_metadata and (not args.checks or any(
             name not in CONTRACTS or CONTRACTS[name]["item_id"] not in SOURCE_LABELS
             for name in args.checks)):

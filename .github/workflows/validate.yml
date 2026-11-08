@@ -48,8 +48,10 @@ jobs:
             fi
             printf '\n---\n' >> "$RUNNER_TEMP/rendered/authored.yaml"
           done
-      - name: Check local-path storage safeguards
-        run: python3 -m unittest discover -s tests -v
+      - name: Check local-path storage and credential safeguards
+        run: |
+          python3 -m pip install cryptography==50.0.2
+          python3 -m unittest discover -s tests -v
       - name: Validate native Kubernetes schemas
         run: |
           # Skip CRD definitions and custom resources; validate native workloads and configuration.

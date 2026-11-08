@@ -487,9 +487,41 @@ reference-byte failure additionally reports replacement/reference formats; it
 never prints private/public key values, fingerprints, sizes or digests. Header
 classification is diagnostic, not cryptographic validation or a parity PASS.
 Do not equate different serializations or add a guessed converter: require the
-actual source representation first, then evaluate an app-local maintained
-serialization library against the unchanged OpenSSH reference and retained ESO
-contract. All existing exact-byte checks remain strict in the meantime.
+actual source representation first. The administrator has now identified raw
+PKCS#8 versus the retained OpenSSH reference. The opt-in `--signing-conversion`
+gate uses [PyCA cryptography's official serialization API](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/serialization/)
+(version 50.0.2, also present in the running Hermes Python environment), not homemade crypto.
+It validates both contributing Operator items' metadata, ownership, Ready status
+and exact raw source bytes, requires retained ESO signing bytes to equal the
+captured original OpenSSH reference, and checks the GitHub credential bytes.
+It then converts PKCS#8 in memory, reloads the OpenSSH result and compares complete
+canonical private-key bytes and the reviewed public key. OpenSSH serialization
+may use random container check bytes, so its output need not be byte-identical
+to another serialization of the same key; this new identity gate does **not**
+relax the default exact-byte checks. No keys, fingerprints or digests are printed
+or written, and a PASS does not mount a converter or switch Git credentials.
+
+Run the two outstanding non-Cloudflare gates together from the authenticated
+administrator context (a disposable venv keeps the package out of the checkout):
+
+```powershell
+git fetch origin main
+$signingVenv = Join-Path $env:TEMP 'homelab-signing-check'
+mise x python@3 -- python -m venv $signingVenv
+$signingPython = Join-Path $signingVenv 'Scripts/python.exe'
+& $signingPython -m pip install cryptography==50.0.2
+git show origin/main:scripts/verify-onepassword-staging.py | & $signingPython - --signing-conversion
+$signingExit = $LASTEXITCODE
+git show origin/main:scripts/verify-onepassword-staging.py | & $signingPython - opencloud-connect
+$servicesExit = $LASTEXITCODE
+Write-Output "INFO remaining-gates: signing-exit=$signingExit services-exit=$servicesExit"
+```
+
+Return only PASS/FAIL/INFO. The agent cannot run these privileged reads; local
+synthetic-key/OpenSSH parser tests are not an administrator parity PASS. A live
+signing PASS is required before wiring this library into the existing private
+credential initializer; retain ESO until then. No further Cloudflare writes or
+recovery are authorized by these checks.
 
 `runtime-item-missing` at `runtime-discovery` identifies a missing or inaccessible
 item, not a credential mismatch. Creation and source/consumer parity have now
