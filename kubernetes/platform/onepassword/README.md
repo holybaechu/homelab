@@ -1006,6 +1006,30 @@ Then remove the ESO-only documents in `platform/controllers/releases.yaml` and
 settings still used by Operator. Update the obsolete ESO guidance in `AGENTS.md`
 with the final Operator contract; do not delete useful security safeguards.
 
+Before deletion, run this single read-only inventory in the administrator's
+existing Kubernetes context (no 1Password CLI reads are needed):
+
+```powershell
+git fetch origin main
+git show origin/main:scripts/inventory-eso-retirement.py | mise x python@3 -- python -
+```
+
+Return its fixed PASS/FAIL/INFO output only. It discovers every served resource
+kind in both ESO API groups, reconciles live targets against the exact 23-target
+set, checks retained Secret owner UIDs/policies, and checks all 20 replacement
+items' Ready/path/Secret-owner metadata. It also checks live consumer references
+(including ClusterIssuer, Helm and Flux interfaces) and inventories Helm-owned
+controller/webhook/RBAC objects and both groups' CRDs. Secret query **output**
+selects metadata only (kubectl still requires normal Secret-read permission);
+no Secret values, digests, raw JSON or exception bodies are printed or persisted.
+It cannot prove authentication, byte parity, refresh,
+backup availability, unused token scope or rollback closure. The accepted
+administrative parity results remain valid evidence; do not repeat them merely
+to run this inventory. A denied/incomplete read fails closed. Unknown resources
+require review, not automatic deletion. This is a bounded inventory of the known
+consumer interfaces, not proof that an unknown controller outside those
+interfaces cannot reference a Secret; review any non-repository consumers too.
+
 The agent cannot list ESO resources, Secret owners, ClusterIssuers or CRDs.
 The administrator must privately discover **both** API groups with
 `kubectl api-resources --api-group=external-secrets.io` and
@@ -1028,12 +1052,24 @@ policy/ownership flags and fixed verification results need be shared.
 2. Every replacement passes Ready, exact item identity and owner UID/key-set/byte
    gates. Verify real consumer authentication and controlled refresh/rotation,
    preserving database/encryption identities, MySQL's coordinated SQL procedure,
-   n8n's import contract and all PVCs. Record any missing integration evidence as
+   n8n's import contract and all PVCs. A safe metadata-only refresh of an
+   authoritative narrow item and verified Operator synchronization/reload can
+   exercise propagation without rotating production credentials. Do not mutate
+   the frozen original Cloudflare item, rotate database/encryption credentials
+   just for migration, or mistake an existing Ready certificate for a DNS01 test
+   with the new Secret. Use an actual new DNS01 Order/Challenge and resulting
+   Ready Certificate, or explicitly retain DNS01 as unverified; a read-only
+   provider token check alone cannot prove DNS write permission. Record any
+   missing integration evidence as
    unverified and block retirement; healthy startup alone is insufficient. Keep
    Hermes native browser Connect compatibility as a separate unresolved gate;
    startup secret migration neither fixes it nor authorizes a token fallback.
-3. Approve the rollback window's end and inspect every original Secret's owner
-   references and ESO creation/deletion policy. With `Owner`, pruning an
+3. Close the rollback window under the authorized full-retirement scope only
+   after the preceding gates pass; no new per-application migration approval is
+   needed. Privately verify a recoverable encrypted backup of the retiring
+   contracts before deletion, with bounded retention and no plaintext export to
+   Git/logs. Inspect every original Secret's owner references and ESO
+   creation/deletion policy. With `Owner`, pruning an
    ExternalSecret can delete its Secret; do not adopt an old target into Operator
    or delete namespace/PVC/TLS resources. Remove only reviewed obsolete
    ExternalSecrets, then read back that live set empty and replacements healthy
