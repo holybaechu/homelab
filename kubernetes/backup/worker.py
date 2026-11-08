@@ -56,7 +56,7 @@ def command(args, *, env=None, timeout=3600, stdout=subprocess.PIPE, allowed=(0,
 
 def sync(source, target, excludes=(), presync=False, dereference=False):
     target.mkdir(parents=True, exist_ok=True)
-    command(['rsync', '-aHAX', '--numeric-ids', '--delete', '--delete-excluded',
+    command(['rsync', '-aHAX', '--numeric-ids', '--modify-window=-1', '--delete', '--delete-excluded',
              *(['--copy-links'] if dereference else []),
              *[f'--exclude={p}' for p in excludes], str(source) + '/', str(target) + '/'],
             allowed=(0, 24) if presync else (0,))
@@ -264,6 +264,10 @@ def upload(run, destination):
     ensure_run(run)
     if (STAGE / 'valid').read_text() != run:
         raise RuntimeError('Unsealed capture')
+    for namespace in ('identity', 'networking'):
+        manifest = json.loads((STAGE / 'capture' / namespace / 'capture.json').read_text())
+        if manifest['run'] != run:
+            raise RuntimeError('Namespace transfer is missing or stale')
     # Initialization is an explicit operator action, never an error fallback.
     output = restic(destination, ['backup', '--json', '--host', 'homelab-' + os.environ['NAMESPACE'],
                                   '--tag', 'pending', '--tag', run, str(STAGE / 'capture')], timeout=43200)

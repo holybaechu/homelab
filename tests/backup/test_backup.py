@@ -167,6 +167,17 @@ class Capture(unittest.TestCase):
         with patch.object(worker, 'STAGE', self.root):
             self.assertEqual(worker.gitops_excludes(source, selected), [])
 
+    def test_incomplete_namespace_transfer_cannot_upload(self):
+        run = '20261108T000000Z-123456ab'
+        (self.root / 'run').write_text(run)
+        (self.root / 'valid').write_text(run)
+        (self.root / 'capture/identity').mkdir(parents=True)
+        (self.root / 'capture/identity/capture.json').write_text(json.dumps({'run': 'stale'}))
+        with patch.object(worker, 'STAGE', self.root), patch.object(worker, 'restic') as restic:
+            with self.assertRaisesRegex(RuntimeError, 'stale'):
+                worker.upload(run, 'b2')
+        restic.assert_not_called()
+
     def test_endpoint_mismatch_is_rejected_before_credentials_are_read(self):
         root = self.root / 'ovh'
         root.mkdir()
@@ -222,6 +233,9 @@ class Capture(unittest.TestCase):
         shutil.copyfile(dbfile, source / 'n8n-data/database.sqlite')
         (source / 'recovery/n8n').mkdir(parents=True)
         (source / 'recovery/n8n/encryption_key').write_text('synthetic-fixture-key')
+        for namespace in ('identity', 'networking'):
+            (source / namespace).mkdir()
+            (source / namespace / 'capture.json').write_text(json.dumps({'run': '20261108T000000Z-123456ab'}))
         (source / 'uploads').mkdir()
         (source / 'uploads/body').write_bytes(b'fixture-upload')
         repo_ids = []
