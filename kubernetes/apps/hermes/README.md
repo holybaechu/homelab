@@ -179,19 +179,52 @@ redirects, and sanitized failures. Non-Connect manager and local-vault paths rem
    vault access and this token's read grants; built-in/personal vault availability
    must be verified, not inferred from a successful server connection. Never give
    this broad token to the Operator, Injector, app containers, chat, or Git.
-2. Download and review [`bootstrap-hermes-browser-vault.ps1`](../../../scripts/bootstrap-hermes-browser-vault.ps1)
-   from the exact approved commit. In the intended administrator kubectl context,
-   run `pwsh -NoProfile -File ./bootstrap-hermes-browser-vault.ps1`. Enter the token
-   only at its masked console prompt. Alternatively, `-TokenFile <private-file>`
-   reads an existing private UTF-8 file without trailing newline (the official
-   `op read --no-newline --out-file <private-file>` can export the exact reference
-   above from an authenticated administrator session). Protect/delete that private
-   file locally; do not upload it. The helper sends Secret JSON only over kubectl
-   stdin and independently checks exact read-back. It never fetches its own
-   authentication from Connect or restarts Hermes.
-3. Merge the exact CI-green head only after attached work has finished: changing
-   the bootstrap ConfigMap replaces this `Recreate` Deployment. After reconnect,
-   verify current Pod readiness and both profile settings. `browser_vault` with
+2. In a private, non-transcribed PowerShell 7.4+ session, confirm the intended
+   administrator kubectl context. Run the following for bootstrap or rotation;
+   paste the token only at the masked prompt, never into command arguments.
+   JSON travels over stdin; output and errors that could quote credentials are
+   suppressed. A failure may follow a successful write: inspect the exact Secret
+   privately before retrying; do not delete it or revoke the active token.
+
+   ```powershell
+   $ErrorActionPreference = 'Stop'
+   $PSNativeCommandUseErrorActionPreference = $false
+   $secure = Read-Host 'Read-only Hermes Connect token' -AsSecureString
+   try {
+       $token = [System.Net.NetworkCredential]::new('', $secure).Password
+       if (-not $token -or $token.Length -gt 16384 -or $token -match '\s') { throw 'Invalid token' }
+       $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($token))
+       $raw = kubectl -n homelab get secret hermes-browser-vault --ignore-not-found -o json 2>$null
+       if ($LASTEXITCODE -ne 0) { throw 'Secret read failed' }
+       if ($raw) {
+           $existing = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
+           if ($existing.type -ne 'Opaque' -or $existing.metadata.ownerReferences -or
+               $existing.metadata.deletionTimestamp -or $existing.immutable -or
+               $existing.data.Count -ne 1 -or -not $existing.data.ContainsKey('connect-token')) {
+               throw 'Unexpected Secret ownership or shape; stop for review'
+           }
+       }
+       $body = @{
+           apiVersion = 'v1'; kind = 'Secret'; type = 'Opaque'
+           metadata = @{ name = 'hermes-browser-vault'; namespace = 'homelab' }
+           data = @{ 'connect-token' = $encoded }
+       } | ConvertTo-Json -Depth 5 -Compress
+       $body | kubectl -n homelab apply --server-side --field-manager=hermes-browser-vault-bootstrap -f - *> $null
+       if ($LASTEXITCODE -ne 0) { throw 'Write outcome unknown; inspect privately before retrying' }
+       $raw = kubectl -n homelab get secret hermes-browser-vault -o json 2>$null
+       if ($LASTEXITCODE -ne 0) { throw 'Verification read failed' }
+       $verified = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
+       if ($verified.data['connect-token'] -cne $encoded) { throw 'Token read-back mismatch' }
+       'PASS: exact token read-back verified; native discovery and login still required.'
+   } catch {
+       throw 'Bootstrap/rotation failed; inspect the named Secret privately before retrying.'
+   } finally {
+       $token = $encoded = $body = $raw = $existing = $verified = $null
+       $secure.Dispose()
+   }
+   ```
+
+3. Verify current Pod readiness and both profile settings. `browser_vault` with
    `action=list` must have no Connect errors and report `connect_vaults`: every
    granted vault ID and its active Login count, including empty vaults. Compare
    these IDs with the administrator's intended supported vault set. This is
@@ -206,8 +239,8 @@ The independent `homelab/hermes-browser-vault` Secret has exactly one key,
 `connect-token`, projected only into the Hermes container. The token is read
 inside the backend on each request; it is never exported to subprocess environments
 or copied to the PVC. Missing bootstrap fails browser login closed without blocking
-unrelated Hermes startup. Rotation uses the same helper; wait for kubelet's Secret
-projection refresh and verify native discovery again, without an automatic restart.
+unrelated Hermes startup. After rotation, wait for kubelet's Secret projection
+refresh and verify native discovery again; no restart or deployment change is needed.
 Both profiles share the same Unix user and broad authorized login access; they are
 not security boundaries against each other or trusted terminal execution.
 

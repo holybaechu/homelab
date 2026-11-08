@@ -3,14 +3,12 @@ on:
   pull_request:
     paths:
       - kubernetes/apps/hermes/**
-      - scripts/bootstrap-hermes-browser-vault.ps1
       - tests/browser_vault/**
       - .github/workflows/browser-vault.yml
   push:
     branches: [main]
     paths:
       - kubernetes/apps/hermes/**
-      - scripts/bootstrap-hermes-browser-vault.ps1
       - tests/browser_vault/**
       - .github/workflows/browser-vault.yml
   workflow_dispatch:
@@ -22,8 +20,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
-      - name: Exercise administrator bootstrap with synthetic native kubectl
-        run: python3 tests/browser_vault/test_bootstrap.py
       - name: Exercise pinned native broker with synthetic Connect API and Chromium
         run: |
           docker run --rm --user 0 --shm-size=256m \
