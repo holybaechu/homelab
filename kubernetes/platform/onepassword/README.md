@@ -159,8 +159,9 @@ a generic replacement templating controller.
 from the existing items by their verified vault/item IDs. No credentials or item
 labels need changing for these two sources. MySQL and both n8n containers now use
 explicit keys from these replacements after administrative byte-parity checks.
-`mysql-env` and `n8n-env` remain for rollback, without active consumers;
-`hermes-webhook` and all existing ESO templates remain in service.
+`mysql-env` and `n8n-env` remain for rollback, without active consumers.
+Hermes also explicitly projects the verified webhook from `n8n-connect` at its
+coordinated cutover; all existing ESO templates remain reconciled for rollback.
 Do not delete either OnePasswordItem while its Secret is in use;
 the Operator finalizer deletes the corresponding Secret.
 
