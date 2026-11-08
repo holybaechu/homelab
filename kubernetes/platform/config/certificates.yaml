@@ -11,8 +11,8 @@ spec:
     - dns01:
         cloudflare:
           apiTokenSecretRef:
-            name: cloudflare-dns
-            key: api-token
+            name: cloudflare-connect
+            key: credential
       selector:
         dnsZones:
         - ${DOMAIN}

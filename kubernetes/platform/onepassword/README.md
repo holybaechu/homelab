@@ -859,8 +859,10 @@ For rollback, revert these consumer references and init/volume changes together;
 all original ESO resources and targets remain managed and available.
 
 The runtime, service, n8n and Hermes Git/signing consumer cutovers are active.
-The rendered Secret-reference inventory has 21 of 23 consumer contracts switched;
-only `cert-manager/cloudflare-dns` and `homelab/cloudflare-ddns` still consume ESO.
+The rendered Secret-reference inventory has all 23 consumer contracts switched;
+cert-manager and DDNS now select `cloudflare-connect/credential`. This final
+Cloudflare cutover requires the two-namespace administrative parity PASS before
+activation; verify live DNS01 and DDNS authentication and refresh afterward.
 All 23 original ESO targets remain
 for rollback: switched consumers do not mean deleted targets. Parity and healthy
 startup do not prove interactive authentication or credential rotation; no source
@@ -937,9 +939,9 @@ PASS. Return only fixed PASS/FAIL diagnostics and the nonsecret new item ID.
 
 `CLOUDFLARE_CONNECT_ITEM_PATH` and both checker contracts now select that exact
 narrow item. The two existing `cloudflare-connect` OnePasswordItems in
-`cert-manager` and `homelab` are consumer-free staging resources; Operator
-auto-restart remains disabled. The original `CLOUDFLARE_TOKEN_REF`, both ESO
-objects and active consumer references remain unchanged.
+`cert-manager` and `homelab` supply explicit consumer key projections after the
+administrative gate; Operator auto-restart remains disabled. The original
+`CLOUDFLARE_TOKEN_REF` and both ESO objects remain unchanged for rollback.
 
 After Flux applies staging to both namespaces, run this **one read-only batch**
 from the administrator's existing personal CLI/Kubernetes context:
