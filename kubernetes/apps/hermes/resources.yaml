@@ -608,6 +608,12 @@ spec:
             - name: langfuse-runtime
               mountPath: /opt/langfuse
               readOnly: true
+            - name: writing-for-agents
+              mountPath: /opt/data/skills/writing-for-agents
+              readOnly: true
+            - name: writing-for-agents
+              mountPath: /opt/data/profiles/coder/skills/writing-for-agents
+              readOnly: true
             - name: langfuse-runtime
               mountPath: /opt/data/plugins/langfuse
               subPath: plugin
@@ -764,6 +770,9 @@ spec:
             - name: obsidian-temporary
               mountPath: /tmp
       volumes:
+        - name: writing-for-agents
+          configMap:
+            name: hermes-writing-for-agents
         - name: talos-identity
           secret:
             secretName: hermes-talos-managed

@@ -5,6 +5,11 @@ resources:
   - onepassword.yaml
   - resources.yaml
 configMapGenerator:
+  - name: hermes-writing-for-agents
+    files:
+      - writing-for-agents/SKILL.md
+      - writing-for-agents/SKILL-MECHANICS.md
+      - writing-for-agents/LICENSE
   - name: hermes-bootstrap
     files:
       - config.yaml

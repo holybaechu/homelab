@@ -162,6 +162,24 @@ the cloud browser, so open the internal URL directly.
 
 ## Skill overrides
 
+The standalone [writing-for-agents](writing-for-agents/SKILL.md) guide is vendored
+from a pinned MIT-licensed upstream revision, with Hermes-specific invocation
+advice in [SKILL-MECHANICS.md](writing-for-agents/SKILL-MECHANICS.md). A dedicated
+ConfigMap mounts it read-only into assistant/default and coder's native skill
+directories; update its Git source rather than using `skill_manage` on the mount.
+Second Brain and coder's SOUL route instruction-writing and substantial prompt
+work to it, including learning-driven updates without granting new write access.
+
+Merging lets Flux replace the `Recreate` Pod automatically: wait until active
+assistant and coder work has finished before merging or reconciling. Startup
+reconciles coder's SOUL and mounts the skill plus Second Brain. Start a new
+assistant chat and a new coder task so
+their instructions and skill catalogs are rebuilt; saved chats can retain old
+context. Verify `skills_list` and `skill_view("writing-for-agents")` in both
+profiles, including its mechanics reference. Skill files can be discovered from
+disk without a gateway restart, but that alone does not refresh saved instruction
+context or install these Kubernetes mounts; avoid ad hoc live profile edits.
+
 Startup seeds the pinned image's native skills and its optional `llm-wiki`, then
 applies [skill-overrides.patch](skill-overrides.patch) with `git apply`. A reverse
 check recognizes an already-applied patch. Context conflicts or a partially
