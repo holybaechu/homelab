@@ -120,11 +120,30 @@ activation; local tests do not prove cloud storage behavior.
 
 B2 runtime credentials remain bucket-scoped. Scaleway uses a dedicated IAM
 application with project-scoped `ObjectStorageReadOnly`,
-`ObjectStorageObjectsWrite` and `ObjectStorageObjectsDelete`, without bucket
-administration or IAM rights. This is **not bucket-only access**: isolate backups
-in a dedicated project, and verify both allowed restic/multipart operations and
-rejected bucket administration/other-project access. Do not enable Object Lock
-or retention incompatible with restic deletion.
+`ObjectStorageObjectsWrite` and `ObjectStorageObjectsDelete`, without IAM
+management rights. IAM alone also permits object ACL, retention/legal-hold and
+bucket Object Lock writes; a private bucket ACL does not prevent public object
+ACLs. Require the provisioning root's official `2023-04-17` bucket policy before
+issuing a runtime key: only restic list/location/get/put/delete and multipart
+actions for the runtime application on the intended bucket, with no ACL,
+retention/legal-hold or bucket configuration writes. Explicit verified
+provisioner and independent administrator/recovery principals retain access;
+confirm their identities/IAM grants before the immediately effective policy is
+installed. Do not rely solely on Organization-owner recovery or weaken/remove
+the policy after key creation.
+
+This is **not project-wide bucket-only access**: isolate backups in a dedicated
+project. The policy does not restrict arbitrary future unprotected buckets there,
+and project bucket listing is not claimed to be denied. After authorized
+provisioning, read back the exact policy/private ACL and application/key scope,
+verify administrator/recovery access, then probe real runtime list/location,
+read/write/delete and multipart behavior. Verify rejected object ACL (including
+public ACL), retention/legal-hold/Object Lock, other bucket configuration and
+other-project access under a separately approved safe probe plan, never on restic
+data or by enabling Object Lock on the real bucket. Local tests are not cloud
+authorization evidence. Do not enable Object Lock or retention incompatible with
+restic deletion. See the official [IAM action mapping](https://www.scaleway.com/en/docs/object-storage/reference-content/s3-iam-permissions-equivalence/)
+and [bucket policy semantics](https://www.scaleway.com/en/docs/object-storage/api-cli/bucket-policy/).
 
 No lifecycle rule may expire current objects: old restic packs can still be
 referenced by recent snapshots. B2 currently keeps all versions; restic deletes
