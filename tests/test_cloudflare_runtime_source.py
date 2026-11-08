@@ -155,6 +155,49 @@ class CloudflareSourceTests(unittest.TestCase):
         self.assertIn("retained-eso-parity", output)
         self.assertEqual(calls.call_count, 1)
 
+    def test_source_diagnostic_stops_after_one_get_without_preview_or_secret_reads(self):
+        status, output, calls, gates = self.invoke(
+            [source_fixture()], ["--recovery-confirmed", "--diagnose-source"])
+        self.assertEqual(status, 0)
+        self.assertIn("creation and consumer parity not checked", output)
+        calls.assert_called_once_with(["item", "get", helper.SOURCE, "--vault", helper.VAULT, "--format=json"])
+        gates.assert_not_called()
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            helper.main(["--recovery-confirmed", "--diagnose-source", "--apply"])
+
+    def test_source_failures_have_fixed_diagnostics_and_never_continue(self):
+        failures = [
+            (subprocess.CalledProcessError(7, ["op", PRIVATE], output=PRIVATE.encode(),
+                stderr=(PRIVATE + " HTTP 401 session expired locked").encode()),
+             "cli-command-failed exit=7 hints=http-401,account-auth-hint,desktop-lock-or-connection-hint"),
+            (subprocess.CalledProcessError(1, ["op"], stderr=(PRIVATE + " HTTP 403 permission").encode()),
+             "cli-command-failed exit=1 hints=http-403,vault-access-hint"),
+            (subprocess.CalledProcessError(1, ["op"], stderr=PRIVATE.encode()),
+             "cli-command-failed exit=1 hints=none"),
+            (subprocess.TimeoutExpired(["op", PRIVATE], 60, output=PRIVATE, stderr=PRIVATE), "cli-timeout"),
+            (FileNotFoundError(PRIVATE), "cli-executable-not-found"),
+            (PermissionError(PRIVATE), "cli-execution-permission-denied"),
+            (OSError(PRIVATE), "cli-os-error"),
+            (subprocess.CompletedProcess([], 0, b"\xff" + PRIVATE.encode()), "response-encoding-invalid"),
+            (subprocess.CompletedProcess([], 0, PRIVATE.encode()), "response-invalid-json"),
+            (subprocess.CompletedProcess([], 0, b"{}"), "response-schema-invalid"),
+        ]
+        for failure, category in failures:
+            with (self.subTest(category=category), patch.dict(os.environ, {}, clear=True),
+                  patch.object(helper.subprocess, "run", side_effect=[failure]) as calls,
+                  patch.object(helper, "verify_consumers") as gates,
+                  contextlib.redirect_stdout(io.StringIO()) as out,
+                  contextlib.redirect_stderr(io.StringIO()) as err):
+                self.assertEqual(helper.main(["--recovery-confirmed", "--diagnose-source"]), 1)
+                output = out.getvalue() + err.getvalue()
+                stage = "source-validation" if category == "response-schema-invalid" else "source-get"
+                self.assertIn(f"stage={stage} category={category} outcome=no-writes", output)
+                self.assertNotIn("PRIVATE", output)
+                self.assertNotIn("session expired", output)
+                calls.assert_called_once()
+                self.assertEqual(calls.call_args.args[0][:3], ["op", "item", "get"])
+                gates.assert_not_called()
+
     def test_retained_secret_complete_key_sets_and_bytes_in_both_namespaces(self):
         import base64
         template = helper.source_template(source_fixture())

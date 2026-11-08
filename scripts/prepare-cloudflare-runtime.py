@@ -28,6 +28,46 @@ class Blocked(ValueError):
     pass
 
 
+def failure_category(error):
+    # CLI output and exception messages can contain credentials; emit fixed hints only.
+    if isinstance(error, Blocked):
+        return str(error)
+    if isinstance(error, subprocess.CalledProcessError):
+        raw = error.stderr or b""
+        text = (raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw).lower()
+        hints = []
+        for status in re.findall(r"\b(?:status(?: code)?|http)[ :=]+(\d{3})\b", text):
+            if status in {"400", "401", "403", "404", "409", "429", "500", "502", "503", "504"}:
+                hints.append("http-" + status)
+        for phrases, hint in (
+            (("not signed in", "sign in", "signin", "session expired", "unauthorized",
+              "authentication", "no accounts configured"), "account-auth-hint"),
+            (("forbidden", "permission", "access denied"), "vault-access-hint"),
+            (("locked", "could not connect to the 1password app", "connecting to desktop app"), "desktop-lock-or-connection-hint"),
+            (("unknown flag", "unknown command"), "cli-compatibility-hint"),
+        ):
+            if any(phrase in text for phrase in phrases):
+                hints.append(hint)
+        return f"cli-command-failed exit={int(error.returncode)} hints={','.join(dict.fromkeys(hints)) or 'none'}"
+    if isinstance(error, subprocess.TimeoutExpired):
+        return "cli-timeout"
+    if isinstance(error, FileNotFoundError):
+        return "cli-executable-not-found"
+    if isinstance(error, PermissionError):
+        return "cli-execution-permission-denied"
+    if isinstance(error, UnicodeError):
+        return "response-encoding-invalid"
+    if isinstance(error, json.JSONDecodeError):
+        return "response-invalid-json"
+    if isinstance(error, OSError):
+        return "cli-os-error"
+    if isinstance(error, KeyboardInterrupt):
+        return "interrupted"
+    if isinstance(error, (KeyError, TypeError, AttributeError)):
+        return "response-schema-invalid"
+    return "execution-or-response-error"
+
+
 def run(arguments, payload=None):
     result = subprocess.run(
         ["op", *arguments], input=payload, capture_output=True, check=True, timeout=60,
@@ -95,7 +135,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--recovery-confirmed", action="store_true",
                         help="administrator privately compared history/current populated values, approved recovery, and confirmed both dates unset")
-    parser.add_argument("--apply", action="store_true", help="explicitly approve creating the narrow item once, after a successful preview")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true", help="explicitly approve creating the narrow item once, after a successful preview")
+    mode.add_argument("--diagnose-source", action="store_true",
+                      help="source GET and strict validation only; no create, preview, discovery or Kubernetes reads")
     args = parser.parse_args(argv)
     stage, attempted = "recovery-authorization", False
     item_id = None
@@ -109,6 +152,9 @@ def main(argv=None):
         source = run(["item", "get", SOURCE, "--vault", VAULT, "--format=json"])
         stage = "source-validation"
         template = source_template(source)
+        if args.diagnose_source:
+            print("INFO cloudflare-runtime: source GET and strict recovered-source validation verified; no writes; creation and consumer parity not checked")
+            return 0
         stage = "retained-eso-parity"
         verify_consumers(template)
         stage = "runtime-discovery"
@@ -154,7 +200,7 @@ def main(argv=None):
         print("INFO cloudflare-runtime: no source edits or consumer cutover; Operator ownership/parity/auth/rotation remain required")
         return 0
     except (Blocked, subprocess.SubprocessError, OSError, ValueError, KeyError, TypeError, AttributeError, KeyboardInterrupt) as error:
-        category = str(error) if isinstance(error, Blocked) else "execution-or-response-error"
+        category = failure_category(error)
         print(f"FAIL cloudflare-runtime: stage={stage} category={category} outcome={'unknown-create-inspect-before-retry' if attempted else 'no-writes'}", file=sys.stderr)
         return 1
 
