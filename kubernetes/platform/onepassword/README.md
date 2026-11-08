@@ -265,12 +265,13 @@ fields. Preserve IDs, values, types, sections, URLs and history; do not recreate
 fields or apply JSON templates. These sources have no live Operator consumers.
 Do **not** rename MySQL/n8n yet: those require the separate protected sequence.
 
-After the new manifests reconcile and the Operator observes the edits, run one
+Include Cloudflare's administrator-only label PATCH below in this same source
+batch. After the new manifests reconcile and the Operator observes the edits, run one
 read-only gate from the authenticated administrative Windows checkout:
 
 ```powershell
 git fetch origin main
-git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - authentik-connect immich-connect adguard-connect qbittorrent-connect obsidian-connect
+git show origin/main:scripts/verify-onepassword-staging.py | mise x python@3 -- python - cloudflare-dns cloudflare-ddns authentik-connect immich-connect adguard-connect qbittorrent-connect obsidian-connect
 ```
 
 Return only PASS/FAIL/INFO output. Each check continues independently after a
@@ -279,11 +280,12 @@ Secret access. Matching versions with differing bytes still require private
 investigation; do not regenerate credentials. If the Operator version is stale,
 use the documented Operator-only refresh, then rerun this same batch.
 
-The checks cover these **seven** existing ESO targets, without authorizing an
+The checks cover these **nine** existing ESO targets, without authorizing an
 immediate Hermes restart:
 
 | Check | Exact existing contract compared |
 | --- | --- |
+| `cloudflare-dns`, `cloudflare-ddns` | Separate namespace ownership and exact `api-token` / `CLOUDFLARE_API_TOKEN` bytes after the reviewed label-only API adaptation |
 | `authentik-connect` | `authentik-postgresql` plus all eight `authentik-env` keys, checking source metadata/bytes and ownership for each of its five source items in `identity` |
 | `immich-connect` | `immich` database bytes and the entire parsed JSON config, including the exact OIDC string; also `hermes-immich` API-key bytes |
 | `adguard-connect` | Complete `adguard-credentials` file bytes, including validated username/bcrypt hash and cluster substitutions |
@@ -313,32 +315,86 @@ website URL label (`웹사이트`) whose Operator key is empty. The checker perm
 only that exact label for those exact items (or no URL), with a nonempty href,
 no files and complete source/replacement key/byte equality. It never prints the
 URL, accepts no arbitrary skipped labels and does not permit extra Secret keys.
-Cloudflare and the token-bearing Hermes source remain blocked as described below;
-staging or a seven-contract gate is not full ESO retirement.
+Cloudflare's real API adaptation and the token-bearing Hermes source remain
+blocked as described below; staging or a nine-contract gate is not full ESO retirement.
 
-### Cloudflare stays on ESO
+### Cloudflare label-only Connect adaptation
 
-Cloudflare DNS's built-in `credential` label remains `자격 증명` and is uneditable
-in the official app. Operator 1.12.1 skips its empty normalized key. Its
-[OnePasswordItem spec](https://github.com/1Password/onepassword-operator/blob/v1.12.1/api/v1/onepassworditem_types.go)
-only supports `itemPath`, with no field-ID selection or key remapping. The two
-unused `cloudflare-connect` staging resources remain, but neither is a supported
-replacement for `cloudflare-dns` or `cloudflare-ddns`. Ready alone is insufficient.
-Both targets are excluded from the checker, including its default invocation;
-explicit requests fail before any reads.
+Cloudflare DNS's built-in labels are uneditable in the official app. The current
+localized credential label produces an empty Operator key. Keep both consumers
+on ESO until the label adaptation **and** independent parity gates pass.
 
-Do not delete/recreate the built-in field, change category, populate the unset
-`validFrom`/`expires` dates, or duplicate the token into an unmanaged field.
-The [official Injector](https://developer.1password.com/docs/k8s/injector/) can
-resolve `op://Homelab/Cloudflare DNS/credential` by field ID for DDNS, but does not
-create cert-manager's required DNS01 Secret. DDNS also needs a verified
-`/bin/ddns` command, an exercised item-change restart trigger and credentials
-that cannot retrieve the broad Hermes token. A Homelab-scoped Connect token is
-**not** safe for DDNS: that vault contains the Hermes broad token, even if the
-Connect token itself has no other vault grants. No Injector cutover is configured
-here. Keep Cloudflare on ESO until a supported integration with safe scope and
-rotation, or an explicitly reviewed minimal source adaptation, satisfies both
-consumers.
+Unlike CLI JSON-template edits, the official [Connect PATCH API](https://developer.1password.com/docs/connect/api-reference/#update-a-subset-of-item-attributes)
+addresses a field attribute directly by its existing ID:
+`replace /fields/credential/label`. The published 1.8.1 OpenAPI specification
+explicitly documents field-attribute patches and `application/json`. This does
+not require sending credential values, recreating fields, or replacing the item.
+`scripts/relabel-cloudflare-connect.py` uses only that documented operation for
+all eight reviewed Cloudflare labels. It never uses PUT or CLI item edits.
+
+**This exact mutation has not yet been exercised against the real server.**
+Focused tests use an isolated loopback HTTP server with dummy credentials, not
+1Password. An administrator must perform and review the real adaptation:
+
+1. Keep the infrastructure Operator token read-only. Provision a **separate,
+   temporary Homelab-write Connect token** out of band on the administrator's
+   machine; never give it to the agent, apps, Git or chat. Do not replace either
+   existing bootstrap Secret. Revoke the temporary token after this batch.
+2. In a separate administrative terminal, run:
+   `kubectl -n onepassword port-forward service/onepassword-connect 8080:8080`.
+   The helper accepts only this fixed loopback endpoint or the exact internal
+   Connect service, disables environment proxies, and refuses redirects.
+3. Fetch the reviewed script, then supply the temporary token in a **masked local
+   prompt**, never as a command argument:
+
+   ```powershell
+   git fetch origin main
+   $env:OP_CONNECT_HOST = 'http://127.0.0.1:8080'
+   $env:OP_CONNECT_TOKEN = [System.Net.NetworkCredential]::new('', (Read-Host 'Temporary Connect write token' -AsSecureString)).Password
+   git show origin/main:scripts/relabel-cloudflare-connect.py | mise x python@3 -- python -
+   ```
+
+   The default performs only GET and structural eligibility checks. It prints
+   INFO, not a mutation or consumer-parity PASS. It requires the exact source
+   vault/item/title, eight existing field IDs/types and only reviewed old/target
+   labels, a nonempty credential, and both date values still unset.
+4. With no concurrent item edits, apply the reviewed label-only patch:
+
+   ```powershell
+   git show origin/main:scripts/relabel-cloudflare-connect.py | mise x python@3 -- python - --apply
+   Remove-Item Env:OP_CONNECT_TOKEN
+   Remove-Item Env:OP_CONNECT_HOST
+   ```
+
+   The helper compares the entire PATCH response and a fresh GET against the
+   pre-write item, allowing only the eight labels plus server revision/timestamp
+   changes. Field IDs, values, date presence, field order and all other returned
+   metadata must remain identical. Raw responses, credentials and exception text
+   never reach output or files. After **any** attempted PATCH failure, the outcome
+   is unknown: inspect item history privately before retrying. It never retries
+   automatically. A PASS is API read-back evidence, not historical/passkey proof,
+   credential authentication or consumer parity.
+5. Revoke the temporary write token and inspect the real item history, including
+   untouched dates and attachments/passkeys. After Operator synchronization, run
+   `cloudflare-dns cloudflare-ddns` together with the consolidated parity batch.
+   The existing authenticated CLI account session is sufficient; do not retain the
+   write token to run the checker.
+
+The checker requires the eight target labels (`notes-plain`, `username`,
+`credential`, `type`, `filename`, `valid-from`, `expires`, `hostname`), original
+IDs/types/purposes, unset dates, no files/URLs, the exact Operator-produced key
+set, and source/replacement/ESO bytes for both namespaces. Optional empty built-in
+fields are skipped exactly as Operator 1.12.1 skips them; `credential` must be
+nonempty. Old localized labels, a changed credential or meaningful dates fail.
+This does not weaken the disabled CLI-template write helper.
+
+After independent PASS, both cert-manager and DDNS can use explicit Operator
+key references without an Injector token. Retain cert-manager's Secret interface
+and verify DNS01 renewal; preserve DDNS's entrypoint and Reloader policy. Never
+hand DDNS a Homelab-scoped Connect token: that vault also contains Hermes's broad
+token. Both existing `cloudflare-connect` resources remain consumer-free pending
+these gates; no label mutation or consumer cutover is performed by merging this
+helper.
 
 ### Read-only administrative gates
 
@@ -460,8 +516,8 @@ If versions match but ESO bytes differ, inspect item history and ESO freshness
 privately before any cutover. Share only PASS/FAIL/INFO lines, not CLI or
 Kubernetes JSON. This agent cannot read Secrets or
 OnePasswordItems; do not broaden RBAC or bypass it with pods/exec. No arguments
-checks all eleven eligible staged checks, including the already-cut-over MySQL
-and n8n contracts, which retain their Kubernetes-only comparison. The five new
+checks all thirteen eligible staged checks, including the already-cut-over MySQL
+and n8n contracts, which retain their Kubernetes-only comparison. The seven newer
 checks require the consolidated source-label batch above before they can pass.
 
 | Namespace | Eligible staged replacement | Existing ESO target |
@@ -507,7 +563,7 @@ an existing **field ID**, not a proposed new field. Do not bulk-rename yet.
 | OpenCloud | `username`, `password` already conform | No custom-field rename needed; preserve Hermes services interface |
 | Hermes Coder Signing | `public_key` → `public-key`; `private_key` → `private-key`; `key_type` → `key-type` | Built-ins: only if official app supports label-only edits; preserve OpenSSH transform and key bytes |
 | GitHub Hermes | `validFrom` → `valid-from` | Built-in: only if editable without setting a date; otherwise record exception; other English fields already conform |
-| Cloudflare DNS | `username` → `username`; `credential` → `credential`; `type` → `type`; `filename` → `filename`; `validFrom` → `valid-from`; `expires` → `expires`; `hostname` → `hostname` | Localized built-ins are blocked unless the official app supports safe in-place label edits; keep dates unset and ESO active |
+| Cloudflare DNS | `username` → `username`; `credential` → `credential`; `type` → `type`; `filename` → `filename`; `validFrom` → `valid-from`; `expires` → `expires`; `hostname` → `hostname`; `notesPlain` → `notes-plain` | Use the administrator-only label-attribute PATCH above; keep dates unset and ESO active until real preservation/parity gates pass |
 | Every source | `notesPlain` → `notes-plain` | Built-in: confirm label-only editability; until then retain `notesPlain` as an explicit exception, including in checkers |
 
 Built-in editability has not been independently established except for the

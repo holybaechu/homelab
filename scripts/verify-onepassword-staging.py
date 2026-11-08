@@ -9,6 +9,20 @@ import sys
 
 
 CONTRACTS = {
+    "cloudflare-dns": {
+        "namespace": "cert-manager", "name": "cloudflare-connect",
+        "item_id": "x62vzi4s2sdnerrjev6pp5ndnu",
+        "allowed": {"notes-plain", "username", "credential", "type", "filename", "valid-from", "expires", "hostname"},
+        "sources": {"cloudflare-dns": {"api-token": "credential"}},
+        "notes_label": "notes-plain", "required_fields": {"credential"},
+    },
+    "cloudflare-ddns": {
+        "namespace": "homelab", "name": "cloudflare-connect",
+        "item_id": "x62vzi4s2sdnerrjev6pp5ndnu",
+        "allowed": {"notes-plain", "username", "credential", "type", "filename", "valid-from", "expires", "hostname"},
+        "sources": {"cloudflare-ddns": {"CLOUDFLARE_API_TOKEN": "credential"}},
+        "notes_label": "notes-plain", "required_fields": {"credential"},
+    },
     "mysql-connect": {
         "namespace": "homelab", "name": "mysql-connect",
         "item_id": "awdei3gge3fnlyv3qyymied62u",
@@ -112,6 +126,12 @@ CONTRACTS = {
 VAULT = "3ryhjdiydkomgh3oxfl5yrg5j4"
 # Reviewed field IDs and section membership from the pre-edit metadata export.
 SOURCE_LABELS = {
+    "x62vzi4s2sdnerrjev6pp5ndnu": ("Cloudflare DNS", {
+        "username": ("username", None), "credential": ("credential", None),
+        "type": ("type", None), "filename": ("filename", None),
+        "validFrom": ("valid-from", None), "expires": ("expires", None),
+        "hostname": ("hostname", None),
+    }),
     "n2olk4p3ngumyuttl6b7itutba": ("AdGuard Home", {
         "username": ("username", None), "password": ("password", None),
         "vu2pnknisjne6k4t5sh5laxf3e": ("password-hash", "add more"),
@@ -163,6 +183,9 @@ SOURCE_LABELS = {
 def field_metadata(item_id, field_id):
     if field_id == "notesPlain":
         return "STRING", "NOTES"
+    if item_id == "x62vzi4s2sdnerrjev6pp5ndnu":
+        return ({"credential": "CONCEALED", "type": "MENU", "validFrom": "DATE", "expires": "DATE"}
+                .get(field_id, "STRING")), None
     if item_id in {"d7ginmnpodzvevvb472v26jvmq", "n2olk4p3ngumyuttl6b7itutba",
                    "ztl6gih3jqixgb5xufbv4xq4bi"}:
         if field_id == "username":
@@ -245,7 +268,8 @@ def source_metadata_summary(source, contract):
         known = section["id"] in expected_sections
         lines.append(f"section-index={index} id-reviewed={str(known).lower()} "
                      f"label-present={str(bool(section.get('label'))).lower()}")
-    for field_id, (label, expected_section) in {**labels, "notesPlain": ("notesPlain", None)}.items():
+    for field_id, (label, expected_section) in {
+            **labels, "notesPlain": (contract.get("notes_label", "notesPlain"), None)}.items():
         matches = [f for f in fields if f["id"] == field_id]
         lines.append(f"field={field_id} occurrences={len(matches)}")
         if len(matches) != 1:
@@ -295,8 +319,7 @@ def verify_source(source, replacement, contract):
         raise CheckFailure("source-sections")
     expected, keys = {}, set()
     for field_id, field in fields.items():
-        label, section = labels.get(field_id, ("notesPlain", None))
-        notes = field_id == "notesPlain"
+        label, section = labels.get(field_id, (contract.get("notes_label", "notesPlain"), None))
         expected_type, expected_purpose = field_metadata(item_id, field_id)
         if field["label"] != label:
             raise CheckFailure(f"source-label field={field_id} expected-label={label}")
@@ -311,7 +334,12 @@ def verify_source(source, replacement, contract):
             raise CheckFailure("source-key-empty-or-collision")
         keys.add(key)
         value = field.get("value", "")
-        if not isinstance(value, str) or (not notes and not value):
+        required = field_id in contract.get("required_fields", set(labels))
+        if value is None and not required and item_id == "x62vzi4s2sdnerrjev6pp5ndnu":
+            value = ""
+        if item_id == "x62vzi4s2sdnerrjev6pp5ndnu" and expected_type == "DATE" and value:
+            raise CheckFailure(f"source-date-not-unset field={field_id}")
+        if not isinstance(value, str) or (required and not value):
             raise CheckFailure(f"source-credential-empty-or-invalid field={field_id}")
         if value:
             expected[key] = value.encode("utf-8")
@@ -462,8 +490,7 @@ def main(argv=None):
             name not in CONTRACTS or CONTRACTS[name]["item_id"] not in SOURCE_LABELS
             for name in args.checks)):
         parser.error("--source-metadata requires explicit source-reviewed check names")
-    if {"cloudflare-dns", "cloudflare-ddns"} & set(args.checks):
-        parser.error("Cloudflare is blocked: built-in label is uneditable; keep ESO")
+
     if set(args.checks) - CONTRACTS.keys():
         parser.error("unknown check; choose from " + ", ".join(CONTRACTS))
     failed = False
