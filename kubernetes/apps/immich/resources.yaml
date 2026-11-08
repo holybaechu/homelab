@@ -64,6 +64,7 @@ metadata:
   name: immich
   annotations:
     reloader.stakater.com/auto: "true"
+    configmap.reloader.stakater.com/reload: immich-config-template
 spec:
   replicas: 1
   strategy:
@@ -92,6 +93,24 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: render-config
+          image: python:3.15.2-alpine3.23
+          command: [python3, /templates/render.py]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: templates
+              mountPath: /templates
+              readOnly: true
+            - name: credentials
+              mountPath: /credentials
+              readOnly: true
+            - name: config
+              mountPath: /config
       containers:
         - name: immich
           image: ghcr.io/immich-app/immich-server:v3.3.5
@@ -118,8 +137,8 @@ spec:
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: immich
-                  key: DB_PASSWORD
+                  name: immich-connect
+                  key: database-password
             - name: DB_VECTOR_EXTENSION
               value: vectorchord
             - name: REDIS_HOSTNAME
@@ -167,12 +186,18 @@ spec:
           persistentVolumeClaim:
             claimName: immich-media
         - name: config
+          emptyDir:
+            medium: Memory
+        - name: templates
+          configMap:
+            name: immich-config-template
+        - name: credentials
           secret:
-            secretName: immich
+            secretName: immich-connect
             defaultMode: 0440
             items:
-              - key: immich.json
-                path: immich.json
+              - key: oidc-client-secret
+                path: oidc-client-secret
         - name: temporary
           emptyDir: {}
 ---
