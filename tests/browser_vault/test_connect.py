@@ -72,9 +72,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif self.path == "/v1/vaults":
                 data = [{"id": V1}, {"id": V2}]
             elif self.path.endswith("/items"):
-                data = [{"id": ITEM, "category": "LOGIN"}] if V1 in self.path else []
+                ids = self.server.items if self.server.items is not None else [ITEM]
+                data = [{"id": ident, "category": "LOGIN"} for ident in ids] if V1 in self.path else []
             else:
-                data = self.server.item
+                data = (self.server.items[self.path.rsplit("/", 1)[1]]
+                        if self.server.items is not None else self.server.item)
             self.wfile.write(json.dumps(data).encode())
         else:
             self.send_response(200)
@@ -145,6 +147,7 @@ class ConnectTests(unittest.TestCase):
 
     def setUp(self):
         self.srv.item = copy.deepcopy(self.item)
+        self.srv.items = None
         self.srv.status, self.srv.payload, self.srv.paths = 200, None, []
         self.adapter = ConnectVault(self.url, str(self.token_file))
 
@@ -158,6 +161,61 @@ class ConnectTests(unittest.TestCase):
         self.assertIn(f"/v1/vaults/{V2}/items", self.srv.paths)
         self.assertEqual(result["connect_vaults"], [{"vault_id": V1, "active_logins": 1}, {"vault_id": V2, "active_logins": 0}])
         self.assert_safe(json.dumps(result))
+
+    def test_invalid_login_metadata_does_not_hide_valid_logins(self):
+        bad_urls = ("https://example.com\n", "https://example.com/a b", "https://example.com\\evil",
+                    "https://user@example.com", "https://example.com:99999", "https://[broken",
+                    "http://127.1", "https://example..com", "https://example.com.", None)
+        cases = []
+        for href in bad_urls:
+            bad = copy.deepcopy(self.item)
+            bad["urls"].append({"href": href})
+            cases.append((bad, "invalid_url"))
+        for extra, category in (({"purpose": "USERNAME", "value": "duplicate"}, "ambiguous_field"),
+                                ({"type": "OTP", "value": SEED}, "ambiguous_otp")):
+            bad = copy.deepcopy(self.item)
+            bad["fields"].append(extra)
+            cases.append((bad, category))
+        bad = copy.deepcopy(self.item)
+        bad["fields"][2]["value"] = "A"
+        cases.append((bad, "invalid_otp"))
+        valid = copy.deepcopy(self.item)
+        valid["id"] = "d" * 26
+        valid_handle = f"op:connect:{V1}:{valid['id']}"
+        for bad, category in cases:
+            with self.subTest(category=category, urls=bad["urls"]):
+                self.srv.items = {ITEM: bad, valid["id"]: valid}
+                result = json.loads(tool._handle_vault({"action": "list"}))
+                self.assertTrue(result["success"])
+                self.assertEqual([i["handle"] for i in result["items"]], [valid_handle])
+                self.assertEqual(result["errors"], [{"backend": "onepassword",
+                    "error": "1Password Connect: " + category, "skipped_items": 1}])
+                self.assertEqual(result["connect_vaults"], [
+                    {"vault_id": V1, "active_logins": 2}, {"vault_id": V2, "active_logins": 0}])
+                with self.assertRaisesRegex(ConnectError, category):
+                    self.adapter.meta(self.handle)
+                self.assert_safe(json.dumps(result))
+        second_bad = copy.deepcopy(self.item)
+        second_bad["id"] = "e" * 26
+        second_bad["urls"] = [{"href": "https://example.com\n"}]
+        self.srv.items = {ITEM: cases[0][0], second_bad["id"]: second_bad}
+        self.assertEqual(self.adapter.list_items(), [])
+        self.assertEqual(self.adapter.discovery_errors,
+                         [{"error": "1Password Connect: invalid_url", "skipped_items": 2}])
+        self.srv.items = {valid["id"]: valid}
+        self.assertEqual([i.id for i in self.adapter.list_items()], [valid_handle])
+        self.assertEqual(self.adapter.discovery_errors, [])
+
+    def test_discovery_does_not_suppress_unexpected_or_provider_errors(self):
+        for category in ("invalid_response", "identity_mismatch", "access_denied", "not_found",
+                         "authentication_failed", "transport_failed", "http_failed"):
+            with self.subTest(category=category), patch.object(self.adapter, "meta",
+                    side_effect=ConnectError("1Password Connect: " + category)):
+                with self.assertRaisesRegex(ConnectError, category):
+                    self.adapter.list_items()
+        with patch("agent.vault_backends.connect_vault.origin", side_effect=RuntimeError("synthetic bug")):
+            with self.assertRaisesRegex(RuntimeError, "synthetic bug"):
+                self.adapter.list_items()
 
     def assert_safe(self, result):
         for value in (TOKEN, PASSWORD, SEED):

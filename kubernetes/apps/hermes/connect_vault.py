@@ -3,6 +3,7 @@
 No CLI/SDK is needed for these three documented GET endpoints. Authentication
 stays in a server-only Secret projection, never in child process environments.
 """
+from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
 import json
@@ -13,7 +14,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from agent.vault_backends.plugin import PluginBackendError
-from agent.vault_store import VaultItemMeta, normalize_otp_secret, normalize_origin, totp_now
+from agent.vault_store import VaultError, VaultItemMeta, normalize_otp_secret, normalize_origin, totp_now
 
 _ID = re.compile(r"[a-z0-9]{26}")
 _INTERNAL = "http://onepassword-connect.onepassword.svc.cluster.local:8080"
@@ -63,6 +64,7 @@ class ConnectVault:
     def __init__(self, host, token_file):
         self.host, self.token_file = host, token_file
         self.coverage = []
+        self.discovery_errors = []
         self.snapshot: ContextVar[dict | None] = ContextVar("connect_vault_snapshot", default=None)
 
     def get(self, path):
@@ -161,7 +163,7 @@ class ConnectVault:
                 bound = origin(href)
                 if bound not in origins:
                     origins.append(bound)
-        except Exception:
+        except (ConnectError, ValueError, VaultError):
             failed = True
         require(not failed, "invalid_url")
         if not origins:
@@ -175,6 +177,8 @@ class ConnectVault:
     def list_items(self):
         out, total = [], 0
         coverage = []
+        rejected = Counter()
+        self.coverage, self.discovery_errors = [], []
         for vault in self.collection(self.get("/v1/vaults"), 256):
             vid = vault["id"]
             items = self.collection(self.get(f"/v1/vaults/{vid}/items"), 10000)
@@ -185,12 +189,23 @@ class ConnectVault:
                 if item.get("category") != "LOGIN" or item.get("state", "ACTIVE") != "ACTIVE":
                     continue
                 require(len(out) < 10000, "too_many_logins")
-                meta = self.meta(f"op:connect:{vid}:{item['id']}")
                 logins += 1
+                try:
+                    meta = self.meta(f"op:connect:{vid}:{item['id']}")
+                except ConnectError as exc:
+                    message = str(exc)
+                    if message not in {"1Password Connect: " + category for category in
+                                       ("invalid_url", "ambiguous_field", "invalid_otp", "ambiguous_otp")}:
+                        raise
+                    # Reject the entire item, never salvage or normalize an unsafe URL.
+                    rejected[message] += 1
+                    continue
                 if meta:
                     out.append(meta)
             coverage.append({"vault_id": vid, "active_logins": logins})
         self.coverage = coverage
+        self.discovery_errors = [{"error": message, "skipped_items": count}
+                                 for message, count in sorted(rejected.items())]
         return out
 
     @contextmanager
