@@ -15,7 +15,7 @@ kind: Deployment
 metadata:
   name: hermes
   annotations:
-    secret.reloader.stakater.com/reload: hermes-runtime-connect,n8n-connect,langfuse-connect,hermes-coder-git,immich-connect,obsidian-connect,hermes-services
+    secret.reloader.stakater.com/reload: hermes-runtime-connect,n8n-connect,langfuse-connect,hermes-coder-git,immich-connect,obsidian-connect,opencloud-connect,zipline-connect,qbittorrent-connect
 spec:
   replicas: 1
   strategy:
@@ -805,9 +805,28 @@ spec:
         - name: homelab-runtime
           emptyDir: {}
         - name: service-credentials
-          secret:
-            secretName: hermes-services
+          projected:
             defaultMode: 0444
+            sources:
+              - secret:
+                  name: opencloud-connect
+                  items:
+                    - key: username
+                      path: OPENCLOUD_USERNAME
+                    - key: password
+                      path: OPENCLOUD_APP_TOKEN
+              - secret:
+                  name: zipline-connect
+                  items:
+                    - key: hermes-api-token
+                      path: ZIPLINE_TOKEN
+              - secret:
+                  name: qbittorrent-connect
+                  items:
+                    - key: username
+                      path: QBITTORRENT_USERNAME
+                    - key: password
+                      path: QBITTORRENT_PASSWORD
         - name: immich-temporary
           emptyDir: {}
         - name: integration-temporary

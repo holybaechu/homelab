@@ -334,7 +334,12 @@ reference and requires exact replacement bytes. If the raw Operator value differ
 from that OpenSSH transform, the gate fails; no guessed conversion is applied.
 
 The OpenCloud gate combines its two fields with existing Zipline/qBittorrent
-replacements and compares **all five** `hermes-services` keys. The GitHub gate
+replacements and compares **all five** `hermes-services` keys. After that composite
+PASS, Hermes projects only those five fields from `opencloud-connect`,
+`zipline-connect` and `qbittorrent-connect` into the unchanged MCP credential-file
+paths; Reloader watches all three sources. Rotate their existing reviewed fields,
+not the retained `hermes-services` rollback target. No broader item keys, tokens or
+new credential renderer are exposed to Hermes. The GitHub gate
 combines GitHub/signing replacements and compares both `hermes-coder-git` keys.
 Each child still needs its own source metadata, ownership, Ready and full-key/byte
 checks. Langfuse also compares both `hermes-langfuse` keys. n8n now checks its
