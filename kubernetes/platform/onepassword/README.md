@@ -340,12 +340,15 @@ checks. Langfuse also compares both `hermes-langfuse` keys. n8n now checks its
 reviewed source metadata as well as `n8n-env` and `hermes-webhook`; its current
 underscore labels remain unchanged until the protected live-source sequence.
 
-The n8n credential renderer is staged in an **unmounted** ConfigMap. It uses the
-Node standard library already present in n8n's pinned image, retains credential
-IDs/names/types/header names and JSON-escapes exact UTF-8 values, including CRLF,
-BOM and literal substitution syntax. It rejects invalid UTF-8/empty values and
-creates its private output exclusively. The existing import init, encryption key,
-entrypoint, PVC and Reloader policy are not changed.
+n8n renders its credential import from explicit `n8n-connect` webhook and
+`hermes-runtime-connect` Perplexity file projections before the existing import
+init. The Node standard library already present in n8n's pinned image retains
+credential IDs/names/types/header names and JSON-escapes exact UTF-8 values,
+including CRLF, BOM and literal substitution syntax. It rejects invalid UTF-8/empty
+values and creates mode-0600 output exclusively on a memory-backed volume owned
+by the existing UID 1000. The encryption key, import command, entrypoint, PVC and
+Reloader policy are unchanged. `n8n-hermes-credentials` remains for rollback;
+a successful import/startup does not prove interactive owner login or rotation.
 
 Hermes's original item contains a broader Connect token, so it must **never** be
 synchronized whole. The administrator-only
