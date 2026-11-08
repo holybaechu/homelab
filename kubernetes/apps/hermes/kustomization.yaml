@@ -20,6 +20,7 @@ configMapGenerator:
       - coder-gh.sh=coder/gh.sh
       - coder-gitconfig=coder/gitconfig
       - coder-configure-git.sh=coder/configure-git.sh
+      - coder-configure-git.py=coder/configure_git.py
       - browser-cloud.patch
       - mcp-servers.yaml
       - webhook.yaml

@@ -18,15 +18,28 @@ in GitHub as a **Signing Key**. Git signs commits and tags as
 key. The original Personal key is not used. Treat this as a separate credential
 from the token used to push.
 
-External Secrets reads both fields through the shared `onepassword` store. The
-key reference requests `?ssh-format=openssh`; the SDK's default is PKCS#8.
-Startup copies the root-only Secret files into a memory-backed volume, owned by
-UID 10000 with mode `0400`; the gateway mounts this volume read-only. Tokens and
-private keys are not copied to the PVC or Git. Profiles share one container and
-Unix user, so these mounts are not an isolation boundary between profiles.
+The Operator supplies `github-connect/credential` and
+`signing-connect/{private-key,public-key}` through explicit root-only projections.
+After the administrator's source/replacement/retained-ESO signing-conversion PASS,
+startup converts the unencrypted PKCS#8 key to OpenSSH with PyCA cryptography.
+It validates the complete private identity and the reviewed public identity,
+then reparses the result before writing anything. The pinned Hermes image already
+ships cryptography 50.0.2 in `/opt/hermes/.venv`; the first init uses that Python
+directly, before tool installation, without network installation or a fallback.
+Image upgrades must preserve this dependency and pass the real signing tests.
 
-For rotation, update the existing 1Password fields and respect the shared refresh
-interval and SDK cache. Reloader restarts the Pod after the Secret changes, then
+The memory-backed destination is mode `0700`; its files are owned by UID 10000
+with mode `0400`, and the gateway mounts it read-only. Initialization refuses
+unsafe source permissions, escaping source symlinks and any nonempty destination;
+it never clears or overwrites an existing Git identity. A partial init failure
+requires a fresh Pod/emptyDir after fixing the cause, not deletion of PVC data.
+Tokens and private keys are not copied to the PVC or Git. Profiles share one
+container and Unix user, so these mounts are not an isolation boundary between
+profiles. The original `hermes-coder-git` ESO target remains for rollback; revert
+the projection, initializer and Reloader references together.
+
+For rotation, update the existing 1Password fields and respect the Operator's
+six-hour poll. Reloader watches both replacement Secrets and restarts the Pod, then
 startup recreates the in-memory files. Register a replacement public signing key
 before switching its private key, and retain old public keys to verify history.
 
