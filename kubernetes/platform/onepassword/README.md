@@ -502,24 +502,35 @@ PKCS#8 versus the retained OpenSSH reference. The opt-in `--signing-conversion`
 gate uses [PyCA cryptography's official serialization API](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/serialization/)
 (version 50.0.2, also present in the running Hermes Python environment), not homemade crypto.
 It validates both contributing Operator items' metadata, ownership, Ready status
-and exact raw source bytes, requires retained ESO signing bytes to equal the
-captured original OpenSSH reference, and checks the GitHub credential bytes.
-It then converts PKCS#8 in memory, reloads the OpenSSH result and compares complete
-canonical private-key bytes and the reviewed public key. OpenSSH serialization
-may use random container check bytes, so its output need not be byte-identical
-to another serialization of the same key; this new identity gate does **not**
-relax the default exact-byte checks. No keys, fingerprints or digests are printed
-or written, and a PASS does not mount a converter or switch Git credentials.
+and exact raw source bytes, and checks exact retained GitHub credential bytes.
+It converts PKCS#8 in memory, reloads the OpenSSH result and compares complete
+canonical private-key bytes and the reviewed public key. Both the captured
+OpenSSH reference and retained ESO key are independently parsed and compared
+against that same PKCS#8 source and public key, not just against each other.
+
+The opt-in gate permits one narrowly defined serialization exception: after full
+PyCA validation, unencrypted single-key OpenSSH containers must match in every
+decoded byte except the two random check integers. PEM armor whitespace may
+also differ. Algorithm, public blob, private material, comment and padding stay
+byte-exact; encryption, KDF options, extra keys, trailing data and malformed
+containers are rejected. This follows [OpenSSH's official private-key format](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.key):
+check integers are random even with cipher/KDF `none`; unencrypted containers
+have no salt and their padding is deterministic. No cryptographic parser is
+reimplemented: the small framing comparison only masks check integers after
+independent library validation. The default staging byte checks are unchanged.
+No keys, fingerprints or digests are printed or written, and a PASS does not
+mount a converter or switch Git credentials.
 
 The administrator's services composite gate has passed, including OpenCloud,
 Zipline and qBittorrent source metadata and bytes; it is independent of signing.
-The signing gate failed at `retained-contract`, before conversion. Its diagnostic
-rerun distinguishes the required retained key set, GitHub credential bytes and
-exact captured OpenSSH-reference bytes. On a retained failure, INFO also reports
-fixed source/reference/retained formats and private/public identity categories.
-An identity match explains a byte mismatch but does **not** waive it; missing or
-extra keys, parse failures, unrelated private/public keys and byte drift stay
-blocked. Only reviewed key names and unreviewed-key counts are shown.
+The earlier signing gate failed at `retained-contract` because it demanded raw
+OpenSSH-reference byte equality despite matching source identities. A new
+administrator PASS is still required: matching identities alone do not establish
+that the mismatch is limited to the allowed check integers/armor whitespace.
+On failure, INFO reports fixed source/reference/retained formats and independent
+private/public identity categories. Missing/extra keys, changed comments,
+parse failures, unrelated keys and credential byte drift remain blocked.
+Only reviewed key names and unreviewed-key counts are shown.
 
 Reuse the existing administrator venv and `$signingPython`; no reinstall or venv
 recreation is needed (the Windows junction-path warning was not an install failure):

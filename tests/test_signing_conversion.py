@@ -72,20 +72,22 @@ class SigningConversionTests(unittest.TestCase):
                          "FAIL signing-conversion: stage=read-github-connect category=validation-failed no-writes\n")
 
     def test_retained_contract_distinguishes_key_set_reference_and_github(self):
-        replacements = {"github-connect": {"credential": b"test-token"}}
-        original = {"github-token": b"test-token", "signing-key": b"test-reference"}
-        staging.verify_retained_signing(original, replacements, b"test-reference")
-        cases = [({"signing-key": b"test-reference"}, b"test-reference", "retained-key-set"),
-                 ({**original, "PRIVATE_VALUE": b"unknown"}, b"test-reference", "retained-key-set"),
+        raw, reference, public = representations(ed25519.Ed25519PrivateKey.generate())
+        replacements = {"github-connect": {"credential": b"test-token"},
+                        "signing-connect": {"private-key": raw, "public-key": public}}
+        original = {"github-token": b"test-token", "signing-key": reference}
+        staging.verify_retained_signing(original, replacements, reference)
+        cases = [({"signing-key": reference}, reference, "retained-key-set"),
+                 ({**original, "PRIVATE_VALUE": b"unknown"}, reference, "retained-key-set"),
                  (original, b"", "retained-reference-empty"),
-                 (original, b"different", "retained-signing-reference-bytes"),
-                 ({**original, "github-token": b"different"}, b"test-reference", "retained-github-credential-bytes")]
+                 (original, b"different", "signing-container-format"),
+                 ({**original, "github-token": b"different"}, reference, "retained-github-credential-bytes")]
         for retained, reference, category in cases:
             with self.subTest(category=category):
                 with self.assertRaisesRegex(staging.CheckFailure, "^" + category + "$"):
                     staging.verify_retained_signing(retained, replacements, reference)
 
-    def test_same_identity_byte_drift_is_diagnosed_but_never_passes_gate(self):
+    def test_same_identity_whitespace_does_not_waive_unknown_keys(self):
         raw, reference, public = representations(ed25519.Ed25519PrivateKey.generate())
         replacements = {"github-connect": {"credential": b"test-token"},
                         "signing-connect": {"private-key": raw, "public-key": public}}
@@ -110,8 +112,56 @@ class SigningConversionTests(unittest.TestCase):
         self.assertEqual(command.call_count, 1)
         self.assertEqual(command.call_args.args[0][:3], ["op", "read", "--no-newline"])
         retained.pop("PRIVATE_VALUE")
-        with self.assertRaisesRegex(staging.CheckFailure, "retained-signing-reference-bytes"):
-            staging.verify_retained_signing(retained, replacements, reference)
+        staging.verify_retained_signing(retained, replacements, reference)
+
+    def test_randomized_containers_require_same_source_identity_for_all_algorithms(self):
+        for key in (ed25519.Ed25519PrivateKey.generate(),
+                    rsa.generate_private_key(public_exponent=65537, key_size=2048),
+                    ec.generate_private_key(ec.SECP256R1())):
+            with self.subTest(algorithm=type(key).__name__):
+                raw, reference, public = representations(key)
+                _, retained, _ = representations(key)
+                self.assertNotEqual(reference, retained)
+                replacements = {"github-connect": {"credential": b"test-token"},
+                                "signing-connect": {"private-key": raw, "public-key": public}}
+                original = {"github-token": b"test-token", "signing-key": retained}
+                staging.verify_retained_signing(original, replacements, reference)
+                _, _, other_public = representations(ed25519.Ed25519PrivateKey.generate())
+                with self.assertRaisesRegex(staging.CheckFailure, "signing-public-identity"):
+                    staging.verify_retained_signing(original,
+                        {**replacements, "signing-connect": {"private-key": raw, "public-key": other_public}},
+                        reference)
+                _, other, _ = representations(ed25519.Ed25519PrivateKey.generate())
+                for old, ref in ((other, reference), (retained, other)):
+                    with self.assertRaisesRegex(staging.CheckFailure, "signing-private-identity"):
+                        staging.verify_retained_signing({**original, "signing-key": old}, replacements, ref)
+                with self.assertRaisesRegex(staging.CheckFailure, "retained-github-credential-bytes"):
+                    staging.verify_retained_signing({**original, "github-token": b"different"}, replacements, reference)
+
+    def test_valid_comment_drift_and_invalid_wrappers_are_not_randomness(self):
+        raw, reference, public = representations(ed25519.Ed25519PrivateKey.generate())
+        replacements = {"github-connect": {"credential": b"test-token"},
+                        "signing-connect": {"private-key": raw, "public-key": public}}
+        # OpenSSH itself rewrites only the comment (and serialization randomness).
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "key"
+            path.write_bytes(reference)
+            path.chmod(0o600)
+            subprocess.run(["ssh-keygen", "-c", "-C", "changed-comment", "-P", "", "-f", str(path)],
+                           capture_output=True, check=True)
+            changed = path.read_bytes()
+        staging.verify_signing_identity(raw, changed, public)
+        for candidate in (changed, reference + b"unreviewed-trailer", b"unreviewed-prefix" + reference):
+            with self.assertRaises(staging.CheckFailure):
+                staging.verify_retained_signing(
+                    {"github-token": b"test-token", "signing-key": candidate}, replacements, reference)
+        corrupted = bytearray(base64.b64decode(b"".join(reference.splitlines()[1:-1])))
+        corrupted[-1] ^= 1
+        invalid = (b"-----BEGIN OPENSSH PRIVATE KEY-----\n" + base64.b64encode(corrupted)
+                   + b"\n-----END OPENSSH PRIVATE KEY-----\n")
+        with self.assertRaisesRegex(staging.CheckFailure, "signing-reference-private-invalid"):
+            staging.verify_retained_signing(
+                {"github-token": b"test-token", "signing-key": invalid}, replacements, reference)
 
     def test_identity_diagnostics_distinguish_private_public_and_parser_failures(self):
         raw, reference, public = representations(ed25519.Ed25519PrivateKey.generate())

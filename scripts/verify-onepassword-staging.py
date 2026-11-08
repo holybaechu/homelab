@@ -654,13 +654,61 @@ def verify_signing_identity(raw, reference, public):
     return encoded
 
 
+def openssh_without_checkints(data):
+    """Compare validated containers without discarding key material or comments."""
+    try:
+        match = re.fullmatch(
+            rb"\s*-----BEGIN OPENSSH PRIVATE KEY-----\s+([A-Za-z0-9+/=\s]+)"
+            rb"-----END OPENSSH PRIVATE KEY-----\s*", data)
+        if match is None:
+            raise ValueError
+        decoded = base64.b64decode(re.sub(rb"\s", b"", match[1]), validate=True)
+        magic = b"openssh-key-v1\x00"
+        if not decoded.startswith(magic):
+            raise ValueError
+        offset = len(magic)
+
+        def string():
+            nonlocal offset
+            if offset + 4 > len(decoded):
+                raise ValueError
+            size = int.from_bytes(decoded[offset:offset + 4], "big")
+            offset += 4
+            if offset + size > len(decoded):
+                raise ValueError
+            value = decoded[offset:offset + size]
+            offset += size
+            return value
+
+        if (string(), string(), string()) != (b"none", b"none", b""):
+            raise ValueError
+        if decoded[offset:offset + 4] != b"\x00\x00\x00\x01":
+            raise ValueError
+        offset += 4
+        string()  # The public blob remains part of the exact comparison.
+        start = offset + 4
+        private = string()
+        if offset != len(decoded) or len(private) < 8 or private[:4] != private[4:8]:
+            raise ValueError
+        return decoded[:start] + b"\x00" * 8 + decoded[start + 8:]
+    except Exception:
+        raise CheckFailure("retained-openssh-container-policy") from None
+
+
 def verify_retained_signing(original, replacements, reference):
     required = {"github-token", "signing-key"}
     if set(original) != required:
         raise CheckFailure("retained-key-set")
     if not reference:
         raise CheckFailure("retained-reference-empty")
-    if not original["signing-key"] or original["signing-key"] != reference:
+    if not original["signing-key"]:
+        raise CheckFailure("retained-signing-reference-bytes")
+    signing = replacements["signing-connect"]
+    for candidate in (reference, original["signing-key"]):
+        verify_signing_identity(signing["private-key"], candidate, signing["public-key"])
+    # OpenSSH randomizes checkints even without encryption. Preserve every
+    # other decoded byte (including algorithm, public blob, comment, padding).
+    if openssh_without_checkints(original["signing-key"]) != openssh_without_checkints(reference):
         raise CheckFailure("retained-signing-reference-bytes")
     if (not original["github-token"]
             or original["github-token"] != replacements["github-connect"]["credential"]):
@@ -678,7 +726,7 @@ def signing_retained_diagnostics(original, replacements, reference):
           f"retained-format={private_key_format(retained)}")
     print(f"INFO signing-conversion: retained-reference-bytes-match={bool(reference) and retained == reference} "
           f"retained-github-bytes-match={bool(original.get('github-token')) and original.get('github-token') == replacements['github-connect']['credential']}")
-    # Identity evidence explains a byte failure; it never overrides the strict gate.
+    # Diagnostics never override a failed key-set, identity or container-policy gate.
     categories = {"signing-container-format", "signing-source-private-invalid",
                   "signing-reference-private-invalid", "signing-conversion-invalid",
                   "signing-private-identity", "signing-public-invalid", "signing-public-identity"}
@@ -720,9 +768,6 @@ def signing_conversion_gate():
         except CheckFailure:
             signing_retained_diagnostics(original, replacements, result.stdout)
             raise
-        stage = "conversion-identity"
-        verify_signing_identity(replacements["signing-connect"]["private-key"], result.stdout,
-                                replacements["signing-connect"]["public-key"])
     except Exception as error:
         # Library/CLI errors may embed key data; never expose raw exception text.
         category = "validation-failed"
@@ -735,7 +780,8 @@ def signing_conversion_gate():
         print(f"FAIL signing-conversion: stage={stage} category={category} no-writes", file=sys.stderr)
         return 1
     print("PASS signing-conversion: Ready, ownership, source metadata/raw bytes, "
-          "retained GitHub/OpenSSH bytes, private/public identity and OpenSSH conversion; "
+          "retained GitHub bytes, retained/reference OpenSSH identity and strict container policy, "
+          "private/public identity and OpenSSH conversion; "
           "no writes or consumer cutover")
     return 0
 
