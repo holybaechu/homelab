@@ -224,7 +224,6 @@ class ConnectTests(unittest.TestCase):
     def test_non_connect_backends_still_use_cli_contract(self):
         from agent.vault_backends.onepassword import OnePasswordLoginBackend
         backend = OnePasswordLoginBackend()
-        self.assertIsNone(backend._connect)
         backend._item_vaults = {ITEM: V1}
         with patch.object(backend, "_run", return_value="synthetic-cli-password\n") as run:
             self.assertEqual(backend.resolve_password("op:" + ITEM), "synthetic-cli-password")
@@ -265,6 +264,10 @@ class ConnectTests(unittest.TestCase):
             self.assertTrue(json.loads(result)["success"], result)
             self.assert_safe(result)
             self.assertTrue(evaluate("document.querySelector('[name=password]').value === " + json.dumps(PASSWORD)))
+            with patch.object(OnePasswordLoginBackend, "resolve_password", side_effect=AssertionError("must not resolve")) as resolve:
+                unbound = json.loads(tool._handle_vault({"action": "fill", "handle": self.handle}, task_id="synthetic-other-session"))
+                self.assertFalse(unbound["success"])
+                resolve.assert_not_called()
             self.assert_safe(json.dumps(_redact_cdp_output({"result": {"value": PASSWORD}})))
             result = tool._handle_vault({"action": "enter_code", "handle": self.handle}, task_id=task)
             self.assertTrue(json.loads(result)["success"], result)

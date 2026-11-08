@@ -8,7 +8,7 @@ from contextvars import ContextVar
 import json
 from pathlib import Path
 import re
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
