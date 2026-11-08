@@ -97,3 +97,71 @@
      if not items:
          out["hint"] = ("No saved logins. On a login page, call browser_vault action=save_login to ask the user to save one. "
                         "Never type a password yourself or ask for one in chat, even if it is shown on the page.")
+--- a/tools/browser_use_cli.py
++++ b/tools/browser_use_cli.py
+@@ -404,9 +404,8 @@
+     env / ``browser.cdp_url`` (``/browser connect``); (3) a cloud provider via ``browser_session.get_session_info``
+     (per-key cache, expiry, reaper, atexit; a provider failure falls back to a local browser);
+     (4) the local engine — ``browser.engine: lightpanda`` or Hermes' packaged Chromium via the launcher
+-    (never the harness's own discovery of the user's installed Chrome); (5) BU direct-API configs WITH
+-    ``BROWSER_USE_API_KEY`` → None (checked before (3)): the CLI reaches BU cloud natively (BU_AUTOSPAWN); a
+-    keyless ``browser-use`` provider (managed-gateway autodetect, or a selection missing its key) takes (3).
++    (never the harness's own discovery of the user's installed Chrome). Browser Use direct and managed
++    sessions both use (3), so the harness and native vault share the same supervised CDP endpoint.
+     ``session_name`` (BU_NAME) keys the session cache so each name gets its OWN browser — what makes named
+     sessions concurrent-safe.
+ 
+@@ -427,22 +426,6 @@
+     provider = _quiet(get_cloud_provider, None, "Cloud provider lookup failed")
+     if provider is None:
+         return _resolve_local_cdp(env, task_id, session_name)
+-
+-    # Browser Use direct-API configs: the CLI talks to BU cloud natively (BU_AUTOSPAWN) — the
+-    # legacy provider would create a second, redundant session. Nous-gateway configs (cloud_provider: nous
+-    # from the picker, or the pre-picker use_gateway: true) DO resolve through the provider: the gateway
+-    # provisions the browser server-side and returns its CDP URL. Without BROWSER_USE_API_KEY the CLI cannot
+-    # autospawn, and the provider is either the managed gateway (autodetect on a never-configured install) or
+-    # a selection missing its key; both go through the session path (gateway CDP, or the session layer's
+-    # local-Chromium fallback) instead of leaving the harness to hunt for an installed Chrome.
+-    provider_key = str(getattr(provider, "name", "") or "").strip().lower()
+-    if provider_key == _BROWSER_USE_PROVIDER and not _use_gateway(_read_browser_cfg()) and _browser_use_api_key_set():
+-        env[_PRIVATE_BROWSER_SENTINEL] = "1"  # named BU cloud browsers are exclusive to their daemon
+-        # Only intent: the harness attaches to a local Chrome already listening instead of autospawning, so
+-        # the live daemon's own report decides.
+-        from tools.browser_use_shot import ACTIVATE_IF_CLOUD
+-        env[_CLOUD_BROWSER_SENTINEL] = ACTIVATE_IF_CLOUD
+-        return None
+ 
+     provider_name = type(provider).__name__
+     session: dict = {}
+@@ -506,7 +489,7 @@
+ def _attach_vault_supervisor(env: dict, task_id: Optional[str]) -> None:
+     """Attach the per-task CDP supervisor to the browser this exec drives so ``browser_vault`` fill has
+     a secret-capable WebSocket (never argv) into the SAME browser. Only CDP-routed backends expose an
+-    endpoint; BU direct-cloud (BU_AUTOSPAWN) does not, and the vault tools report ``supervisor_required``."""
++    endpoint, including Browser Use sessions resolved by the provider."""
+     cdp = env.get("BU_CDP_WS") or env.get("BU_CDP_URL")
+     if not cdp:
+         return
+--- a/tools/browser_session.py
++++ b/tools/browser_session.py
+@@ -254,6 +254,8 @@
+         if not session_info or not isinstance(session_info, dict):
+             raise ValueError(f"Cloud provider returned invalid session: {session_info!r}")
+     except Exception as e:  # health: allow BLE001 -- any provider failure falls back to a local browser
++        if getattr(provider, "name", "") == "browser-use":
++            raise RuntimeError("Browser Use session creation failed; no local fallback") from None
+         provider_name = type(provider).__name__
+         logger.warning("Cloud provider %s failed (%s); falling back to local Chromium for %s",
+                        provider_name, e, cache_key, exc_info=True)
+--- a/plugins/browser/browser_use/provider.py
++++ b/plugins/browser/browser_use/provider.py
+@@ -136,7 +136,7 @@
+         # Short gateway sessions: billing authorization must not default to a long Browser-Use timeout.
+         payload = (
+             {"timeout": _DEFAULT_MANAGED_TIMEOUT_MINUTES, "proxyCountryCode": _DEFAULT_MANAGED_PROXY_COUNTRY_CODE}
+-            if managed_mode else {})
++            if managed_mode else {"proxyCountryCode": "kr"})
+         # Managed mode propagates network errors raw (retry with the preserved key); direct wraps them.
+         response = self._post_create(
+             f"{config['base_url']}/browsers", headers, payload, wrap_errors=not managed_mode)

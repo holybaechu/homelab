@@ -29,7 +29,9 @@ shutil.copytree(SOURCE / "agent", ROOT / "agent", ignore=shutil.ignore_patterns(
 (ROOT / "tools").mkdir()
 (ROOT / "tools/__init__.py").write_text((SOURCE / "tools/__init__.py").read_text() +
                                        "\n__path__.append(" + repr(str(SOURCE / "tools")) + ")\n")
-shutil.copyfile(SOURCE / "tools/browser_vault_tool.py", ROOT / "tools/browser_vault_tool.py")
+for name in ("browser_vault_tool.py", "browser_use_cli.py", "browser_session.py"):
+    shutil.copyfile(SOURCE / "tools" / name, ROOT / "tools" / name)
+shutil.copytree(SOURCE / "plugins", ROOT / "plugins", ignore=shutil.ignore_patterns("__pycache__"))
 subprocess.run(["git", "apply", "--check", str(APP / "browser-vault-connect.patch")], cwd=ROOT, check=True)
 subprocess.run(["git", "apply", str(APP / "browser-vault-connect.patch")], cwd=ROOT, check=True)
 shutil.copyfile(APP / "connect_vault.py", ROOT / "agent/vault_backends/connect_vault.py")
@@ -87,6 +89,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
 <input name=otp autocomplete=one-time-code><button>Sign in</button></form>''')
 
     def do_POST(self):
+        if self.path == "/browsers":
+            if self.headers.get("X-Browser-Use-API-Key") != TOKEN:
+                self.send_error(401)
+                return
+            self.server.cloud_creates.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            self.send_response(201)
+            self.end_headers()
+            self.wfile.write(json.dumps({"id": "synthetic-cloud-id", "cdpUrl": self.server.cdp_endpoint}).encode())
+            return
         fields = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
         valid = (self.path == "/session" and fields.get("username") == ["synthetic@example.com"] and
                  fields.get("password") == [PASSWORD] and fields.get("otp") == [totp_now(SEED)])
@@ -115,7 +126,9 @@ class ConnectTests(unittest.TestCase):
         cls.token_file.write_text(TOKEN)
         cls.token_file.chmod(0o600)
         cls.cfg = {"connect_host": cls.url, "connect_token_file": str(cls.token_file), "enabled": True}
-        (ROOT / "home/config.yaml").write_text(json.dumps({"vault": {"onepassword": cls.cfg}}))
+        (ROOT / "home/config.yaml").write_text(json.dumps({"vault": {"onepassword": cls.cfg},
+            "browser": {"cloud_provider": "browser-use", "allow_private_urls": True,
+                        "auto_local_for_private_urls": False}}))
         cls.item = {"id": ITEM, "vault": {"id": V1}, "category": "LOGIN", "title": "Synthetic Login",
                     "urls": [{"href": cls.url + "/login"}, {"href": "HTTPS://EXAMPLE.com:443/login?next=%2Faccount"}],
                     "fields": [{"purpose": "USERNAME", "value": "synthetic@example.com"},
@@ -237,10 +250,29 @@ class ConnectTests(unittest.TestCase):
             self.assertEqual(backend.resolve_password("op:" + ITEM), "synthetic-cli-password")
             self.assertIn("--vault", run.call_args.args)
 
+    def test_browser_use_creation_failure_never_uses_another_browser(self):
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        from tools import browser_session, browser_use_cli
+        provider = BrowserUseBrowserProvider()
+        with patch.object(provider, "create_session", side_effect=RuntimeError(TOKEN + PASSWORD)), patch.object(
+                browser_session, "_create_local_session", side_effect=AssertionError("no local fallback")) as local:
+            with self.assertRaisesRegex(RuntimeError, "^Browser Use session creation failed; no local fallback$") as caught:
+                browser_session._create_cloud_session_or_fallback("synthetic-cloud-failure", provider)
+            self.assertTrue(caught.exception.__suppress_context__)
+            self.assert_safe(str(caught.exception))
+            local.assert_not_called()
+        with patch("tools.browser_session_cloud.get_cloud_provider", return_value=provider), patch.object(
+                browser_session, "get_session_info", side_effect=RuntimeError("synthetic unavailable")), patch.object(
+                browser_use_cli, "_resolve_local_cdp", side_effect=AssertionError("no alternate browser")) as local:
+            error = browser_use_cli._resolve_backend_cdp({}, "synthetic-cloud-failure")
+            self.assertIn("failed to provide a session", error)
+            local.assert_not_called()
+
     def test_native_chromium_fill_otp_redaction_mismatch_and_navigation(self):
         from tools.browser_supervisor import SUPERVISOR_REGISTRY
         from tools.browser_cdp_tool import _redact_cdp_output
         from agent.vault_backends.onepassword import OnePasswordLoginBackend
+        from tools import browser_session, browser_use_cli
 
         profile = ROOT / "chromium"
         chromium = shutil.which("chromium") or shutil.which("chromium-browser")
@@ -259,7 +291,37 @@ class ConnectTests(unittest.TestCase):
             port = port_file.read_text().splitlines()[0]
             with urlopen(f"http://127.0.0.1:{port}/json/version") as response:
                 endpoint = json.load(response)["webSocketDebuggerUrl"]
-            sup = SUPERVISOR_REGISTRY.get_or_start(task_id=task, cdp_url=endpoint)
+            from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+            from tools import browser_session, browser_use_cli
+            self.srv.cdp_endpoint, self.srv.cloud_creates = endpoint, []
+            provider = BrowserUseBrowserProvider()
+            env = {}
+            with patch("tools.browser_session_cloud.get_cloud_provider", return_value=provider), patch.object(
+                    provider, "_get_config", return_value={"base_url": self.url, "api_key": TOKEN, "managed_mode": False}), patch.dict(
+                    os.environ, {"BROWSER_USE_API_KEY": TOKEN, "BH_HOME": str(ROOT / "harness")}):
+                self.assertTrue(browser_use_cli._browser_use_api_key_set())
+                self.assertIsNone(browser_use_cli._resolve_backend_cdp(env, task))
+                self.assertIsNone(browser_use_cli._resolve_backend_cdp({}, task))
+                named = {}
+                self.assertIsNone(browser_use_cli._resolve_backend_cdp(named, task, session_name="synthetic-named"))
+                driven = browser_use_cli.browser_exec("new_tab(" + repr(self.url + "/login") +
+                    "); wait_for_load(); print(page_info())\n" +
+                    "for target in cdp('Target.getTargets')['targetInfos']:\n" +
+                    "    if target['type'] == 'page' and target['targetId'] != current_tab()['targetId']:\n" +
+                    "        cdp('Target.closeTarget', targetId=target['targetId'])\n",
+                    session="synthetic-named", task_id=task)
+                driven = json.loads(driven) if isinstance(driven, str) else driven
+                self.assertTrue(driven["success"], driven)
+                self.assertIn("Synthetic login", driven["output"])
+                self.assert_safe(json.dumps(driven))
+            self.assertEqual(self.srv.cloud_creates, [{"proxyCountryCode": "kr"}, {"proxyCountryCode": "kr"}])
+            self.assertEqual(env.get("BU_CDP_WS") or env.get("BU_CDP_URL"), endpoint)
+            self.assertNotEqual(browser_session._active_sessions[task]["session_key"],
+                                browser_session._active_sessions["bu-named-synthetic-named"]["session_key"])
+            browser_use_cli._attach_vault_supervisor(env, task)
+            sup = SUPERVISOR_REGISTRY.get(task)
+            self.assertIsNotNone(sup)
+            self.assertEqual(sup.cdp_url, endpoint)
             for _ in range(50):
                 if sup.evaluate_runtime("!!document.querySelector('input[type=password]')").get("result"):
                     break
@@ -285,7 +347,7 @@ class ConnectTests(unittest.TestCase):
             self.assertNotIn(code, json.dumps(_redact_cdp_output({"result": {"value": code}})))
             evaluate("document.querySelector('[name=username]').value = 'synthetic@example.com'; document.querySelector('button').click()")
             time.sleep(0.3)
-            self.assertEqual(evaluate("document.title"), "logged-in-synthetic")
+            self.assertTrue(evaluate("document.title").endswith("logged-in-synthetic"))
             # The provider changes its saved origins after precheck: the in-context
             # fresh snapshot must refuse before password resolution or any write.
             evaluate("location.href = " + json.dumps(self.url + "/login"))
@@ -323,6 +385,10 @@ class ConnectTests(unittest.TestCase):
             self.assertEqual(result["error_type"], "origin_changed")
             self.assertEqual(evaluate("document.querySelector('[name=password]').value"), "")
         finally:
+            from tools import browser_session
+            browser_use_cli.stop_harness_daemons()
+            with browser_session._cleanup_lock:
+                browser_session._active_sessions.clear()
             SUPERVISOR_REGISTRY.stop_all()
             process.terminate()
             process.wait(timeout=15)

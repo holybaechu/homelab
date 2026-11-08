@@ -212,7 +212,14 @@ Both profiles share the same Unix user and broad authorized login access; they a
 not security boundaries against each other or trusted terminal execution.
 
 Fills reuse the native classifier, task-bound supervisor, redactor and in-page
-origin recheck. Password/TOTP resolution uses one short-lived item snapshot after
+origin recheck. Browser Use sessions are provisioned by the bundled provider and
+their CDP endpoint is shared by the harness and native supervisor, rather than
+using harness-only cloud autospawn. Named sessions retain separate provider
+sessions; Browser Use creation failures refuse instead of falling back to another
+browser. The direct provider retains the existing Korean proxy country. Deployment
+replaces existing harness-only sessions, so reopen the authorized login page after
+restart before filling; discovery alone does not prove a supervised page exists.
+Password/TOTP resolution uses one short-lived item snapshot after
 the page-origin check, so a provider edit cannot swap the checked origins for a
 new secret. Only exact saved HTTP(S) origins authorize writes: no inferred
 subdomains, wildcard grants or app URI expansion. Ambiguous URL spellings fail
