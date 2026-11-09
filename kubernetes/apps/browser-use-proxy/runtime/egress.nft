@@ -1,0 +1,20 @@
+table inet browser_proxy {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ip6 saddr ::/0 counter reject
+    ct state established,related accept
+    ip saddr ${NODE_IP} tcp dport 3128 accept
+    iifname lo tcp dport 3128 accept
+    counter reject
+  }
+  chain output {
+    type filter hook output priority 0; policy drop;
+    ip6 daddr ::/0 counter reject
+    ct state established,related accept
+    meta skuid 1000 ip daddr 10.96.0.10 udp dport 53 accept
+    meta skuid 1000 ip daddr 10.96.0.10 tcp dport 53 accept
+    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.88.99.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4, 240.0.0.0/4 } counter reject
+    meta skuid 1000 tcp dport { 80, 443 } counter accept
+    counter reject
+  }
+}

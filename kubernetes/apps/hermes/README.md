@@ -309,13 +309,49 @@ item path, Operator Ready/Secret owner UID and item version, sole
 Flux inventory alone are not synchronization or authentication proof.
 
 The existing Cloudflare DDNS app owns public DNS (DNS-only); do not introduce a
-second DNS controller. Public exposure requires separate review of reserved-name
-collisions, candidate boundary proof, real projected-credential initialization and
-authentication, and proxy-only TCP/TLS routing on the existing Traefik entrypoint.
+second DNS controller. Both `browser-use-proxy-runtime` and
+`browser-use-proxy-public` Flux Kustomizations are suspended in Git. Review and
+activate them separately:
+
+1. Apply preparation and pass the private Operator gate above. Activate only
+   `browser-use-proxy-runtime`, then verify both init exits and real projected
+   authentication (valid credentials work; missing/wrong credentials get 407).
+   The raw JSON is mounted only in the verifier init; Squid receives only an
+   OpenSSL-derived SHA-512-crypt verifier on a memory-backed volume. Only the
+   firewall init has NET_ADMIN, in its own Pod network namespace. Runtime is
+   nonroot, read-only and cap-drop, with no API token or host namespaces.
+2. Require controlled public-to-private DNS cache-transition/known-live-listener
+   evidence and actual UID egress denials. Verify public TLS and own-WAN normal
+   and spoofed private-service denials through this candidate. A static private
+   hostname returning 503 is not kernel or rebinding proof. Flannel NetworkPolicy
+   is not an enforcement substitute.
+3. Privately clear authoritative Cloudflare A/AAAA/CNAME/TXT and Traefik HTTP/TCP
+   reserved-name collisions. Public DNS zero answers alone are insufficient.
+   In a separately reviewed exposure change, append `proxy.${DOMAIN}` to the
+   existing DDNS `DOMAINS` (retain `PROXIED=false`) and activate
+   `browser-use-proxy-public`. No DNS or router change is included here.
+
+The public route matches only proxy SNI on existing TCP/443, using the existing
+wildcard TLSStore certificate. Its dedicated TLSOption offers only HTTP/1.1:
+[Traefik's default ALPN](https://doc.traefik.io/traefik/reference/routing-configuration/http/tls/tls-options/#alpn-protocols)
+includes h2, which must not be negotiated before forwarding decrypted TCP to
+Squid. Other routers and global TLS options are unchanged. Verify certificate
+trust, ALPN and authenticated CONNECT before declaring exposure operational.
+
+The pinned Canonical image is the reviewed `7.2-26.04_edge` content, not a stable
+channel claim. Its embedded package inventory contains
+`squid 7.7-0ubuntu0.26.04.2`, matching the fix in
+[USN-8998-1](https://ubuntu.com/security/notices/USN-8998-1). Review Canonical's
+current channel/support and security inventory again before production approval
+or digest upgrades; a tag's advertised Squid version is not installed-package
+proof. No runtime package installation or alternate proxy/DNS engine is used.
+
 Keep native activation PR #344 unmerged until the parent has drained active work.
-Rotation must coordinate proxy verifier restart with future native Cloud sessions
-and the reviewed gateway refresh; never restart Hermes from an attached task or
-change the existing private/local Browser Harness route to make a probe pass.
+Rotation updates only the existing authoritative item. Reloader restarts only
+this proxy when its Secret changes; coordinate that outage and verifier refresh
+with future native Cloud sessions and the reviewed gateway/default-profile
+projection refresh. Never restart Hermes from an attached task or change the
+existing private/local Browser Harness route to make a probe pass.
 
 ### 1Password Connect logins
 
