@@ -6,7 +6,17 @@ metadata:
 spec:
   ipAllowList:
     sourceRange:
-    - ${LAN_CIDR}
+    # Exclude router-SNAT traffic, including own-WAN hairpins to protected routes.
+    # Regenerate with Python ipaddress: LAN_CIDR.address_exclude(GATEWAY_IP/32)
+    # from clusters/homelab/settings.yaml whenever either setting changes.
+    - 192.168.0.0/32
+    - 192.168.0.2/31
+    - 192.168.0.4/30
+    - 192.168.0.8/29
+    - 192.168.0.16/28
+    - 192.168.0.32/27
+    - 192.168.0.64/26
+    - 192.168.0.128/25
     - 100.64.0.0/10
     - fd7a:115c:a1e0::/48
 ---

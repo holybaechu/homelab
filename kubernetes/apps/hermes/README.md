@@ -134,6 +134,65 @@ for the owner/share-list contract. A TCP timeout before host setup does not
 establish whether the existing route works; listener, routing, caller identity,
 OS permissions and real tool execution remain separate acceptance checks.
 
+### Windows Aside local REPL
+
+For browser work explicitly targeting the existing Windows Aside profile, use
+Cua `space_bash` on `direct:100.64.0.4:3211` to run the laptop's official CLI:
+`C:\Users\holybaechu\AppData\Local\Aside\CLI\current\aside.exe`.
+This is command transport to **local** Aside, not Aside Remote Control. It needs
+the running, locally signed-in Aside app, not a server Aside login or Pro plan.
+A local permission, plan, or availability refusal is a stop boundary; leave the
+user's security settings intact. No server installation or additional MCP server
+is needed.
+
+1. Read `repl --help` and `guide repl` from that executable. Discover profiles with
+   `host profiles --host local --account u0 --json`; bind every REPL invocation to
+   the returned connected profile. The verified binding is account `u0`, profile
+   `31e95288-73db-4644-97dc-7510d6fb0e27`. Rediscover if it becomes unavailable;
+   do not silently select a different account or profile.
+2. Use Cua `space_write` or `upload` for a uniquely owned JavaScript file, then
+   invoke it from PowerShell:
+
+   ```powershell
+   $aside = 'C:\Users\holybaechu\AppData\Local\Aside\CLI\current\aside.exe'
+   & $aside repl --host local --account u0 `
+       --profile 31e95288-73db-4644-97dc-7510d6fb0e27 --json --file $ownedJsPath
+   $replExit = $LASTEXITCODE
+   ```
+
+   `space_bash` uses `cmd.exe /C` on Windows. Encode short PowerShell launchers
+   with Base64 of UTF-16LE and pass `powershell.exe -NoProfile -NonInteractive
+   -EncodedCommand <encoded>`. Upload longer scripts: encoded commands still hit
+   cmd.exe's command-length limit. `--file` also avoids native argument quoting
+   damage to JavaScript. Inspect the REPL exit code and JSON `run.error`, not just
+   Cua transport success. Give `space_bash` enough time for REPL's 120-second limit.
+3. Keep each task in one one-shot REPL script with `try/finally`: create only its
+   own tabs with `openTab`, perform locator actions, read the resulting snapshot
+   and exact DOM value, then `closeTab` each owned page in `finally`. One-shot
+   calls start with unset `page` and empty `tabs`; their temporary REPL closes on
+   return. JavaScript bindings do **not** persist into the next Cua call. Avoid
+   interactive/background REPL processes and Aside agent `exec` for this route.
+4. Capture only the owned page with `page.screenshot()`. For retrieval, emit
+   `JSON.stringify({stage:'screenshot',base64:Buffer.from(await page.screenshot()).toString('base64')})`
+   through `console.log`. Consume the JSON locally on Windows: `run.content`
+   contains text parts with multiple newline-separated log records. Parse those
+   lines, decode only the screenshot record with `[Convert]::FromBase64String`,
+   and write a uniquely owned PNG. Return its path instead of its Base64 payload
+   (Cua truncates long stdout), then use Cua `download` for that exact path.
+5. In a fresh one-shot call, filter `listBrowserTabs()` in memory for the exact
+   owned target IDs or unique fixture URL/title and return only the match count.
+   Zero matches plus unset `page`/empty `tabs` verifies owned cleanup without
+   exposing personal tabs. Remove only exact task-created scripts and screenshot
+   copies after retrieval, and read back their absence.
+
+For focus-sensitive work, compare Windows `GetForegroundWindow` and
+`GetCursorPos` before and after the operation without reading window titles or
+capturing the desktop. The controlled fill/click, DOM readback and owned-page
+capture passed with unchanged foreground handle and cursor at those checkpoints;
+this is not a continuous-focus guarantee. User activity or changed samples make
+isolation uncertain. Do not activate windows, move the cursor, change desktops,
+or silently fall back to GUI control.
+
 ## Cluster administration
 
 Startup installs `kubectl`, `flux`, and `talosctl` with the existing checksum-pinned
@@ -241,51 +300,76 @@ the cloud browser, so open the internal URL directly.
 
 ### Homelab public-internet proxy
 
-The native provider's repository patch accepts the profile-scoped secret
-`BROWSER_USE_CUSTOM_PROXY_JSON`. It is opt-in; no proxy listener, DNS record,
-credential item or Secret projection is provisioned by this app. Until those
-prerequisites are approved and verified, leave it unset and retain the existing
-Korean residential proxy. This does not replace Browser Harness or local Chromium.
+`networking/browser-use-proxy-connect` and `homelab/browser-use-proxy-connect`
+project the same dedicated item through the official Operator using
+`BROWSER_USE_PROXY_CONNECT_ITEM_PATH`, with automatic restart disabled. Each
+Operator owns its namespaced Secret; the sole intended key is `custom-proxy-json`.
+An administrator must privately verify both exact item paths, Ready conditions,
+Secret owner UIDs, sole key sets, versions and original-source byte equality.
+Projection-to-projection equality alone is not original-source or auth proof.
 
-The secret must contain exactly `host`, `port`, `protocol`, `username` and
-`password`: a lowercase public DNS hostname, integer port `443`, protocol `https`
-and dedicated nonempty proxy credentials. Deliver it from a narrow 1Password item
-through an explicit, **non-optional** Operator Secret key projection into Hermes;
-never put its value in Git, CLI arguments or chat. Missing projected Secrets must
-block startup, not remove proxy intent. Item creation requires an authorized
-administrator; the read-only Operator token is not a writer. Do not use the
-browser-login Connect token or broaden its grants.
+The staged default-profile binding requires that homelab key through an explicit
+nonoptional file projection, mounted only into `configure-profiles`. Missing
+Secret/key blocks Pod startup. Before the gateway starts,
+[configure_browser_proxy.py](configure_browser_proxy.py) validates one JSON object
+with exactly `host`, `port`, `protocol`, `username`, `password`, fixed
+`proxy.hchu.me`, integer `443`, `https` and bounded nonempty string credentials.
+Missing, empty, duplicate-key, multi-document or unexpected input fails before
+changing `/opt/data/.env`. Only `BROWSER_USE_CUSTOM_PROXY_JSON` is reconciled there;
+unrelated keys, comments, escaping and file permissions are preserved. It uses
+the installed python-dotenv tokenizer and native Hermes lock, quoting and atomic
+writer; the high-level `save_env_value` would normalize unrelated lines. Review
+these pinned native helpers on image upgrades. No dependencies are installed.
+
+No global Pod credential environment is added. Native session creation reads the
+active secret scope, or the current profile's own `.env` when unscoped, never an
+inherited default selector. Coder and other profiles' files, model auth and memory
+remain unchanged. Do not use the LOGIN-only `connect_vault.py` for Secure Notes,
+add a reader/token/grant, or enable `secrets.onepassword` startup mappings.
 
 The existing [API v3 standalone-browser endpoint](https://docs.browser-use.com/cloud/api-v3/browsers/create-browser-session)
-accepts top-level `customProxy`; each native session creation receives it instead
-of `proxyCountryCode`. No SDK/API migration or hosted agent is needed. Malformed
-configuration and provider refusal fail closed, without a second create request
-or another provider. Certificate bypass and custom CAs are not accepted. The
-[documented proxy GET/PATCH endpoint](https://docs.browser-use.com/cloud/browser/proxies)
-can inspect/change an owned existing session on v3 too, but does not configure
-future native sessions. A custom proxy's `exitIp: null` is expected.
+receives top-level `customProxy` instead of `proxyCountryCode` at every native
+create/profile seam. Malformed input and provider refusal fail without retry or
+another browser/provider. Browser Harness, task/vault supervision, named-session
+ownership and automatic local-private routing remain unchanged. Certificate
+bypass/custom CAs are not accepted. An owned browser's
+[proxy GET/PATCH endpoint](https://docs.browser-use.com/cloud/browser/proxies)
+is inspection, not future-session configuration; custom `exitIp: null` is expected.
 
-Before activation, approve an unused DNS-only public hostname and verify a
-TLS-authenticated forward-proxy path from Browser Use Cloud. Existing HTTP reverse
-routes are not CONNECT proxies; use a separately reviewed TCP/TLS route if reusing
-Traefik's WAN TCP/443 listener. Validate the public certificate and credentials;
-never decrypt destination TLS. Prefer a maintained proxy such as Squid over a new
-controller. Enforce public web ports only and deny private, loopback, link-local,
-metadata, tailnet, cluster/service and IPv6-equivalent destinations at resolved
-connection addresses, including DNS rebinding and public-WAN hairpin paths.
-Domain ACLs alone are insufficient. This cluster's Flannel does not enforce
-Kubernetes NetworkPolicy; a manifest alone is not an egress firewall.
+**Rotation and activation are operator-drained, not automatic.** Hermes retains
+its explicit Reloader Secret allowlist and controller `autoReloadAll: false`;
+`browser-use-proxy-connect` is deliberately absent. Merely adding this init-only
+mount does not enable automatic reload. Other listed secrets retain their existing
+restart behavior; ConfigMap hash changes still cause Recreate. Do not enable auto
+reload on Hermes or add BYOP to that allowlist. Operator delivery updates the file,
+not the persisted selector or an existing browser. No watcher/hot reload is added.
 
-Keep `browser.auto_local_for_private_urls: true`; internal services and localhost
-stay local. Remote laptop browsing remains a separate Aside/Cua path. Before
-replacing Hermes, drain attached work through the parent operator's handoff.
-After activation, use an owned native browser to compare a public IP echo with
-homelab egress privately (report equality only), inspect its custom proxy state,
-verify unauthenticated/incorrect auth and private-address denials, and make the
-proxy unavailable temporarily to prove no vendor/direct-egress fallback. Verify
-both a fresh named cloud session and local-private routing. Stop only the owned
-session and read its stopped status back. Synthetic provider tests do not prove
-public reachability, proxy data-plane safety or native gateway activation.
+1. Keep PR #344 Draft/unmerged and public/runtime PR #347 suspended until source
+   parity, actual proxy credential initialization, public TLS/authentication and
+   resolved-address egress denial pass independently. Existing Cloudflare DDNS
+   owns DNS-only records; no second DNS controller. A reverse HTTP route is not a
+   CONNECT proxy. Flannel does not enforce NetworkPolicy; require real denial of
+   private, metadata, tailnet, cluster, IPv6-equivalent, DNS-rebinding and WAN
+   hairpin paths before public exposure.
+2. For activation or rotation, drain attached gateway work and owned Cloud sessions
+   first. Coordinate the proxy verifier's credential refresh with Operator version
+   and private original-source parity verification in both namespaces; freeze
+   writes during this boundary. Existing browser credentials are not refreshed.
+   Use the parent-owned reviewed merge/restart boundary only after drain. Never
+   restart Hermes from the attached task. Git rollback alone does not remove the
+   selector on the PVC; any rollback must reconcile it privately while stopped.
+3. After reconnect, check Flux revision, Deployment observed generation and
+   updated/ready/available replicas, current owned Pod UID, all init exits/restarts,
+   required Secret/key projection, default-only selector and Obsidian ready marker.
+   Do not print credentials or inspect other profiles' auth material.
+4. In the actual default gateway conversation, open an owned fresh native Cloud
+   browser and a fresh named session. Privately verify custom proxy metadata and
+   public IP equality with homelab egress. Test correct/incorrect/absent proxy auth,
+   TLS validation, resolved-address denials and an approved proxy outage with no
+   vendor/direct fallback. Open an authorized private URL separately and verify
+   local Chromium routing. Stop only owned sessions and read stopped status back.
+   Local fixtures/CI, projection parity and Pod readiness do not prove these gates.
+
 
 ### 1Password Connect logins
 
