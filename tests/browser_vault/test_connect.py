@@ -403,19 +403,17 @@ class ConnectTests(unittest.TestCase):
                        "ws:///session", "wss://cdp.example:99999/session", "wss://[broken",
                        "wss://cdp.example/space here", "wss://cdp.example/\ncanary",
                        "https://cdp.example/" + PASSWORD,
-                       "wss://cdp.example/" + quote(PASSWORD, safe=""),
-                       "wss://cdp.example/" + proxy["username"]],
+                       "wss://cdp.example/" + quote(PASSWORD, safe="")],
             "timeoutAt": [{}, [], True, PASSWORD],
         }.items():
             invalid.extend({**valid, key: value} for value in values)
         for key in ("id", "cdpUrl", "timeoutAt"):
             invalid.append({**valid, key: quote(PASSWORD, safe="")})
         for endpoint in ("wss://synthetic-proxy-user@cdp.example/session",
-                         "wss://cdp.example/session?username=synthetic-proxy-user",
-                         "wss://cdp.example/%73ynthetic-proxy-user",
-                         "wss://cdp.example/session?username=%73ynthetic-proxy-user"):
+                         "wss://%73ynthetic-proxy-user@cdp.example/session",
+                         "wss://other:synthetic-proxy-user@cdp.example/session",
+                         "wss://other:%73ynthetic-proxy-user@cdp.example/session"):
             invalid.append({**valid, "cdpUrl": endpoint})
-        invalid.extend({**valid, key: proxy["username"]} for key in ("id", "timeoutAt"))
         bodies = [b'{"bad":' + PASSWORD.encode(), *(json.dumps(value).encode() for value in invalid)]
         for key in ("id", "cdpUrl", "timeoutAt"):
             bodies.append((json.dumps({**valid, "timeoutAt": "2030-01-01T00:00:00Z"})[:-1] +
@@ -484,6 +482,13 @@ class ConnectTests(unittest.TestCase):
         session_id = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
         for username, endpoint in (("browser-use", "wss://connect.browser-use.com/session"),
                                    ("a", "wss://cdp.example/session"),
+                                   ("session", "wss://connect.browser-use.com/session"),
+                                   ("browser", "wss://cdp.example/devtools/browser/" + session_id),
+                                   (session_id, "wss://cdp.example/session"),
+                                   ("2030-01-01T00:00:00Z", "wss://cdp.example/session"),
+                                   ("cdp.example", "wss://cdp.example/session"),
+                                   ("wss://cdp.example/session", "wss://cdp.example/session"),
+                                   ("synthetic-proxy-user", "wss://cdp.example/%73ynthetic-proxy-user?username=synthetic-proxy-user#synthetic-proxy-user"),
                                    ("ordinary-user", "wss://cdp.example/session"),
                                    ("synthetic-long-user-" * 40, "https://cdp.example")):
             with self.subTest(username=username):
