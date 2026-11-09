@@ -59,6 +59,9 @@ spec:
               mkdir -p /opt/langfuse/python /opt/langfuse/plugin /opt/data/plugins/langfuse
               mkdir -p /opt/browser
               mkdir -p /opt/coder/bin /opt/coder-credentials
+              mkdir -p /opt/data/cua
+              chown 10000:10000 /opt/data/cua
+              chmod 700 /opt/data/cua
               mkdir -p /opt/data/coder-tools/mise /opt/data/coder-tools/cache /opt/data/coder-tools/config
               chown 10000:10000 /opt/coder /opt/coder/bin /opt/coder-credentials
               chown 10000:10000 /opt/data/coder-tools /opt/data/coder-tools/mise /opt/data/coder-tools/cache /opt/data/coder-tools/config

@@ -60,6 +60,80 @@ change their source files instead of editing them in the dashboard. Other live
 assistant settings and both profiles' histories remain on the PVC. Configuration
 backups taken before the initial migration remain under `/opt/data/backups`.
 
+## Laptop control with Cua
+
+The official [Cua CLI](https://github.com/trycua/cua/releases/tag/cua-sdk-v0.16.0)
+0.16.0 is installed as `/opt/coder/bin/cua` by `install-coder-tools`, using the
+SHA256 in `coder/tools.sha256`. Only the CLI is extracted; Hermes runs its standard
+stdio `cua mcp --embedded`, not a host service or a cloud relay. MCP and the
+registration examples set `CUA_TELEMETRY=0` to disable CLI telemetry. `seed-config`
+reconciles [mcp-servers.yaml](mcp-servers.yaml) through `hermes config set` on pod
+startup. An operator-reviewed deployment must complete both init steps before a
+new assistant session can discover Cua. Do not edit live profile YAML or restart
+Hermes from the session being used to prepare this change.
+
+The MCP permission list and Hermes allowlist expose only `list_spaces`,
+`space_bash`, `space_job`, `space_write`, `upload`, `download`, `list_tools`, and
+`call_tool`. No provisioning, deletion, cloud account, or agent-key management
+tools are exposed. `call_tool` invokes services advertised by a registered Space,
+including native desktop tools; it is not a per-desktop-tool security boundary.
+Shell, file and UI access control the signed-in laptop user's real desktop and
+files, not an isolated sandbox. Registration is an operator action, outside MCP.
+Native delegated coder tasks inherit these parent tools; no coder MCP config is
+needed.
+
+### Onboard the existing Headscale laptops
+
+1. Both laptops are already enrolled: Mac `100.64.0.3`, Windows `100.64.0.4`.
+   Install the official [Cua Spaces app](https://github.com/trycua/cua/releases/tag/cua-spaces-v0.22.3)
+   on the Mac; Windows already has Cua installed. Make the bundled `cua` CLI
+   available in each laptop's terminal and check `cua --version`. Keep the
+   Headscale client running; do not enroll again or use Cua sign-in/pairing.
+2. Run on **each laptop**, in its signed-in desktop session:
+
+   ```sh
+   cua host setup --tailnet --share desktop
+   cua host status
+   ```
+
+   Grant the app's requested Accessibility and Screen Recording permissions on
+   macOS. Keep the desktop session available and the laptop awake. `--tailnet`
+   binds port 3211 to the laptop's tailnet IP; do not expose it publicly. The
+   laptop runs `tailscale whois` to identify callers: its owner and explicitly
+   allowed Headscale users need no token. If the existing gateway's observed
+   source belongs to another Headscale user, repeat setup with
+   `--allow <verified-headscale-user>`. The caller does not need a local Tailscale
+   CLI. Tagged or unidentified sources require a separately protected env token;
+   leave registration pending until route and authentication are verified, rather
+   than broadening ACLs or adding identity sidecars. Never put tokens in Git/chat.
+3. After the reviewed server deployment, register from the Hermes container using
+   the same persistent home as MCP (only after endpoint authentication succeeds):
+
+   ```sh
+   CUA_TELEMETRY=0 CUA_HOME=/opt/data/cua cua spaces add 100.64.0.3:3211 --embedded --name mac-laptop
+   CUA_TELEMETRY=0 CUA_HOME=/opt/data/cua cua spaces add 100.64.0.4:3211 --embedded --name windows-laptop
+   CUA_TELEMETRY=0 CUA_HOME=/opt/data/cua cua spaces list --embedded
+   ```
+
+   Cua owns its registry and separate protected credentials under `/opt/data/cua`
+   on `hermes-data`; keep that directory private. No addresses or hypothetical
+   credentials are seeded into the registry. An empty `list_spaces` result is a
+   valid server-only acceptance result, not evidence of laptop connectivity.
+4. In a new assistant session, use `list_spaces`, then `list_tools` for the
+   returned Space ID. Verify a harmless shell command, screenshot and file
+   round-trip on each laptop before calling it operational. `space_job` supports
+   Linux/macOS POSIX jobs (start/status/logs/cancel); **Windows is unsupported**.
+   The daemon has a native ProcessService (start/connect/list/signal), but it is
+   not a tested Windows job workflow through this MCP configuration. No custom
+   process orchestration is installed. Do not claim background-job notifications
+   or Windows process recovery until tested end to end.
+
+To revoke laptop control immediately, run `cua host stop` on that laptop.
+See upstream [Headscale identity and sharing](https://cua.ai/docs/spaces/guides/your-tailnet)
+for the owner/share-list contract. A TCP timeout before host setup does not
+establish whether the existing route works; listener, routing, caller identity,
+OS permissions and real tool execution remain separate acceptance checks.
+
 ## Cluster administration
 
 Startup installs `kubectl`, `flux`, and `talosctl` with the existing checksum-pinned

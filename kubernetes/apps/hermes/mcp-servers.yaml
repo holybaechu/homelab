@@ -1,5 +1,28 @@
 # Git owns the full MCP server list, reconciled on every pod start.
 # OAuth credentials stay on the persistent volume, outside this ConfigMap.
+cua:
+  command: /opt/coder/bin/cua
+  args:
+    - mcp
+    - --embedded
+    - --permissions
+    - spaces:list_spaces,spaces:space_bash,spaces:space_job,spaces:space_write,spaces:upload,spaces:download,spaces:list_tools,spaces:call_tool
+  env:
+    CUA_HOME: /opt/data/cua
+    CUA_TELEMETRY: "0"
+  enabled: true
+  tools:
+    resources: false
+    prompts: false
+    include:
+      - list_spaces
+      - space_bash
+      - space_job
+      - space_write
+      - upload
+      - download
+      - list_tools
+      - call_tool
 langfuse:
   url: http://langfuse.homelab.svc.cluster.local:3000/api/public/mcp
   headers:
