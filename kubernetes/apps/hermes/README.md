@@ -300,13 +300,27 @@ the cloud browser, so open the internal URL directly.
 
 ### Public-only custom proxy preparation
 
-`networking/browser-use-proxy-connect` projects the existing dedicated
-`browser-use-proxy` item through the Operator with automatic restart disabled.
-This preparation creates no listener, DNS record, or Hermes Pod-template change.
-Before enabling any consumer, an administrator must privately verify the exact
-item path, Operator Ready/Secret owner UID and item version, sole
-`custom-proxy-json` key, and source-to-Secret byte equality. Source creation and
-Flux inventory alone are not synchronization or authentication proof.
+`networking/browser-use-proxy-connect` and `homelab/browser-use-proxy-connect`
+project the same existing dedicated `browser-use-proxy` item through the official
+Operator, using `BROWSER_USE_PROXY_CONNECT_ITEM_PATH`, with automatic restart
+disabled. The Operator owns each namespaced Secret; the sole intended key is
+`custom-proxy-json`. The homelab projection is reserved for the future default
+profile, not coder or other profiles. This preparation creates no consumer mount,
+environment mapping, listener, DNS record, or Hermes Pod-template change.
+Before enabling any consumer, an administrator must privately verify both exact
+item paths, Operator Ready/Secret owner UIDs and item versions, sole key sets,
+and source-to-Secret byte equality. Source creation and Flux inventory alone are
+not synchronization or authentication proof.
+
+The follow-up default-profile binding must require the homelab Secret's
+`custom-proxy-json` key (not optional) and reconcile only
+`BROWSER_USE_CUSTOM_PROXY_JSON` in `/opt/data/.env` before gateway startup, using
+the existing native dotenv writer/loader and preserving every other setting.
+The native loader gives the profile `.env` precedence over container environment;
+a container-only export would not establish this contract. No binding is active
+here. Do not copy the selector to `profiles/*/.env`, distribute a Connect token,
+reuse the login-only `connect_vault.py` backend for Secure Notes, or enable a new
+startup secret reader. Startup `secrets.onepassword` is not configured.
 
 The existing Cloudflare DDNS app owns public DNS (DNS-only); do not introduce a
 second DNS controller. Public exposure requires separate review of reserved-name
