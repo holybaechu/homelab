@@ -9,6 +9,7 @@ cua:
     - spaces:list_spaces,spaces:space_bash,spaces:space_job,spaces:space_write,spaces:upload,spaces:download,spaces:list_tools,spaces:call_tool
   env:
     CUA_HOME: /opt/data/cua
+    CUA_TELEMETRY: "0"
   enabled: true
   tools:
     resources: false

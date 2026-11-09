@@ -65,7 +65,8 @@ backups taken before the initial migration remain under `/opt/data/backups`.
 The official [Cua CLI](https://github.com/trycua/cua/releases/tag/cua-sdk-v0.16.0)
 0.16.0 is installed as `/opt/coder/bin/cua` by `install-coder-tools`, using the
 SHA256 in `coder/tools.sha256`. Only the CLI is extracted; Hermes runs its standard
-stdio `cua mcp --embedded`, not a host service or a cloud relay. `seed-config`
+stdio `cua mcp --embedded`, not a host service or a cloud relay. MCP and the
+registration examples set `CUA_TELEMETRY=0` to disable CLI telemetry. `seed-config`
 reconciles [mcp-servers.yaml](mcp-servers.yaml) through `hermes config set` on pod
 startup. An operator-reviewed deployment must complete both init steps before a
 new assistant session can discover Cua. Do not edit live profile YAML or restart
@@ -109,9 +110,9 @@ needed.
    the same persistent home as MCP (only after endpoint authentication succeeds):
 
    ```sh
-   CUA_HOME=/opt/data/cua cua spaces add 100.64.0.3:3211 --host --name mac-laptop
-   CUA_HOME=/opt/data/cua cua spaces add 100.64.0.4:3211 --host --name windows-laptop
-   CUA_HOME=/opt/data/cua cua spaces list
+   CUA_TELEMETRY=0 CUA_HOME=/opt/data/cua cua spaces add 100.64.0.3:3211 --embedded --name mac-laptop
+   CUA_TELEMETRY=0 CUA_HOME=/opt/data/cua cua spaces add 100.64.0.4:3211 --embedded --name windows-laptop
+   CUA_TELEMETRY=0 CUA_HOME=/opt/data/cua cua spaces list --embedded
    ```
 
    Cua owns its registry and separate protected credentials under `/opt/data/cua`
