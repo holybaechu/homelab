@@ -298,6 +298,25 @@ containing both public and private URLs runs entirely on the local browser.
 homelab apps. A public URL that later redirects to a private address stays in
 the cloud browser, so open the internal URL directly.
 
+### Public-only custom proxy preparation
+
+`networking/browser-use-proxy-connect` projects the existing dedicated
+`browser-use-proxy` item through the Operator with automatic restart disabled.
+This preparation creates no listener, DNS record, or Hermes Pod-template change.
+Before enabling any consumer, an administrator must privately verify the exact
+item path, Operator Ready/Secret owner UID and item version, sole
+`custom-proxy-json` key, and source-to-Secret byte equality. Source creation and
+Flux inventory alone are not synchronization or authentication proof.
+
+The existing Cloudflare DDNS app owns public DNS (DNS-only); do not introduce a
+second DNS controller. Public exposure requires separate review of reserved-name
+collisions, candidate boundary proof, real projected-credential initialization and
+authentication, and proxy-only TCP/TLS routing on the existing Traefik entrypoint.
+Keep native activation PR #344 unmerged until the parent has drained active work.
+Rotation must coordinate proxy verifier restart with future native Cloud sessions
+and the reviewed gateway refresh; never restart Hermes from an attached task or
+change the existing private/local Browser Harness route to make a probe pass.
+
 ### 1Password Connect logins
 
 The native [`browser_vault`](https://hermes-agent.nousresearch.com/docs/user-guide/features/credential-vault)
