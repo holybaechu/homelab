@@ -134,6 +134,65 @@ for the owner/share-list contract. A TCP timeout before host setup does not
 establish whether the existing route works; listener, routing, caller identity,
 OS permissions and real tool execution remain separate acceptance checks.
 
+### Windows Aside local REPL
+
+For browser work explicitly targeting the existing Windows Aside profile, use
+Cua `space_bash` on `direct:100.64.0.4:3211` to run the laptop's official CLI:
+`C:\Users\holybaechu\AppData\Local\Aside\CLI\current\aside.exe`.
+This is command transport to **local** Aside, not Aside Remote Control. It needs
+the running, locally signed-in Aside app, not a server Aside login or Pro plan.
+A local permission, plan, or availability refusal is a stop boundary; leave the
+user's security settings intact. No server installation or additional MCP server
+is needed.
+
+1. Read `repl --help` and `guide repl` from that executable. Discover profiles with
+   `host profiles --host local --account u0 --json`; bind every REPL invocation to
+   the returned connected profile. The verified binding is account `u0`, profile
+   `31e95288-73db-4644-97dc-7510d6fb0e27`. Rediscover if it becomes unavailable;
+   do not silently select a different account or profile.
+2. Use Cua `space_write` or `upload` for a uniquely owned JavaScript file, then
+   invoke it from PowerShell:
+
+   ```powershell
+   $aside = 'C:\Users\holybaechu\AppData\Local\Aside\CLI\current\aside.exe'
+   & $aside repl --host local --account u0 `
+       --profile 31e95288-73db-4644-97dc-7510d6fb0e27 --json --file $ownedJsPath
+   $replExit = $LASTEXITCODE
+   ```
+
+   `space_bash` uses `cmd.exe /C` on Windows. Encode short PowerShell launchers
+   with Base64 of UTF-16LE and pass `powershell.exe -NoProfile -NonInteractive
+   -EncodedCommand <encoded>`. Upload longer scripts: encoded commands still hit
+   cmd.exe's command-length limit. `--file` also avoids native argument quoting
+   damage to JavaScript. Inspect the REPL exit code and JSON `run.error`, not just
+   Cua transport success. Give `space_bash` enough time for REPL's 120-second limit.
+3. Keep each task in one one-shot REPL script with `try/finally`: create only its
+   own tabs with `openTab`, perform locator actions, read the resulting snapshot
+   and exact DOM value, then `closeTab` each owned page in `finally`. One-shot
+   calls start with unset `page` and empty `tabs`; their temporary REPL closes on
+   return. JavaScript bindings do **not** persist into the next Cua call. Avoid
+   interactive/background REPL processes and Aside agent `exec` for this route.
+4. Capture only the owned page with `page.screenshot()`. For retrieval, emit
+   `JSON.stringify({stage:'screenshot',base64:Buffer.from(await page.screenshot()).toString('base64')})`
+   through `console.log`. Consume the JSON locally on Windows: `run.content`
+   contains text parts with multiple newline-separated log records. Parse those
+   lines, decode only the screenshot record with `[Convert]::FromBase64String`,
+   and write a uniquely owned PNG. Return its path instead of its Base64 payload
+   (Cua truncates long stdout), then use Cua `download` for that exact path.
+5. In a fresh one-shot call, filter `listBrowserTabs()` in memory for the exact
+   owned target IDs or unique fixture URL/title and return only the match count.
+   Zero matches plus unset `page`/empty `tabs` verifies owned cleanup without
+   exposing personal tabs. Remove only exact task-created scripts and screenshot
+   copies after retrieval, and read back their absence.
+
+For focus-sensitive work, compare Windows `GetForegroundWindow` and
+`GetCursorPos` before and after the operation without reading window titles or
+capturing the desktop. The controlled fill/click, DOM readback and owned-page
+capture passed with unchanged foreground handle and cursor at those checkpoints;
+this is not a continuous-focus guarantee. User activity or changed samples make
+isolation uncertain. Do not activate windows, move the cursor, change desktops,
+or silently fall back to GUI control.
+
 ## Cluster administration
 
 Startup installs `kubectl`, `flux`, and `talosctl` with the existing checksum-pinned
