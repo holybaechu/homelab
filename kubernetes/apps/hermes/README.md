@@ -212,6 +212,60 @@ text such as names or note contents.
 
 ## Browser
 
+### agent-browser preparation (cutover blocked)
+
+`install-coder-tools` installs the official standalone
+[agent-browser 0.41.2](https://github.com/vercel-labs/agent-browser/releases/tag/v0.41.2)
+at `/opt/coder/bin/agent-browser`, verified by `coder/tools.sha256`. It supports
+native typed MCP (`mcp --help`) and Browser Use Cloud (`-p browseruse`,
+`BROWSER_USE_PROXY_COUNTRY=kr`), without npm or another model login. The standalone
+release lacks its advertised bundled skills; use the versioned upstream docs.
+
+**This prepares the driver, not a default-workflow cutover.** Existing
+`browser_exec`, `browser_vault`, hybrid routing and Cua remain unchanged. Current
+Hermes ignores the retired `browser.backend` selector. Do not expose an unguarded
+agent-browser MCP server until both security contracts are integrated and tested:
+
+- Hermes's unconditional metadata-URL refusal and DNS-aware private routing must
+  also cover URL-bearing eval/CDP operations. Separate local/cloud MCP names and
+  instructions alone do not enforce these controls.
+- Native vault fills require the same task's registered CDP supervisor. Independent
+  CLI/MCP sessions are not registered. Direct CDP transport works, but a
+  profile-wide `/browser connect` is not a safe handoff across simultaneous chats.
+  Custom `BrowserPageBackend` extensions require bundled/catalog-reviewed trust;
+  preserve that gate instead of copying secrets into another auth store.
+
+For nonsecret server tests, reuse the image's Chromium through
+`AGENT_BROWSER_EXECUTABLE_PATH` and `AGENT_BROWSER_ARGS=--no-sandbox`. Driver
+compatibility does not establish browser security currency: review the packaged
+Chromium version before production cutover. Use unique namespaces/sessions,
+`--content-boundaries`, `--max-output 8000`, and close the exact session. Cloud
+acceptance requires protected key injection and positively acknowledged cleanup;
+keys and CDP endpoints must stay out of arguments, chat and reports.
+
+Upload laptop binaries through their registered Cua Space, into signed-in-user
+owned version directories, and verify the hash on the laptop before execution:
+
+| Laptop | Official v0.41.2 asset | SHA256 | Owned installation directory |
+| --- | --- | --- | --- |
+| Apple Silicon Mac | `agent-browser-darwin-arm64` | `19680f06cf87d0095c318a2e80bea6b71523d95d3b651cd18d81885cd182477a` | `~/.local/share/hermes-agent-browser/0.41.2/` |
+| Windows x64 | `agent-browser-win32-x64.exe` | `c2eadee7b67e326dfff02d5dd51a16ce7673eb165699d134b3ea5f05b4a7a9d0` | `%LOCALAPPDATA%\hermes-agent-browser\0.41.2\` |
+
+Use verified existing Chrome/Edge via `--executable-path`, headless mode and owned
+temporary profiles; keep restore disabled. Windows uses a private desktop.
+Leave personal UI/profiles, extensions and auto-connect alone. Cua still owns
+command/files/native-app GUI. Laptop localhost means that laptop, not the server.
+An offline laptop is a pending gate, not a reason to change host setup or ACLs.
+
+The hashed bootstrap change can trigger `Recreate` after merge: parent/operator
+must drain all active chats first. After approved deployment, verify
+`/opt/coder/bin/agent-browser --version`; existing browser tools must remain.
+Revert the installer change for removal on the next approved rollout. Laptop
+recovery closes only its named migration session and removes only its owned
+version directory, never all Chrome processes or existing browser profiles.
+
+### Existing protected workflow
+
 [Hybrid routing](https://hermes-agent.nousresearch.com/docs/user-guide/features/browser#hybrid-routing-cloud-for-public-urls-local-for-lanlocalhost)
 uses Browser Use Cloud for public URLs and the image's packaged Chromium for
 private URLs. `seed-config` enforces the provider, automatic private routing,
