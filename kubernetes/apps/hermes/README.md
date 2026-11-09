@@ -280,7 +280,9 @@ The Pod blocks Chromium's user-namespace sandbox, so local Chromium runs as UID
 Coder uses local Chromium by default; `configure-profiles` reconciles the same
 flag from `coder.yaml` without replacing its other live browser settings.
 
-Cloud sessions default to a South Korea (`kr`) residential proxy.
+Browser Harness's country-only Cloud default remains South Korea (`kr`); the
+native default-profile BYOP binding below supersedes country selection for its
+provider-owned sessions after activation.
 `seed-config` applies [browser-cloud.patch](browser-cloud.patch) to the image's
 Browser Harness in a runtime volume. Review the patch when upgrading the image;
 a context mismatch stops startup rather than silently losing the country setting.
@@ -460,7 +462,8 @@ origin recheck. Browser Use sessions are provisioned by the bundled provider and
 their CDP endpoint is shared by the harness and native supervisor, rather than
 using harness-only cloud autospawn. Named sessions retain separate provider
 sessions; Browser Use creation failures refuse instead of falling back to another
-browser. The direct provider retains the existing Korean proxy country. Deployment
+browser. The direct provider retains the Korean proxy country only for profiles
+without the custom selector. Deployment
 replaces existing harness-only sessions, so reopen the authorized login page after
 restart before filling; discovery alone does not prove a supervised page exists.
 
