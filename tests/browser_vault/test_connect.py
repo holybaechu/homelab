@@ -98,7 +98,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.server.cloud_creates.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
             self.send_response(201)
             self.end_headers()
-            self.wfile.write(json.dumps({"id": "synthetic-cloud-id", "cdpUrl": self.server.cdp_endpoint}).encode())
+            payload = getattr(self.server, "cloud_response", None)
+            self.wfile.write(payload if payload is not None else json.dumps(
+                {"id": "synthetic-cloud-id", "cdpUrl": self.server.cdp_endpoint}).encode())
             return
         fields = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
         valid = (self.path == "/session" and fields.get("username") == ["synthetic@example.com"] and
@@ -149,6 +151,7 @@ class ConnectTests(unittest.TestCase):
         self.srv.item = copy.deepcopy(self.item)
         self.srv.items = None
         self.srv.status, self.srv.payload, self.srv.paths = 200, None, []
+        self.srv.cloud_response = None
         self.adapter = ConnectVault(self.url, str(self.token_file))
 
     def test_discovery_all_granted_vaults_and_metadata_only(self):
@@ -380,6 +383,125 @@ class ConnectTests(unittest.TestCase):
                     self.assertTrue(caught.exception.__suppress_context__)
                     self.assertEqual(create.call_count, 1)
                     self.assertEqual(create.call_args.args[2], {"customProxy": proxy})
+
+    def test_byop_malformed_success_never_reaches_native_discovery_or_logs(self):
+        import contextlib
+        import io
+        import logging
+        import traceback
+        from urllib.parse import quote
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        from tools import browser_session
+        provider = BrowserUseBrowserProvider()
+        proxy = dict(host="proxy.example.com", port=443, protocol="https",
+                     username="synthetic-proxy-user", password=PASSWORD)
+        valid = dict(id="synthetic-owned", cdpUrl="wss://cdp.example/session")
+        invalid = [None, [], {}, dict(cdpUrl=valid["cdpUrl"]), dict(id=valid["id"])]
+        for key, values in {
+            "id": [None, 7, {}, "", " ", PASSWORD, "owned-" + PASSWORD],
+            "cdpUrl": [None, 7, {}, "", PASSWORD, "not-a-url", "ftp://cdp.example/session",
+                       "ws:///session", "wss://cdp.example:99999/session", "wss://[broken",
+                       "wss://cdp.example/space here", "wss://cdp.example/\ncanary",
+                       "https://cdp.example/" + PASSWORD,
+                       "wss://cdp.example/" + quote(PASSWORD, safe=""),
+                       "wss://cdp.example/" + proxy["username"]],
+            "timeoutAt": [{}, [], True, PASSWORD],
+        }.items():
+            invalid.extend({**valid, key: value} for value in values)
+        bodies = [b'{"bad":' + PASSWORD.encode(), *(json.dumps(value).encode() for value in invalid)]
+        output = io.StringIO()
+        handler = logging.StreamHandler(output)
+        logger = logging.getLogger("tools.browser_session_cdp")
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        with patch.object(provider, "_get_config", return_value={
+                "base_url": self.url, "api_key": TOKEN, "managed_mode": False}), patch(
+                "agent.secret_scope.current_secret_scope", return_value={"BROWSER_USE_CUSTOM_PROXY_JSON": json.dumps(proxy)}), patch(
+                "requests.get", side_effect=AssertionError("must not discover")) as discovery, patch.object(
+                browser_session, "_create_local_session", side_effect=AssertionError("no fallback")) as local:
+            for case, body in enumerate(bodies):
+                with self.subTest(case=case):
+                    self.srv.cloud_creates, self.srv.cloud_response = [], body
+                    # Test the provider diagnostic itself and the real native consumer boundary.
+                    for create in (lambda: provider.create_session("synthetic-malformed"),
+                                   lambda: browser_session._create_cloud_session_or_fallback("synthetic-malformed", provider)):
+                        with contextlib.redirect_stderr(output), self.assertRaises(RuntimeError) as caught:
+                            create()
+                        rendered = "".join(traceback.format_exception(caught.exception))
+                        self.assertTrue(caught.exception.__suppress_context__)
+                        self.assertNotIn(PASSWORD, rendered)
+                        self.assertNotIn(proxy["username"], rendered)
+                        self.assertIn(str(caught.exception), (
+                            "Invalid Browser Use custom proxy session response",
+                            "Browser Use session creation failed; no local fallback"))
+                    self.assertEqual(len(self.srv.cloud_creates), 2)  # exactly one POST per explicit call
+            discovery.assert_not_called()
+            local.assert_not_called()
+        self.assertNotIn(PASSWORD, output.getvalue())
+        self.assertNotIn(proxy["username"], output.getvalue())
+
+    def test_byop_valid_success_preserves_native_endpoints_and_consumed_fields(self):
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        from tools import browser_session
+        provider = BrowserUseBrowserProvider()
+        proxy = dict(host="proxy.example.com", port=443, protocol="https",
+                     username="synthetic-proxy-user", password=PASSWORD)
+        with patch.object(provider, "_get_config", return_value={
+                "base_url": self.url, "api_key": TOKEN, "managed_mode": False}), patch(
+                "agent.secret_scope.current_secret_scope", return_value={"BROWSER_USE_CUSTOM_PROXY_JSON": json.dumps(proxy)}), patch(
+                "requests.get") as discovery:
+            discovery.return_value.json.return_value = {"webSocketDebuggerUrl": "ws://[::1]:9222/devtools/browser/synthetic"}
+            for field, endpoint in (("cdpUrl", "wss://cdp.example/session?token=synthetic-cdp-token"),
+                                    ("connectUrl", "ws://127.0.0.1:9222/devtools/browser/synthetic"),
+                                    ("cdpUrl", "http://localhost:9222"), ("cdpUrl", "https://cdp.example")):
+                with self.subTest(field=field, endpoint=endpoint):
+                    data = dict(id="synthetic-owned", timeoutAt="2030-01-01T00:00:00Z", **{field: endpoint},
+                                liveUrl=PASSWORD, metadata={"ignored": PASSWORD})
+                    self.srv.cloud_creates, self.srv.cloud_response = [], json.dumps(data).encode()
+                    result = browser_session._create_cloud_session_or_fallback("synthetic-valid", provider)
+                    self.assertEqual(result["bb_session_id"], data["id"])
+                    self.assertEqual(result["expires_at"], data["timeoutAt"])
+                    self.assertEqual(result["cdp_url"], discovery.return_value.json.return_value["webSocketDebuggerUrl"]
+                                     if endpoint.startswith("http") else endpoint)
+                    self.assertNotIn(PASSWORD, json.dumps(result))
+                    self.assertEqual(self.srv.cloud_creates, [{"customProxy": proxy}])
+
+    def test_unconfigured_native_provider_retains_direct_and_managed_creation(self):
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider, _pending_create_keys
+        provider = BrowserUseBrowserProvider()
+        self.srv.cdp_endpoint = "wss://cdp.example/session"
+        with patch("agent.secret_scope.current_secret_scope", return_value={}):
+            for managed in (False, True):
+                with self.subTest(managed=managed), patch.object(provider, "_get_config", return_value={
+                        "base_url": self.url, "api_key": TOKEN, "managed_mode": managed}):
+                    self.srv.cloud_creates = []
+                    result = provider.create_session("synthetic-unconfigured")
+                    self.assertEqual(result["cdp_url"], self.srv.cdp_endpoint)
+                    self.assertEqual(result["bb_session_id"], "synthetic-cloud-id")
+                    self.assertEqual(self.srv.cloud_creates, [{"timeout": 5, "proxyCountryCode": "us"}
+                                                            if managed else {"proxyCountryCode": "kr"}])
+                    self.assertNotIn("synthetic-unconfigured", _pending_create_keys)
+
+    def test_byop_duplicate_config_is_rejected_in_scope_and_profile_dotenv(self):
+        from agent.secret_scope import set_secret_scope, reset_secret_scope
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        provider = BrowserUseBrowserProvider()
+        proxy = dict(host="proxy.example.com", port=443, protocol="https",
+                     username="synthetic-proxy-user", password=PASSWORD)
+        raw = json.dumps(proxy).replace('"port": 443', '"port": 80, "port": 443')
+        with tempfile.TemporaryDirectory() as temp, patch.object(provider, "_get_config", return_value={"managed_mode": False}), patch.object(
+                provider, "_post_create") as create, patch("hermes_constants.get_hermes_home", return_value=Path(temp)):
+            (Path(temp) / ".env").write_text("BROWSER_USE_CUSTOM_PROXY_JSON='" + raw + "'\n")
+            for scope in ({"BROWSER_USE_CUSTOM_PROXY_JSON": raw}, None):
+                token = set_secret_scope(scope)
+                try:
+                    with self.assertRaises(ValueError) as caught:
+                        provider.create_session("synthetic-duplicate")
+                    self.assertNotIn(PASSWORD, str(caught.exception))
+                    self.assertTrue(caught.exception.__suppress_context__)
+                finally:
+                    reset_secret_scope(token)
+            create.assert_not_called()
 
     def test_byop_secret_scope_does_not_inherit_another_profiles_proxy(self):
         from agent.secret_scope import (set_secret_scope, reset_secret_scope,
