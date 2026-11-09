@@ -7,6 +7,11 @@
       "src": ["autogroup:member"],
       "dst": ["autogroup:member", "${LAN_CIDR}", "tag:gateway", "autogroup:internet"],
       "ip": ["*"]
+    },
+    {
+      "src": ["tag:gateway"],
+      "dst": ["100.64.0.3", "100.64.0.4"],
+      "ip": ["tcp:3211"]
     }
   ],
   "autoApprovers": {
