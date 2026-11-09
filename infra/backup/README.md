@@ -258,7 +258,8 @@ BitLocker-protected location, not OneDrive/a shared drive. Both encrypted state
 (`backup.tfstate`, including future backups) and plan (`adoption.tfplan`), plus
 provider data, stay in `$Private`, never the checkout. Preserve this directory and
 its nonsecret source SHA/path for recovery. Before any rerun, locate existing
-state/plan and inspect the failure stage; never silently start with fresh state.
+state/plan, state backup or lock metadata, and inspect the failure stage; never
+silently start with fresh state.
 
 ### Run only after credential storage and read-only planning are authorized
 
@@ -272,7 +273,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Adoption review failed; stop. No apply authori
 screen, dump item JSON/provider environments, use `--no-masking`, save decrypted
 plan JSON, or upload the encrypted artifacts to chat/CI. The launcher captures
 `tofu show` before parsing and checks its native exit code, so a failed producer
-cannot pass the review gate. Expected: only `b2_bucket.backup: no-op` with the
+cannot pass the review gate. The review requires the pinned format `1.2`,
+`terraform_version=1.13.2` and boolean `errored=false`; that producer has no
+`complete` field. It rejects array-wrapped roots, malformed action/import shapes
+and case/Unicode variants of the approved identity. Expected: only
+`b2_bucket.backup: no-op` with the
 exact import ID, and no data resources. Scaleway credentials are not required for
 this disabled-provider adoption checkpoint; do not inject dummy credentials. A
 success **does not** prove SDK write access, an active Scaleway account, or bucket/runtime scope.

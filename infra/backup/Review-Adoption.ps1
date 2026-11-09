@@ -45,7 +45,9 @@ foreach ($name in @('OP_ACCOUNT', 'B2_APPLICATION_KEY_ID', 'B2_APPLICATION_KEY',
 $planPath = Join-Path $private 'adoption.tfplan'
 $statePath = Join-Path $private 'backup.tfstate'
 $dataPath = Join-Path $private 'tofu-data'
-if ((Test-Path $planPath) -or (Test-Path $statePath) -or (Test-Path $dataPath)) {
+$existing = @($planPath, $statePath, $dataPath, "$statePath.backup",
+    (Join-Path $private '.backup.tfstate.lock.info')) | Where-Object { Test-Path -LiteralPath $_ }
+if ($existing) {
     Stop-Review 'Existing artifacts found. Preserve them and review recovery; do not overwrite or choose fresh state.'
 }
 $versionText = & tofu version -json 2>$null
@@ -66,22 +68,37 @@ if ($planExit -notin @(0, 2)) { Stop-Review 'Read-only plan failed; no plan appr
 # Capture producer first; never pipe failed/partial decrypted output into a gate.
 $json = & tofu "-chdir=$source" show -json $planPath 2>$null
 if ($LASTEXITCODE -ne 0) { $json = $null; Stop-Review 'Plan decryption failed; no plan approved.' }
-try { $plan = $json -join "`n" | ConvertFrom-Json -Depth 100 }
-catch { Stop-Review 'Invalid plan JSON; no plan approved.' }
-finally { $json = $null }
-$changes = @($plan.resource_changes)
-$managed = @($changes | Where-Object { $_.mode -eq 'managed' })
-if ($managed.Count -ne 1 -or $managed[0].address -ne 'b2_bucket.backup' -or
-    ($managed[0].change.actions -join ',') -ne 'no-op' -or
-    $managed[0].change.importing.id -ne '8a6f23878ab0beb4a3120e11') {
-    Stop-Review 'Stop: expected only the unchanged B2 bucket import. No apply authorized.'
+try {
+    $plan = ConvertFrom-Json -InputObject ($json -join "`n") -Depth 100 -AsHashtable -NoEnumerate
+    if ($plan -isnot [System.Collections.IDictionary] -or
+        $plan['format_version'] -isnot [string] -or
+        -not [string]::Equals($plan['format_version'], '1.2', [StringComparison]::Ordinal) -or
+        $plan['terraform_version'] -isnot [string] -or
+        -not [string]::Equals($plan['terraform_version'], '1.13.2', [StringComparison]::Ordinal) -or
+        $plan['errored'] -isnot [bool] -or $plan['errored'] -or
+        $plan['resource_changes'] -isnot [array] -or $plan['resource_changes'].Count -ne 1) {
+        throw 'schema'
+    }
+    # OpenTofu 1.13.2 format 1.2 emits errored, but has no complete field.
+    $resource = $plan['resource_changes'][0]
+    if ($resource -isnot [System.Collections.IDictionary] -or
+        $resource['mode'] -isnot [string] -or
+        -not [string]::Equals($resource['mode'], 'managed', [StringComparison]::Ordinal) -or
+        $resource['address'] -isnot [string] -or
+        -not [string]::Equals($resource['address'], 'b2_bucket.backup', [StringComparison]::Ordinal) -or
+        $resource['change'] -isnot [System.Collections.IDictionary]) { throw 'identity' }
+    $change = $resource['change']
+    if ($change['actions'] -isnot [array] -or $change['actions'].Count -ne 1 -or
+        $change['actions'][0] -isnot [string] -or
+        -not [string]::Equals($change['actions'][0], 'no-op', [StringComparison]::Ordinal) -or
+        $change['importing'] -isnot [System.Collections.IDictionary] -or
+        $change['importing']['id'] -isnot [string] -or
+        -not [string]::Equals($change['importing']['id'], '8a6f23878ab0beb4a3120e11', [StringComparison]::Ordinal)) {
+        throw 'action/import'
+    }
 }
-foreach ($change in $changes) {
-    if ($change.mode -ne 'managed') { Stop-Review 'Unexpected plan mode/resource; stop.' }
-}
-foreach ($change in $changes) {
-    Write-Output ('{0}: {1}' -f $change.address, ($change.change.actions -join ','))
-}
-$plan = $null
+catch { Stop-Review 'Stop: invalid plan or unexpected B2 import. No apply authorized.' }
+finally { $json = $null; $plan = $null; $resource = $null; $change = $null }
+Write-Output 'b2_bucket.backup: no-op'
 Write-Output 'PASS: unchanged B2 metadata import only. Encrypted plan retained; no import/apply performed.'
 Write-Output 'STOP here. SDK write authentication and Scaleway account/naming/runtime provisioning remain separate gates.'
