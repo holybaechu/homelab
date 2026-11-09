@@ -397,11 +397,11 @@
  
 +import json
 +import re
-+from urllib.parse import unquote, urlsplit
++from urllib.parse import parse_qsl, unquote, urlsplit
  import logging
  import threading
  import uuid
-@@ -126,9 +129,84 @@
+@@ -126,9 +129,92 @@
      def _release_body(self, config: dict[str, Any]) -> dict[str, object]:
          return {"action": "stop"}
  
@@ -465,9 +465,17 @@
 +                if isinstance(value, str):
 +                    if any(ord(c) < 32 or ord(c) == 127 for c in value):
 +                        raise ValueError
-+                    if any(proxy[key] in value or proxy[key] in unquote(value) for key in ("username", "password")):
++                    if proxy["password"] in value or proxy["password"] in unquote(value):
++                        raise ValueError
++                    if unquote(value) == proxy["username"]:
 +                        raise ValueError
 +            target = urlsplit(cdp_url)
++            # Match complete credential-bearing fields, not hostnames or opaque token substrings.
++            username_fields = [unquote(target.username or ""), unquote(target.password or ""),
++                               *unquote(target.path).split("/"),
++                               *(value for _, value in parse_qsl(target.query)), unquote(target.fragment)]
++            if proxy["username"] in username_fields:
++                raise ValueError
 +            if (target.scheme not in {"ws", "wss", "http", "https"} or not target.hostname or
 +                    any(c.isspace() for c in cdp_url) or "\\" in cdp_url):
 +                raise ValueError
@@ -486,7 +494,7 @@
  
          headers = self._headers(config)
          if managed_mode:
-@@ -136,10 +214,20 @@
+@@ -136,10 +222,20 @@
          # Short gateway sessions: billing authorization must not default to a long Browser-Use timeout.
          payload = (
              {"timeout": _DEFAULT_MANAGED_TIMEOUT_MINUTES, "proxyCountryCode": _DEFAULT_MANAGED_PROXY_COUNTRY_CODE}
@@ -510,7 +518,7 @@
          if not response.ok and managed_mode and not _should_preserve_pending_create_key(response):
              _clear_pending_create_key(task_id)
          self._check_created(response)
-@@ -147,7 +235,8 @@
+@@ -147,7 +243,8 @@
 -        session_data = response.json()
 +        session_data = (self._custom_proxy_session_data(response, custom_proxy)
 +                        if custom_proxy is not None else response.json())

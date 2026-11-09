@@ -408,7 +408,18 @@ class ConnectTests(unittest.TestCase):
             "timeoutAt": [{}, [], True, PASSWORD],
         }.items():
             invalid.extend({**valid, key: value} for value in values)
+        for key in ("id", "cdpUrl", "timeoutAt"):
+            invalid.append({**valid, key: quote(PASSWORD, safe="")})
+        for endpoint in ("wss://synthetic-proxy-user@cdp.example/session",
+                         "wss://cdp.example/session?username=synthetic-proxy-user",
+                         "wss://cdp.example/%73ynthetic-proxy-user",
+                         "wss://cdp.example/session?username=%73ynthetic-proxy-user"):
+            invalid.append({**valid, "cdpUrl": endpoint})
+        invalid.extend({**valid, key: proxy["username"]} for key in ("id", "timeoutAt"))
         bodies = [b'{"bad":' + PASSWORD.encode(), *(json.dumps(value).encode() for value in invalid)]
+        for key in ("id", "cdpUrl", "timeoutAt"):
+            bodies.append((json.dumps({**valid, "timeoutAt": "2030-01-01T00:00:00Z"})[:-1] +
+                           "," + json.dumps(key) + ":" + json.dumps(valid.get(key, 0)) + "}").encode())
         output = io.StringIO()
         handler = logging.StreamHandler(output)
         logger = logging.getLogger("tools.browser_session_cdp")
@@ -465,6 +476,33 @@ class ConnectTests(unittest.TestCase):
                                      if endpoint.startswith("http") else endpoint)
                     self.assertNotIn(PASSWORD, json.dumps(result))
                     self.assertEqual(self.srv.cloud_creates, [{"customProxy": proxy}])
+
+    def test_byop_username_coincidences_preserve_native_session_creation(self):
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        from tools import browser_session
+        provider = BrowserUseBrowserProvider()
+        session_id = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        for username, endpoint in (("browser-use", "wss://connect.browser-use.com/session"),
+                                   ("a", "wss://cdp.example/session"),
+                                   ("ordinary-user", "wss://cdp.example/session"),
+                                   ("synthetic-long-user-" * 40, "https://cdp.example")):
+            with self.subTest(username=username):
+                proxy = dict(host="proxy.example.com", port=443, protocol="https",
+                             username=username, password=PASSWORD)
+                data = dict(id=session_id, cdpUrl=endpoint, timeoutAt="2030-01-01T00:00:00Z")
+                self.srv.cloud_creates, self.srv.cloud_response = [], json.dumps(data).encode()
+                with patch.object(provider, "_get_config", return_value={
+                        "base_url": self.url, "api_key": TOKEN, "managed_mode": False}), patch(
+                        "agent.secret_scope.current_secret_scope", return_value={"BROWSER_USE_CUSTOM_PROXY_JSON": json.dumps(proxy)}), patch(
+                        "requests.get") as discovery, patch.object(browser_session, "_create_local_session") as local:
+                    discovery.return_value.json.return_value = {"webSocketDebuggerUrl": "wss://cdp.example/session"}
+                    result = browser_session._create_cloud_session_or_fallback("synthetic-username", provider)
+                    self.assertEqual(result["bb_session_id"], session_id)
+                    self.assertEqual(result["expires_at"], data["timeoutAt"])
+                    self.assertEqual(result["cdp_url"], "wss://cdp.example/session" if endpoint.startswith("https") else endpoint)
+                    self.assertEqual(discovery.call_count, int(endpoint.startswith("https")))
+                    local.assert_not_called()
+                self.assertEqual(self.srv.cloud_creates, [{"customProxy": proxy}])
 
     def test_unconfigured_native_provider_retains_direct_and_managed_creation(self):
         from plugins.browser.browser_use.provider import BrowserUseBrowserProvider, _pending_create_keys
