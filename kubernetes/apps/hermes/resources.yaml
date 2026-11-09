@@ -190,6 +190,7 @@ spec:
               done
               sha256sum -c /bootstrap/delegation-plugin.sha256
               /opt/hermes/.venv/bin/python /bootstrap/configure_profiles.py
+              /opt/hermes/.venv/bin/python /bootstrap/configure_browser_proxy.py
           securityContext:
             runAsUser: 10000
             runAsGroup: 10000
@@ -209,6 +210,9 @@ spec:
               mountPath: /opt/data
             - name: bootstrap
               mountPath: /bootstrap
+              readOnly: true
+            - name: browser-proxy-source
+              mountPath: /var/run/hermes-browser-proxy
               readOnly: true
             - name: integration-temporary
               mountPath: /tmp
@@ -919,6 +923,14 @@ spec:
           emptyDir: {}
         - name: browser-runtime
           emptyDir: {}
+        - name: browser-proxy-source
+          secret:
+            secretName: browser-use-proxy-connect
+            optional: false
+            defaultMode: 0444
+            items:
+              - key: custom-proxy-json
+                path: custom-proxy-json
         - name: browser-vault-credentials
           secret:
             secretName: hermes-browser-vault

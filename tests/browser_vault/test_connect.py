@@ -346,13 +346,13 @@ class ConnectTests(unittest.TestCase):
                 provider, "_post_create", side_effect=AssertionError("must not create")) as create:
             for case, raw in enumerate(invalid):
                 with self.subTest(case=case), patch(
-                        "plugins.browser.browser_use.provider.get_secret", return_value=raw):
+                        "agent.secret_scope.current_secret_scope", return_value={"BROWSER_USE_CUSTOM_PROXY_JSON": raw}):
                     with self.assertRaises(ValueError) as caught:
                         provider.create_session("synthetic-byop-invalid")
                     self.assertNotIn(PASSWORD, str(caught.exception))
             create.assert_not_called()
         with patch.object(provider, "_get_config", return_value={"managed_mode": True}), patch(
-                "plugins.browser.browser_use.provider.get_secret", return_value=json.dumps(proxy)), patch.object(
+                "agent.secret_scope.current_secret_scope", return_value={"BROWSER_USE_CUSTOM_PROXY_JSON": json.dumps(proxy)}), patch.object(
                 provider, "_post_create") as create:
             with self.assertRaisesRegex(ValueError, "requires the direct API provider"):
                 provider.create_session("synthetic-managed-byop")
@@ -366,7 +366,7 @@ class ConnectTests(unittest.TestCase):
                  "username": "synthetic-proxy", "password": PASSWORD}
         with patch.object(provider, "_get_config", return_value={
                 "base_url": self.url, "api_key": TOKEN, "managed_mode": False}), patch(
-                "plugins.browser.browser_use.provider.get_secret", return_value=json.dumps(proxy)):
+                "agent.secret_scope.current_secret_scope", return_value={"BROWSER_USE_CUSTOM_PROXY_JSON": json.dumps(proxy)}):
             for failure in (RuntimeError(PASSWORD), SimpleNamespace(ok=False, text=PASSWORD)):
                 with self.subTest(outage=isinstance(failure, Exception)), patch.object(
                         provider, "_post_create") as create:
@@ -644,6 +644,108 @@ class ConnectTests(unittest.TestCase):
             SUPERVISOR_REGISTRY.stop_all()
             process.terminate()
             process.wait(timeout=15)
+
+
+class DefaultProxyBindingTests(unittest.TestCase):
+    def setUp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("configure_browser_proxy", APP / "configure_browser_proxy.py")
+        assert spec is not None and spec.loader is not None
+        self.binding = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.binding)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.source, self.env = self.home / "projection", self.home / ".env"
+        self.proxy = dict(host="proxy.hchu.me", port=443, protocol="https",
+                          username="synthetic-user", password="synthetic \\ ' \" # ${HOME} 한글")
+        self.source.write_text(json.dumps(self.proxy))
+
+    def test_dotenv_preserves_unrelated_bytes_mode_and_native_roundtrip(self):
+        from agent.secret_scope import load_env_file
+        from hermes_cli.env_loader import load_hermes_dotenv
+        key = self.binding.KEY
+        prefix = b'\xef\xbb\xbf# keep comment\r\n  OTHER = "keep\\\\path # value"\r\nMULTI=\'first\nsecond\'\r\n'
+        suffix = b'# trailing comment\r\nAUTH=untouched'
+        self.env.write_bytes(prefix + (key + '=old\nexport ' + key + '=stale\n').encode() + suffix)
+        self.env.chmod(0o640)
+        coder = self.home / "profiles/coder/.env"
+        coder.parent.mkdir(parents=True)
+        coder.write_bytes(b'CODER=unchanged\n')
+        with patch.dict(os.environ, {key: "inherited-default"}):
+            self.binding.reconcile(self.source, self.env)
+            self.assertEqual(os.environ[key], "inherited-default")
+            result = self.env.read_bytes()
+            self.binding.reconcile(self.source, self.env)
+            self.assertEqual(self.env.read_bytes(), result)
+            self.assertEqual(self.env.stat().st_mode & 0o777, 0o640)
+            with patch("hermes_cli.env_loader._apply_external_secret_sources"):
+                load_hermes_dotenv(hermes_home=self.home, load_external_secrets=False)
+            self.assertEqual(json.loads(os.environ[key]), self.proxy)
+        self.assertTrue(result.startswith(prefix))
+        self.assertIn(suffix, result)
+        self.assertEqual(result.count((key + "=").encode()), 1)
+        self.assertEqual(json.loads(load_env_file(self.env)[key]), self.proxy)
+        self.assertEqual(coder.read_bytes(), b'CODER=unchanged\n')
+
+    def test_input_failures_leave_env_untouched_and_main_sanitized(self):
+        import contextlib
+        import io
+        original = b'# protected\nMODEL=unchanged\n'
+        invalid = [b'', b' ', b'null', b'[]', b'{}', b'---\n{}', b'{}\n{}', b'\xff',
+                   json.dumps(self.proxy).replace('443', '443.0').encode(),
+                   json.dumps(self.proxy).replace('proxy.hchu.me', 'unexpected.example').encode(),
+                   json.dumps(self.proxy).replace('"port": 443', '"port": 443, "port": 443').encode()]
+        for key, value in [('username', None), ('password', ''), ('password', ' '), ('port', True),
+                           ('protocol', 'http'), ('password', 'synthetic\ncanary'), ('extra', 'synthetic-canary')]:
+            invalid.append(json.dumps(dict(self.proxy, **{key: value})).encode())
+        for raw in [None, *invalid]:
+            with self.subTest(case=invalid.index(raw) if raw in invalid else -1):
+                self.env.write_bytes(original)
+                self.source.unlink(missing_ok=True)
+                if raw is not None:
+                    self.source.write_bytes(raw)
+                out = io.StringIO()
+                with patch.object(self.binding, 'SOURCE', self.source), patch.object(self.binding, 'ENV', self.env), contextlib.redirect_stderr(out):
+                    self.assertEqual(self.binding.main(), 1)
+                self.assertEqual(out.getvalue(), 'Browser proxy binding refused; gateway startup blocked\n')
+                self.assertEqual(self.env.read_bytes(), original)
+
+    def test_unexpected_env_and_failed_writer_are_safe(self):
+        original = b'# keep\nAUTH=untouched\n'
+        target = self.home / 'target'
+        target.write_bytes(original)
+        self.env.symlink_to(target)
+        with self.assertRaises(ValueError):
+            self.binding.reconcile(self.source, self.env)
+        self.assertEqual(target.read_bytes(), original)
+        self.env.unlink()
+        self.env.write_bytes(b'BROKEN="unterminated\n')
+        with self.assertRaises(ValueError):
+            self.binding.reconcile(self.source, self.env)
+        self.assertEqual(self.env.read_bytes(), b'BROKEN="unterminated\n')
+        self.env.write_bytes(original)
+        with patch.object(self.binding, '_write_env_lines', side_effect=OSError('synthetic-canary')):
+            with self.assertRaises(OSError):
+                self.binding.reconcile(self.source, self.env)
+        self.assertEqual(self.env.read_bytes(), original)
+
+    def test_unscoped_profiles_ignore_inherited_selector(self):
+        from agent.secret_scope import set_secret_scope, reset_secret_scope
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        token = set_secret_scope(None)
+        try:
+            with patch.dict(os.environ, {self.binding.KEY: json.dumps(self.proxy)}), patch('hermes_constants.get_hermes_home', return_value=self.home):
+                self.assertIsNone(BrowserUseBrowserProvider._custom_proxy())
+                self.binding.reconcile(self.source, self.env)
+                self.assertEqual(BrowserUseBrowserProvider._custom_proxy(), self.proxy)
+                coder = self.home / 'profiles/coder'
+                coder.mkdir(parents=True)
+                (coder / '.env').write_text('UNRELATED=keep\n')
+                with patch('hermes_constants.get_hermes_home', return_value=coder):
+                    self.assertIsNone(BrowserUseBrowserProvider._custom_proxy())
+        finally:
+            reset_secret_scope(token)
 
 
 if __name__ == "__main__":

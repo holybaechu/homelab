@@ -400,13 +400,18 @@
  import logging
  import threading
  import uuid
-@@ -126,9 +128,38 @@
+@@ -126,9 +128,43 @@
      def _release_body(self, config: dict[str, Any]) -> dict[str, object]:
          return {"action": "stop"}
  
 +    @staticmethod
 +    def _custom_proxy() -> Optional[dict[str, object]]:
-+        raw = get_secret("BROWSER_USE_CUSTOM_PROXY_JSON")
++        from agent.secret_scope import current_secret_scope, load_env_file
++        from hermes_constants import get_hermes_home
++        scope = current_secret_scope()
++        if scope is None:
++            scope = load_env_file(get_hermes_home() / ".env")
++        raw = scope.get("BROWSER_USE_CUSTOM_PROXY_JSON")
 +        if raw is None:
 +            return None
 +        try:
