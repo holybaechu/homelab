@@ -308,6 +308,91 @@ class ConnectTests(unittest.TestCase):
             self.assertEqual(backend.resolve_password("op:" + ITEM), "synthetic-cli-password")
             self.assertIn("--vault", run.call_args.args)
 
+    def test_byop_native_provider_sends_top_level_proxy_for_each_session(self):
+        from agent.secret_scope import set_secret_scope, reset_secret_scope
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        proxy = {"host": "proxy.example.com", "port": 443, "protocol": "https",
+                 "username": "synthetic-proxy", "password": PASSWORD}
+        provider = BrowserUseBrowserProvider()
+        self.srv.cloud_creates, self.srv.cdp_endpoint = [], "ws://synthetic.example/devtools/browser"
+        scope = set_secret_scope({"BROWSER_USE_CUSTOM_PROXY_JSON": json.dumps(proxy)})
+        try:
+            with patch.object(provider, "_get_config", return_value={
+                    "base_url": self.url, "api_key": TOKEN, "managed_mode": False}):
+                first = provider.create_session("synthetic-byop")
+                second = provider.create_session("synthetic-byop-named")
+            self.assertEqual(self.srv.cloud_creates, [{"customProxy": proxy}, {"customProxy": proxy}])
+            self.assertNotEqual(first["session_name"], second["session_name"])
+            self.assertEqual(first["cdp_url"], self.srv.cdp_endpoint)
+            self.assertNotIn(PASSWORD, json.dumps(first))
+            self.assertEqual(provider._release_body({}), {"action": "stop"})
+        finally:
+            reset_secret_scope(scope)
+
+    def test_byop_invalid_or_unsupported_config_never_creates_a_browser(self):
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        proxy = {"host": "proxy.example.com", "port": 443, "protocol": "https",
+                 "username": "synthetic-proxy", "password": PASSWORD}
+        invalid = ["", "not-json-" + PASSWORD, "null", "[]", "{}", "x" * 16385]
+        for key, value in (("protocol", "http"), ("port", 80), ("port", True),
+                           ("password", ""), ("password", "\n" + PASSWORD), ("username", None),
+                           ("username", "x" * 2049), ("password", "x" * 8193),
+                           ("host", "https://proxy.example.com"), ("host", "user@proxy.example.com"),
+                           ("host", "127.0.0.1"), ("host", "proxy.example.com/path"),
+                           ("ignoreCertErrors", True), ("caBundle", "synthetic")):
+            invalid.append(json.dumps({**proxy, key: value}))
+        provider = BrowserUseBrowserProvider()
+        with patch.object(provider, "_get_config", return_value={"managed_mode": False}), patch.object(
+                provider, "_post_create", side_effect=AssertionError("must not create")) as create:
+            for case, raw in enumerate(invalid):
+                with self.subTest(case=case), patch(
+                        "plugins.browser.browser_use.provider.get_secret", return_value=raw):
+                    with self.assertRaises(ValueError) as caught:
+                        provider.create_session("synthetic-byop-invalid")
+                    self.assertNotIn(PASSWORD, str(caught.exception))
+            create.assert_not_called()
+        with patch.object(provider, "_get_config", return_value={"managed_mode": True}), patch(
+                "plugins.browser.browser_use.provider.get_secret", return_value=json.dumps(proxy)), patch.object(
+                provider, "_post_create") as create:
+            with self.assertRaisesRegex(ValueError, "requires the direct API provider"):
+                provider.create_session("synthetic-managed-byop")
+            create.assert_not_called()
+
+    def test_byop_provider_refusal_and_outage_are_redacted_without_retry(self):
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        from types import SimpleNamespace
+        provider = BrowserUseBrowserProvider()
+        proxy = {"host": "proxy.example.com", "port": 443, "protocol": "https",
+                 "username": "synthetic-proxy", "password": PASSWORD}
+        with patch.object(provider, "_get_config", return_value={
+                "base_url": self.url, "api_key": TOKEN, "managed_mode": False}), patch(
+                "plugins.browser.browser_use.provider.get_secret", return_value=json.dumps(proxy)):
+            for failure in (RuntimeError(PASSWORD), SimpleNamespace(ok=False, text=PASSWORD)):
+                with self.subTest(outage=isinstance(failure, Exception)), patch.object(
+                        provider, "_post_create") as create:
+                    if isinstance(failure, Exception):
+                        create.side_effect = failure
+                    else:
+                        create.return_value = failure
+                    with self.assertRaisesRegex(RuntimeError, "Browser Use custom proxy session creation") as caught:
+                        provider.create_session("synthetic-byop-unavailable")
+                    self.assertNotIn(PASSWORD, str(caught.exception))
+                    self.assertTrue(caught.exception.__suppress_context__)
+                    self.assertEqual(create.call_count, 1)
+                    self.assertEqual(create.call_args.args[2], {"customProxy": proxy})
+
+    def test_byop_secret_scope_does_not_inherit_another_profiles_proxy(self):
+        from agent.secret_scope import (set_secret_scope, reset_secret_scope,
+                                       set_multiplex_context, reset_multiplex_context)
+        from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
+        scope, context = set_secret_scope({}), set_multiplex_context(True)
+        try:
+            with patch.dict(os.environ, {"BROWSER_USE_CUSTOM_PROXY_JSON": PASSWORD}):
+                self.assertIsNone(BrowserUseBrowserProvider._custom_proxy())
+        finally:
+            reset_multiplex_context(context)
+            reset_secret_scope(scope)
+
     def test_browser_use_creation_failure_never_uses_another_browser(self):
         from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
         from tools import browser_session, browser_use_cli

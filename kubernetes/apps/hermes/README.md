@@ -239,6 +239,54 @@ containing both public and private URLs runs entirely on the local browser.
 homelab apps. A public URL that later redirects to a private address stays in
 the cloud browser, so open the internal URL directly.
 
+### Homelab public-internet proxy
+
+The native provider's repository patch accepts the profile-scoped secret
+`BROWSER_USE_CUSTOM_PROXY_JSON`. It is opt-in; no proxy listener, DNS record,
+credential item or Secret projection is provisioned by this app. Until those
+prerequisites are approved and verified, leave it unset and retain the existing
+Korean residential proxy. This does not replace Browser Harness or local Chromium.
+
+The secret must contain exactly `host`, `port`, `protocol`, `username` and
+`password`: a lowercase public DNS hostname, integer port `443`, protocol `https`
+and dedicated nonempty proxy credentials. Deliver it from a narrow 1Password item
+through an explicit, **non-optional** Operator Secret key projection into Hermes;
+never put its value in Git, CLI arguments or chat. Missing projected Secrets must
+block startup, not remove proxy intent. Item creation requires an authorized
+administrator; the read-only Operator token is not a writer. Do not use the
+browser-login Connect token or broaden its grants.
+
+The existing [API v3 standalone-browser endpoint](https://docs.browser-use.com/cloud/api-v3/browsers/create-browser-session)
+accepts top-level `customProxy`; each native session creation receives it instead
+of `proxyCountryCode`. No SDK/API migration or hosted agent is needed. Malformed
+configuration and provider refusal fail closed, without a second create request
+or another provider. Certificate bypass and custom CAs are not accepted. The
+[documented proxy GET/PATCH endpoint](https://docs.browser-use.com/cloud/browser/proxies)
+can inspect/change an owned existing session on v3 too, but does not configure
+future native sessions. A custom proxy's `exitIp: null` is expected.
+
+Before activation, approve an unused DNS-only public hostname and verify a
+TLS-authenticated forward-proxy path from Browser Use Cloud. Existing HTTP reverse
+routes are not CONNECT proxies; use a separately reviewed TCP/TLS route if reusing
+Traefik's WAN TCP/443 listener. Validate the public certificate and credentials;
+never decrypt destination TLS. Prefer a maintained proxy such as Squid over a new
+controller. Enforce public web ports only and deny private, loopback, link-local,
+metadata, tailnet, cluster/service and IPv6-equivalent destinations at resolved
+connection addresses, including DNS rebinding and public-WAN hairpin paths.
+Domain ACLs alone are insufficient. This cluster's Flannel does not enforce
+Kubernetes NetworkPolicy; a manifest alone is not an egress firewall.
+
+Keep `browser.auto_local_for_private_urls: true`; internal services and localhost
+stay local. Remote laptop browsing remains a separate Aside/Cua path. Before
+replacing Hermes, drain attached work through the parent operator's handoff.
+After activation, use an owned native browser to compare a public IP echo with
+homelab egress privately (report equality only), inspect its custom proxy state,
+verify unauthenticated/incorrect auth and private-address denials, and make the
+proxy unavailable temporarily to prove no vendor/direct-egress fallback. Verify
+both a fresh named cloud session and local-private routing. Stop only the owned
+session and read its stopped status back. Synthetic provider tests do not prove
+public reachability, proxy data-plane safety or native gateway activation.
+
 ### 1Password Connect logins
 
 The native [`browser_vault`](https://hermes-agent.nousresearch.com/docs/user-guide/features/credential-vault)
