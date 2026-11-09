@@ -6,6 +6,6 @@ resources:
 configMapGenerator:
   - name: browser-use-proxy-config
     files:
-      - squid.conf
+      - 3proxy.cfg
       - egress.nft
-      - initialize.sh
+      - initialize.py

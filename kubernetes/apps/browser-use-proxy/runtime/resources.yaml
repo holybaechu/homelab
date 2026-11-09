@@ -51,8 +51,8 @@ spec:
             limits:
               memory: 128Mi
         - name: verifier
-          image: nicolaka/netshoot@sha256:147f2c4cb0aa7a741151bce2bfef71d9e1a04631636e24665ee2a5ed799feb47
-          command: [/bin/sh, /config/initialize.sh, /source/custom-proxy.json, /runtime/passwd]
+          image: python@sha256:a18b20ad69e74df6cf6d2e1b1a260d7a1ecf5380fd83b310f83ba88c461cf894
+          command: [python, -I, -B, /config/initialize.py, /source/custom-proxy.json, /runtime/passwd]
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
@@ -77,10 +77,9 @@ spec:
             limits:
               memory: 128Mi
       containers:
-        - name: squid
-          # Canonical 7.2-26.04_edge, pinned content: squid 7.7-0ubuntu0.26.04.2.
-          image: ubuntu/squid@sha256:417f97c0f570e616de72c4144bd45c5669d5055201888632fa41b10bac9b5517
-          command: [/usr/sbin/squid-gnutls, -N, -f, /config/squid.conf]
+        - name: proxy
+          image: docker.io/3proxy/3proxy@sha256:db6712d3566c52b04b9fec3d2a263580dcbef04f1943b5bf3fb86c7fce0da7f4
+          command: [/bin/3proxy, /config/3proxy.cfg]
           ports:
             - name: proxy
               containerPort: 3128
@@ -99,10 +98,6 @@ spec:
             - name: runtime
               mountPath: /runtime
               readOnly: true
-            - name: run
-              mountPath: /run/squid
-            - name: tmp
-              mountPath: /tmp
           readinessProbe:
             tcpSocket:
               port: proxy
@@ -128,14 +123,6 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 1Mi
-        - name: run
-          emptyDir:
-            medium: Memory
-            sizeLimit: 8Mi
-        - name: tmp
-          emptyDir:
-            medium: Memory
-            sizeLimit: 8Mi
 ---
 apiVersion: v1
 kind: Service

@@ -330,8 +330,8 @@ activate them separately:
 1. Apply preparation and pass the private Operator gate above. Activate only
    `browser-use-proxy-runtime`, then verify both init exits and real projected
    authentication (valid credentials work; missing/wrong credentials get 407).
-   The raw JSON is mounted only in the verifier init; Squid receives only an
-   OpenSSL-derived SHA-512-crypt verifier on a memory-backed volume. Only the
+   The raw JSON is mounted only in the verifier init; 3proxy receives only a
+   salted BLAKE2b-128 verifier on a read-only memory-backed volume. Only the
    firewall init has NET_ADMIN, in its own Pod network namespace. Runtime is
    nonroot, read-only and cap-drop, with no API token or host namespaces.
 2. Require controlled public-to-private DNS cache-transition/known-live-listener
@@ -349,32 +349,55 @@ The public route matches only proxy SNI on existing TCP/443, using the existing
 wildcard TLSStore certificate. Its dedicated TLSOption offers only HTTP/1.1:
 [Traefik's default ALPN](https://doc.traefik.io/traefik/reference/routing-configuration/http/tls/tls-options/#alpn-protocols)
 includes h2, which must not be negotiated before forwarding decrypted TCP to
-Squid. Other routers and global TLS options are unchanged. Verify certificate
+3proxy. Other routers and global TLS options are unchanged. Verify certificate
 trust, ALPN and authenticated CONNECT before declaring exposure operational.
 
-The pinned Canonical image remains a staged candidate, not a production image
-approval. Its reviewed `7.2-26.04_edge` amd64 content contains
-`squid 7.7-0ubuntu0.26.04.2`, matching
-[USN-8998-1](https://ubuntu.com/security/notices/USN-8998-1). Canonical's
-[image support table](https://hub.docker.com/r/ubuntu/squid) lists support through
-May 2031, but the registry publishes no stable-channel tag. The advertised
-`7.2-26.04_beta` is absent; published 24.04/22.04 beta and edge images are older,
-not demonstrated safer replacements. Do not substitute `latest` or infer Docker
-image support from generic snap-channel documentation.
+The staged engine is official [3proxy 1.0.3](https://github.com/3proxy/3proxy/releases/tag/1.0.3),
+on its supported Main branch, pinned by immutable OCI digest. Verified upstream
+provenance binds it to `4d79d68af65fcab009c7e89a57492f7457ad2166`.
+The previous Canonical Squid candidate was not approved: its edge-only channel
+and [unresolved vendor advisory](https://ubuntu.com/security/CVE-2026-62846)
+remain reasons not to silently fall back to it.
+The former Squid initializer used `openssl passwd -6` (SHA-512-crypt), not bcrypt.
+The new native `CR:$3$` format is one fast salted BLAKE2b digest with 128-bit
+output and **no password work factor**; it is not suitable for human passwords.
+Its acceptance is limited to the established machine-secret creation contract:
+48 bytes filled by `System.Security.Cryptography.RandomNumberGenerator.Fill`,
+then base64url encoded in native memory. All rotations must preserve that CSPRNG
+contract; never substitute a memorable, manually chosen or length-only password.
+The initializer accepts only 64 base64url characters, but shape does not prove
+entropy or that the current source equals the original. That private native
+source/parity gate remains mandatory before activation; no source is regenerated.
 
-Before production approval or digest upgrades, review the complete embedded
-package inventory and current advisories, not just one fixed USN. In particular,
-[Canonical's CVE-2026-62846 status](https://ubuntu.com/security/CVE-2026-62846)
-remains vulnerable/fix deferred with insufficient public details to establish
-applicability. [CVE-2026-104786](https://ubuntu.com/security/CVE-2026-104786) is
-still under vendor evaluation, although its
-[upstream advisory](https://github.com/squid-cache/squid/security/advisories/GHSA-j9pf-q9f6-v44c)
-identifies a fix in 7.7 and requires client credentials passed to `cache_peer`,
-which this configuration does not use. These are not whole-image vulnerability
-clearance. Keep suspension until a supported stable replacement is verified or
-an explicit production risk decision accepts this candidate's channel and
-remaining advisory uncertainty. No runtime package installation or alternate
-proxy/DNS engine is used.
+Official `3proxy_crypt` takes passwords in argv and has no stdin interface.
+The pinned official Python 3.14 Alpine initializer instead reads the protected
+projection directly, uses stdlib `hashlib.blake2b`, and encodes the source-verified
+format from `src/3proxy_crypt.c`; openly synthetic vectors were cross-checked
+against the attested official helper. It creates only the quoted verifier file
+with mode 0640, rejects extra/duplicate keys and multiple JSON documents, and
+emits no credential-bearing errors. There is no custom cryptographic primitive,
+auth bridge, cleartext-main fallback, runtime installation or broad token mount.
+
+The exact image contains OpenSSL 3.5.7; upstream disables SBOM generation and
+uses floating build dependencies. Current
+[OpenSSL advisories](https://openssl-library.org/news/vulnerabilities-3.5/)
+include affected library code (including DTLS CVE-2026-84782), so this is **not**
+whole-image clearance. This configuration enables only HTTP forwarding and
+opaque CONNECT, strong native auth and designated CoreDNS. It enables no TLS
+termination/interception/client wrapping, QUIC/DTLS, CMP/CMS, regex filters,
+plugins, SOCKS, FTP, mail or admin services. The reviewed affected OpenSSL paths
+are not used by those enabled operations; TLS is handled by Traefik and the
+destination client. Source advisory fixes precede or are included in 1.0.3.
+Static PCRE2/compression and libc inventories remain incomplete: absence of an
+SBOM is an inventory limit, not proof of vulnerability or safety. Review current
+advisories and embedded dependencies before upgrades or enabling any feature.
+This supports suspended candidate staging, not production approval.
+
+Before approval, require final-config authentication, designated-CoreDNS and
+HTTP80/443 success, CONNECT443-only enforcement, and verified post-CONNECT TLS.
+Earlier stable-image TLS/rebinding/kernel evidence does not clear actual edge
+TLS or native-source authentication. Keep both Flux gates suspended and PR #347
+Draft until the remaining acceptance gates pass.
 
 Keep native activation PR #344 unmerged until the parent has drained active work.
 Rotation updates only the existing authoritative item. Reloader restarts only
