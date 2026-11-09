@@ -338,13 +338,29 @@ includes h2, which must not be negotiated before forwarding decrypted TCP to
 Squid. Other routers and global TLS options are unchanged. Verify certificate
 trust, ALPN and authenticated CONNECT before declaring exposure operational.
 
-The pinned Canonical image is the reviewed `7.2-26.04_edge` content, not a stable
-channel claim. Its embedded package inventory contains
-`squid 7.7-0ubuntu0.26.04.2`, matching the fix in
-[USN-8998-1](https://ubuntu.com/security/notices/USN-8998-1). Review Canonical's
-current channel/support and security inventory again before production approval
-or digest upgrades; a tag's advertised Squid version is not installed-package
-proof. No runtime package installation or alternate proxy/DNS engine is used.
+The pinned Canonical image remains a staged candidate, not a production image
+approval. Its reviewed `7.2-26.04_edge` amd64 content contains
+`squid 7.7-0ubuntu0.26.04.2`, matching
+[USN-8998-1](https://ubuntu.com/security/notices/USN-8998-1). Canonical's
+[image support table](https://hub.docker.com/r/ubuntu/squid) lists support through
+May 2031, but the registry publishes no stable-channel tag. The advertised
+`7.2-26.04_beta` is absent; published 24.04/22.04 beta and edge images are older,
+not demonstrated safer replacements. Do not substitute `latest` or infer Docker
+image support from generic snap-channel documentation.
+
+Before production approval or digest upgrades, review the complete embedded
+package inventory and current advisories, not just one fixed USN. In particular,
+[Canonical's CVE-2026-62846 status](https://ubuntu.com/security/CVE-2026-62846)
+remains vulnerable/fix deferred with insufficient public details to establish
+applicability. [CVE-2026-104786](https://ubuntu.com/security/CVE-2026-104786) is
+still under vendor evaluation, although its
+[upstream advisory](https://github.com/squid-cache/squid/security/advisories/GHSA-j9pf-q9f6-v44c)
+identifies a fix in 7.7 and requires client credentials passed to `cache_peer`,
+which this configuration does not use. These are not whole-image vulnerability
+clearance. Keep suspension until a supported stable replacement is verified or
+an explicit production risk decision accepts this candidate's channel and
+remaining advisory uncertainty. No runtime package installation or alternate
+proxy/DNS engine is used.
 
 Keep native activation PR #344 unmerged until the parent has drained active work.
 Rotation updates only the existing authoritative item. Reloader restarts only
