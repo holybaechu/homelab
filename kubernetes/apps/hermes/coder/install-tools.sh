@@ -10,15 +10,20 @@ curl --fail --silent --show-error --location --max-time 60 --retry 2 \
 curl --fail --silent --show-error --location --max-time 60 --retry 2 \
   https://github.com/cli/cli/releases/download/v2.103.2/gh_2.103.2_linux_amd64.tar.gz \
   -o gh.tar.gz
+curl --fail --silent --show-error --location --max-time 60 --retry 2 \
+  https://github.com/trycua/cua/releases/download/cua-sdk-v0.16.0/cua-cli-0.16.0-linux-x64.tar.gz \
+  -o cua.tar.gz
 sha256sum -c /bootstrap/coder-tools.sha256
 tar -xJf mise.tar.xz --strip-components=2 -C /opt/coder/bin mise/bin/mise
 tar -xzf gh.tar.gz --strip-components=2 -C /opt/coder/bin gh_2.103.2_linux_amd64/bin/gh
+tar -xzf cua.tar.gz -C /opt/coder/bin cua
 mv /opt/coder/bin/gh /opt/coder/bin/gh-real
 cp /bootstrap/coder-gh.sh /opt/coder/bin/gh
 cp /bootstrap/coder-gitconfig /opt/coder/gitconfig
-chmod 755 /opt/coder/bin/mise /opt/coder/bin/gh /opt/coder/bin/gh-real
+chmod 755 /opt/coder/bin/mise /opt/coder/bin/gh /opt/coder/bin/gh-real /opt/coder/bin/cua
 /opt/coder/bin/mise --version
 /opt/coder/bin/gh-real --version
+/opt/coder/bin/cua --version
 
 export PATH=/opt/coder/bin:$PATH
 kubectl_version=$(printf '%s' "$KUBERNETES_VERSION" | sed 's/^v//')
