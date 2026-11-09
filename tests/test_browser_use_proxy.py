@@ -10,11 +10,11 @@ INITIALIZE = pathlib.Path(__file__).resolve().parents[1] / 'kubernetes/apps/brow
 
 
 class ProxyVerifierTests(unittest.TestCase):
-    def initialize(self, data):
+    def initialize(self, data, raw=False):
         with tempfile.TemporaryDirectory() as directory:
             source = pathlib.Path(directory) / 'source.json'
             target = pathlib.Path(directory) / 'passwd'
-            source.write_text(json.dumps(data))
+            source.write_text(data if raw else json.dumps(data))
             result = subprocess.run(['sh', str(INITIALIZE), str(source), str(target)], capture_output=True)
             return result, target.read_text() if target.exists() else None, stat.S_IMODE(target.stat().st_mode) if target.exists() else None
 
@@ -42,6 +42,14 @@ class ProxyVerifierTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual((result.stdout, result.stderr), (b'', b''))
                 self.assertIsNone(verifier)
+
+    def test_rejects_malformed_or_multiple_json_documents(self):
+        valid = json.dumps(self.source())
+        for raw in ('', '{', valid + '\n' + valid, '{}\n' + valid):
+            result, verifier, _ = self.initialize(raw, raw=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual((result.stdout, result.stderr), (b'', b''))
+            self.assertIsNone(verifier)
 
 
 if __name__ == '__main__':
