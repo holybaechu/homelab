@@ -230,8 +230,8 @@ agent-browser MCP server until both security contracts are integrated and tested
   also cover URL-bearing eval/CDP operations. Separate local/cloud MCP names and
   instructions alone do not enforce these controls.
 - Native vault fills require the same task's registered CDP supervisor. Independent
-  CLI/MCP sessions are not registered. Direct CDP transport works, but a
-  profile-wide `/browser connect` is not a safe handoff across simultaneous chats.
+  CLI/MCP sessions are not registered. An isolated local direct-CDP canary passes,
+  but profile-wide `/browser connect` is unsafe across simultaneous chats.
   Custom `BrowserPageBackend` extensions require bundled/catalog-reviewed trust;
   preserve that gate instead of copying secrets into another auth store.
 
