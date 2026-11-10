@@ -4,7 +4,7 @@ metadata:
   name: browser-use-proxy-runtime
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   dependsOn:
     - name: apps
   interval: 10m
@@ -30,7 +30,7 @@ metadata:
   name: browser-use-proxy-public
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   dependsOn:
     - name: browser-use-proxy-runtime
   interval: 10m

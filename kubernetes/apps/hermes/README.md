@@ -323,27 +323,46 @@ reuse the login-only `connect_vault.py` backend for Secure Notes, or enable a ne
 startup secret reader. Startup `secrets.onepassword` is not configured.
 
 The existing Cloudflare DDNS app owns public DNS (DNS-only); do not introduce a
-second DNS controller. Both `browser-use-proxy-runtime` and
-`browser-use-proxy-public` Flux Kustomizations are suspended in Git. Review and
-activate them separately:
+second DNS controller. The approved public endpoint is exactly `proxy.hchu.me:443`.
+Git enables both proxy Flux Kustomizations and appends only `proxy.hchu.me` to
+that owner's `DOMAINS`, retaining its other domains, `PROXIED=false`,
+`IP6_PROVIDER=none` and `DELETE_ON_STOP=false`.
 
-1. Apply preparation and pass the private Operator gate above. Activate only
-   `browser-use-proxy-runtime`, then verify both init exits and real projected
-   authentication (valid credentials work; missing/wrong credentials get 407).
-   The raw JSON is mounted only in the verifier init; 3proxy receives only a
-   salted BLAKE2b-128 verifier on a read-only memory-backed volume. Only the
-   firewall init has NET_ADMIN, in its own Pod network namespace. Runtime is
-   nonroot, read-only and cap-drop, with no API token or host namespaces.
-2. Require controlled public-to-private DNS cache-transition/known-live-listener
-   evidence and actual UID egress denials. Verify public TLS and own-WAN normal
-   and spoofed private-service denials through this candidate. A static private
-   hostname returning 503 is not kernel or rebinding proof. Flannel NetworkPolicy
-   is not an enforcement substitute.
-3. Privately clear authoritative Cloudflare A/AAAA/CNAME/TXT and Traefik HTTP/TCP
-   reserved-name collisions. Public DNS zero answers alone are insufficient.
-   In a separately reviewed exposure change, append `proxy.${DOMAIN}` to the
-   existing DDNS `DOMAINS` (retain `PROXIED=false`) and activate
-   `browser-use-proxy-public`. No DNS or router change is included here.
+After the exact reviewed merge, Flux applies apps (including the DDNS rollout and
+Operator projections), then runtime with `wait: true`, then public with runtime
+as its readiness dependency. Apps does not depend on either proxy layer. DNS can
+appear before the runtime/route is ready; DNS publication is not acceptance.
+DDNS replaces its own Pod; the Hermes Deployment template and generated ConfigMap
+names/data must remain identical to main. No Hermes restart or native binding
+(PR #344) is authorized by this activation.
+
+The private Operator parity, real projected authentication and controlled
+rebinding/kernel/own-WAN boundary gates have passed for the reviewed candidate.
+Preserve that evidence rather than repeating source reads or creating test Pods.
+The raw JSON is mounted only in verifier init; the main proxy gets only its salted
+verifier on a read-only memory volume. Only firewall init has NET_ADMIN; the main
+UID remains 1000, read-only, cap-drop, without host namespaces or an API token.
+
+Before merging, privately clear authoritative Cloudflare A/AAAA/CNAME/TXT and live
+Traefik HTTP/TCP reserved-name collisions; stop rather than adopting or replacing
+any collision. After merging, require exact Flux revisions, both init exits,
+Ready runtime, matching Service endpoints, public authoritative/resolver DNS,
+trusted proxy certificate/hostname and HTTP/1.1 ALPN, then real HTTPS-to-proxy
+CONNECT plus destination certificate/hostname TLS and HTTP success. Use curl with
+`HTTPS-proxy` support; stdlib `HTTPSConnection.set_tunnel` alone does not prove
+TLS to the proxy. Missing/wrong auth must return 407, prohibited ports/private
+addresses 403, and existing private routes must retain their 403 boundary.
+Read credentials only privately from the exact Operator Secret in the authorized
+native owner; pass curl configuration through stdin/memory, never argv, environment,
+URLs, host files, verbose traces or logs. No Cloud browser session is needed.
+
+Rollback must close the proxy route explicitly: suspension and `deletionPolicy:
+Orphan` alone do not remove it. In a reviewed proxy-only rollback, remove the
+IngressRouteTCP/TLSOption and stop the proxy workload, suspend its gates in Git,
+and remove only this name from DDNS. `DELETE_ON_STOP=false` means removing the
+name does not delete the existing DNS record; any cleanup requires the existing
+DNS owner and separate explicit approval. Do not alter shared Traefik, private
+allowlists, Hermes, credentials or other DDNS names.
 
 The public route matches only proxy SNI on existing TCP/443, using the existing
 wildcard TLSStore certificate. Its dedicated TLSOption offers only HTTP/1.1:
@@ -391,13 +410,15 @@ destination client. Source advisory fixes precede or are included in 1.0.3.
 Static PCRE2/compression and libc inventories remain incomplete: absence of an
 SBOM is an inventory limit, not proof of vulnerability or safety. Review current
 advisories and embedded dependencies before upgrades or enabling any feature.
-This supports suspended candidate staging, not production approval.
+This inventory limitation was explicitly accepted for proxy-only public exposure;
+it is not whole-image security clearance and does not authorize native binding
+or Hermes activation.
 
-Before approval, require final-config authentication, designated-CoreDNS and
-HTTP80/443 success, CONNECT443-only enforcement, and verified post-CONNECT TLS.
-Earlier stable-image TLS/rebinding/kernel evidence does not clear actual edge
-TLS or native-source authentication. Keep both Flux gates suspended and PR #347
-Draft until the remaining acceptance gates pass.
+The reviewed candidate passed real Operator-projected authentication, public
+CONNECT with destination TLS, HTTP80/443 and prohibited-target checks, alongside
+the separate rebinding/kernel/own-WAN evidence. Public TLS-to-proxy, live routing
+and DNS acceptance remain post-merge checks, not inferred from those private tests.
+Keep PR #347 Draft until the parent reviews the exact activation head and checks.
 
 Keep native activation PR #344 unmerged until the parent has drained active work.
 Rotation updates only the existing authoritative item. Reloader restarts only
