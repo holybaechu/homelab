@@ -323,13 +323,109 @@ reuse the login-only `connect_vault.py` backend for Secure Notes, or enable a ne
 startup secret reader. Startup `secrets.onepassword` is not configured.
 
 The existing Cloudflare DDNS app owns public DNS (DNS-only); do not introduce a
-second DNS controller. Public exposure requires separate review of reserved-name
-collisions, candidate boundary proof, real projected-credential initialization and
-authentication, and proxy-only TCP/TLS routing on the existing Traefik entrypoint.
+second DNS controller. The approved public endpoint is exactly `proxy.hchu.me:443`.
+Git enables both proxy Flux Kustomizations and appends only `proxy.hchu.me` to
+that owner's `DOMAINS`, retaining its other domains, `PROXIED=false`,
+`IP6_PROVIDER=none` and `DELETE_ON_STOP=false`.
+
+After the exact reviewed merge, Flux applies apps (including the DDNS rollout and
+Operator projections), then runtime with `wait: true`, then public with runtime
+as its readiness dependency. Apps does not depend on either proxy layer. DNS can
+appear before the runtime/route is ready; DNS publication is not acceptance.
+DDNS replaces its own Pod; the Hermes Deployment template and generated ConfigMap
+names/data must remain identical to main. No Hermes restart or native binding
+(PR #344) is authorized by this activation.
+
+The private Operator parity, real projected authentication and controlled
+rebinding/kernel/own-WAN boundary gates have passed for the reviewed candidate.
+Preserve that evidence rather than repeating source reads or creating test Pods.
+The raw JSON is mounted only in verifier init; the main proxy gets only its salted
+verifier on a read-only memory volume. Only firewall init has NET_ADMIN; the main
+UID remains 1000, read-only, cap-drop, without host namespaces or an API token.
+
+Before merging, privately clear authoritative Cloudflare A/AAAA/CNAME/TXT and live
+Traefik HTTP/TCP reserved-name collisions; stop rather than adopting or replacing
+any collision. After merging, require exact Flux revisions, both init exits,
+Ready runtime, matching Service endpoints, public authoritative/resolver DNS,
+trusted proxy certificate/hostname and HTTP/1.1 ALPN, then real HTTPS-to-proxy
+CONNECT plus destination certificate/hostname TLS and HTTP success. Use curl with
+`HTTPS-proxy` support; stdlib `HTTPSConnection.set_tunnel` alone does not prove
+TLS to the proxy. Missing/wrong auth must return 407, prohibited ports/private
+addresses 403, and existing private routes must retain their 403 boundary.
+Read credentials only privately from the exact Operator Secret in the authorized
+native owner; pass curl configuration through stdin/memory, never argv, environment,
+URLs, host files, verbose traces or logs. No Cloud browser session is needed.
+
+Rollback must close the proxy route explicitly: suspension and `deletionPolicy:
+Orphan` alone do not remove it. In a reviewed proxy-only rollback, remove the
+IngressRouteTCP/TLSOption and stop the proxy workload, suspend its gates in Git,
+and remove only this name from DDNS. `DELETE_ON_STOP=false` means removing the
+name does not delete the existing DNS record; any cleanup requires the existing
+DNS owner and separate explicit approval. Do not alter shared Traefik, private
+allowlists, Hermes, credentials or other DDNS names.
+
+The public route matches only proxy SNI on existing TCP/443, using the existing
+wildcard TLSStore certificate. Its dedicated TLSOption offers only HTTP/1.1:
+[Traefik's default ALPN](https://doc.traefik.io/traefik/reference/routing-configuration/http/tls/tls-options/#alpn-protocols)
+includes h2, which must not be negotiated before forwarding decrypted TCP to
+3proxy. Other routers and global TLS options are unchanged. Verify certificate
+trust, ALPN and authenticated CONNECT before declaring exposure operational.
+
+The staged engine is official [3proxy 1.0.3](https://github.com/3proxy/3proxy/releases/tag/1.0.3),
+on its supported Main branch, pinned by immutable OCI digest. Verified upstream
+provenance binds it to `4d79d68af65fcab009c7e89a57492f7457ad2166`.
+The previous Canonical Squid candidate was not approved: its edge-only channel
+and [unresolved vendor advisory](https://ubuntu.com/security/CVE-2026-62846)
+remain reasons not to silently fall back to it.
+The former Squid initializer used `openssl passwd -6` (SHA-512-crypt), not bcrypt.
+The new native `CR:$3$` format is one fast salted BLAKE2b digest with 128-bit
+output and **no password work factor**; it is not suitable for human passwords.
+Its acceptance is limited to the established machine-secret creation contract:
+48 bytes filled by `System.Security.Cryptography.RandomNumberGenerator.Fill`,
+then base64url encoded in native memory. All rotations must preserve that CSPRNG
+contract; never substitute a memorable, manually chosen or length-only password.
+The initializer accepts only 64 base64url characters, but shape does not prove
+entropy or that the current source equals the original. That private native
+source/parity gate remains mandatory before activation; no source is regenerated.
+
+Official `3proxy_crypt` takes passwords in argv and has no stdin interface.
+The pinned official Python 3.14 Alpine initializer instead reads the protected
+projection directly, uses stdlib `hashlib.blake2b`, and encodes the source-verified
+format from `src/3proxy_crypt.c`; openly synthetic vectors were cross-checked
+against the attested official helper. It creates only the quoted verifier file
+with mode 0640, rejects extra/duplicate keys and multiple JSON documents, and
+emits no credential-bearing errors. There is no custom cryptographic primitive,
+auth bridge, cleartext-main fallback, runtime installation or broad token mount.
+
+The exact image contains OpenSSL 3.5.7; upstream disables SBOM generation and
+uses floating build dependencies. Current
+[OpenSSL advisories](https://openssl-library.org/news/vulnerabilities-3.5/)
+include affected library code (including DTLS CVE-2026-84782), so this is **not**
+whole-image clearance. This configuration enables only HTTP forwarding and
+opaque CONNECT, strong native auth and designated CoreDNS. It enables no TLS
+termination/interception/client wrapping, QUIC/DTLS, CMP/CMS, regex filters,
+plugins, SOCKS, FTP, mail or admin services. The reviewed affected OpenSSL paths
+are not used by those enabled operations; TLS is handled by Traefik and the
+destination client. Source advisory fixes precede or are included in 1.0.3.
+Static PCRE2/compression and libc inventories remain incomplete: absence of an
+SBOM is an inventory limit, not proof of vulnerability or safety. Review current
+advisories and embedded dependencies before upgrades or enabling any feature.
+This inventory limitation was explicitly accepted for proxy-only public exposure;
+it is not whole-image security clearance and does not authorize native binding
+or Hermes activation.
+
+The reviewed candidate passed real Operator-projected authentication, public
+CONNECT with destination TLS, HTTP80/443 and prohibited-target checks, alongside
+the separate rebinding/kernel/own-WAN evidence. Public TLS-to-proxy, live routing
+and DNS acceptance remain post-merge checks, not inferred from those private tests.
+Keep PR #347 Draft until the parent reviews the exact activation head and checks.
+
 Keep native activation PR #344 unmerged until the parent has drained active work.
-Rotation must coordinate proxy verifier restart with future native Cloud sessions
-and the reviewed gateway refresh; never restart Hermes from an attached task or
-change the existing private/local Browser Harness route to make a probe pass.
+Rotation updates only the existing authoritative item. Reloader restarts only
+this proxy when its Secret changes; coordinate that outage and verifier refresh
+with future native Cloud sessions and the reviewed gateway/default-profile
+projection refresh. Never restart Hermes from an attached task or change the
+existing private/local Browser Harness route to make a probe pass.
 
 ### 1Password Connect logins
 

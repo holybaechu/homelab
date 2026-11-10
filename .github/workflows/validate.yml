@@ -87,7 +87,7 @@ jobs:
             export "$key=$value"
           done < <(yq -N -r '.data | to_entries | .[] | [.key, .value] | @tsv' kubernetes/clusters/homelab/{settings,onepassword}.yaml)
           mkdir -p "$RUNNER_TEMP/rendered"
-          for path in bootstrap clusters/homelab platform/controllers platform/onepassword platform/config identity apps access; do
+          for path in bootstrap clusters/homelab platform/controllers platform/onepassword platform/config identity apps apps/browser-use-proxy/runtime apps/browser-use-proxy/public access; do
             if [[ "$path" == bootstrap ]]; then
               kustomize build "$RUNNER_TEMP/bootstrap" >> "$RUNNER_TEMP/rendered/authored.yaml"
             elif [[ "$path" == clusters/homelab ]]; then
@@ -106,7 +106,7 @@ jobs:
           # Skip CRD definitions and custom resources; validate native workloads and configuration.
           kubeconform -strict -summary \
             -kubernetes-version "$(yq -r '.data.KUBERNETES_VERSION | sub("^v", "")' kubernetes/clusters/homelab/settings.yaml)" \
-            -skip CustomResourceDefinition,Certificate,ClusterIssuer,OnePasswordItem,HelmRelease,HelmRepository,IngressRoute,Kustomization,Middleware,TLSStore,talos.dev/v1alpha1/ServiceAccount \
+            -skip CustomResourceDefinition,Certificate,ClusterIssuer,OnePasswordItem,HelmRelease,HelmRepository,IngressRoute,IngressRouteTCP,Kustomization,Middleware,TLSOption,TLSStore,talos.dev/v1alpha1/ServiceAccount \
             "$RUNNER_TEMP/rendered/authored.yaml"
       - name: Render and validate isolated Talos configuration
         if: ${{ inputs.talos }}
