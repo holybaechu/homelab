@@ -343,6 +343,16 @@ The raw JSON is mounted only in verifier init; the main proxy gets only its salt
 verifier on a read-only memory volume. Only firewall init has NET_ADMIN; the main
 UID remains 1000, read-only, cap-drop, without host namespaces or an API token.
 
+Client ingress on TCP/3128 admits only the configured `NODE_IP`, the exact
+single-node CNI host source `10.244.0.1`, and loopback (plus established/related
+traffic). The existing host-network Traefik route uses that CNI source; this
+exception does not permit the Pod CIDR or change proxy egress. If the node or CNI
+topology changes, keep publication closed until the route's exact host source is
+requalified and this allow-set is reviewed in Git; do not broaden it to a subnet.
+The missing CNI source is a verified INPUT contract mismatch, not proof of the
+exclusive cause of the earlier unclassified connection failure. Runtime readiness
+and public acceptance still require verification after the reviewed rollout.
+
 Before merging, privately clear authoritative Cloudflare A/AAAA/CNAME/TXT and live
 Traefik HTTP/TCP reserved-name collisions; stop rather than adopting or replacing
 any collision. After merging, require exact Flux revisions, both init exits,
