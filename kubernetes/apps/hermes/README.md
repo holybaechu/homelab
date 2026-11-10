@@ -360,8 +360,17 @@ Ready runtime, matching Service endpoints, public authoritative/resolver DNS,
 trusted proxy certificate/hostname and HTTP/1.1 ALPN, then real HTTPS-to-proxy
 CONNECT plus destination certificate/hostname TLS and HTTP success. Use curl with
 `HTTPS-proxy` support; stdlib `HTTPSConnection.set_tunnel` alone does not prove
-TLS to the proxy. Missing/wrong auth must return 407, prohibited ports/private
-addresses 403, and existing private routes must retain their 403 boundary.
+TLS to the proxy. Missing/wrong auth must return 407 and prohibited ports must return 403.
+Private-address CONNECT controls must establish no tunnel with trusted proxy TLS;
+record actual curl exit, CONNECT/HTTP statuses and TLS verification before refusing.
+A 4xx/5xx refusal alone does not prove kernel filtering: combine it with a known-live
+private listener control, exact runtime UID/init/mounted-policy readback and the qualified
+private kernel proof. No response, malformed status or TLS failure remains unknown;
+any 2xx CONNECT fails. IPv6 syntax rejection is not IPv6 network-filter proof.
+Existing private HTTP routes must retain their 403 boundary. For private-only DNS
+names, test forced-WAN SNI with curl `--connect-to host:443:proxy.hchu.me:443`,
+preserving the original URL hostname, SNI and certificate verification. Keep normal
+public-DNS NODATA distinct from this forced-WAN test; do not publish private DNS.
 Read credentials only privately from the exact Operator Secret in the authorized
 native owner; pass curl configuration through stdin/memory, never argv, environment,
 URLs, host files, verbose traces or logs. No Cloud browser session is needed.
