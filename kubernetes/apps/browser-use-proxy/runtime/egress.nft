@@ -4,6 +4,7 @@ table inet browser_proxy {
     ip6 saddr ::/0 counter reject
     ct state established,related accept
     ip saddr ${NODE_IP} tcp dport 3128 accept
+    ip saddr 10.244.0.1 tcp dport 3128 accept
     iifname lo tcp dport 3128 accept
     counter reject
   }
