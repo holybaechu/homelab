@@ -280,7 +280,9 @@ The Pod blocks Chromium's user-namespace sandbox, so local Chromium runs as UID
 Coder uses local Chromium by default; `configure-profiles` reconciles the same
 flag from `coder.yaml` without replacing its other live browser settings.
 
-Cloud sessions default to a South Korea (`kr`) residential proxy.
+Browser Harness's country-only Cloud default remains South Korea (`kr`); the
+native default-profile BYOP binding below supersedes country selection for its
+provider-owned sessions after activation.
 `seed-config` applies [browser-cloud.patch](browser-cloud.patch) to the image's
 Browser Harness in a runtime volume. Review the patch when upgrading the image;
 a context mismatch stops startup rather than silently losing the country setting.
@@ -298,29 +300,76 @@ containing both public and private URLs runs entirely on the local browser.
 homelab apps. A public URL that later redirects to a private address stays in
 the cloud browser, so open the internal URL directly.
 
-### Public-only custom proxy preparation
+### Homelab public-internet proxy
 
 `networking/browser-use-proxy-connect` and `homelab/browser-use-proxy-connect`
-project the same existing dedicated `browser-use-proxy` item through the official
-Operator, using `BROWSER_USE_PROXY_CONNECT_ITEM_PATH`, with automatic restart
-disabled. The Operator owns each namespaced Secret; the sole intended key is
-`custom-proxy-json`. The homelab projection is reserved for the future default
-profile, not coder or other profiles. This preparation creates no consumer mount,
-environment mapping, listener, DNS record, or Hermes Pod-template change.
-Before enabling any consumer, an administrator must privately verify both exact
-item paths, Operator Ready/Secret owner UIDs and item versions, sole key sets,
-and source-to-Secret byte equality. Source creation and Flux inventory alone are
-not synchronization or authentication proof.
+project the same dedicated item through the official Operator using
+`BROWSER_USE_PROXY_CONNECT_ITEM_PATH`, with automatic restart disabled. Each
+Operator owns its namespaced Secret; the sole intended key is `custom-proxy-json`.
+An administrator must privately verify both exact item paths, Ready conditions,
+Secret owner UIDs, sole key sets, versions and original-source byte equality.
+Projection-to-projection equality alone is not original-source or auth proof.
 
-The follow-up default-profile binding must require the homelab Secret's
-`custom-proxy-json` key (not optional) and reconcile only
-`BROWSER_USE_CUSTOM_PROXY_JSON` in `/opt/data/.env` before gateway startup, using
-the existing native dotenv writer/loader and preserving every other setting.
-The native loader gives the profile `.env` precedence over container environment;
-a container-only export would not establish this contract. No binding is active
-here. Do not copy the selector to `profiles/*/.env`, distribute a Connect token,
-reuse the login-only `connect_vault.py` backend for Secure Notes, or enable a new
-startup secret reader. Startup `secrets.onepassword` is not configured.
+The staged default-profile binding requires that homelab key through an explicit
+nonoptional file projection, mounted only into `configure-profiles`. Missing
+Secret/key blocks Pod startup. Before the gateway starts,
+[configure_browser_proxy.py](configure_browser_proxy.py) validates one JSON object
+with exactly `host`, `port`, `protocol`, `username`, `password`, fixed
+`proxy.hchu.me`, integer `443`, `https` and bounded nonempty string credentials.
+Missing, empty, duplicate-key, multi-document or unexpected input fails before
+changing `/opt/data/.env`. Only `BROWSER_USE_CUSTOM_PROXY_JSON` is reconciled there;
+unrelated keys, comments, escaping and file permissions are preserved. It uses
+the installed python-dotenv tokenizer and native Hermes lock, quoting and atomic
+writer; the high-level `save_env_value` would normalize unrelated lines. Review
+these pinned native helpers on image upgrades. No dependencies are installed.
+
+No global Pod credential environment is added. Native session creation reads the
+active secret scope, or the current profile's own `.env` when unscoped, never an
+inherited default selector. Coder and other profiles' files, model auth and memory
+remain unchanged. Do not use the LOGIN-only `connect_vault.py` for Secure Notes,
+add a reader/token/grant, or enable `secrets.onepassword` startup mappings.
+
+The existing [API v3 standalone-browser endpoint](https://docs.browser-use.com/cloud/api-v3/browsers/create-browser-session)
+receives top-level `customProxy` instead of `proxyCountryCode` at every native
+create/profile seam. Malformed input and provider refusal fail without retry or
+another browser/provider. Browser Harness, task/vault supervision, named-session
+ownership and automatic local-private routing remain unchanged. Certificate
+bypass/custom CAs are not accepted. An owned browser's
+[proxy GET/PATCH endpoint](https://docs.browser-use.com/cloud/browser/proxies)
+is inspection, not future-session configuration; custom `exitIp: null` is expected.
+
+**Rotation and activation are operator-drained, not automatic.** Hermes retains
+its explicit Reloader Secret allowlist and controller `autoReloadAll: false`;
+`browser-use-proxy-connect` is deliberately absent. Merely adding this init-only
+mount does not enable automatic reload. Other listed secrets retain their existing
+restart behavior; ConfigMap hash changes still cause Recreate. Do not enable auto
+reload on Hermes or add BYOP to that allowlist. Operator delivery updates the file,
+not the persisted selector or an existing browser. No watcher/hot reload is added.
+
+1. Keep PR #344 Draft/unmerged until the parent has drained active work and
+   arranged an out-of-band verifier that survives gateway replacement. Proxy-only
+   public activation is complete; preserve its independent source-parity,
+   authentication, trusted TLS and resolved-address denial evidence. It does not
+   prove provider API validity, native scope selection or fresh-session routing.
+   Do not repeat proxy qualification or change its runtime to activate this binding.
+2. For activation or rotation, drain attached gateway work and owned Cloud sessions
+   first. Coordinate the proxy verifier's credential refresh with Operator version
+   and private original-source parity verification in both namespaces; freeze
+   writes during this boundary. Existing browser credentials are not refreshed.
+   Use the parent-owned reviewed merge/restart boundary only after drain. Never
+   restart Hermes from the attached task. Git rollback alone does not remove the
+   selector on the PVC; any rollback must reconcile it privately while stopped.
+3. After reconnect, check Flux revision, Deployment observed generation and
+   updated/ready/available replicas, current owned Pod UID, all init exits/restarts,
+   required Secret/key projection, default-only selector and Obsidian ready marker.
+   Do not print credentials or inspect other profiles' auth material.
+4. In the actual default gateway conversation, open an owned fresh native Cloud
+   browser and a fresh named session. Privately verify custom proxy metadata and
+   public IP equality with homelab egress. Reuse the qualified proxy auth/TLS and
+   resolved-address denial evidence; independently verify native provider refusal
+   has no vendor/direct fallback. Open an authorized private URL separately and verify
+   local Chromium routing. Stop only owned sessions and read stopped status back.
+   Local fixtures/CI, projection parity and Pod readiness do not prove these gates.
 
 The existing Cloudflare DDNS app owns public DNS (DNS-only); do not introduce a
 second DNS controller. The approved public endpoint is exactly `proxy.hchu.me:443`.
@@ -535,7 +584,8 @@ origin recheck. Browser Use sessions are provisioned by the bundled provider and
 their CDP endpoint is shared by the harness and native supervisor, rather than
 using harness-only cloud autospawn. Named sessions retain separate provider
 sessions; Browser Use creation failures refuse instead of falling back to another
-browser. The direct provider retains the existing Korean proxy country. Deployment
+browser. The direct provider retains the Korean proxy country only for profiles
+without the custom selector. Deployment
 replaces existing harness-only sessions, so reopen the authorized login page after
 restart before filling; discovery alone does not prove a supervised page exists.
 

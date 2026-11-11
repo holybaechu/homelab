@@ -391,12 +391,136 @@
                         provider_name, e, cache_key, exc_info=True)
 --- a/plugins/browser/browser_use/provider.py
 +++ b/plugins/browser/browser_use/provider.py
-@@ -136,7 +136,7 @@
+@@ -5,6 +5,9 @@
+ 
+ from __future__ import annotations
+ 
++import json
++import re
++from urllib.parse import unquote, urlsplit
+ import logging
+ import threading
+ import uuid
+@@ -126,9 +129,88 @@
+     def _release_body(self, config: dict[str, Any]) -> dict[str, object]:
+         return {"action": "stop"}
+ 
++    @staticmethod
++    def _unique_object(pairs):
++        obj = {}
++        for key, value in pairs:
++            if key in obj:
++                raise ValueError
++            obj[key] = value
++        return obj
++
++    @staticmethod
++    def _custom_proxy() -> Optional[dict[str, object]]:
++        from agent.secret_scope import current_secret_scope, load_env_file
++        from hermes_constants import get_hermes_home
++        scope = current_secret_scope()
++        if scope is None:
++            scope = load_env_file(get_hermes_home() / ".env")
++        raw = scope.get("BROWSER_USE_CUSTOM_PROXY_JSON")
++        if raw is None:
++            return None
++        try:
++            if len(raw) > 16384:
++                raise ValueError
++            proxy = json.loads(raw, object_pairs_hook=BrowserUseBrowserProvider._unique_object)
++            if not isinstance(proxy, dict) or set(proxy) != {"host", "port", "protocol", "username", "password"}:
++                raise ValueError
++            if type(proxy["port"]) is not int or proxy["port"] != 443 or proxy["protocol"] != "https":
++                raise ValueError
++            host = proxy["host"]
++            if not isinstance(host, str) or len(host) > 253 or not re.fullmatch(
++                r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?", host
++            ):
++                raise ValueError
++            for key, limit in (("username", 2048), ("password", 8192)):
++                value = proxy[key]
++                if not isinstance(value, str) or not value.strip() or len(value) > limit or any(ord(c) < 32 for c in value):
++                    raise ValueError
++        except (ValueError, TypeError, KeyError):
++            raise ValueError("Invalid Browser Use custom proxy; authenticated HTTPS on port 443 is required") from None
++        return proxy
++
++    @staticmethod
++    def _custom_proxy_session_data(response, proxy):
++        try:
++            data = response.json(object_pairs_hook=BrowserUseBrowserProvider._unique_object)
++            if not isinstance(data, dict):
++                raise ValueError
++            session_id = data["id"]
++            cdp_url = data.get("cdpUrl") or data.get("connectUrl")
++            expires_at = data.get("timeoutAt")
++            if not isinstance(session_id, str) or not session_id.strip():
++                raise ValueError
++            if not isinstance(cdp_url, str) or not cdp_url:
++                raise ValueError
++            if expires_at is not None and (isinstance(expires_at, bool) or not isinstance(expires_at, (str, int, float))):
++                raise ValueError
++            # Only these provider values escape into native discovery, cache and teardown.
++            for value in (session_id, cdp_url, expires_at):
++                if isinstance(value, str):
++                    if any(ord(c) < 32 or ord(c) == 127 for c in value):
++                        raise ValueError
++                    if proxy["password"] in value or proxy["password"] in unquote(value):
++                        raise ValueError
++            target = urlsplit(cdp_url)
++            # Username equality in opaque metadata is incidental; URL userinfo is credential-bearing.
++            username_fields = [unquote(target.username or ""), unquote(target.password or "")]
++            if proxy["username"] in username_fields:
++                raise ValueError
++            if (target.scheme not in {"ws", "wss", "http", "https"} or not target.hostname or
++                    any(c.isspace() for c in cdp_url) or "\\" in cdp_url):
++                raise ValueError
++            # urlsplit checks bracketed hosts; accessing port also checks its syntax/range.
++            target.port
++            return {"id": session_id, "cdpUrl": cdp_url, "timeoutAt": expires_at}
++        except Exception:
++            raise RuntimeError("Invalid Browser Use custom proxy session response") from None
++
+     def create_session(self, task_id: str) -> dict[str, object]:
+         config = self._get_config()
+         managed_mode = bool(config.get("managed_mode"))
++        custom_proxy = self._custom_proxy()
++        if custom_proxy is not None and managed_mode:
++            raise ValueError("Browser Use custom proxy requires the direct API provider")
+ 
+         headers = self._headers(config)
+         if managed_mode:
+@@ -136,10 +218,20 @@
          # Short gateway sessions: billing authorization must not default to a long Browser-Use timeout.
          payload = (
              {"timeout": _DEFAULT_MANAGED_TIMEOUT_MINUTES, "proxyCountryCode": _DEFAULT_MANAGED_PROXY_COUNTRY_CODE}
 -            if managed_mode else {})
 +            if managed_mode else {"proxyCountryCode": "kr"})
++        if custom_proxy is not None:
++            payload = {"customProxy": custom_proxy}
          # Managed mode propagates network errors raw (retry with the preserved key); direct wraps them.
-         response = self._post_create(
-             f"{config['base_url']}/browsers", headers, payload, wrap_errors=not managed_mode)
+-        response = self._post_create(
+-            f"{config['base_url']}/browsers", headers, payload, wrap_errors=not managed_mode)
++        try:
++            response = self._post_create(
++                f"{config['base_url']}/browsers", headers, payload, wrap_errors=not managed_mode)
++        except Exception:
++            if custom_proxy is not None:
++                raise RuntimeError("Browser Use custom proxy session creation failed") from None
++            raise
++        if custom_proxy is not None and not response.ok:
++            # Provider errors can echo the request, including proxy credentials.
++            raise RuntimeError("Browser Use custom proxy session creation refused") from None
+         if not response.ok and managed_mode and not _should_preserve_pending_create_key(response):
+             _clear_pending_create_key(task_id)
+         self._check_created(response)
+@@ -147,7 +239,8 @@
+-        session_data = response.json()
++        session_data = (self._custom_proxy_session_data(response, custom_proxy)
++                        if custom_proxy is not None else response.json())
+         if managed_mode:
+             _clear_pending_create_key(task_id)
+         session_name = self._session_name(task_id)
+         logger.info("Created Browser Use session %s", session_name)
+         return {
+             "session_name": session_name,

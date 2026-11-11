@@ -18,6 +18,7 @@ configMapGenerator:
       - coder.yaml
       - coder-soul.md
       - configure_profiles.py
+      - configure_browser_proxy.py
       - delegation-plugin.sha256
       - coder-install-tools.sh=coder/install-tools.sh
       - coder-tools.sha256=coder/tools.sha256
