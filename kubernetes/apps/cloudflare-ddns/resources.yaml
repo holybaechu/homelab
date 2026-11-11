@@ -31,7 +31,7 @@ spec:
                   name: cloudflare-connect
                   key: credential
             - name: DOMAINS
-              value: dns.${DOMAIN},auth.${DOMAIN},vpn.${DOMAIN},cloud.${DOMAIN},office.${DOMAIN},wopi.${DOMAIN},i.${DOMAIN},l.${DOMAIN},photos.${DOMAIN},info.hermes.${DOMAIN},mysql.${DOMAIN}
+              value: dns.${DOMAIN},auth.${DOMAIN},vpn.${DOMAIN},cloud.${DOMAIN},office.${DOMAIN},wopi.${DOMAIN},i.${DOMAIN},l.${DOMAIN},photos.${DOMAIN},info.hermes.${DOMAIN},mysql.${DOMAIN},proxy.hchu.me
             - name: IP6_PROVIDER
               value: none
             - name: PROXIED

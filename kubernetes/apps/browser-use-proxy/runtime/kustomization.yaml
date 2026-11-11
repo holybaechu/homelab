@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: networking
+resources:
+  - resources.yaml
+configMapGenerator:
+  - name: browser-use-proxy-config
+    files:
+      - 3proxy.cfg
+      - egress.nft
+      - initialize.py
