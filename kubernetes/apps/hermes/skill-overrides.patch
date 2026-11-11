@@ -83,8 +83,7 @@
 +   routine capture directly; discuss open choices only when they change what
 +   should be saved.
  
-@@ -282,4 +269,5 @@
-      When new info contradicts existing content, follow the Update Policy.
+@@ -283,3 +270,4 @@
 -   - **Cross-reference:** Every new or updated page must link to at least 2 other
 -     pages via `[[wikilinks]]`. Check that existing pages link back.
 +   - **Cross-reference:** Link relevant existing pages via `[[wikilinks]]` and
