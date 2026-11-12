@@ -35,10 +35,11 @@ The existing Discord profile is displayed as `assistant`; its built-in ID stays
 `default` to preserve sessions, memory, and model authentication. Startup creates
 a blank `coder` profile and reconciles [coder.yaml](coder.yaml),
 [coder-soul.md](coder-soul.md), and the assistant's native profile delegation route.
-Startup also reconciles assistant's `model` selection and the `agent` inference
-settings in [config.yaml](config.yaml): `gpt-6.1-sol` through `openai-codex`,
+New homes seed assistant's `model` selection and `agent` inference settings
+from [config.yaml](config.yaml): `gpt-6.1-sol` through `openai-codex`,
 `xhigh` reasoning, and Fast (`service_tier: priority`). Coder's inference settings
-remain separate. Existing chats can retain session-specific overrides; start a
+remain separate. Personal inference changes survive startup. Existing chats can
+retain session-specific overrides; start a
 new chat to use the profile defaults.
 Coder inherits the root Codex OAuth grant through Hermes's native fallback; keep
 its `auth.json` absent rather than copying rotating OAuth tokens.
@@ -62,9 +63,10 @@ profile.
 
 `configure-profiles` verifies the immutable official `advanced-delegation` plugin
 against [delegation-plugin.sha256](delegation-plugin.sha256) and fails startup if
-it cannot prepare the route. Git owns these profile settings and both SOUL files
-([assistant-soul.md](assistant-soul.md) and [coder-soul.md](coder-soul.md));
-change their source files instead of editing them in the dashboard. Other live
+it cannot prepare the route. Git owns operational integration wiring.
+[assistant-soul.md](assistant-soul.md) and [coder-soul.md](coder-soul.md) seed a new
+home; existing SOUL files remain editable and use the private instruction history
+described below. Other live
 assistant settings and both profiles' histories remain on the PVC. Configuration
 backups taken before the initial migration remain under `/opt/data/backups`.
 
@@ -74,9 +76,10 @@ The official [Cua CLI](https://github.com/trycua/cua/releases/tag/cua-sdk-v0.16.
 0.16.0 is installed as `/opt/coder/bin/cua` by `install-coder-tools`, using the
 SHA256 in `coder/tools.sha256`. Only the CLI is extracted; Hermes runs its standard
 stdio `cua mcp --embedded`, not a host service or a cloud relay. MCP and the
-registration examples set `CUA_TELEMETRY=0` to disable CLI telemetry. `seed-config`
-reconciles [mcp-servers.yaml](mcp-servers.yaml) through `hermes config set` on pod
-startup. An operator-reviewed deployment must complete both init steps before a
+registration examples set `CUA_TELEMETRY=0` to disable CLI telemetry.
+`configure-profiles` reconciles [mcp-servers.yaml](mcp-servers.yaml) on startup
+while preserving additional personal servers. An operator-reviewed deployment
+must complete both init steps before a
 new assistant session can discover Cua. Do not edit live profile YAML or restart
 Hermes from the session being used to prepare this change.
 
@@ -659,26 +662,78 @@ work to it, including learning-driven updates without granting new write access.
 
 Merging lets Flux replace the `Recreate` Pod automatically: wait until active
 assistant and coder work has finished before merging or reconciling. Startup
-reconciles coder's SOUL and mounts the skill plus Second Brain. Start a new
+preserves existing SOUL files and mounts the skill plus Second Brain. Start a new
 assistant chat and a new coder task so
 their instructions and skill catalogs are rebuilt; saved chats can retain old
 context. Verify `skills_list` and `skill_view("writing-for-agents")` in both
 profiles, including its mechanics reference. Skill files can be discovered from
 disk without a gateway restart, but that alone does not refresh saved instruction
-context or install these Kubernetes mounts; avoid ad hoc live profile edits.
+context or install these Kubernetes mounts; change the mounts through Flux.
 
-Startup seeds the pinned image's native skills and its optional `llm-wiki`, then
-applies [skill-overrides.patch](skill-overrides.patch) with `git apply`. A reverse
-check recognizes an already-applied patch. Context conflicts or a partially
-applied patch stop startup for review; existing files are not reset. Inspect the
-`reconcile-skills` init-container log and resolve only the conflicting hunks.
+Startup seeds the pinned image's native skills and optional `llm-wiki`, preserving
+user-modified and relocated copies through native sync. Existing overrides are
+ordinary editable files. They are no longer patched again at startup. Review
+upstream changes to modified skills when upgrading the image.
 
-Modified skills are treated as user-owned by native sync. Review their upstream
-changes when upgrading the Hermes image. The patch escapes literal dollars as
-`$$` for Flux substitution. To undo overrides, stop the gateway, reverse-apply
-the rendered bootstrap patch with `git apply --reverse`, and revert its bootstrap
-configuration before restarting. Reverting Git alone does not undo edits on the
-persistent volume. Preserve custom skill content when resolving conflicts.
+## Personal profile history
+
+The private [hermes-instructions](https://github.com/holybaechu/hermes-instructions)
+repository records assistant and coder's persistent profile state. It follows the
+pinned Hermes profile-export allowlist, adds hooks, skins, profile metadata and UI
+preferences, and excludes conversation exports and runtime state. It includes
+SOUL, personal skills, configuration, memories, user instructions, cron job
+definitions, scripts and personal plugins. The local Git directory is
+`/opt/data/.instruction-history.git` on `hermes-data`; its worktree is `/opt/data`
+without a home-level `.git` directory. Installed skill files and their bundled,
+registry and curator metadata are included, so additions and deletions are
+versioned as well as content edits. Mounted operational skills remain owned by
+this homelab repo.
+Authentication, conversations, execution databases, hidden runtime files,
+credential files and caches are outside the archive. Cron execution ledgers stay
+outside Git; only `cron/jobs.json` is recorded. Cluster-owned integration,
+networking and credential wiring remain reconciled from homelab. Personal model
+settings and additional MCP servers survive startup.
+
+Both profiles use Hermes's native `on_session_end` hook to run
+`hermes-instructions save` after each agent turn. Only that exact hook command is
+approved; global hook auto-approval remains disabled. Snapshots use the existing
+Hermes GitHub and signing credentials, serialize concurrent writers, and scan
+the exact staged bytes with the image's credential patterns and known runtime
+credentials. Unchanged credential examples from the pinned image are preserved.
+Suspicious additions stop recording without printing their values. Local files
+and signed commits survive a push failure; the next save retries publication.
+A history failure does not stop the gateway.
+
+Personal edits require no Flux deployment or gateway restart. Use a new
+conversation to load changed instructions. The mounted
+[instruction-history skill](instruction-history.md) documents scoped history,
+diff and restore commands. A restore is saved as a new commit, preserving later
+history. Keep credentials in 1Password, including credentials needed by a skill.
+
+For loss of the local history directory, first stop new work with `hermes pause`
+and wait for active tasks to finish. The restore command checkpoints current
+profile files before changing them. The existing GitHub and signing projections
+must be available. Run these commands in the Hermes container;
+they refuse to replace an existing history directory:
+
+```sh
+set -eu
+umask 077
+test ! -e /opt/data/.instruction-history.git
+git clone --bare https://github.com/holybaechu/hermes-instructions.git /opt/data/.instruction-history.git
+git --git-dir=/opt/data/.instruction-history.git config core.bare false
+git --git-dir=/opt/data/.instruction-history.git config core.worktree /opt/data
+git --git-dir=/opt/data/.instruction-history.git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+git --git-dir=/opt/data/.instruction-history.git config status.showUntrackedFiles no
+printf '*\n' > /opt/data/.instruction-history.git/info/exclude
+hermes-instructions restore HEAD -- .
+hermes resume
+```
+
+This restores only archived profile paths. Restore the PVC backup separately
+for OAuth grants, conversations and databases.
+An empty Git remote is initialized once from the reviewed live instructions during
+the initial migration; never force-push over an existing history to repair a failure.
 
 Hermes v0.23 supplies the native OAuth issuer normalization used by TickTick;
 no provider file is overlaid. Langfuse dependencies use pip's pinned hashes, and
