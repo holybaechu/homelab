@@ -1,4 +1,4 @@
-  #!/opt/hermes/.venv/bin/python
+#!/opt/hermes/.venv/bin/python
 """Record persistent Hermes profile changes with Git; exclude credentials and runtime data."""
 
 import fcntl
