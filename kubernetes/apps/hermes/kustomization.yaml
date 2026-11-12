@@ -18,6 +18,8 @@ configMapGenerator:
       - coder.yaml
       - coder-soul.md
       - configure_profiles.py
+      - instruction_history.py
+      - instruction-history.md
       - configure_browser_proxy.py
       - delegation-plugin.sha256
       - coder-install-tools.sh=coder/install-tools.sh
@@ -36,7 +38,6 @@ configMapGenerator:
       - obsidian-sync/package-lock.json
       - second-brain.md
       - seed_skills.py
-      - skill-overrides.patch
       - qmd-package.json=qmd/package.json
       - qmd-package-lock.json=qmd/package-lock.json
       - qmd-index.yml=qmd/index.yml

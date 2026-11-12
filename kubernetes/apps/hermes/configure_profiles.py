@@ -36,19 +36,29 @@ def configure_coding_route(config: dict, *, t3_enabled: bool) -> None:
 
 
 def reconcile(root: Path, bootstrap: Path) -> None:
-    (root / "SOUL.md").write_text((bootstrap / "assistant-soul.md").read_text())
-    if not profile_exists("coder"):
+    history_exists = (root / ".instruction-history.git").exists()
+    if not (root / "SOUL.md").exists() and not history_exists:
+        (root / "SOUL.md").write_text((bootstrap / "assistant-soul.md").read_text())
+    new_coder = not profile_exists("coder")
+    if new_coder:
         create_profile("coder", no_alias=True)
 
     coder = root / "profiles" / "coder"
     (coder / "workspace").mkdir(exist_ok=True)
     desired = yaml.safe_load((bootstrap / "coder.yaml").read_text())
-    config = yaml.safe_load((coder / "config.yaml").read_text()) or {}
+    coder_config = coder / "config.yaml"
+    config = yaml.safe_load(coder_config.read_text()) if coder_config.exists() else {}
+    config = config or {}
     config.setdefault("browser", {}).update(desired.pop("browser"))
-    config.update(desired)
+    if new_coder:
+        config.update(desired)
+    else:
+        for key, value in desired.items():
+            config.setdefault(key, value)
     configure_browser_vault(config)
     atomic_yaml_write(coder / "config.yaml", config, sort_keys=False)
-    (coder / "SOUL.md").write_text((bootstrap / "coder-soul.md").read_text())
+    if new_coder or (not (coder / "SOUL.md").exists() and not history_exists):
+        (coder / "SOUL.md").write_text((bootstrap / "coder-soul.md").read_text())
     write_profile_meta(
         coder,
         display_name="coder",
@@ -58,14 +68,19 @@ def reconcile(root: Path, bootstrap: Path) -> None:
 
     config = yaml.safe_load((root / "config.yaml").read_text()) or {}
     assistant = yaml.safe_load((bootstrap / "config.yaml").read_text())
-    config.setdefault("model", {}).update(assistant["model"])
-    config.setdefault("agent", {}).update(assistant["agent"])
+    for section in ("model", "agent"):
+        for key, value in assistant[section].items():
+            config.setdefault(section, {}).setdefault(key, value)
     configure_browser_vault(config)
     servers = yaml.safe_load((bootstrap / "mcp-servers.yaml").read_text())
+    config.setdefault("mcp_servers", {}).update(servers)
     configure_coding_route(config, t3_enabled=servers["t3code"]["enabled"] is True)
     atomic_yaml_write(root / "config.yaml", config, sort_keys=False)
     # The built-in default ID owns existing Discord sessions and OAuth grants.
     write_profile_meta(root, display_name="assistant")
+    from instruction_history import configure_hooks
+
+    configure_hooks(root)
     print("Reconciled assistant and coder profiles.")
 
 

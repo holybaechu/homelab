@@ -89,8 +89,6 @@ spec:
               chown -R 10000:10000 /opt/homelab /opt/immich-mcp
               chown 10000:10000 /opt/data/obsidian /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
               chmod 700 /opt/data/obsidian/headless
-              # Git owns the MCP section; the CLI preserves other live settings.
-              hermes config set --force mcp_servers "$(cat /bootstrap/mcp-servers.yaml)"
               hermes config set --force platforms.webhook "$(cat /bootstrap/webhook.yaml)"
               # Reconcile web access for existing profiles as well as new installs.
               hermes config set --force dashboard.public_url https://dash.hermes.${DOMAIN}
@@ -148,13 +146,6 @@ spec:
           args:
             - |
               /opt/hermes/.venv/bin/python /bootstrap/seed_skills.py
-              cd /opt/data/skills
-              if git apply --reverse --check /bootstrap/skill-overrides.patch 2>/dev/null; then
-                echo 'Skill overrides already applied.'
-              else
-                git apply --check /bootstrap/skill-overrides.patch
-                git apply /bootstrap/skill-overrides.patch
-              fi
           securityContext:
             runAsUser: 10000
             runAsGroup: 10000
@@ -654,6 +645,14 @@ spec:
               readOnly: true
             - name: writing-for-agents
               mountPath: /opt/data/profiles/coder/skills/writing-for-agents
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/data/skills/instruction-history/SKILL.md
+              subPath: instruction-history.md
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/data/profiles/coder/skills/instruction-history/SKILL.md
+              subPath: instruction-history.md
               readOnly: true
             - name: langfuse-runtime
               mountPath: /opt/data/plugins/langfuse
