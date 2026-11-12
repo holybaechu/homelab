@@ -4,6 +4,9 @@ namespace: homelab
 resources:
   - resources.yaml
 configMapGenerator:
+  - name: t3-policy
+    files:
+      - policy.json
   - name: t3-bootstrap
     files:
       - install-runtime.sh

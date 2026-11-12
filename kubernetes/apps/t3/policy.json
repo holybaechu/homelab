@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "organization": "Homelab",
+  "settings": {
+    "defaultModelSelection": {
+      "value": {
+        "instanceId": "codex",
+        "model": "gpt-6.1-sol",
+        "options": [{ "id": "reasoningEffort", "value": "xhigh" }]
+      },
+      "locked": false
+    },
+    "fallbackModelSelection": { "value": null, "locked": false },
+    "defaultRuntimeMode": { "value": "auto", "locked": false },
+    "sourceControlWritingStyle.mode": { "value": "conventional_commits", "locked": false },
+    "reviewGuidesEnabled": { "value": true, "locked": false },
+    "storageCleanup.worktreeOnDelete": { "value": true, "locked": false },
+    "storageCleanup.worktreeOnMerge": { "value": true, "locked": false }
+  }
+}
