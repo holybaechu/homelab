@@ -28,7 +28,7 @@
 +Choose the relevant operation below. A general question alone does not require
 +wiki retrieval or a new record.
  
-@@ -71,26 +70,13 @@
+@@ -71,26 +70,18 @@
  
 -## Resuming an Existing Wiki (CRITICAL — do this every session)
 -
@@ -60,13 +60,18 @@
 +helps locate them; consult recent log entries only when the question concerns
 +recent activity or provenance. Routine lookup remains read-only.
 +
-+Before creating or updating content, read `SCHEMA.md`, check the relevant index
-+section, and search for existing coverage. Consult recent log entries when
-+needed to avoid repeating an ingest. For an audit, inspect the structures the
-+requested checks require. Orientation is complete when the relevant evidence
-+or applicable writing conventions and duplicate checks are known.
++Before creating or updating content, establish the applicable `SCHEMA.md`
++conventions, check the relevant index section, and search for existing coverage.
++Reuse conventions and skill content already available in context; reload when
++changed, lost through compression, or needed for a different operation. Refresh
++mutable edit targets before writing, rather than rereading unrelated navigation.
++Consult recent log entries only when needed to avoid repeating an ingest. Treat
++an unchanged-file response as confirmation, not a reason to repeat the same read.
++For an audit, inspect the structures the requested checks require. Orientation
++is complete when the relevant evidence, writing conventions and duplicate checks
++are known.
  
-@@ -121,6 +107,6 @@
+@@ -121,6 +112,6 @@
  - Every wiki page starts with YAML frontmatter (see below)
 -- Use `[[wikilinks]]` to link between pages (minimum 2 outbound links per page)
 +- Use `[[wikilinks]]` for relevant existing pages; add only supported relationships
@@ -75,7 +80,7 @@
 -- Every action must be appended to `log.md`
 +- Append content-changing actions and requested audits to `log.md`
  - **Provenance markers:** On pages that synthesize 3+ sources, append `^[raw/articles/source-file.md]`
-@@ -270,4 +256,5 @@
+@@ -270,4 +261,5 @@
  
 -② **Discuss takeaways** with the user — what's interesting, what matters for
 -   the domain. (Skip this in automated/cron contexts — proceed directly.)
@@ -83,14 +88,14 @@
 +   routine capture directly; discuss open choices only when they change what
 +   should be saved.
  
-@@ -283,3 +270,4 @@
+@@ -283,3 +275,4 @@
 -   - **Cross-reference:** Every new or updated page must link to at least 2 other
 -     pages via `[[wikilinks]]`. Check that existing pages link back.
 +   - **Cross-reference:** Link relevant existing pages via `[[wikilinks]]` and
 +     add reciprocal links when they improve navigation. Preserve genuine
 +     relationships rather than inventing links to meet a count.
     - **Tags:** Only use tags from the taxonomy in SCHEMA.md
-@@ -297,6 +285,8 @@
+@@ -297,6 +290,8 @@
  
 -⑥ **Report what changed** — list every file created or updated to the user.
 -
@@ -103,7 +108,7 @@
 +Update only pages materially affected by the new evidence; reuse existing
 +coverage instead of creating pages for incidental mentions.
  
-@@ -304,14 +294,14 @@
+@@ -304,14 +299,14 @@
  
 -When the user asks a question about the wiki's domain:
 -
@@ -130,7 +135,7 @@
 +⑤ **Log content changes**, including a newly filed synthesis. Log a query itself
 +   only when the user requested a query audit; avoid trivial lookup writes.
  
-@@ -479,10 +469,10 @@
+@@ -479,10 +474,10 @@
  - **Never modify files in `raw/`** — sources are immutable. Corrections go in wiki pages.
 -- **Always orient first** — read SCHEMA + index + recent log before any operation in a new session.
 -  Skipping this causes duplicates and missed cross-references.
