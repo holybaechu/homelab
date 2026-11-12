@@ -5,8 +5,17 @@ from pathlib import Path
 import hermes_yaml as yaml
 
 from hermes_cli.profiles import create_profile, profile_exists, write_profile_meta
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, reset_hermes_home_override, set_hermes_home_override
 from utils import atomic_yaml_write
+
+
+PROFILE_SYNC = "/opt/coder/bin/hermes-profile-sync"
+
+
+def configure_profile_sync(config: dict) -> None:
+    hooks = config.setdefault("hooks", {}).setdefault("on_session_end", [])
+    hooks[:] = [entry for entry in hooks if entry.get("command") != PROFILE_SYNC]
+    hooks.append({"command": PROFILE_SYNC, "timeout": 30})
 
 
 def configure_browser_vault(config: dict) -> None:
@@ -36,7 +45,7 @@ def configure_coding_route(config: dict, *, t3_enabled: bool) -> None:
 
 
 def reconcile(root: Path, bootstrap: Path) -> None:
-    history_exists = (root / ".instruction-history.git").exists()
+    history_exists = (root / ".git").exists()
     if not (root / "SOUL.md").exists() and not history_exists:
         (root / "SOUL.md").write_text((bootstrap / "assistant-soul.md").read_text())
     new_coder = not profile_exists("coder")
@@ -56,6 +65,7 @@ def reconcile(root: Path, bootstrap: Path) -> None:
         for key, value in desired.items():
             config.setdefault(key, value)
     configure_browser_vault(config)
+    configure_profile_sync(config)
     atomic_yaml_write(coder / "config.yaml", config, sort_keys=False)
     if new_coder or (not (coder / "SOUL.md").exists() and not history_exists):
         (coder / "SOUL.md").write_text((bootstrap / "coder-soul.md").read_text())
@@ -75,12 +85,18 @@ def reconcile(root: Path, bootstrap: Path) -> None:
     servers = yaml.safe_load((bootstrap / "mcp-servers.yaml").read_text())
     config.setdefault("mcp_servers", {}).update(servers)
     configure_coding_route(config, t3_enabled=servers["t3code"]["enabled"] is True)
+    configure_profile_sync(config)
     atomic_yaml_write(root / "config.yaml", config, sort_keys=False)
     # The built-in default ID owns existing Discord sessions and OAuth grants.
     write_profile_meta(root, display_name="assistant")
-    from instruction_history import configure_hooks
+    from agent.shell_hooks import _record_approval
 
-    configure_hooks(root)
+    for home in (root, coder):
+        token = set_hermes_home_override(home)
+        try:
+            _record_approval("on_session_end", PROFILE_SYNC)
+        finally:
+            reset_hermes_home_override(token)
     print("Reconciled assistant and coder profiles.")
 
 

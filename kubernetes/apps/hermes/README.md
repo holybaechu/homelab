@@ -677,63 +677,61 @@ upstream changes to modified skills when upgrading the image.
 
 ## Personal profile history
 
-The private [hermes-instructions](https://github.com/holybaechu/hermes-instructions)
-repository records assistant and coder's persistent profile state. It follows the
-pinned Hermes profile-export allowlist, adds hooks, skins, profile metadata and UI
-preferences, and excludes conversation exports and runtime state. It includes
-SOUL, personal skills, configuration, memories, user instructions, cron job
-definitions, scripts and personal plugins. The local Git directory is
-`/opt/data/.instruction-history.git` on `hermes-data`; its worktree is `/opt/data`
-without a home-level `.git` directory. Installed skill files and their bundled,
-registry and curator metadata are included, so additions and deletions are
-versioned as well as content edits. Mounted operational skills remain owned by
-this homelab repo.
-Authentication, conversations, execution databases, hidden runtime files,
-credential files and caches are outside the archive. Cron execution ledgers stay
-outside Git; only `cron/jobs.json` is recorded. Cluster-owned integration,
-networking and credential wiring remain reconciled from homelab. Personal model
-settings and additional MCP servers survive startup.
+`/opt/data` is Hermes's home and a normal Git working tree, with `.git` on
+`hermes-data` and the private
+[hermes-instructions](https://github.com/holybaechu/hermes-instructions) remote.
+It records both profiles' SOUL, skills, configuration, memories, user instructions,
+cron job definitions, hooks, scripts, personal plugins and preferences.
+[home.gitignore](home.gitignore) seeds `.gitignore` once; maintain the live policy
+in the private repository. It excludes credentials, conversations, databases,
+execution ledgers, caches, workspaces and cluster-managed mounts/plugins. Keep
+credential values in 1Password and use references in tracked files.
 
-Both profiles use Hermes's native `on_session_end` hook to run
-`hermes-instructions save` after each agent turn. Only that exact hook command is
-approved; global hook auto-approval remains disabled. Snapshots use the existing
-Hermes GitHub and signing credentials, serialize concurrent writers, and scan
-the exact staged bytes with the image's credential patterns and known runtime
-credentials. Unchanged credential examples from the pinned image are preserved.
-Suspicious additions stop recording without printing their values. Local files
-and signed commits survive a push failure; the next save retries publication.
-A history failure does not stop the gateway.
+Hermes's native `on_session_end` hook runs the short
+[profile-sync.sh](profile-sync.sh): serialize writers with `flock`, stage changes,
+commit when needed, and push using existing signing/GitHub credentials. A failed
+push keeps local commits and retries at the next turn. Only this exact hook is
+approved; global hook auto-approval stays disabled.
 
-Personal edits require no Flux deployment or gateway restart. Use a new
-conversation to load changed instructions. The mounted
-[instruction-history skill](instruction-history.md) documents scoped history,
-diff and restore commands. A restore is saved as a new commit, preserving later
-history. Keep credentials in 1Password, including credentials needed by a skill.
+Use normal Git commands for history and file-scoped restoration. Commit pending
+changes before restoring, then commit and push the restoration. Personal changes
+require no image build or gateway restart; start a new conversation to load
+changed instructions. For selected config settings, use `hermes config set` so
+cluster-managed integration wiring and the recording hook stay intact. Pause
+dispatch with `hermes pause` and finish active work before restoring schedules;
+review the schedules before `hermes resume`.
 
-For loss of the local history directory, first stop new work with `hermes pause`
-and wait for active tasks to finish. The restore command checkpoints current
-profile files before changing them. The existing GitHub and signing projections
-must be available. Run these commands in the Hermes container;
-they refuse to replace an existing history directory:
+Run manual Git commands as the gateway account `hermes` (UID/GID `10000:10000`)
+so new Git objects and locks remain writable by the gateway. Open a shell with:
+
+```sh
+kubectl -n homelab exec -it deploy/hermes -c hermes -- runuser -u hermes -- /bin/sh
+```
+
+```sh
+git -C /opt/data log --oneline -- SOUL.md memories/ config.yaml
+git -C /opt/data diff <commit> HEAD -- <path>
+git -C /opt/data restore --source=<commit> -- <path>
+```
+
+If only `.git` is lost, pause dispatch and wait for active tasks. With the existing
+GitHub/signing projections available, recover metadata without overwriting profile
+files. These commands refuse to replace an existing `.git`; inspect `git status`
+before choosing any file restoration:
 
 ```sh
 set -eu
 umask 077
-test ! -e /opt/data/.instruction-history.git
-git clone --bare https://github.com/holybaechu/hermes-instructions.git /opt/data/.instruction-history.git
-git --git-dir=/opt/data/.instruction-history.git config core.bare false
-git --git-dir=/opt/data/.instruction-history.git config core.worktree /opt/data
-git --git-dir=/opt/data/.instruction-history.git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
-git --git-dir=/opt/data/.instruction-history.git config status.showUntrackedFiles no
-printf '*\n' > /opt/data/.instruction-history.git/info/exclude
-hermes-instructions restore HEAD -- .
-hermes resume
+test ! -e /opt/data/.git
+git clone --no-checkout https://github.com/holybaechu/hermes-instructions.git /tmp/hermes-profile-recovery
+mv /tmp/hermes-profile-recovery/.git /opt/data/.git
+git -C /opt/data reset --mixed HEAD
+git -C /opt/data status --short
 ```
 
-This restores only archived profile paths. Restore the PVC backup separately
-for OAuth grants, conversations and databases.
-An empty Git remote is initialized once from the reviewed live instructions during
-the initial migration; never force-push over an existing history to repair a failure.
+Resume dispatch after verification. Recover the PVC backup separately for OAuth
+grants, conversations and databases. Preserve existing history; use ordinary
+commits for corrections rather than replacing the remote history.
 
 Hermes v0.23 supplies the native OAuth issuer normalization used by TickTick;
 no provider file is overlaid. Langfuse dependencies use pip's pinned hashes, and
