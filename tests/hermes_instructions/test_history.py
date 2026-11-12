@@ -170,6 +170,14 @@ class HistoryTests(unittest.TestCase):
                                 capture_output=True, check=True)
         self.assertEqual(result.stdout.decode().strip(), saved)
 
+    def test_installed_entrypoint_executes_without_an_explicit_interpreter(self):
+        entry = self.base / "hermes-instructions"
+        entry.write_bytes((SOURCE / "instruction_history.py").read_bytes())
+        entry.chmod(0o555)
+        result = subprocess.run([str(entry), "invalid-command"], capture_output=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"use save, status, log, diff, show or restore", result.stderr)
+
     def test_profile_hooks_preserve_existing_config_and_approve_only_one_command(self):
         for home in [self.root, self.root / "profiles/coder"]:
             home.mkdir(parents=True, exist_ok=True)
