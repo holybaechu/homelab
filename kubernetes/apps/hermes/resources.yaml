@@ -52,8 +52,10 @@ spec:
                 chown 10000:10000 /opt/data/config.yaml
                 chmod 600 /opt/data/config.yaml
               fi
-              if [ ! -e /opt/data/.gitignore ]; then
-                install -o 10000 -g 10000 -m 0600 /bootstrap/home.gitignore /opt/data/.gitignore
+              mkdir -p /opt/data/.config/chezmoi
+              chown 10000:10000 /opt/data/.config /opt/data/.config/chezmoi
+              if [ ! -e /opt/data/.config/chezmoi/chezmoi.toml ]; then
+                install -o 10000 -g 10000 -m 0600 /bootstrap/chezmoi.toml /opt/data/.config/chezmoi/chezmoi.toml
               fi
               mkdir -p /opt/data/workspace /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
               mkdir -p /opt/data/skills /opt/data/workspace/homelab

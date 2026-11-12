@@ -11,7 +11,8 @@ configMapGenerator:
       - kubeconfig.yaml=kubernetes-client.yaml
       - coder.yaml
       - configure_profiles.py
-      - home.gitignore
+      - home.chezmoiignore
+      - chezmoi.toml
       - profile-sync.sh
       - configure_browser_proxy.py
       - delegation-plugin.sha256

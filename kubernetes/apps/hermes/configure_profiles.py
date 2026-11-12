@@ -13,9 +13,11 @@ PROFILE_SYNC = "/opt/coder/bin/hermes-profile-sync"
 
 
 def configure_profile_sync(config: dict) -> None:
-    hooks = config.setdefault("hooks", {}).setdefault("on_session_end", [])
-    hooks[:] = [entry for entry in hooks if entry.get("command") != PROFILE_SYNC]
-    hooks.append({"command": PROFILE_SYNC, "timeout": 30})
+    for event, action in (("on_session_start", "start"), ("on_session_end", "end")):
+        hooks = config.setdefault("hooks", {}).setdefault(event, [])
+        command = f"{PROFILE_SYNC} {action}"
+        hooks[:] = [entry for entry in hooks if entry.get("command") not in (PROFILE_SYNC, command)]
+        hooks.append({"command": command, "timeout": 60})
 
 
 def configure_browser_vault(config: dict) -> None:
@@ -89,7 +91,8 @@ def reconcile(root: Path, bootstrap: Path) -> None:
     for home in (root, coder):
         token = set_hermes_home_override(home)
         try:
-            _record_approval("on_session_end", PROFILE_SYNC)
+            for event, action in (("on_session_start", "start"), ("on_session_end", "end")):
+                _record_approval(event, f"{PROFILE_SYNC} {action}")
         finally:
             reset_hermes_home_override(token)
     print("Reconciled assistant and coder profiles.")
