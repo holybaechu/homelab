@@ -4,14 +4,14 @@ on:
     paths:
       - kubernetes/apps/hermes/**
       - tests/browser_vault/**
-      - tests/hermes_instructions/**
+      - tests/native_hermes/**
       - .github/workflows/browser-vault.yml
   push:
     branches: [main]
     paths:
       - kubernetes/apps/hermes/**
       - tests/browser_vault/**
-      - tests/hermes_instructions/**
+      - tests/native_hermes/**
       - .github/workflows/browser-vault.yml
   workflow_dispatch:
 permissions:
@@ -30,11 +30,11 @@ jobs:
             -v "$GITHUB_WORKSPACE:/repo:ro" -w /repo \
             nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd \
             tests/browser_vault/test_connect.py
-      - name: Check instruction history with native Git and credential patterns
+      - name: Check preservation of personal profile state at startup
         run: |
           docker run --rm --user 0 \
             --entrypoint /opt/hermes/.venv/bin/python \
             -e PYTHONPATH=/opt/hermes \
             -v "$GITHUB_WORKSPACE:/repo:ro" -w /repo \
             nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd \
-            tests/hermes_instructions/test_history.py
+            tests/native_hermes/test_profiles.py

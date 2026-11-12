@@ -20,7 +20,7 @@ tar -xzf cua.tar.gz -C /opt/coder/bin cua
 mv /opt/coder/bin/gh /opt/coder/bin/gh-real
 cp /bootstrap/coder-gh.sh /opt/coder/bin/gh
 cp /bootstrap/coder-gitconfig /opt/coder/gitconfig
-install -m 0555 /bootstrap/instruction_history.py /opt/coder/bin/hermes-instructions
+install -m 0555 /bootstrap/profile-sync.sh /opt/coder/bin/hermes-profile-sync
 chmod 755 /opt/coder/bin/mise /opt/coder/bin/gh /opt/coder/bin/gh-real /opt/coder/bin/cua
 /opt/coder/bin/mise --version
 /opt/coder/bin/gh-real --version

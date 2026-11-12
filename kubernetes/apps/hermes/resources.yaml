@@ -52,6 +52,9 @@ spec:
                 chown 10000:10000 /opt/data/config.yaml
                 chmod 600 /opt/data/config.yaml
               fi
+              if [ ! -e /opt/data/.gitignore ]; then
+                install -o 10000 -g 10000 -m 0600 /bootstrap/home.gitignore /opt/data/.gitignore
+              fi
               mkdir -p /opt/data/workspace /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
               mkdir -p /opt/data/skills/homelab-services /opt/data/workspace/homelab
               mkdir -p /opt/homelab/python /opt/homelab/credentials /opt/immich-mcp
@@ -645,14 +648,6 @@ spec:
               readOnly: true
             - name: writing-for-agents
               mountPath: /opt/data/profiles/coder/skills/writing-for-agents
-              readOnly: true
-            - name: bootstrap
-              mountPath: /opt/data/skills/instruction-history/SKILL.md
-              subPath: instruction-history.md
-              readOnly: true
-            - name: bootstrap
-              mountPath: /opt/data/profiles/coder/skills/instruction-history/SKILL.md
-              subPath: instruction-history.md
               readOnly: true
             - name: langfuse-runtime
               mountPath: /opt/data/plugins/langfuse
