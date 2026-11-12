@@ -56,7 +56,7 @@ spec:
                 install -o 10000 -g 10000 -m 0600 /bootstrap/home.gitignore /opt/data/.gitignore
               fi
               mkdir -p /opt/data/workspace /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
-              mkdir -p /opt/data/skills/homelab-services /opt/data/workspace/homelab
+              mkdir -p /opt/data/workspace/homelab
               mkdir -p /opt/homelab/python /opt/homelab/credentials /opt/immich-mcp
               mkdir -p /opt/qmd /opt/data/qmd/config /opt/data/qmd/cache/qmd
               mkdir -p /opt/langfuse/python /opt/langfuse/plugin /opt/data/plugins/langfuse
@@ -86,7 +86,7 @@ spec:
               cp /bootstrap/qmd-index.yml /opt/data/qmd/config/index.yml
               touch /opt/homelab/services.py /opt/homelab/mcp_server.py
               chown 10000:10000 /opt/data /opt/data/workspace
-              chown 10000:10000 /opt/data/skills/homelab-services /opt/data/workspace/homelab
+              chown 10000:10000 /opt/data/workspace/homelab
               chown 10000:10000 /opt/data/skills /opt/qmd /opt/data/qmd /opt/data/qmd/config /opt/data/qmd/config/index.yml /opt/data/qmd/cache /opt/data/qmd/cache/qmd
               chown 10000:10000 /opt/langfuse /opt/langfuse/python /opt/langfuse/plugin /opt/data/plugins /opt/data/plugins/langfuse
               chown -R 10000:10000 /opt/homelab /opt/immich-mcp
@@ -643,12 +643,6 @@ spec:
             - name: langfuse-runtime
               mountPath: /opt/langfuse
               readOnly: true
-            - name: writing-for-agents
-              mountPath: /opt/data/skills/writing-for-agents
-              readOnly: true
-            - name: writing-for-agents
-              mountPath: /opt/data/profiles/coder/skills/writing-for-agents
-              readOnly: true
             - name: langfuse-runtime
               mountPath: /opt/data/plugins/langfuse
               subPath: plugin
@@ -710,10 +704,6 @@ spec:
             - name: browser-vault-credentials
               mountPath: /var/run/hermes-browser-vault
               readOnly: true
-            - name: bootstrap
-              mountPath: /opt/data/workspace/.hermes.md
-              subPath: second-brain.md
-              readOnly: true
             - name: homelab-runtime
               mountPath: /opt/homelab
               readOnly: true
@@ -730,10 +720,6 @@ spec:
               readOnly: true
             - name: homelab-workspace
               mountPath: /opt/data/workspace/homelab
-            - name: bootstrap
-              mountPath: /opt/data/skills/homelab-services/SKILL.md
-              subPath: homelab-skill.md
-              readOnly: true
         - name: immich-mcp
           image: ghcr.io/drolosoft/immich-photo-manager:2.0.14@sha256:7486f483c9d47563aa4167d00dfaf901c71aa85cb214239da98764154b0264e1
           env:
@@ -836,9 +822,6 @@ spec:
             - name: obsidian-temporary
               mountPath: /tmp
       volumes:
-        - name: writing-for-agents
-          configMap:
-            name: hermes-writing-for-agents
         - name: talos-identity
           secret:
             secretName: hermes-talos-managed

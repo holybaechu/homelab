@@ -77,9 +77,11 @@
 *.db
 *.sqlite
 
-# Cluster-managed mounts and plugins stay in the homelab repository.
-**/skills/writing-for-agents/
-**/skills/homelab-services/
-**/skills/instruction-history/
+# Track workspace-wide instructions without project checkouts.
+!/workspace/
+/workspace/*
+!/workspace/.hermes.md
+
+# Cluster-managed plugins stay in the homelab repository.
 **/plugins/advanced-delegation/
 **/plugins/langfuse/

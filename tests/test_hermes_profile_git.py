@@ -46,12 +46,15 @@ class ProfileGitTests(unittest.TestCase):
         included = {"SOUL.md", "config.yaml", "memories/USER.md", "cron/jobs.json",
                     "skills/custom/SKILL.md", "skills/.bundled_manifest", "skills/.hub/lock.json",
                     "hooks/custom.sh", "scripts/task.py", "profiles/coder/config.yaml",
-                    "profiles/coder/memories/MEMORY.md"}
+                    "profiles/coder/memories/MEMORY.md", "workspace/.hermes.md",
+                    "skills/writing-for-agents/SKILL.md", "skills/writing-for-agents/LICENSE",
+                    "profiles/coder/skills/writing-for-agents/SKILL.md",
+                    "skills/homelab-services/SKILL.md"}
         excluded = {".env", "auth.json", "google_token.json", "state.db", "sessions/chat.json",
-                    "workspace/repo/file.py", "cron/executions.db", "cron/ticker_heartbeat",
+                    "workspace/repo/file.py", "workspace/config.yaml", "cron/executions.db", "cron/ticker_heartbeat",
                     "skills/custom/.env", "skills/custom/token.json", "skills/custom/key.pem",
                     "skills/custom/node_modules/library.js", "skills/.usage.json", "skills/.locks/x.lock",
-                    "skills/writing-for-agents/SKILL.md", "plugins/langfuse/plugin.py",
+                    "plugins/langfuse/plugin.py",
                     "profiles/coder/auth.json", "profiles/coder/.env", "profiles/coder/workspace/file.py"}
         for path in included | excluded:
             self.write(path)

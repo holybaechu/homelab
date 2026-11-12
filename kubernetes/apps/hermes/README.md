@@ -33,8 +33,8 @@ those credentials are not automatically shared with T3.
 
 The existing Discord profile is displayed as `assistant`; its built-in ID stays
 `default` to preserve sessions, memory, and model authentication. Startup creates
-a blank `coder` profile and reconciles [coder.yaml](coder.yaml),
-[coder-soul.md](coder-soul.md), and the assistant's native profile delegation route.
+a blank `coder` profile and reconciles [coder.yaml](coder.yaml) and the
+assistant's native profile delegation route.
 New homes seed assistant's `model` selection and `agent` inference settings
 from [config.yaml](config.yaml): `gpt-6.1-sol` through `openai-codex`,
 `xhigh` reasoning, and Fast (`service_tier: priority`). Coder's inference settings
@@ -64,10 +64,8 @@ profile.
 `configure-profiles` verifies the immutable official `advanced-delegation` plugin
 against [delegation-plugin.sha256](delegation-plugin.sha256) and fails startup if
 it cannot prepare the route. Git owns operational integration wiring.
-[assistant-soul.md](assistant-soul.md) and [coder-soul.md](coder-soul.md) seed a new
-home; existing SOUL files remain editable and use the private instruction history
-described below. Other live
-assistant settings and both profiles' histories remain on the PVC. Configuration
+Personal instructions and both profiles' histories remain on the PVC and use
+the private profile repository described below. Configuration
 backups taken before the initial migration remain under `/opt/data/backups`.
 
 ## Laptop control with Cua
@@ -250,7 +248,7 @@ confirm disk and USB identities and arrange the single node's downtime first.
 
 ## Behavior and search
 
-[second-brain.md](second-brain.md) owns source selection, knowledge capture, and
+`workspace/.hermes.md` in the private profile repository owns source selection, knowledge capture, and
 answer scope. Discord tool logs stay visible; final answers focus on useful
 results. [QMD](qmd/README.md) supplies local keyword and semantic search over a
 read-only vault mount. Reopen source notes before relying on indexed results.
@@ -650,25 +648,19 @@ HTTP endpoint; it follows no redirects or environment proxies. No provider write
 endpoints, source-item relabeling, service-account fallback, or ESO resources are
 involved.
 
-## Skill overrides
+## Skills and instructions
 
-The standalone [writing-for-agents](writing-for-agents/SKILL.md) guide is vendored
-from a pinned MIT-licensed upstream revision, with Hermes-specific invocation
-advice in [SKILL-MECHANICS.md](writing-for-agents/SKILL-MECHANICS.md). A dedicated
-ConfigMap mounts it read-only into assistant/default and coder's native skill
-directories; update its Git source rather than using `skill_manage` on the mount.
-Second Brain and coder's SOUL route instruction-writing and substantial prompt
-work to it, including learning-driven updates without granting new write access.
+SOUL files, Second Brain (`workspace/.hermes.md`), `writing-for-agents` in both
+profiles and `homelab-services` are writable files in the private profile
+repository. Keep the writing guide's MIT license and mechanics reference with
+its package. Update `homelab-services` there when its MCP interface changes.
+Homelab deploys infrastructure and integration code; it does not mount or seed
+personal instruction content. New empty profiles use native defaults until their
+saved profile files are restored.
 
-Merging lets Flux replace the `Recreate` Pod automatically: wait until active
-assistant and coder work has finished before merging or reconciling. Startup
-preserves existing SOUL files and mounts the skill plus Second Brain. Start a new
-assistant chat and a new coder task so
-their instructions and skill catalogs are rebuilt; saved chats can retain old
-context. Verify `skills_list` and `skill_view("writing-for-agents")` in both
-profiles, including its mechanics reference. Skill files can be discovered from
-disk without a gateway restart, but that alone does not refresh saved instruction
-context or install these Kubernetes mounts; change the mounts through Flux.
+Flux workload changes use `Recreate`: wait until active assistant and coder work
+has finished before merging or reconciling. After personal instruction edits,
+start a new assistant chat or coder task to refresh saved instruction context.
 
 Startup seeds the pinned image's native skills and optional `llm-wiki`, preserving
 user-modified and relocated copies through native sync. Existing overrides are
@@ -684,7 +676,8 @@ It records both profiles' SOUL, skills, configuration, memories, user instructio
 cron job definitions, hooks, scripts, personal plugins and preferences.
 [home.gitignore](home.gitignore) seeds `.gitignore` once; maintain the live policy
 in the private repository. It excludes credentials, conversations, databases,
-execution ledgers, caches, workspaces and cluster-managed mounts/plugins. Keep
+execution ledgers, caches, project workspaces and cluster-managed plugins. The
+workspace-wide `.hermes.md` remains tracked. Keep
 credential values in 1Password and use references in tracked files.
 
 Hermes's native `on_session_end` hook runs the short

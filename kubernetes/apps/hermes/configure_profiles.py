@@ -45,9 +45,6 @@ def configure_coding_route(config: dict, *, t3_enabled: bool) -> None:
 
 
 def reconcile(root: Path, bootstrap: Path) -> None:
-    history_exists = (root / ".git").exists()
-    if not (root / "SOUL.md").exists() and not history_exists:
-        (root / "SOUL.md").write_text((bootstrap / "assistant-soul.md").read_text())
     new_coder = not profile_exists("coder")
     if new_coder:
         create_profile("coder", no_alias=True)
@@ -67,8 +64,6 @@ def reconcile(root: Path, bootstrap: Path) -> None:
     configure_browser_vault(config)
     configure_profile_sync(config)
     atomic_yaml_write(coder / "config.yaml", config, sort_keys=False)
-    if new_coder or (not (coder / "SOUL.md").exists() and not history_exists):
-        (coder / "SOUL.md").write_text((bootstrap / "coder-soul.md").read_text())
     write_profile_meta(
         coder,
         display_name="coder",

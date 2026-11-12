@@ -5,7 +5,7 @@ Hermes. It reads the synced vault at `/vault`; Obsidian remains the source of
 truth. The MCP endpoint binds to the pod's loopback address and has no Service
 or ingress.
 
-The retrieval policy in [second-brain.md](../second-brain.md) keeps expansion and
+The retrieval policy in the private profile's `workspace/.hermes.md` keeps expansion and
 reranking for difficult lookups: they load extra local models. The pinned MCP
 runtime unloads models after five idle minutes; Linux may retain their file
 pages as cache afterward.
