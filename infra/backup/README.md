@@ -7,24 +7,35 @@ The official Backblaze and Scaleway providers are pinned and checksummed in the 
 
 ## Adoption and activation
 
+The active deployment target is **B2 only**. Use
+`provision_runtime_credentials=true` with `provision_scaleway=false` only in a
+reviewed credential-provisioning plan. Runtime activation separately requires
+credential parity, scope and restore acceptance. Scaleway
+is deferred; its staged integration is retained without account, key or resource
+changes. The B2 path requires no Scaleway account, API credential or billing input.
+
 - B2 imports **only bucket metadata** for private `homelab-backup-b2`, ID
   `8a6f23878ab0beb4a3120e11`. Preserve SSE-B2/AES256, disabled Object Lock and
   Keep All Versions. There is no lifecycle expiry rule. The first real plan must
   show import with **no bucket changes**, not creation/replacement. Stop on any
   discrepancy, including unexpected lifecycle rules, CORS or retention defaults.
-- Scaleway signup remains blocked at email verification. No project, bucket or
-  key has been created. The unrelated OVH discovery project
+- If Scaleway is selected again, verify account/billing and API bootstrap access.
+  The previously selected candidate is a new exact `homelab-backup` project;
+  do not adopt or rename `Homelab Backup`.
+  Its candidate bucket, runtime identity and runtime item are `homelab-backup-scaleway`,
+  in `nl-ams`. The unrelated OVH discovery project
   `ca114dc8826842a093ba32f8ead79f99` is **untouched**; this root no longer reads it.
 - `provision_scaleway=false` and `provision_runtime_credentials=false` are staging
-  defaults, not teardown switches. Before enabling them, obtain account/billing
-  verification, explicit provisioning authorization, and approved nonsecret inputs:
+  defaults, not teardown switches. Enabling Scaleway additionally requires
+  account/billing verification, explicit provisioning authorization and approved
+  nonsecret inputs:
   `scaleway_organization_id`, `scaleway_project_name`, `scaleway_bucket_name`,
   `scaleway_region`, `scaleway_runtime_name`, `scaleway_runtime_item_title`,
   and `scaleway_admin_principals` (verified `user_id:<UUID>` /
   `application_id:<UUID>` entries for the active provisioner and independent
   administrator/recovery access). These principals are nonsecret but require
   human identity/access confirmation; never guess them or include the runtime app.
-  No Scaleway name or region is approved by this code; blank defaults fail closed
+  Supply the approved names and region explicitly; blank defaults fail closed
   when their provisioning gate is enabled.
 - OpenTofu owns a dedicated Scaleway project, private bucket/ACL and dedicated IAM
   application/policy/key. The project has `delete_with_resources=false`; the
@@ -209,11 +220,13 @@ private directory, and report only the failed stage, never raw errors or files.
 
   If a credential has not been securely issued/saved, stop before the launch step;
   do not invent placeholders as values or send secrets for an agent to copy.
-  Record nonsecret issuance/expiry metadata in that private item. Later bootstrap
-  may temporarily replace the B2 provider fields with the already approved,
-  short-lived `writeKeys`/`listKeys` authority; it is effectively account-wide,
-  must be revoked after bootstrap, and is **not needed now**. Runtime keys and
-  repository passwords are written directly by the provider, never copied by hand.
+  Record nonsecret issuance/expiry metadata in that private item. For a separately
+  approved bootstrap, preserve the adoption fields and use separate concealed
+  `b2-provider-key-id` / `b2-provider-key` fields for the short-lived
+  `writeKeys`/`listKeys` authority. Inject those into the later provisioning
+  process only; do not rerun first-adoption setup against existing artifacts.
+  This is effectively account-wide authority and must be revoked after bootstrap.
+  Runtime keys and repository passwords are written directly by the provider.
 
 ### Prepare isolated sources and private references
 
@@ -298,9 +311,8 @@ exact import ID, and no data resources. Scaleway credentials are not required fo
 this disabled-provider adoption checkpoint; do not inject dummy credentials. A
 success **does not** prove SDK write access, an active Scaleway account, or bucket/runtime scope.
 
-**Stop here.** No B2 key is created and no runtime flag is enabled. Scaleway
-account/email verification, region/names, dedicated-project scope and temporary
-bootstrap authorization remain gates. A later reviewed provisioning plan must
+**Stop at this adoption boundary.** No B2 key is created and no runtime flag is
+enabled by the adoption launcher. The later B2-only provisioning plan must
 verify SDK authentication, Homelab vault UUID/title absence, expanded provider
 grants, exact plan settings and authorization **before** applying only that saved
 plan. Verify direct item writes/runtime scope and revoke temporary bootstrap keys.
@@ -308,31 +320,22 @@ Leave the read-only Connect/Operator contract unchanged.
 
 ## Execution and review gates
 
-Only local validation is authorized in this change. A real plan/import/apply
-requires separately reviewed bootstrap/activation and explicit authorization.
-These are operator commands for that later stage, not a CI deployment path:
+A real plan/import/apply requires reviewed bootstrap/activation and operator
+authorization. These B2-only operator commands are not a CI deployment path:
 
 ```sh
 umask 077
 # BACKUP_STATE and BACKUP_PLAN are private absolute paths outside the checkout.
 # TF_DATA_DIR must be dedicated to this root; inject credentials/passphrase privately.
 tofu -chdir=infra/backup init -lockfile=readonly -backend-config="path=$BACKUP_STATE"
-tofu -chdir=infra/backup plan -out="$BACKUP_PLAN"
+tofu -chdir=infra/backup plan -var=provision_runtime_credentials=true -var=provision_scaleway=false -out="$BACKUP_PLAN"
 # Stream the decrypted plan; never save/publish the JSON (it can contain secrets).
 tofu -chdir=infra/backup show -json "$BACKUP_PLAN" | jq -e '
   (.resource_changes | type == "array") and
   all(.resource_changes[];
     (.address == "b2_bucket.backup" and .change.actions == ["no-op"]) or
     ((.address == "b2_application_key.runtime[0]" or
-      .address == "scaleway_account_project.backup[0]" or
-      .address == "scaleway_object_bucket.backup[0]" or
-      .address == "scaleway_object_bucket_acl.backup[0]" or
-      .address == "scaleway_object_bucket_policy.backup[0]" or
-      .address == "scaleway_iam_application.runtime[0]" or
-      .address == "scaleway_iam_policy.runtime[0]" or
-      .address == "scaleway_iam_api_key.runtime[0]" or
-      .address == "onepassword_item.runtime[\"b2\"]" or
-      .address == "onepassword_item.runtime[\"scaleway\"]") and
+      .address == "onepassword_item.runtime[\"b2\"]") and
      (.change.actions == ["create"] or .change.actions == ["no-op"])))
 ' > /dev/null
 ```
@@ -340,8 +343,8 @@ tofu -chdir=infra/backup show -json "$BACKUP_PLAN" | jq -e '
 Use a shell with `set -o pipefail`; a failed producer must fail the review gate.
 The allowlist gate rejects every managed delete, replacement, B2 update/create
 and unexpected address. It does not grant approval: privately review the real
-plan's exact import ID, project, bucket region/private ACL settings,
-policies and creations. Defaults permit only B2 adoption; enable each staging
+plan's exact existing bucket identity, unchanged settings, runtime key scope,
+item destination and creations. Defaults permit only B2 adoption; enable each staging
 flag only in a fresh explicitly reviewed plan. Apply **only that saved plan**
 after authorization (`tofu -chdir=infra/backup apply "$BACKUP_PLAN"`), then read
 back exact cloud targets and securely verify secrets before enabling restic.
