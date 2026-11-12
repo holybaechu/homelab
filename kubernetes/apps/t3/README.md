@@ -1,9 +1,9 @@
 # T3 coding workspace
 
 T3 owns coding conversations, real diffs, and direct user steering. Hermes keeps
-planning, research, read-only investigation, and live operations. This is a
-**staged installation, not an accepted coding-route cutover**. The Git-owned
-`hermes/mcp-servers.yaml` entry stays disabled until the trial below passes.
+planning, research, read-only investigation, and live operations. The Git-owned
+`hermes/mcp-servers.yaml` entry enables the native OAuth MCP connection. Verify
+production OAuth and complete the trial below before calling cutover complete.
 No laptop software is required: open `https://t3.<DOMAIN>` from LAN or tailnet.
 
 ## Deployment and ownership
@@ -45,7 +45,7 @@ The UI shell loading is not proof that its protected APIs allow anonymous use.
 ## GitOps defaults
 
 `policy.json` uses T3 v0.1.9's [managed policy](https://github.com/pingdotgg/t3code/blob/v0.1.9/docs/user/managed-policy.md)
-contract, mounted read-only at `/etc/t3code/policy.json`. All eight selections
+contract, mounted read-only at `/etc/t3code/policy.json`. All nine selections
 are server-side defaults shared by browser, desktop, and mobile clients:
 
 | Selection | Native setting/value |
@@ -55,6 +55,7 @@ are server-side defaults shared by browser, desktop, and mobile clients:
 | Fallback: None | `fallbackModelSelection = null` |
 | New-thread permissions: Auto | `defaultRuntimeMode = auto` |
 | Commit and PR writing: Conventional Commits | `sourceControlWritingStyle.mode = conventional_commits` |
+| Worktree branch naming: Semantic | `branchNamingMode = semantic` |
 | Review guides (beta): On | `reviewGuidesEnabled = true` |
 | Delete worktrees with deleted threads: On | `storageCleanup.worktreeOnDelete = true` |
 | Delete merged worktrees: On | `storageCleanup.worktreeOnMerge = true` |
@@ -189,10 +190,11 @@ assistant's MCP connection with `hermes mcp login t3code`; trial-profile tokens
 do not automatically become production grants.
 
 The parent/operator owns merging, rollout timing, and active-work handling.
-Deploy the combined PR only after active Hermes work finishes; do not split a
-service-only PR or interrupt unrelated work. Bootstrap ConfigMap changes replace
-the Recreate Hermes Pod: preserve completed work IDs, then roll out from an
-independent session. Use a new assistant chat after rollout to avoid a cached native tool
+Deploy the combined PR only after active Hermes and T3 work finishes; do not split
+a service-only PR or interrupt unrelated work. Bootstrap ConfigMap changes replace
+the Recreate Hermes Pod and restart T3, which projects the same coder Git helpers.
+Preserve completed work IDs, then roll out from an independent session. Use a new
+assistant chat after rollout to avoid a cached native tool
 schema. Verify the real default-profile MCP connection, all-code routing,
 thread link, and direct steering before calling cutover complete. Revoke/remove
 the disposable trial profile only with explicit approval after preserving evidence.

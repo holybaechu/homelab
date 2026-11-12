@@ -20,12 +20,12 @@ addresses and `hermes webapp --status` in the Hermes container.
 
 ## Assistant and coder
 
-A [staged T3 coding workspace](../t3/README.md) adds a separate server-side UI,
-private PVC, and native OAuth MCP connection. Its source gate remains disabled
-until the documented real chat/diff/steering/stop trial passes. Once enabled,
-all project code changes move to that one authoritative T3 thread; broader
-assistant work stays here. The existing native route below remains active only
-before acceptance; old coder state is retained after cutover.
+The [T3 coding workspace](../t3/README.md) provides a separate server-side UI,
+private PVC, and enabled native OAuth MCP connection. After rollout, all project
+code changes use one authoritative T3 thread; broader assistant work stays here.
+Verify production OAuth and complete the documented real chat/diff/steering/stop
+trial before calling cutover complete. The native coder route is disabled;
+old coder state is retained for recovery.
 
 [Coder development tools](coder/README.md) covers mise, GitHub authentication,
 commit signing, and credential rotation for the retained Hermes coder environment;
@@ -35,6 +35,7 @@ The existing Discord profile is displayed as `assistant`; its built-in ID stays
 `default` to preserve sessions, memory, and model authentication. Startup creates
 a blank `coder` profile and reconciles [coder.yaml](coder.yaml) and the
 assistant's native profile delegation route.
+With T3 enabled, startup removes the native delegation plugin from the assistant.
 New homes seed assistant's `model` selection and `agent` inference settings
 from [config.yaml](config.yaml): `gpt-6.1-sol` through `openai-codex`,
 `xhigh` reasoning, and Fast (`service_tier: priority`). Coder's inference settings
@@ -43,6 +44,11 @@ retain session-specific overrides; start a
 new chat to use the profile defaults.
 Coder inherits the root Codex OAuth grant through Hermes's native fallback; keep
 its `auth.json` absent rather than copying rotating OAuth tokens.
+
+### Retained native coder recovery
+
+Use this workflow only after stopping T3 edits and reverting the Git-owned MCP
+gate as described in the [T3 recovery instructions](../t3/README.md#hermes-mcp-and-acceptance).
 
 Ask assistant in Discord to implement a task and provide the repository path or
 clone URL. Open the same Discord conversation in Webapp, expand its subagent

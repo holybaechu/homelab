@@ -4,8 +4,7 @@ t3code:
   url: https://t3.${DOMAIN}/mcp
   auth: oauth
   connect_timeout: 315
-  # Cutover gate: enable only after the operator acceptance in ../t3/README.md.
-  enabled: false
+  enabled: true
   tools:
     resources: false
     prompts: false

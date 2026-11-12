@@ -42,7 +42,7 @@ class ProfileStartupTests(unittest.TestCase):
             config["model"] = {"provider": "personal", "default": "personal-model"}
             config["agent"]["reasoning_effort"] = "low"
             config["mcp_servers"]["personal"] = {"command": "echo"}
-            config["mcp_servers"]["t3code"]["enabled"] = True
+            config["mcp_servers"]["t3code"]["enabled"] = False
             config["hooks"]["on_session_end"].append({"command": "echo retained"})
             config["hooks"]["on_session_end"].append({"command": "/opt/coder/bin/hermes-profile-sync"})
             config["hooks"]["on_session_start"].append({"command": "echo start retained"})
@@ -55,7 +55,8 @@ class ProfileStartupTests(unittest.TestCase):
             self.assertEqual(config["model"]["default"], "personal-model")
             self.assertEqual(config["agent"]["reasoning_effort"], "low")
             self.assertIn("personal", config["mcp_servers"])
-            self.assertFalse(config["mcp_servers"]["t3code"]["enabled"])
+            self.assertTrue(config["mcp_servers"]["t3code"]["enabled"])
+            self.assertNotIn("advanced-delegation", config["plugins"]["enabled"])
             self.assertEqual(len(config["hooks"]["on_session_end"]), 2)
             self.assertEqual(len(config["hooks"]["on_session_start"]), 2)
             self.assertIn({"command": "echo start retained"}, config["hooks"]["on_session_start"])

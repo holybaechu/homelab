@@ -13,6 +13,7 @@
     "fallbackModelSelection": { "value": null, "locked": false },
     "defaultRuntimeMode": { "value": "auto", "locked": false },
     "sourceControlWritingStyle.mode": { "value": "conventional_commits", "locked": false },
+    "branchNamingMode": { "value": "semantic", "locked": false },
     "reviewGuidesEnabled": { "value": true, "locked": false },
     "storageCleanup.worktreeOnDelete": { "value": true, "locked": false },
     "storageCleanup.worktreeOnMerge": { "value": true, "locked": false }
