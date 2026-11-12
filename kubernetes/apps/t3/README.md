@@ -32,7 +32,8 @@ has Flux pruning disabled; deleting its namespace or the PVC manually remains
 destructive. Back up the entire PVC with T3 stopped before upgrading; roll back
 the binary only with a compatible database or a matching backup. Recreate
 prevents concurrent servers writing its database. Never move/delete old
-`hermes-data`, coder profiles, sessions, auth, or checkouts during this trial.
+`hermes-data`, sessions, auth, or checkouts during this trial. Retire old profile
+data only through the [Hermes backup and removal procedure](../hermes/README.md#retire-existing-coding-profile-data).
 
 Ingress reuses `traefik/private-only` and `secure-headers`, plus HTTPS and T3's
 native pairing/auth. It does not create an Authentik client or put forward-auth
@@ -118,11 +119,9 @@ tokens or helper responses. Compare the converted public fingerprint to the
 existing coder identity. These Git checks are separate from native provider
 installation/sign-in and the live chat/diff/steering acceptance below.
 
-A Local ACP command (`hermes -p coder acp`) is supported by the two products,
-but would require an installed/configured Hermes profile and an explicit auth,
-permission, session-ownership, and process-lifetime contract on this new server.
-It is not wired as a fallback. Native Codex is the smaller independent runtime;
-its separate sign-in is an explicit operator gate, not silently borrowed auth.
+Hermes ACP is not configured as a fallback. Native Codex is the independent
+coding runtime; its separate sign-in is an explicit operator gate, not silently
+borrowed auth.
 
 After a separately approved rollout, an operator can mint an initial private
 pairing link on the server:
@@ -144,7 +143,7 @@ Full access/Auto defaults. Approval mode is not filesystem confinement.
 Use the [official outside-agent MCP flow](https://github.com/pingdotgg/t3code/blob/v0.1.9/docs/user/outside-agents.md)
 and [Hermes native OAuth support](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp),
 not a bridge or a second agent editor. Before cutover, use a disposable Hermes
-profile with no native coder delegation for the isolated trial. In that profile:
+profile for the isolated trial. In that profile:
 
 ```sh
 hermes -p t3-trial mcp add t3code --url https://t3.<DOMAIN>/mcp \
@@ -181,11 +180,11 @@ Acceptance requires one harmless fixture repository and one authoritative thread
 6. Start a separate thread directly in T3, then have Hermes read/steer that exact
    ID rather than duplicating it. Keep evidence IDs/check results, never tokens.
 
-Only after those checks and operator approval, enable `t3code` in the Git-owned
-MCP file. `configure_profiles.py` then removes only `advanced-delegation` from
-the assistant's enabled plugins, retaining its route configuration and all old
-state. Source instructions route **all** code changes through T3; an unavailable
-T3 runtime becomes a blocker, not a native fallback. Authenticate the production
+Only after those checks and operator approval, roll out the enabled `t3code`
+Git-owned MCP file. `configure_profiles.py` removes the retired native delegation
+plugin and route without creating a coding profile or deleting old data. Source
+instructions route **all** code changes through T3; an unavailable T3 runtime is
+a blocker, not a native fallback. Authenticate the production
 assistant's MCP connection with `hermes mcp login t3code`; trial-profile tokens
 do not automatically become production grants.
 
@@ -198,5 +197,7 @@ assistant chat after rollout to avoid a cached native tool
 schema. Verify the real default-profile MCP connection, all-code routing,
 thread link, and direct steering before calling cutover complete. Revoke/remove
 the disposable trial profile only with explicit approval after preserving evidence.
-For recovery, stop T3 edits before reverting the Git gate and intentionally
-rolling Hermes back; never run both editors against one checkout.
+For recovery, stop T3 edits before intentionally rolling back a reviewed release.
+Disabling the MCP gate does not recreate the retired native route. Never run two
+editors against one checkout, and preserve the profile archive before restoring
+any older configuration.

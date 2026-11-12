@@ -36,9 +36,12 @@ class ProfileStartupTests(unittest.TestCase):
             configure()
             coder = home / "profiles/coder/SOUL.md"
             self.assertEqual((home / "SOUL.md").read_text(), "Personal assistant instructions.\n")
-            self.assertTrue(coder.is_file())
+            self.assertFalse(coder.parent.exists())
+            coder.parent.mkdir(parents=True)
             coder.write_text("Personal coder instructions.\n")
             config = yaml.safe_load((home / "config.yaml").read_text())
+            config["plugins"]["enabled"].append("advanced-delegation")
+            config["delegation"] = {"backend": "profile_routes"}
             config["model"] = {"provider": "personal", "default": "personal-model"}
             config["agent"]["reasoning_effort"] = "low"
             config["mcp_servers"]["personal"] = {"command": "echo"}
@@ -57,6 +60,8 @@ class ProfileStartupTests(unittest.TestCase):
             self.assertIn("personal", config["mcp_servers"])
             self.assertTrue(config["mcp_servers"]["t3code"]["enabled"])
             self.assertNotIn("advanced-delegation", config["plugins"]["enabled"])
+            self.assertNotIn("delegation", config)
+            self.assertFalse((coder.parent / "config.yaml").exists())
             self.assertEqual(len(config["hooks"]["on_session_end"]), 2)
             self.assertEqual(len(config["hooks"]["on_session_start"]), 2)
             self.assertIn({"command": "echo start retained"}, config["hooks"]["on_session_start"])

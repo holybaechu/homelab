@@ -1,4 +1,8 @@
-# Coder development tools
+# Shared development tools
+
+The `coder` directory and runtime paths are legacy names for tooling shared by
+Hermes and T3, not a Hermes profile. Keep the existing credential identities and
+1Password references when retiring profile configuration.
 
 Startup installs checksum-pinned mise and GitHub CLI into the Pod's runtime
 volume. Project tools follow the repository's `mise.toml`; after cloning a trusted

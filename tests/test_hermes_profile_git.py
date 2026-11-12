@@ -55,19 +55,19 @@ class ProfileGitTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr.decode())
         return result
 
-    def test_policy_tracks_profiles_without_credentials_or_runtime_data(self):
+    def test_policy_tracks_assistant_without_retired_profiles_or_runtime_data(self):
         included = {"SOUL.md", "config.yaml", "memories/USER.md", "cron/jobs.json",
                     "skills/custom/SKILL.md", "skills/.bundled_manifest", "skills/.hub/lock.json",
-                    "hooks/custom.sh", "scripts/task.py", "profiles/coder/config.yaml",
-                    "profiles/coder/memories/MEMORY.md", "workspace/.hermes.md",
+                    "hooks/custom.sh", "scripts/task.py", "workspace/.hermes.md",
                     "skills/writing-for-agents/SKILL.md", "skills/writing-for-agents/LICENSE",
-                    "profiles/coder/skills/writing-for-agents/SKILL.md",
                     "skills/homelab-services/SKILL.md"}
         excluded = {".env", "auth.json", "google_token.json", "state.db", "sessions/chat.json",
                     "workspace/repo/file.py", "workspace/config.yaml", "cron/executions.db", "cron/ticker_heartbeat",
                     "skills/custom/.env", "skills/custom/token.json", "skills/custom/key.pem",
                     "skills/custom/node_modules/library.js", "skills/.usage.json", "skills/.locks/x.lock",
                     "plugins/langfuse/plugin.py",
+                    "profiles/coder/config.yaml", "profiles/coder/memories/MEMORY.md",
+                    "profiles/coder/skills/writing-for-agents/SKILL.md",
                     "profiles/coder/auth.json", "profiles/coder/.env", "profiles/coder/workspace/file.py"}
         for path in included | excluded:
             self.write(path)
@@ -84,14 +84,24 @@ class ProfileGitTests(unittest.TestCase):
         for path in excluded:
             self.assertTrue((self.root / path).is_file())
 
-    def test_coder_and_default_share_the_same_git_root(self):
+    def test_retiring_profile_sources_does_not_delete_or_recapture_live_data(self):
+        policy = self.source / ".chezmoiignore"
+        policy.write_text(policy.read_text() + "\n!profiles/\n!profiles/coder/\n!profiles/coder/SOUL.md\n")
         self.write("SOUL.md")
+        self.write("profiles/coder/SOUL.md", "retained instructions\n")
+        self.write("profiles/coder/state.db", "retained history\n")
         self.sync()
-        self.write("profiles/coder/memories/MEMORY.md")
-        self.sync(self.root / "profiles/coder")
+        target = self.root / "profiles/coder/SOUL.md"
+        source = Path(self.chezmoi("source-path", str(target)).decode().strip())
+        self.assertTrue(source.is_file())
+        shutil.copyfile(SOURCE / "home.chezmoiignore", policy)
+        source.unlink()
+        self.chezmoi("apply", "--force")
         self.sync()
-        self.assertEqual(self.git("rev-list", "--count", "HEAD").strip(), b"2")
-        self.assertEqual(self.git("rev-parse", "HEAD"), self.git("rev-parse", "refs/remotes/origin/main"))
+        self.assertEqual(target.read_text(), "retained instructions\n")
+        self.assertEqual((target.parent / "state.db").read_text(), "retained history\n")
+        managed = self.chezmoi("managed", "--include", "files,symlinks").decode().splitlines()
+        self.assertFalse(any(path.startswith("profiles/") for path in managed))
 
     def test_new_skills_and_deleted_files_are_recorded(self):
         self.write("SOUL.md")

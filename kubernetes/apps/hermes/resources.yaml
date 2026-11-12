@@ -178,13 +178,6 @@ spec:
           command: [/bin/sh, -ec]
           args:
             - |
-              mkdir -p /opt/data/plugins/advanced-delegation
-              cd /opt/data/plugins/advanced-delegation
-              source=https://raw.githubusercontent.com/NousResearch/hermes-official-plugins/bedc9e74ef792864cd7198a8e43cedd5b585ace7/advanced-delegation
-              for file in __init__.py cli.py model_map.py profile_routes.py slash.py store.py LICENSE plugin.yaml; do
-                curl --fail --silent --show-error --location --max-time 30 --retry 1 "$source/$file" -o "$file"
-              done
-              sha256sum -c /bootstrap/delegation-plugin.sha256
               /opt/hermes/.venv/bin/python /bootstrap/configure_profiles.py
               /opt/hermes/.venv/bin/python /bootstrap/configure_browser_proxy.py
           securityContext:
@@ -325,8 +318,6 @@ spec:
           args:
             - |
               /opt/hermes/.venv/bin/python /bootstrap/langfuse-configure-mcp.py
-              mkdir -p /opt/data/profiles/coder/plugins
-              ln -sfn /opt/langfuse/plugin /opt/data/profiles/coder/plugins/langfuse
               cd /opt/langfuse/plugin
               rm -f plugin.yaml plugin.yaml.pending
               source=https://raw.githubusercontent.com/NousResearch/hermes-official-plugins/83f0a896b3518c7131181838e340c9a80c79524d/langfuse
@@ -583,7 +574,7 @@ spec:
             - name: TALOSCONFIG
               value: /var/run/secrets/talos.dev/talosconfig
             - name: GH_CONFIG_DIR
-              value: /opt/data/profiles/coder/home/.config/gh
+              value: /opt/data/.config/gh
             - name: GH_HOST
               value: github.com
             - name: GH_PROMPT_DISABLED

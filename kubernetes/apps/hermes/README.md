@@ -18,61 +18,48 @@ every startup, including existing profiles. Other live profile settings remain
 on the persistent volume. After deployment, verify Authentik sign-in at both
 addresses and `hermes webapp --status` in the Hermes container.
 
-## Assistant and coder
+## Assistant and coding workspace
 
 The [T3 coding workspace](../t3/README.md) provides a separate server-side UI,
 private PVC, and enabled native OAuth MCP connection. After rollout, all project
 code changes use one authoritative T3 thread; broader assistant work stays here.
 Verify production OAuth and complete the documented real chat/diff/steering/stop
-trial before calling cutover complete. The native coder route is disabled;
-old coder state is retained for recovery.
+trial before calling cutover complete. There is no native coding-profile fallback;
+unavailable or unauthenticated T3 is a blocker for code changes.
 
-[Coder development tools](coder/README.md) covers mise, GitHub authentication,
-commit signing, and credential rotation for the retained Hermes coder environment;
-those credentials are not automatically shared with T3.
+[Shared development tools](coder/README.md) covers mise, GitHub authentication,
+commit signing, and credential rotation. The legacy `coder` runtime and Secret
+names remain because Hermes and T3 reuse these tools and the existing Git identity;
+they do not create a Hermes profile.
 
 The existing Discord profile is displayed as `assistant`; its built-in ID stays
-`default` to preserve sessions, memory, and model authentication. Startup creates
-a blank `coder` profile and reconciles [coder.yaml](coder.yaml) and the
-assistant's native profile delegation route.
-With T3 enabled, startup removes the native delegation plugin from the assistant.
+`default` to preserve sessions, memory, and model authentication. Startup reconciles
+only this profile and removes the retired native delegation plugin and route.
 New homes seed assistant's `model` selection and `agent` inference settings
 from [config.yaml](config.yaml): `gpt-6.1-sol` through `openai-codex`,
-`xhigh` reasoning, and Fast (`service_tier: priority`). Coder's inference settings
-remain separate. Personal inference changes survive startup. Existing chats can
+`xhigh` reasoning, and Fast (`service_tier: priority`). Personal inference changes
+survive startup. Existing chats can
 retain session-specific overrides; start a
 new chat to use the profile defaults.
-Coder inherits the root Codex OAuth grant through Hermes's native fallback; keep
-its `auth.json` absent rather than copying rotating OAuth tokens.
 
-### Retained native coder recovery
+### Retire existing coding-profile data
 
-Use this workflow only after stopping T3 edits and reverting the Git-owned MCP
-gate as described in the [T3 recovery instructions](../t3/README.md#hermes-mcp-and-acceptance).
+Removing profile source files does not delete live data. Neither Flux nor startup
+prunes `profiles/coder`. The apps Flux Kustomization has pruning enabled; retain
+the `hermes-data` PVC manifest and namespace. The StorageClass uses `Retain` and a
+non-deleting teardown hook, but neither protects files removed inside the Pod.
+The PVC also owns assistant sessions, authentication, and other application data;
+never delete it to retire a profile.
 
-Ask assistant in Discord to implement a task and provide the repository path or
-clone URL. Open the same Discord conversation in Webapp, expand its subagent
-panel, and read coder's live transcript. Use **Steer** to update the active task or
-**Stop** to interrupt it. A queued steer takes effect at the next tool checkpoint;
-verify the resulting behavior. The child transcript belongs to the assistant's
-conversation, so look there rather than in coder's separate chat history.
-Existing chats retain their saved delegation schema: use `/new`, or run
-`/delegation profile_routes --now` once to rebuild the current chat's tools.
-
-New checkouts belong in `/opt/data/profiles/coder/workspace` on `hermes-data`;
-`/opt/data/workspace/homelab` is an ephemeral service workspace. Coder has no
-personal MCP server configuration. Native delegated tasks inherit the parent's
-toolsets, and profiles share one container and Unix user; this is a workflow
-separation rather than an access boundary. Use normal interactive sessions for
-profile delegation; frozen managed-worker sessions cannot switch to another
-profile.
-
-`configure-profiles` verifies the immutable official `advanced-delegation` plugin
-against [delegation-plugin.sha256](delegation-plugin.sha256) and fails startup if
-it cannot prepare the route. Git owns operational integration wiring.
-Personal instructions and both profiles' histories remain on the PVC and use
-the private profile repository described below. Configuration
-backups taken before the initial migration remain under `/opt/data/backups`.
+After active work finishes, archive the retired profile and any checkouts outside
+it to a private backup, verify archive integrity and a disposable restore, then
+use Hermes's native `hermes profile delete coder --yes` as the gateway account.
+This deletes profile history, credentials, and workspaces, so do not run it before
+the backup is verified. Remove the unused `plugins/advanced-delegation` directory
+only after confirming no other profile uses it. Startup no longer recreates either.
+Recover profile content from the verified archive and instructional source from
+the private repository's Git history; do not overwrite the assistant's home or
+copy rotating OAuth tokens. Resume coding only after T3 authentication is verified.
 
 ## Laptop control with Cua
 
@@ -94,8 +81,7 @@ tools are exposed. `call_tool` invokes services advertised by a registered Space
 including native desktop tools; it is not a per-desktop-tool security boundary.
 Shell, file and UI access control the signed-in laptop user's real desktop and
 files, not an isolated sandbox. Registration is an operator action, outside MCP.
-Native delegated coder tasks inherit these parent tools; no coder MCP config is
-needed.
+These tools belong to the assistant; project code changes use T3.
 
 ### Onboard the existing Headscale laptops
 
@@ -292,8 +278,6 @@ private URLs. `seed-config` enforces the provider, automatic private routing,
 and Chromium flags on every startup while preserving other live browser settings.
 The Pod blocks Chromium's user-namespace sandbox, so local Chromium runs as UID
 10000 with `--no-sandbox`; it relies on the existing container isolation.
-Coder uses local Chromium by default; `configure-profiles` reconciles the same
-flag from `coder.yaml` without replacing its other live browser settings.
 
 Browser Harness's country-only Cloud default remains South Korea (`kr`); the
 native default-profile BYOP binding below supersedes country selection for its
@@ -516,7 +500,7 @@ The native [`browser_vault`](https://hermes-agent.nousresearch.com/docs/user-gui
 broker uses the existing Connect server through a repository-owned backend
 extension, not startup `secrets.onepassword` or a secret-returning MCP tool.
 [The patch](browser-vault-connect.patch) selects [the read-only adapter](connect_vault.py)
-for assistant and coder. The CLI's documented Connect commands do not include
+for the assistant. The CLI's documented Connect commands do not include
 login discovery. Direct documented GETs avoid adding the Connect SDK's model and
 transport dependencies while retaining bounded responses, disabled proxies and
 redirects, and sanitized failures. Non-Connect manager and local-vault paths remain.
@@ -664,9 +648,9 @@ Homelab deploys infrastructure and integration code; it does not mount or seed
 personal instruction content. New empty profiles use native defaults until their
 saved profile files are restored.
 
-Flux workload changes use `Recreate`: wait until active assistant and coder work
+Flux workload changes use `Recreate`: wait until active Hermes and T3 work
 has finished before merging or reconciling. After personal instruction edits,
-start a new assistant chat or coder task to refresh saved instruction context.
+start a new assistant chat to refresh saved instruction context.
 
 Startup seeds the pinned image's native skills and optional `llm-wiki`, preserving
 user-modified and relocated copies through native sync. Existing overrides are
@@ -678,7 +662,7 @@ upstream changes to modified skills when upgrading the image.
 [chezmoi](https://www.chezmoi.io/) manages the live `/opt/data` home from its
 source repository at `/opt/data/.local/share/chezmoi`, using the private
 [hermes-instructions](https://github.com/holybaechu/hermes-instructions) remote.
-The original Git history is retained. Both profiles' SOUL, skills, configuration,
+The original Git history is retained. The assistant's SOUL, skills, configuration,
 memories, user instructions, cron definitions, hooks, scripts, personal plugins
 and preferences are covered. Source names use chezmoi attributes such as
 `private_config.yaml` and `exact_skills/`; use `chezmoi source-path <live-path>`
@@ -687,12 +671,12 @@ to find the corresponding file before editing it on GitHub.
 [home.chezmoiignore](home.chezmoiignore) seeds the source `.chezmoiignore` during
 migration; maintain the live policy in the private repository. It excludes
 credentials, conversations, databases, execution ledgers, caches, project
-workspaces and cluster-managed plugins. The workspace-wide `.hermes.md` remains
+workspaces, retired profiles, and cluster-managed plugins. The workspace-wide `.hermes.md` remains
 tracked. Keep credential values in 1Password and references in managed files.
 [chezmoi.toml](chezmoi.toml) seeds local configuration once. The runtime uses the
 checksum-verified release pinned in `mise.toml`; no image build is required.
 
-Native session hooks run [profile-sync.sh](profile-sync.sh) for both profiles.
+Native session hooks run [profile-sync.sh](profile-sync.sh) for the assistant.
 The thin bridge serializes synchronization with `flock`, forgets deleted files
 from source without deleting live data, then adds allowed home entries through
 chezmoi. Its `autoCommit` records the changes. Session start also runs
@@ -702,7 +686,7 @@ disabled. A failed push keeps local commits for retry. A conflict stops before
 applying remote files and blocks later captures until resolved; it never selects
 a winner or force-pushes.
 
-Edit files on GitHub, then start a new assistant conversation or coder task to
+Edit files on GitHub, then start a new assistant conversation to
 fetch them and load fresh instructions. Changes during an existing conversation
 arrive at its next session start, not continuously. For selected config settings,
 use `hermes config set` so cluster-managed wiring and recording hooks stay intact.
