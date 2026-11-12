@@ -24,6 +24,7 @@ DATA = {
     'authentik': ['authentik-media'],
     'headscale': ['headscale', 'headscale-gateway'],
     'hermes': ['hermes-data'],
+    't3': ['t3-data'],
 }
 # Never exclude workspaces, vaults, profiles, recovery files or application DBs.
 HERMES_EXCLUDES = [
@@ -37,6 +38,9 @@ HERMES_EXCLUDES = [
     '/profiles/coder/skills/writing-for-agents/', '/skills/homelab-services/',
     '/.npm/', '/gateway.sock', '/gateway.pid', '/gateway.lock',
 ]
+
+T3_EXCLUDES = ['node_modules/', '__pycache__/', '.venv/', '.cache/', '/.npm/',
+               '/.local/share/mise/installs/', '/server/logs/']
 
 
 def command(args, *, env=None, timeout=3600, stdout=subprocess.PIPE, allowed=(0,)):
@@ -121,27 +125,61 @@ def safe_path(root, name):
     return target
 
 
-def restore_git_deletions(directory):
+def repository_git(root, relative, source_name):
+    git = root / relative / '.git'
+    if not git.resolve().is_relative_to(root.resolve()):
+        return None
+    if git.is_file():
+        text = git.read_text().strip()
+        prefix = 'gitdir: ' + ('/var/lib/t3/' if source_name == 't3-data' else '/opt/data/')
+        if not text.startswith(prefix):
+            return None
+        git = (root / text.removeprefix(prefix)).resolve()
+        if not git.is_relative_to(root.resolve()):
+            return None
+    base = ['git', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null',
+            '-c', 'safe.directory=*', '--git-dir=' + str(git), '--work-tree=' + str(root / relative)]
+    env = dict(os.environ)
+    if source_name == 't3-data' and (git / 'commondir').is_file():
+        common = (git / 'commondir').read_text().strip()
+        if common.startswith('/var/lib/t3/'):
+            common = (root / common.removeprefix('/var/lib/t3/')).resolve()
+        else:
+            common = (git / common).resolve()
+        if not common.is_relative_to(root.resolve()):
+            return None
+        env['GIT_COMMON_DIR'] = str(common)
+    return base, env
+
+
+def restore_git_deletions(directory, source_name='hermes-data'):
+    if source_name not in ('hermes-data', 't3-data'):
+        raise ValueError('Unknown recovery source')
+    manifest = source_name.removesuffix('-data') + '-repositories.json'
     # Only explicitly isolated restores under staging; never source/workspace trees.
     root = Path(directory)
     isolated = STAGE / 'restore'
     if root == isolated or not root.resolve().is_relative_to(isolated.resolve()):
         raise ValueError('Expected an isolated restore below /stage/restore')
     root = safe_path(isolated, str(root.relative_to(isolated)))
-    entries = json.loads((root / 'hermes-repositories.json').read_text())
+    entries = json.loads((root / manifest).read_text())
     removals = []
     for entry in entries:
         if entry['origin'] != 'https://github.com/holybaechu/homelab.git':
             raise ValueError('Unapproved recovery origin')
-        repository = safe_path(root / 'hermes-data', entry['path'])
+        repository = safe_path(root / source_name, entry['path'])
         if not re.fullmatch(r'[0-9a-f]{40,64}', entry['commit']):
             raise ValueError('Invalid recovery commit')
         for name in entry.get('deleted', []):
             if Path(name) == Path('.'):
                 raise ValueError('Invalid tombstone')
             target = safe_path(repository, name)
-            tracked = command(['git', '--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-C', str(repository),
-                               'ls-tree', '-z', entry['commit'], '--', name])
+            metadata = repository_git(root / source_name, Path(entry['path']), source_name)
+            if metadata is None:
+                raise ValueError('Unsafe recovery Git metadata')
+            base, env = metadata
+            tracked = command(['git', '--literal-pathspecs', *base[1:],
+                               'ls-tree', '-z', entry['commit'], '--', name], env=env)
             if not tracked or tracked.split(b'\t', 1)[-1].rstrip(b'\0') != os.fsencode(name):
                 raise ValueError('Tombstone is not tracked at the recorded commit')
             if target.is_dir():
@@ -151,7 +189,7 @@ def restore_git_deletions(directory):
         target.unlink(missing_ok=True)
 
 
-def gitops_excludes(root, selected):
+def gitops_excludes(root, selected, source_name='hermes-data'):
     excluded, recovery = [], []
     for directory, dirs, files in os.walk(selected, followlinks=False):
         if '.git' not in dirs and '.git' not in files:
@@ -159,19 +197,19 @@ def gitops_excludes(root, selected):
         if '.git' in dirs:
             dirs.remove('.git')
         relative = Path(directory).relative_to(selected)
-        git = root / relative / '.git'
-        if git.is_file():
-            text = git.read_text().strip()
-            if not text.startswith('gitdir: /opt/data/'):
-                continue
-            git = root / text.removeprefix('gitdir: /opt/data/')
-        base = ['git', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null',
-                '-c', 'safe.directory=*', '--git-dir=' + str(git), '--work-tree=' + str(root / relative)]
+        metadata = repository_git(root, relative, source_name)
+        if metadata is None:
+            continue
+        base, env = metadata
         def read(*args):
-            return command([*base, *args])
+            return command([*base, *args], env=env)
         repository_excludes = []
         try:
-            if read('config', '--get', 'remote.origin.url').strip() != b'https://github.com/holybaechu/homelab.git':
+            origin = read('config', '--get', 'remote.origin.url').strip()
+            origins = [b'https://github.com/holybaechu/homelab.git']
+            if source_name == 't3-data':
+                origins.append(b'https://github.com/holybaechu/homelab')
+            if origin not in origins:
                 continue
             # Exclude only a commit already in the authoritative main branch.
             read('merge-base', '--is-ancestor', 'HEAD', 'refs/remotes/origin/main')
@@ -183,8 +221,8 @@ def gitops_excludes(root, selected):
             status = read('status', '--porcelain=v1', '-z')
             # Preserve index, staged blobs and stash as recovery state when dirty.
             has_stash = subprocess.run([*base, 'rev-parse', '--verify', 'refs/stash'],
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-            if not status and not has_stash:
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env).returncode == 0
+            if source_name != 't3-data' and not status and not has_stash:
                 repository_excludes.append(literal_exclude(relative / '.git'))
             deleted = [os.fsdecode(p) for p in read(
                 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', 'HEAD', '--diff-filter=D',
@@ -200,7 +238,7 @@ def gitops_excludes(root, selected):
         excluded.extend(repository_excludes)
         if '.git' in dirs:
             dirs.remove('.git')
-    (STAGE / 'capture/hermes-repositories.json').write_text(json.dumps(recovery))
+    (STAGE / 'capture' / (source_name.removesuffix('-data') + '-repositories.json')).write_text(json.dumps(recovery))
     return excluded
 
 
@@ -208,12 +246,12 @@ def copy_data(name, *, presync=False, deadline=None):
     source, target = SOURCES / name, STAGE / 'capture' / name
     excludes = ['*-wal', '*-shm', '*.backup-partial'] if name in ('n8n-data', 'headscale') else []
     databases = []
-    if name == 'hermes-data':
-        excludes += HERMES_EXCLUDES
+    if name in ('hermes-data', 't3-data'):
+        excludes += T3_EXCLUDES if name == 't3-data' else HERMES_EXCLUDES
         # Inventory the staged selection, NOT excluded model/tool caches.
         sync(source, target, excludes, presync=True)
         databases = sqlite_files(target)
-        excludes += gitops_excludes(source, target)
+        excludes += gitops_excludes(source, target, name)
     elif name == 'n8n-data':
         databases = [Path('database.sqlite')]
         excludes += ['/database.sqlite']
@@ -224,8 +262,9 @@ def copy_data(name, *, presync=False, deadline=None):
         excludes += ['/.tmp/']
     sync(source, target, excludes, presync=presync)
     if not presync:
-        if name == 'hermes-data':
-            entries = json.loads((STAGE / 'capture/hermes-repositories.json').read_text())
+        if name in ('hermes-data', 't3-data'):
+            manifest = name.removesuffix('-data') + '-repositories.json'
+            entries = json.loads((STAGE / 'capture' / manifest).read_text())
             for entry in entries:
                 repository = safe_path(target, entry['path'])
                 if any(safe_path(repository, p).exists() for p in entry['deleted']):

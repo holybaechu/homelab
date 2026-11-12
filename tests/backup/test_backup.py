@@ -58,6 +58,37 @@ class Recovery(unittest.TestCase):
         self.assertEqual(journal.state['phase'], 'aborted')
         self.assertEqual(journal.state['replicas'], [])
 
+    def test_backup_and_maintenance_use_b2_without_scaleway(self):
+        journal = Journal()
+        def invoke(namespace, operation, *args, **kwargs):
+            if operation == 'upload':
+                return 'a' * 64
+        with patch.object(controller, 'Journal', return_value=journal), \
+             patch.object(controller, 'kube', return_value={'status': {'readyReplicas': 1}}), \
+             patch.object(controller, 'capture'), patch.object(controller, 'collect'), \
+             patch.object(controller, 'worker', side_effect=invoke) as calls:
+            controller.backup()
+            controller.maintenance()
+        operations = [call.args for call in calls.call_args_list]
+        self.assertEqual([a[3] for a in operations if a[1] in ('upload', 'publish')], ['b2', 'b2'])
+        self.assertEqual([a[2] for a in operations if a[1] == 'maintain'], ['b2'])
+        self.assertEqual(journal.state['phase'], 'idle')
+
+    def test_t3_capture_failure_restores_its_original_replicas(self):
+        targets = dict(controller.GROUPS)['t3']
+        journal = Journal(dict(run='run', phase='preparing', replicas=[]))
+        controls = [['flux-system', 'kustomization', 'apps', False]]
+        with patch.object(controller, 'kube', return_value={'spec': {'replicas': 1}}), \
+             patch.object(controller, 'controls_for', return_value=controls), \
+             patch.object(controller, 'suspend'), patch.object(controller, 'wait_stopped'), \
+             patch.object(controller, 'scale') as scale, \
+             patch.object(controller, 'worker', side_effect=TimeoutError('fixture timeout')):
+            with self.assertRaises(TimeoutError):
+                controller.capture(journal, 'run', 't3', targets)
+        self.assertEqual([c.args for c in scale.call_args_list], [('homelab', 't3', 0), ('homelab', 't3', 1)])
+        self.assertEqual(journal.state['phase'], 'aborted')
+        self.assertFalse(journal.state['replicas'])
+
     def test_expired_capture_cannot_commit(self):
         journal = Journal(dict(run='r', phase='capture', deadline=0, replicas=[]))
         with self.assertRaises(RuntimeError):
@@ -282,6 +313,89 @@ class Capture(unittest.TestCase):
         git('commit', '-m', 'unpublished fixture')
         with patch.object(worker, 'STAGE', self.root):
             self.assertEqual(worker.gitops_excludes(source, selected), [])
+
+    def test_t3_preserves_shared_git_objects_and_unpublished_worktrees(self):
+        source = self.root / 'source/t3-data'
+        repo = source / 'workspaces/homelab'
+        repo.mkdir(parents=True)
+        def git(path, *args):
+            return subprocess.check_output(['git', '-C', str(path), '-c', 'user.name=fixture',
+                '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', *args],
+                stderr=subprocess.PIPE)
+        git(repo, 'init')
+        git(repo, 'remote', 'add', 'origin', 'https://github.com/holybaechu/homelab')
+        (repo / 'clean').write_text('authoritative')
+        (repo / 'deleted').write_text('authoritative deletion fixture')
+        git(repo, 'add', '.')
+        git(repo, 'commit', '-m', 'published fixture')
+        git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+        worktrees = source / 'server/worktrees/homelab'
+        worktrees.mkdir(parents=True)
+        published, unpublished = worktrees / 'published', worktrees / 'unpublished'
+        git(repo, 'worktree', 'add', '-b', 'fixture-published', str(published))
+        git(repo, 'worktree', 'add', '-b', 'fixture-unpublished', str(unpublished))
+        git(published, 'rm', 'deleted')
+        (unpublished / 'private').write_text('unpublished recovery')
+        git(unpublished, 'add', '.')
+        git(unpublished, 'commit', '-m', 'unpublished fixture')
+        unpublished_commit = git(unpublished, 'rev-parse', 'HEAD').strip()
+        for tree in (published, unpublished):
+            pointer = tree / '.git'
+            pointer.write_text(pointer.read_text().replace(str(source), '/var/lib/t3'))
+        selected = self.root / 'capture/t3-data'
+        shutil.copytree(source, selected)
+        with patch.object(worker, 'STAGE', self.root):
+            excludes = worker.gitops_excludes(source, selected, 't3-data')
+        self.assertIn('/workspaces/homelab/clean', excludes)
+        self.assertIn('/server/worktrees/homelab/published/clean', excludes)
+        self.assertNotIn('/workspaces/homelab/.git', excludes)
+        self.assertNotIn('/server/worktrees/homelab/published/.git', excludes)
+        self.assertFalse(any('/unpublished/' in p for p in excludes))
+        if shutil.which('rsync'):
+            filtered = self.root / 'filtered'
+            worker.sync(source, filtered, excludes)
+            self.assertEqual(git(filtered / 'workspaces/homelab', 'cat-file', '-t', unpublished_commit.decode()).strip(), b'commit')
+            self.assertEqual((filtered / 'server/worktrees/homelab/unpublished/private').read_text(), 'unpublished recovery')
+            restored = self.root / 'restore/drill'
+            restored.mkdir(parents=True)
+            shutil.copytree(filtered, restored / 't3-data')
+            shutil.copyfile(self.root / 'capture/t3-repositories.json', restored / 't3-repositories.json')
+            deleted = restored / 't3-data/server/worktrees/homelab/published/deleted'
+            deleted.write_text('reconstructed authoritative file')
+            source.rename(source.with_name('original-unavailable'))
+            with patch.object(worker, 'STAGE', self.root):
+                worker.restore_git_deletions(restored, 't3-data')
+            self.assertFalse(deleted.exists())
+            pointer = restored / 't3-data/server/worktrees/homelab/published/.git'
+            pointer.write_text('gitdir: /var/lib/t3/../../outside')
+            deleted.write_text('must survive unsafe metadata')
+            with patch.object(worker, 'STAGE', self.root):
+                with self.assertRaisesRegex(ValueError, 'Unsafe recovery Git metadata'):
+                    worker.restore_git_deletions(restored, 't3-data')
+            self.assertTrue(deleted.exists())
+
+    @unittest.skipUnless(shutil.which('rsync'), 'rsync required')
+    def test_t3_capture_materializes_wal_and_keeps_private_state(self):
+        source = self.root / 'source/t3-data'
+        (source / 'server').mkdir(parents=True)
+        (source / '.codex').mkdir()
+        (source / '.codex/auth.json').write_text('synthetic-private-auth')
+        (source / '.cache').mkdir()
+        (source / '.cache/disposable').write_text('regenerable')
+        with closing(sqlite3.connect(source / 'server/state.sqlite')) as db:
+            db.execute('PRAGMA journal_mode=WAL')
+            db.execute('CREATE TABLE chats (body TEXT)')
+            db.execute("INSERT INTO chats VALUES ('fixture chat')")
+            db.commit()
+            (self.root / 'capture').mkdir()
+            with patch.object(worker, 'STAGE', self.root), patch.object(worker, 'SOURCES', source.parent):
+                worker.copy_data('t3-data', deadline=time.time() + 10)
+        target = self.root / 'capture/t3-data'
+        self.assertEqual((target / '.codex/auth.json').read_text(), 'synthetic-private-auth')
+        self.assertFalse((target / '.cache').exists())
+        self.assertFalse((target / 'server/state.sqlite-wal').exists())
+        with closing(sqlite3.connect(target / 'server/state.sqlite')) as db:
+            self.assertEqual(db.execute('SELECT body FROM chats').fetchall(), [('fixture chat',)])
 
     @unittest.skipUnless(shutil.which('rsync'), 'rsync required')
     def test_git_deletion_tombstones_restore_staged_and_unstaged_deletions(self):

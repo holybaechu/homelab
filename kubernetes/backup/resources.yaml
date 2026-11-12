@@ -21,14 +21,6 @@ metadata:
 spec:
   itemPath: ${BACKUP_B2_CONNECT_ITEM_PATH}
 ---
-apiVersion: onepassword.com/v1
-kind: OnePasswordItem
-metadata:
-  name: backup-scaleway-connect
-  namespace: homelab
-spec:
-  itemPath: ${BACKUP_SCALEWAY_CONNECT_ITEM_PATH}
----
 apiVersion: v1
 kind: Service
 metadata:
@@ -108,6 +100,9 @@ spec:
             - name: hermes-data
               mountPath: /source/hermes-data
               readOnly: true
+            - name: t3-data
+              mountPath: /source/t3-data
+              readOnly: true
             - name: n8n-data
               mountPath: /source/n8n-data
               readOnly: true
@@ -147,6 +142,10 @@ spec:
         - name: hermes-data
           persistentVolumeClaim:
             claimName: hermes-data
+            readOnly: true
+        - name: t3-data
+          persistentVolumeClaim:
+            claimName: t3-data
             readOnly: true
         - name: n8n-data
           persistentVolumeClaim:
@@ -194,15 +193,6 @@ spec:
                       path: b2/secret-access-key
                     - key: restic-password
                       path: b2/restic-password
-              - secret:
-                  name: backup-scaleway-connect
-                  items:
-                    - key: access-key-id
-                      path: scaleway/access-key-id
-                    - key: secret-access-key
-                      path: scaleway/secret-access-key
-                    - key: restic-password
-                      path: scaleway/restic-password
               - configMap:
                   name: backup-repositories
                   items:
@@ -210,12 +200,6 @@ spec:
                       path: b2/repository
                     - key: b2-region
                       path: b2/region
-                    - key: scaleway-repository
-                      path: scaleway/repository
-                    - key: scaleway-region
-                      path: scaleway/region
-                    - key: scaleway-bucket
-                      path: scaleway/bucket
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -461,9 +445,6 @@ metadata:
 data:
   b2-repository: s3:https://s3.us-west-004.backblazeb2.com/homelab-backup-b2
   b2-region: us-west-004
-  scaleway-repository: ${BACKUP_SCALEWAY_REPOSITORY}
-  scaleway-region: ${BACKUP_SCALEWAY_REGION}
-  scaleway-bucket: ${BACKUP_SCALEWAY_BUCKET}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -504,6 +485,7 @@ rules:
       - immich
       - n8n
       - zipline
+      - t3
     verbs:
       - get
       - patch
@@ -518,6 +500,7 @@ rules:
       - immich
       - n8n
       - zipline
+      - t3
       - backup-watchdog
     verbs:
       - get
@@ -576,6 +559,7 @@ rules:
       - immich
       - n8n
       - zipline
+      - t3
     verbs:
       - get
       - patch
@@ -590,6 +574,7 @@ rules:
       - immich
       - n8n
       - zipline
+      - t3
       - backup-watchdog
     verbs:
       - get

@@ -15,6 +15,7 @@ GROUPS = (
     ('immich', [('homelab', 'immich')]),
     ('n8n', [('homelab', 'n8n')]),
     ('zipline', [('homelab', 'zipline')]),
+    ('t3', [('homelab', 't3')]),
     ('authentik', [('identity', 'authentik-server'), ('identity', 'authentik-worker')]),
     ('headscale', [('identity', 'headscale'), ('networking', 'headscale-gateway')]),
 )
@@ -230,7 +231,7 @@ def backup():
         failures = []
         for ns in ('identity', 'networking'):
             collect(ns)
-        for destination in ('b2', 'scaleway'):
+        for destination in ('b2',):
             try:
                 snapshot = worker('homelab', 'upload', run, destination, timeout=43200)
                 worker('homelab', 'publish', run, destination, snapshot)
@@ -270,7 +271,7 @@ def maintenance():
     journal.write(dict(run=run, phase='maintenance', replicas=[]))
     try:
         # All snapshots reside in each single shared repository, independent of namespace.
-        for destination in ('b2', 'scaleway'):
+        for destination in ('b2',):
             worker('homelab', 'maintain', destination, timeout=43200)
     finally:
         transition(journal, run, 'maintenance', dict(phase='idle', replicas=[]))

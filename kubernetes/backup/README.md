@@ -30,9 +30,7 @@ built in CI, not installed over the network when a backup starts.
    earlier, leaving time inside the approved ten minutes for resumption.
 5. After **all apps resume**, committed Hermes SQLite state is captured online,
    namespace staging is collected with checked tar producers/consumers, and one
-   complete snapshot is uploaded independently to each repository. Failed restic
-   uploads are never tagged `complete`; a failed destination does not prevent an
-   attempt at the other. Restore only snapshots tagged `complete`.
+   complete snapshot is uploaded to B2. Failed restic uploads are never tagged `complete`. Restore only snapshots tagged `complete`.
 
 **Availability limit:** no process on this single Talos node can guarantee a
 wall-clock ten-minute service recovery if the node, Kubernetes API or application
@@ -65,6 +63,7 @@ to local staging metadata preservation.
 | n8n SQLite + filesystem binary data + original encryption key | Stop n8n for the binary-directory boundary, SQLite Online Backup API, exact `n8n-connect/encryption_key` projection matching the current workload |
 | Zipline PGlite + uploads + original secrets | Stop only during physical local capture; never open PGlite from a second process; omit `.tmp` uploads |
 | Headscale SQLite/noise key + gateway identity | Stop Headscale and gateway together; SQLite Online Backup API plus gateway state; resume original counts together |
+| T3 server state/auth/chats/diffs/workspaces/unpublished work | Stop T3 and all its child processes, copy `t3-data`, preserve Git metadata shared by worktrees, materialize SQLite backups; resume before upload |
 | Hermes sessions/profiles/auth/vault/uncommitted workspaces/recovery | Never stop Hermes; selected filesystem capture plus Online Backup API for every discovered selected SQLite DB, including WAL-committed transactions; uncommitted/in-flight actions are interrupted recovery, not a global point-in-time snapshot |
 
 No standalone MySQL, AdGuard, Collabora proofkey, qBittorrent configuration/resume
@@ -80,78 +79,51 @@ are retained. Git secret references are **not** key values: original runtime
 keys remain in 1Password and required recovery keys are explicitly projected into
 the encrypted backup. Never replace them with fresh generated keys on restore.
 
+T3 is a bounded stopped capture, unlike the online Hermes capture. Schedule it
+only when T3 threads, delegates and terminals are idle; this backup includes no
+T3 task drain protocol. Never start a manual capture from an active T3 thread.
+Use an independent operator session for the first drill. Pre-sync may run online,
+but the final copy and Git inventory run only after T3 Pods have disappeared.
+T3 rebuildable caches and clean tracked homelab files are omitted; server state,
+provider authentication, grants, attachments and unpublished work remain selected.
+`t3-repositories.json` records reconstruction commits and deletion tombstones.
+All T3 Git metadata remains selected, even for clean main checkouts: linked
+worktrees can need their shared objects and unpublished refs for recovery.
+
 ## Activation and credentials
 
-The existing official 1Password Operator must own `backup-b2-connect` and
-`backup-scaleway-connect` in `homelab`. Each new **separate** source item needs exactly
-these lowercase field labels/Secret keys (no broad Connect token):
+This deployment uses **Backblaze B2 only**. A second destination is deferred;
+there is no Scaleway Operator item, required Secret, endpoint or scheduled upload.
+The worker retains its previously tested optional Scaleway command support, but
+this deployment does not configure or invoke it.
+
+The existing official 1Password Operator owns `backup-b2-connect` in `homelab`.
+Its separate source item needs these lowercase field labels/Secret keys:
 
 | Key | Meaning |
 | --- | --- |
-| `access-key-id` | B2 bucket-scoped or Scaleway dedicated-project application access ID |
-| `secret-access-key` | Corresponding S3 secret |
-| `restic-password` | Independent securely generated repository password; retain outside the cluster for disaster recovery |
+| `access-key-id` | B2 bucket-scoped application key ID |
+| `secret-access-key` | Corresponding application key |
+| `restic-password` | Repository password; retain outside the cluster for disaster recovery |
 
-Set the two `BACKUP_*_CONNECT_ITEM_PATH` references to verified item IDs in the
-existing Homelab vault. Human-facing item and provider application-key names
-require user approval; no item/key is created by this layer. Existing app item
-references are unchanged. Securely confirm exact projected key availability,
-including n8n's current underscore key, before activation; do not relabel an item
-or rotate an original encryption key to make a missing projection work.
+Set `BACKUP_B2_CONNECT_ITEM_PATH` to the verified item ID in the existing Homelab
+vault. The approved runtime key/item title is `homelab-backup-b2`; this layer
+creates neither. Existing app references and original encryption keys must stay
+unchanged. Securely confirm projected keys, including n8n's current underscore
+key, before activation. Never relabel or rotate an original key to fix projection.
 
-B2 is fixed to the verified private bucket `homelab-backup-b2`, endpoint
-`s3.us-west-004.backblazeb2.com`, region `us-west-004`; SSE-B2 is supplementary to
-restic encryption, not a replacement. Scaleway region, dedicated project, bucket,
-application/key and item names are **pending approval**; no OVH names are reused.
-Set `BACKUP_SCALEWAY_BUCKET`, `BACKUP_SCALEWAY_REGION` and
-`BACKUP_SCALEWAY_REPOSITORY` only after verifying the actual private bucket.
-Use `s3:https://s3.<region>.scw.cloud/<approved-bucket>` at the bucket root;
-the worker rejects mismatched endpoints, paths, regions and unresolved inputs.
-The supported regional allowlist is `fr-par`, `nl-ams`, `pl-waw`; verify
-Standard One Zone availability in the selected region before provisioning.
-
-[Scaleway Standard One Zone](https://www.scaleway.com/en/docs/object-storage/concepts/#storage-class)
-uses the API token `ONEZONE_IA`, **not** `STANDARD_IA` or `STANDARD`.
-The worker passes `s3.storage-class=ONEZONE_IA` to every Scaleway restic command,
-including init, config, keys, locks, indexes, snapshots and data pack writes.
-Restic 0.19.1 treats only GLACIER/DEEP_ARCHIVE as metadata exceptions; ONEZONE_IA
-is applied to all saves. Verify returned classes with real credentials before
-activation; local tests do not prove cloud storage behavior.
-
-B2 runtime credentials remain bucket-scoped. Scaleway uses a dedicated IAM
-application with project-scoped `ObjectStorageReadOnly`,
-`ObjectStorageObjectsWrite` and `ObjectStorageObjectsDelete`, without IAM
-management rights. IAM alone also permits object ACL, retention/legal-hold and
-bucket Object Lock writes; a private bucket ACL does not prevent public object
-ACLs. Require the provisioning root's official `2023-04-17` bucket policy before
-issuing a runtime key: only restic list/location/get/put/delete and multipart
-actions for the runtime application on the intended bucket, with no ACL,
-retention/legal-hold or bucket configuration writes. Explicit verified
-provisioner and independent administrator/recovery principals retain access;
-confirm their identities/IAM grants before the immediately effective policy is
-installed. Do not rely solely on Organization-owner recovery or weaken/remove
-the policy after key creation.
-
-This is **not project-wide bucket-only access**: isolate backups in a dedicated
-project. The policy does not restrict arbitrary future unprotected buckets there,
-and project bucket listing is not claimed to be denied. After authorized
-provisioning, read back the exact policy/private ACL and application/key scope,
-verify administrator/recovery access, then probe real runtime list/location,
-read/write/delete and multipart behavior. Verify rejected object ACL (including
-public ACL), retention/legal-hold/Object Lock, other bucket configuration and
-other-project access under a separately approved safe probe plan, never on restic
-data or by enabling Object Lock on the real bucket. Local tests are not cloud
-authorization evidence. Do not enable Object Lock or retention incompatible with
-restic deletion. See the official [IAM action mapping](https://www.scaleway.com/en/docs/object-storage/reference-content/s3-iam-permissions-equivalence/)
-and [bucket policy semantics](https://www.scaleway.com/en/docs/object-storage/api-cli/bucket-policy/).
+The private bucket is `homelab-backup-b2`, endpoint
+`s3.us-west-004.backblazeb2.com`, region `us-west-004`. Runtime capabilities are
+only `listBuckets`, `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`, restricted
+to that bucket, with no prefix or global bucket-name listing. Bucket configuration
+and key-management authority remain outside the cluster. Verify actual positive
+and negative runtime scope before activation. SSE-B2 supplements restic encryption.
 
 No lifecycle rule may expire current objects: old restic packs can still be
 referenced by recent snapshots. B2 currently keeps all versions; restic deletes
 can leave billed hidden versions. Review a **hidden/noncurrent-only** deletion
 rule separately with the provider owner, with no upload-age hiding/expiry of
 current objects. Do not apply such a rule without that safety review.
-Review current Scaleway Standard One Zone minimum-duration, retrieval and request
-pricing with the approved region before activation.
 
 1. Run CI's `backup` workflow. Publish its verified tooling image only through an
    explicitly approved `workflow_dispatch` with `publish=true`; this publishes
@@ -159,8 +131,8 @@ pricing with the approved region before activation.
    read-back digest in `BACKUP_IMAGE`; ensure the cluster can pull it. Review
    image/package visibility before publishing any image.
 2. Finish provider setup and Operator projections privately. Do not send values
-   through chat, logs, Git or command arguments. Independently retain both
-   passwords, bucket identities and the original application/Connect recovery
+   through chat, logs, Git or command arguments. Independently retain the B2
+   password, bucket identity and the original application/Connect recovery
    credentials outside this cluster.
 3. With parent approval, unsuspend only Flux `backup`; keep both CronJobs
    suspended. Verify the three workers, watchdog, explicit source mounts,
@@ -169,19 +141,19 @@ pricing with the approved region before activation.
    replace API-server admission/read-back verification. Local-path requests
    do not reserve/enforce a quota; staging shares the same disk, is not a backup,
    and contains mode-restricted plaintext. Retain PVCs when removing this layer.
-4. From an authorized administrator, initialize **each verified empty target**
+4. From an authorized administrator, initialize the **verified empty B2 target**
    explicitly using the worker's projected files and `worker.repository()`
    environment: `kubectl -n homelab exec backup-worker-0 -c worker -- python3
-   /backup/worker.py init b2` (then `init scaleway`). Each prints only its repository ID.
+   /backup/worker.py init b2`. It prints only its repository ID.
    `restic init` is deliberately not an automatic fallback after a
    failed repository read. Never initialize a substitute repository on an auth,
-   endpoint or network failure; verify the distinct repository IDs afterwards.
+   endpoint or network failure; record and independently retain its repository ID afterwards.
 5. With parent approval for the first capture outage, create a Job from
    `cronjob/backup-daily`. Measure stop-to-ready time for every group, inject a
    producer timeout and coordinator interruption, and verify exact original
    counts/suspension restoration, no valid partial snapshot and uploads only
    after resumption. Do not activate a schedule if any drill exceeds ten minutes.
-6. Run the isolated restore below against **both real destinations**, then
+6. Run the isolated restore below against **the actual B2 repository**, then
    perform full application restores into isolated PVCs/services (never production
    volumes). Only then unsuspend daily and maintenance CronJobs in Git.
 
@@ -189,8 +161,7 @@ Daily backup starts at **04:00 Asia/Seoul**. After each successful publication,
 `forget` retains **7 daily / 4 weekly / 6 monthly** restore points without pruning
 data. Maintenance is monthly at 12:00 on the first, under the same journal lock:
 reapply retention, prune without repacking existing packs, then metadata `check`.
-This avoids daily
-IA rewrite/retrieval churn. It is not a full data scrub; schedule an approved
+This limits unnecessary repacking. It is not a full data scrub; schedule an approved
 paid full/subset read check when needed. Pending/unpublished snapshots are never
 valid restore points and are not automatically forgotten; inspect and remove
 them explicitly after failed uploads to avoid orphan-storage growth.
@@ -204,7 +175,6 @@ integrity/schema, then deletes only that isolated directory:
 
 ```sh
 kubectl -n homelab exec backup-worker-0 -c worker -- python3 /backup/worker.py restore-test b2
-kubectl -n homelab exec backup-worker-0 -c worker -- python3 /backup/worker.py restore-test scaleway
 ```
 
 This is more than `restic check`, but does not prove n8n credential decryption or
@@ -230,9 +200,24 @@ This applies verified tracked-file tombstones without changing the recovered
 Git index. It rejects traversal, symlinks, untracked targets and directories;
 never point recovery tooling at production/user workspaces.
 
+For T3, reconstruct the listed clean files at each `t3-repositories.json` commit
+before overlaying `t3-data` and that manifest in a new isolated restore directory.
+Apply its tombstones with:
+
+```sh
+python3 /backup/worker.py restore-git-deletions /stage/restore/<drill> t3-data
+```
+
+Preserve shared Git metadata and unpublished refs. Before starting a restored T3,
+verify SQLite integrity, private file ownership and auth/grants without printing
+secrets. Restore at `/var/lib/t3` in the isolated environment, or repair Git
+worktree pointers there before use; never reuse production volumes or connect
+recovered agents to production. Verify an unpublished commit, staged and unstaged
+changes, tracked deletions, attachments and actual chat state in the restore drill.
+
 A failed Job is the Kubernetes failure signal; no external alert destination is
 invented here. Before unattended activation, connect Job failure **and missing
-fresh `complete` snapshots at either destination** to the existing operator's
+fresh `complete` snapshots in B2** to the existing operator's
 alerting route; if no such route exists, that is an activation blocker, not a
 successful alert test. Inspect `backup-state`, Job status and sanitized logs.
 
