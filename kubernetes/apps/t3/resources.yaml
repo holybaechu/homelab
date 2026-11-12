@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: t3-data
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      # Required bookkeeping; local-path does not enforce this as a quota.
+      storage: 1Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: t3
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: t3
+  template:
+    metadata:
+      labels:
+        app: t3
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10000
+        runAsGroup: 10000
+        runAsNonRoot: true
+        fsGroup: 10000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      initContainers:
+        - name: install-t3
+          # Reuse the existing pinned tool image, not its gateway or entrypoint.
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              umask 077
+              curl --fail --silent --show-error --location \
+                https://github.com/pingdotgg/t3code/releases/download/v0.1.9/t3-0.1.9-linux-x64.tar.gz \
+                --output /tmp/t3.tar.gz
+              printf '%s  %s\n' \
+                0141025335da334759cecd8db3483e09772f3600ca03674698524e7d94291362 \
+                /tmp/t3.tar.gz | sha256sum --check --strict
+              tar -xzf /tmp/t3.tar.gz -C /runtime --strip-components=1
+              /runtime/t3 --version | grep -Fx 't3 v0.1.9'
+              mkdir -p /var/lib/t3/workspaces
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: runtime
+              mountPath: /runtime
+            - name: temporary
+              mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/t3
+      containers:
+        - name: t3
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
+          command: [/runtime/t3]
+          args: [serve, --host, 0.0.0.0, --port, "3773", --base-dir, /var/lib/t3/server, --no-browser]
+          workingDir: /var/lib/t3/workspaces
+          env:
+            - name: HOME
+              value: /var/lib/t3
+            - name: T3CODE_TELEMETRY_ENABLED
+              value: "false"
+            - name: TZ
+              value: ${TIME_ZONE}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 3773
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 4Gi
+          volumeMounts:
+            - name: runtime
+              mountPath: /runtime
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/t3
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: runtime
+          emptyDir: {}
+        - name: temporary
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: t3-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: t3
+spec:
+  selector:
+    app: t3
+  ports:
+    - name: http
+      port: 3773
+      targetPort: http
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: t3
+spec:
+  secretName: t3-tls
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt
+  dnsNames:
+    - t3.${DOMAIN}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: t3
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`t3.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: private-only
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: t3
+          port: 3773
+  tls:
+    secretName: t3-tls

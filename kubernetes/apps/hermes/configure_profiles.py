@@ -17,6 +17,24 @@ def configure_browser_vault(config: dict) -> None:
     })
 
 
+def configure_coding_route(config: dict, *, t3_enabled: bool) -> None:
+    enabled = config.setdefault("plugins", {}).setdefault("enabled", [])
+    if t3_enabled:
+        enabled[:] = [name for name in enabled if name != "advanced-delegation"]
+        # Retain historical route settings for recovery; the plugin is inactive.
+        return
+    if "advanced-delegation" not in enabled:
+        enabled.append("advanced-delegation")
+    delegation = config.setdefault("delegation", {})
+    delegation["backend"] = "profile_routes"
+    delegation["inherit_mcp_toolsets"] = False
+    delegation.setdefault("backends", {})["profile_routes"] = {
+        "profiles": [
+            {"name": "coder", "description": "Implement, debug, and verify code changes."}
+        ]
+    }
+
+
 def reconcile(root: Path, bootstrap: Path) -> None:
     (root / "SOUL.md").write_text((bootstrap / "assistant-soul.md").read_text())
     if not profile_exists("coder"):
@@ -43,19 +61,8 @@ def reconcile(root: Path, bootstrap: Path) -> None:
     config.setdefault("model", {}).update(assistant["model"])
     config.setdefault("agent", {}).update(assistant["agent"])
     configure_browser_vault(config)
-    plugins = config.setdefault("plugins", {})
-    enabled = plugins.setdefault("enabled", [])
-    if "advanced-delegation" not in enabled:
-        enabled.append("advanced-delegation")
-    # Git owns this route; unrelated delegation tuning stays live on the PVC.
-    delegation = config.setdefault("delegation", {})
-    delegation["backend"] = "profile_routes"
-    delegation["inherit_mcp_toolsets"] = False
-    delegation.setdefault("backends", {})["profile_routes"] = {
-        "profiles": [
-            {"name": "coder", "description": "Implement, debug, and verify code changes."}
-        ]
-    }
+    servers = yaml.safe_load((bootstrap / "mcp-servers.yaml").read_text())
+    configure_coding_route(config, t3_enabled=servers["t3code"]["enabled"] is True)
     atomic_yaml_write(root / "config.yaml", config, sort_keys=False)
     # The built-in default ID owns existing Discord sessions and OAuth grants.
     write_profile_meta(root, display_name="assistant")

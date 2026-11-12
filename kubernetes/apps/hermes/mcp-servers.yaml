@@ -1,5 +1,26 @@
 # Git owns the full MCP server list, reconciled on every pod start.
 # OAuth credentials stay on the persistent volume, outside this ConfigMap.
+t3code:
+  url: https://t3.${DOMAIN}/mcp
+  auth: oauth
+  connect_timeout: 315
+  # Cutover gate: enable only after the operator acceptance in ../t3/README.md.
+  enabled: false
+  tools:
+    resources: false
+    prompts: false
+    include:
+      - orchestrator_capabilities
+      - t3_project_list
+      - t3_project_read
+      - t3_thread_launch
+      - t3_thread_list
+      - t3_thread_search
+      - t3_thread_read
+      - t3_thread_send
+      - t3_thread_wait
+      - t3_thread_interrupt
+      - t3_queue
 cua:
   command: /opt/coder/bin/cua
   args:

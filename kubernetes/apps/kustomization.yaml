@@ -12,6 +12,7 @@ resources:
   - immich
   - hermes
   - langfuse
+  - t3
   - hermes-site
   - mysql
   - n8n

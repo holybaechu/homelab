@@ -20,8 +20,16 @@ addresses and `hermes webapp --status` in the Hermes container.
 
 ## Assistant and coder
 
+A [staged T3 coding workspace](../t3/README.md) adds a separate server-side UI,
+private PVC, and native OAuth MCP connection. Its source gate remains disabled
+until the documented real chat/diff/steering/stop trial passes. Once enabled,
+all project code changes move to that one authoritative T3 thread; broader
+assistant work stays here. The existing native route below remains active only
+before acceptance; old coder state is retained after cutover.
+
 [Coder development tools](coder/README.md) covers mise, GitHub authentication,
-commit signing, and credential rotation.
+commit signing, and credential rotation for the retained Hermes coder environment;
+those credentials are not automatically shared with T3.
 
 The existing Discord profile is displayed as `assistant`; its built-in ID stays
 `default` to preserve sessions, memory, and model authentication. Startup creates
