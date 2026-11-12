@@ -14,7 +14,7 @@ SOURCE = Path(__file__).resolve().parents[2] / "kubernetes/apps/hermes"
 
 
 class ProfileStartupTests(unittest.TestCase):
-    def test_personal_state_survives_startup_with_a_normal_home_git_repository(self):
+    def test_personal_state_and_other_hooks_survive_chezmoi_hook_reconciliation(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
             (home / "config.yaml").write_text("{}\n")
@@ -44,6 +44,8 @@ class ProfileStartupTests(unittest.TestCase):
             config["mcp_servers"]["personal"] = {"command": "echo"}
             config["mcp_servers"]["t3code"]["enabled"] = True
             config["hooks"]["on_session_end"].append({"command": "echo retained"})
+            config["hooks"]["on_session_end"].append({"command": "/opt/coder/bin/hermes-profile-sync"})
+            config["hooks"]["on_session_start"].append({"command": "echo start retained"})
             (home / "config.yaml").write_text(yaml.safe_dump(config))
             subprocess.run(["git", "init", str(home)], capture_output=True, check=True)
             configure()
@@ -55,6 +57,10 @@ class ProfileStartupTests(unittest.TestCase):
             self.assertIn("personal", config["mcp_servers"])
             self.assertFalse(config["mcp_servers"]["t3code"]["enabled"])
             self.assertEqual(len(config["hooks"]["on_session_end"]), 2)
+            self.assertEqual(len(config["hooks"]["on_session_start"]), 2)
+            self.assertIn({"command": "echo start retained"}, config["hooks"]["on_session_start"])
+            self.assertEqual(config["hooks"]["on_session_start"][-1]["command"],
+                             "/opt/coder/bin/hermes-profile-sync start")
             self.assertIn({"command": "echo retained"}, config["hooks"]["on_session_end"])
             self.assertFalse(config.get("hooks_auto_accept", False))
             (home / "SOUL.md").unlink()

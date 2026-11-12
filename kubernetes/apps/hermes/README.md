@@ -669,62 +669,85 @@ upstream changes to modified skills when upgrading the image.
 
 ## Personal profile history
 
-`/opt/data` is Hermes's home and a normal Git working tree, with `.git` on
-`hermes-data` and the private
+[chezmoi](https://www.chezmoi.io/) manages the live `/opt/data` home from its
+source repository at `/opt/data/.local/share/chezmoi`, using the private
 [hermes-instructions](https://github.com/holybaechu/hermes-instructions) remote.
-It records both profiles' SOUL, skills, configuration, memories, user instructions,
-cron job definitions, hooks, scripts, personal plugins and preferences.
-[home.gitignore](home.gitignore) seeds `.gitignore` once; maintain the live policy
-in the private repository. It excludes credentials, conversations, databases,
-execution ledgers, caches, project workspaces and cluster-managed plugins. The
-workspace-wide `.hermes.md` remains tracked. Keep
-credential values in 1Password and use references in tracked files.
+The original Git history is retained. Both profiles' SOUL, skills, configuration,
+memories, user instructions, cron definitions, hooks, scripts, personal plugins
+and preferences are covered. Source names use chezmoi attributes such as
+`private_config.yaml` and `exact_skills/`; use `chezmoi source-path <live-path>`
+to find the corresponding file before editing it on GitHub.
 
-Hermes's native `on_session_end` hook runs the short
-[profile-sync.sh](profile-sync.sh): serialize writers with `flock`, stage changes,
-commit when needed, and push using existing signing/GitHub credentials. A failed
-push keeps local commits and retries at the next turn. Only this exact hook is
-approved; global hook auto-approval stays disabled.
+[home.chezmoiignore](home.chezmoiignore) seeds the source `.chezmoiignore` during
+migration; maintain the live policy in the private repository. It excludes
+credentials, conversations, databases, execution ledgers, caches, project
+workspaces and cluster-managed plugins. The workspace-wide `.hermes.md` remains
+tracked. Keep credential values in 1Password and references in managed files.
+[chezmoi.toml](chezmoi.toml) seeds local configuration once. The runtime uses the
+checksum-verified release pinned in `mise.toml`; no image build is required.
 
-Use normal Git commands for history and file-scoped restoration. Commit pending
-changes before restoring, then commit and push the restoration. Personal changes
-require no image build or gateway restart; start a new conversation to load
-changed instructions. For selected config settings, use `hermes config set` so
-cluster-managed integration wiring and the recording hook stay intact. Pause
-dispatch with `hermes pause` and finish active work before restoring schedules;
-review the schedules before `hermes resume`.
+Native session hooks run [profile-sync.sh](profile-sync.sh) for both profiles.
+The thin bridge serializes synchronization with `flock`, forgets deleted files
+from source without deleting live data, then adds allowed home entries through
+chezmoi. Its `autoCommit` records the changes. Session start also runs
+`chezmoi update` to pull/rebase and apply remote edits; both boundaries push.
+Only the two exact hook commands are approved; global hook auto-approval stays
+disabled. A failed push keeps local commits for retry. A conflict stops before
+applying remote files and blocks later captures until resolved; it never selects
+a winner or force-pushes.
 
-Run manual Git commands as the gateway account `hermes` (UID/GID `10000:10000`)
-so new Git objects and locks remain writable by the gateway. Open a shell with:
+Edit files on GitHub, then start a new assistant conversation or coder task to
+fetch them and load fresh instructions. Changes during an existing conversation
+arrive at its next session start, not continuously. For selected config settings,
+use `hermes config set` so cluster-managed wiring and recording hooks stay intact.
+For remote deletions, use chezmoi's `.chezmoiremove` rather than only deleting a
+source file. Pause dispatch and finish active work before manually applying
+configuration or restoring schedules; review schedules before resuming.
+
+Run commands as the gateway account (UID/GID `10000:10000`) to keep source objects,
+locks and chezmoi state writable:
 
 ```sh
-kubectl -n homelab exec -it deploy/hermes -c hermes -- runuser -u hermes -- /bin/sh
+kubectl -n homelab exec -it deploy/hermes -c hermes -- runuser -u hermes -- /bin/bash
 ```
 
 ```sh
-git -C /opt/data log --oneline -- SOUL.md memories/ config.yaml
-git -C /opt/data diff <commit> HEAD -- <path>
-git -C /opt/data restore --source=<commit> -- <path>
+chezmoi git log --oneline
+chezmoi source-path /opt/data/config.yaml
+chezmoi diff
+/opt/coder/bin/hermes-profile-sync start
 ```
 
-If only `.git` is lost, pause dispatch and wait for active tasks. With the existing
-GitHub/signing projections available, recover metadata without overwriting profile
-files. These commands refuse to replace an existing `.git`; inspect `git status`
-before choosing any file restoration:
+To recover a synchronization conflict, pause dispatch and wait for active work.
+Inspect `chezmoi git status`, resolve the conflicted source files, then finish:
 
 ```sh
-set -eu
-umask 077
-test ! -e /opt/data/.git
-git clone --no-checkout https://github.com/holybaechu/hermes-instructions.git /tmp/hermes-profile-recovery
-mv /tmp/hermes-profile-recovery/.git /opt/data/.git
-git -C /opt/data reset --mixed HEAD
-git -C /opt/data status --short
+chezmoi git add --all
+GIT_EDITOR=true chezmoi git rebase --continue
+chezmoi --no-tty --error-on-conflict apply
+chezmoi git push
+hermes resume
 ```
 
-Resume dispatch after verification. Recover the PVC backup separately for OAuth
-grants, conversations and databases. Preserve existing history; use ordinary
-commits for corrections rather than replacing the remote history.
+Repeat the resolve/continue step if more than one commit conflicts. For a normal
+file restoration, restore the selected source version with `chezmoi git restore
+--source=<commit> -- <source-path>`, review `chezmoi diff`, apply it, then run
+`chezmoi push` to record and publish the restoration. Do not run the capture hook
+between source restoration and apply: it would capture the current live file.
+
+If the source repository is lost, pause dispatch and finish active work. Back up
+the current home, then clone without applying, inspect the diff and restore:
+
+```sh
+chezmoi init --apply=false https://github.com/holybaechu/hermes-instructions.git
+chezmoi diff
+chezmoi apply
+hermes resume
+```
+
+The original migration's Git bundle and profile files remain under
+`/opt/data/backups/chezmoi-migration-*`. Recover the PVC backup separately for
+OAuth grants, conversations and databases; these are not portable source state.
 
 Hermes v0.23 supplies the native OAuth issuer normalization used by TickTick;
 no provider file is overlaid. Langfuse dependencies use pip's pinned hashes, and

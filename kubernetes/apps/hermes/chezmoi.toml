@@ -1,0 +1,4 @@
+[git]
+autoCommit = true
+autoPush = false
+commitMessageTemplate = "chore(hermes): update profile state"

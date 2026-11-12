@@ -1,4 +1,5 @@
 [tools]
+chezmoi = "2.74.1"
 jq = "1.8.2"
 yq = "4.54.1"
 opentofu = "1.13.2"
