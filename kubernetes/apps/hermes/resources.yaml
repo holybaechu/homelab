@@ -56,7 +56,7 @@ spec:
                 install -o 10000 -g 10000 -m 0600 /bootstrap/home.gitignore /opt/data/.gitignore
               fi
               mkdir -p /opt/data/workspace /opt/data/obsidian/vault /opt/data/obsidian/headless /opt/obsidian
-              mkdir -p /opt/data/workspace/homelab
+              mkdir -p /opt/data/skills /opt/data/workspace/homelab
               mkdir -p /opt/homelab/python /opt/homelab/credentials /opt/immich-mcp
               mkdir -p /opt/qmd /opt/data/qmd/config /opt/data/qmd/cache/qmd
               mkdir -p /opt/langfuse/python /opt/langfuse/plugin /opt/data/plugins/langfuse
