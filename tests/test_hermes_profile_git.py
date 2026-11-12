@@ -71,11 +71,15 @@ class ProfileGitTests(unittest.TestCase):
                     "profiles/coder/auth.json", "profiles/coder/.env", "profiles/coder/workspace/file.py"}
         for path in included | excluded:
             self.write(path)
+        plugin = self.root / "profiles/coder/plugins/langfuse"
+        plugin.parent.mkdir(parents=True, exist_ok=True)
+        plugin.symlink_to(self.root / "plugins/langfuse", target_is_directory=True)
         self.sync()
         managed = set(self.chezmoi("managed", "--include", "files,symlinks").decode().splitlines())
         self.assertEqual(managed, included)
         for path in excluded:
             self.assertTrue((self.root / path).is_file())
+        self.assertTrue(plugin.is_symlink())
         self.sync(action="start")
         for path in excluded:
             self.assertTrue((self.root / path).is_file())
