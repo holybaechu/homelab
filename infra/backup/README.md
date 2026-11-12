@@ -119,6 +119,22 @@ adopt unrelated composite items.
 | Scaleway provider | `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_DEFAULT_ORGANIZATION_ID` for an explicitly approved local bootstrap. Project creation needs organization-scoped `ProjectManager`; application/key and policy creation need `IAMApplicationManager` and `IAMPolicyManager`. Bucket/ACL creation needs `ObjectStorageBucketsWrite` plus read access in the dedicated project; bucket-policy management additionally needs `ObjectStorageBucketPolicyFullAccess`. Verify these grants for the explicit provisioner/recovery principals. These are consequential management grants, not runtime permissions: privately review exact API requirements, authorize temporarily, revoke afterwards. Never silently widen on failure. |
 | Scaleway runtime | Dedicated application, API key default project set explicitly; `ObjectStorageReadOnly`, `ObjectStorageObjectsWrite`, `ObjectStorageObjectsDelete` on the single dedicated project, further restricted on the intended bucket by its policy below. No project or IAM management grants. |
 
+B2 provider 0.14.1 can plan false bucket updates with a bucket-restricted key:
+its [`get_bucket_by_id` read](https://github.com/Backblaze/terraform-provider-b2/blob/5e063b123c61b5ab30813ee51c5b27c3cfb9f109/python-bindings/b2_terraform/provider_tool.py#L262)
+uses the SDK's name/ID cache without fetching bucket type, encryption, Object Lock
+or revision. Compare unexpected changes with `b2_list_buckets` for the exact
+bucket. Do not apply them or widen the key to work around the read failure.
+
+A reviewed local correction must fetch `list_buckets(bucket_id=...)` and handle
+an empty result as a missing bucket. Build from the pinned official source using
+its Windows build workflow; retain the source commit, minimal diff, tool versions
+and binary checksum with the protected artifacts. Keep the signed provider and
+lockfile intact, and scope `dev_overrides` through a child-only
+`TF_CLI_CONFIG_FILE`. Review and apply a saved plan with that same corrected
+binary. Subsequent narrow-key plans also need the corrected read until a fixed
+official release is verified. The exact import/no-op and encryption gates still
+apply.
+
 Scaleway IAM permission sets are **project-scoped, not bucket-only**. In particular,
 `ObjectStorageObjectsWrite` includes `PutObjectAcl`, `PutObjectLegalHold`,
 `PutObjectRetention` and `PutObjectLockConfiguration` (the last maps to
