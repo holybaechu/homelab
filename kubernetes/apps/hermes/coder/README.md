@@ -1,4 +1,8 @@
-# Coder development tools
+# Shared development tools
+
+The `coder` directory and runtime paths are legacy names for tooling shared by
+Hermes and T3, not a Hermes profile. Keep the existing credential identities and
+1Password references when retiring profile configuration.
 
 Startup installs checksum-pinned mise and GitHub CLI into the Pod's runtime
 volume. Project tools follow the repository's `mise.toml`; after cloning a trusted
@@ -38,6 +42,10 @@ container and Unix user, so these mounts are not an isolation boundary between
 profiles. The obsolete `hermes-coder-git` ESO target is removed. Recovery requires
 the [retirement recovery set](../../../platform/onepassword/README.md#ordered-eso-retirement)
 before reverting the projection, initializer and Reloader references together.
+
+T3 reuses this same identity through the same converter and a separate private
+memory-backed volume; it receives only these Git credentials, not Hermes home
+or other assistant credentials. See the [T3 operator guide](../../t3/README.md).
 
 For rotation, update the existing 1Password fields and respect the Operator's
 six-hour poll. Reloader watches both replacement Secrets and restarts the Pod, then

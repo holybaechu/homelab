@@ -1,4 +1,4 @@
-# Seeded on first boot; configure-profiles also reconciles assistant inference settings.
+# Seeded on first boot; existing personal inference settings are preserved.
 model:
   provider: openai-codex
   default: gpt-6.1-sol

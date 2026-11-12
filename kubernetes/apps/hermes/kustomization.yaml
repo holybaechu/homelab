@@ -5,20 +5,15 @@ resources:
   - onepassword.yaml
   - resources.yaml
 configMapGenerator:
-  - name: hermes-writing-for-agents
-    files:
-      - writing-for-agents/SKILL.md
-      - writing-for-agents/SKILL-MECHANICS.md
-      - writing-for-agents/LICENSE
   - name: hermes-bootstrap
     files:
       - config.yaml
       - kubeconfig.yaml=kubernetes-client.yaml
-      - assistant-soul.md
-      - coder.yaml
-      - coder-soul.md
       - configure_profiles.py
-      - delegation-plugin.sha256
+      - home.chezmoiignore
+      - chezmoi.toml
+      - profile-sync.sh
+      - configure_browser_proxy.py
       - coder-install-tools.sh=coder/install-tools.sh
       - coder-tools.sha256=coder/tools.sha256
       - coder-gh.sh=coder/gh.sh
@@ -33,9 +28,7 @@ configMapGenerator:
       - webhook.yaml
       - obsidian-sync/package.json
       - obsidian-sync/package-lock.json
-      - second-brain.md
       - seed_skills.py
-      - skill-overrides.patch
       - qmd-package.json=qmd/package.json
       - qmd-package-lock.json=qmd/package-lock.json
       - qmd-index.yml=qmd/index.yml
@@ -47,5 +40,4 @@ configMapGenerator:
       - langfuse-configure-mcp.py=langfuse/configure_mcp.py
       - services.py=integrations/services.py
       - mcp_server.py=integrations/mcp_server.py
-      - homelab-skill.md=integrations/SKILL.md
       - requirements.txt=integrations/requirements.txt

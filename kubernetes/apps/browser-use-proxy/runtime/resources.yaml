@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: browser-use-proxy
+  annotations:
+    secret.reloader.stakater.com/reload: browser-use-proxy-connect
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: browser-use-proxy
+  template:
+    metadata:
+      labels:
+        app: browser-use-proxy
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      nodeSelector:
+        kubernetes.io/hostname: talos-homelab
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: firewall
+          image: nicolaka/netshoot@sha256:147f2c4cb0aa7a741151bce2bfef71d9e1a04631636e24665ee2a5ed799feb47
+          command: [/bin/sh, -ec, 'nft -f /config/egress.nft']
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [NET_ADMIN]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+        - name: verifier
+          image: python@sha256:a18b20ad69e74df6cf6d2e1b1a260d7a1ecf5380fd83b310f83ba88c461cf894
+          command: [python, -I, -B, /config/initialize.py, /source/custom-proxy.json, /runtime/passwd]
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: source
+              mountPath: /source
+              readOnly: true
+            - name: runtime
+              mountPath: /runtime
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      containers:
+        - name: proxy
+          image: docker.io/3proxy/3proxy@sha256:db6712d3566c52b04b9fec3d2a263580dcbef04f1943b5bf3fb86c7fce0da7f4
+          command: [/bin/3proxy, /config/3proxy.cfg]
+          ports:
+            - name: proxy
+              containerPort: 3128
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: runtime
+              mountPath: /runtime
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: proxy
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: browser-use-proxy-config
+        - name: source
+          secret:
+            secretName: browser-use-proxy-connect
+            defaultMode: 0440
+            items:
+              - key: custom-proxy-json
+                path: custom-proxy.json
+        - name: runtime
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: browser-use-proxy
+spec:
+  selector:
+    app: browser-use-proxy
+  ports:
+    - name: proxy
+      port: 3128
+      targetPort: proxy

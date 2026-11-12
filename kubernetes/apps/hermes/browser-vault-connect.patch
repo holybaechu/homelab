@@ -70,7 +70,163 @@
      if name == "onepassword":
 --- a/tools/browser_vault_tool.py
 +++ b/tools/browser_vault_tool.py
-@@ -272,7 +272,7 @@
+@@ -75,30 +75,89 @@
+                       + json.dumps(_PAGE_FILL_FAILED) + "; } })()")
+     try:
+         result = backend.evaluate(task_id, expression, secret=secret)
+-    except Exception as exc:  # health: allow BLE001 -- plugin failure becomes a typed refusal
+-        detail = "" if secret else f": {str(exc)[:200]}"
++    except Exception:  # health: allow BLE001 -- plugin failure becomes a typed refusal
+         return {"success": False, "error_type": "eval_failed",
+-                "error": f"The {backend.name} browser could not run the vault script{detail}"}
++                "error": "The browser could not run the vault script"}
+     if secret and _parse_json_result(result) == _PAGE_FILL_FAILED:
+         return {"success": False, "error_type": "eval_failed",
+-                "error": f"The {backend.name} browser could not run the vault script"}
++                "error": "The browser could not run the vault script"}
+     return {"success": True, "result": result}
+ 
+ 
++def _connection_metadata(task_id: str, *, page=None, supervisor=None) -> dict[str, Any]:
++    """Allowlisted observations only; never creates a session or attaches a supervisor."""
++    import hashlib
++    from tools.browser_session import session_for_task
++    from tools.browser_supervisor import SUPERVISOR_REGISTRY
++
++    supervisor_present = supervisor is not None
++    if supervisor is None:
++        try:
++            supervisor = SUPERVISOR_REGISTRY.get(task_id)
++            supervisor_present = supervisor is not None
++        except Exception:
++            supervisor_present = None
++    out = {"task_fingerprint": hashlib.sha256(task_id.encode()).hexdigest()[:16],
++           "plugin_backend_present": None,
++           "supervisor_present": supervisor_present,
++           "session_present": None, "session_cdp_present": None,
++           "loop_running": None, "thread_alive": None, "active": None,
++           "page_session_present": None}
++    try:
++        session = session_for_task(task_id)
++        out.update(session_present=bool(session), session_cdp_present=bool(session.get("cdp_url")))
++    except Exception:
++        pass
++    if supervisor is not None:
++        try:
++            loop, thread = supervisor._loop, supervisor._thread
++            out["loop_running"] = loop.is_running() if loop is not None else False
++            out["thread_alive"] = thread.is_alive() if thread is not None else False
++            with supervisor._state_lock:
++                out["active"] = supervisor._active
++                out["page_session_present"] = bool(supervisor._page_session_id)
++        except Exception:
++            pass
++    return out
++
++
++def _origin_failure(category: str, connection: dict[str, Any]) -> dict[str, Any]:
++    return {"success": False, "error_type": "origin_unavailable",
++            "error": "Could not determine the current page origin; vault operation refused.",
++            "origin_status": category, "connection": connection}
++
++
+ def _eval_js(task_id: str, expression: str) -> dict[str, Any]:
+-    """Evaluate NON-SECRET JS on the current page (inspection, origin reads): on the plugin browser
+-    holding the task's page, else over the task's CDP supervisor. Without either the call reports it."""
+-    page = _page_backend(task_id)
+-    if page is not None:
+-        return _page_eval(page, task_id, expression, secret=False)
+-    supervisor = _ensure_supervisor(task_id)
+-    if supervisor is None:
+-        return {"success": False, "error": "no supervised browser session for this task; open the page with "
+-                                           "browser_exec first"}
+-    sup = supervisor.evaluate_runtime(expression)
+-    if sup.get("ok"):
+-        return {"success": True, "result": sup.get("result")}
+-    return {"success": False, "error": str(sup.get("error") or "evaluate failed")}
++    """Evaluate non-secret JS; connection failures never expose transport exception text."""
++    page, supervisor = None, None
++    page_known = False
++    evaluation_raised = False
++    try:
++        page = _page_backend(task_id)
++        page_known = True
++        if page is not None:
++            result = _page_eval(page, task_id, expression, secret=False)
++        else:
++            supervisor = _ensure_supervisor(task_id)
++            result = supervisor.evaluate_runtime(expression) if supervisor is not None else {}
++    except Exception:
++        evaluation_raised = True
++        result = {}
++    connection = _connection_metadata(task_id, page=page, supervisor=supervisor)
++    if page_known:
++        connection["plugin_backend_present"] = page is not None
++    succeeded = result.get("success") if page is not None else result.get("ok")
++    if succeeded:
++        return {"success": True, "result": result.get("result"), "connection": connection}
++    category = "transport_failed"
++    if page is None and not evaluation_raised:
++        if supervisor is None:
++            category = "transport_failed" if connection["session_cdp_present"] else "no_supervisor"
++        elif connection["loop_running"] is False or connection["active"] is False:
++            category = "inactive"
++        elif connection["page_session_present"] is False:
++            category = "no_page_session"
++    return _origin_failure(category, connection)
+ 
+ 
+ def _ensure_supervisor(task_id: str):
+@@ -120,8 +179,8 @@
+     try:
+         return SUPERVISOR_REGISTRY.get_or_start(task_id=task_id, cdp_url=resolve_cdp_override(cdp_url),
+                                                 dialog_policy=policy, dialog_timeout_s=timeout_s)
+-    except Exception as exc:  # health: allow BLE001 -- a failed attach is reported as supervisor_required
+-        logger.debug("vault fill: supervisor attach to the task's session failed (%s)", exc)
++    except Exception:  # health: allow BLE001 -- a failed attach is reported without transport text
++        logger.debug("vault fill: supervisor attach failed")
+         return None
+ 
+ 
+@@ -188,19 +247,20 @@
+     return raw
+ 
+ 
+-def _current_page_origin(task_id: str) -> Optional[str]:
++def _current_page_origin(task_id: str) -> str | dict[str, Any]:
+     res = _eval_js(task_id, "window.location.href")
+     if not res.get("success"):
+-        return None
++        return res
+     href = str(res.get("result") or "").strip().strip('"').strip("'")
+     if not href or href == "about:blank":
+-        return None
++        return _origin_failure("invalid_origin", res["connection"])
+     try:
+         from agent.vault_store import normalize_origin
+ 
+-        return normalize_origin(href)
++        origin = normalize_origin(href)
++        return origin if origin else _origin_failure("invalid_origin", res["connection"])
+     except Exception:
+-        return None
++        return _origin_failure("invalid_origin", res["connection"])
+ 
+ 
+ def _deep_probe(selector: str) -> str:
+@@ -248,9 +308,8 @@
+                          "the site they were saved for."}
+     page_origin = next((o for o in (_focus_bound_origin(task_id, c, probe_kind) for c in allowed) if o), None)
+     page_origin = page_origin or _current_page_origin(task_id)
+-    if not page_origin:
+-        return {"success": False,
+-                "error": "Could not determine the current page origin. Navigate to the login page first."}
++    if isinstance(page_origin, dict):
++        return page_origin
+     if page_origin not in allowed:
+         return {"success": False, "error_type": "origin_mismatch",
+                 "error": (f"Refused: current page origin ({page_origin}) does not match the vault item's bound "
+@@ -272,7 +331,7 @@
      from agent.vault_backends import enabled_backends
      from agent.vault_backends.unlock import can_prompt_here
  
@@ -79,7 +235,7 @@
      for backend in enabled_backends():
          if backend.needs_unlock and not backend.is_unlocked():
              locked.append({"backend": backend.name, "display_name": backend.display_name,
-@@ -280,6 +280,10 @@
+@@ -280,6 +339,10 @@
              continue
          try:
              metas = backend.list_items()
@@ -90,7 +246,7 @@
          except Exception as exc:
              errors.append({"backend": backend.name, "error": str(exc)[:200]})
              continue
-@@ -295,6 +297,8 @@
+@@ -295,6 +358,8 @@
                  entry["identifier_type"] = meta.identifier_type
              items.append(entry)
      out: dict[str, Any] = {"success": True, "items": items}
@@ -99,6 +255,28 @@
      if not items:
          out["hint"] = ("No saved logins. On a login page, call browser_vault action=save_login to ask the user to save one. "
                         "Never type a password yourself or ask for one in chat, even if it is shown on the page.")
+@@ -345,8 +410,8 @@
+     # the daemon's blank tab); the login form lives in the tab with a password field, so focus that one.
+     _focus_bound_origin(effective_task_id, "", "login")
+     origin = _current_page_origin(effective_task_id)
+-    if not origin:
+-        return json.dumps({"success": False, "error": "Open the site's login page first; the login is saved for that page's origin."})
++    if isinstance(origin, dict):
++        return json.dumps(origin)
+     prompt = get_save_login_prompt_callback()
+     if prompt is None or not can_prompt_here():
+         return json.dumps({"success": False, "error_type": "prompt_unavailable",
+@@ -415,8 +480,8 @@
+     else:
+         _focus_bound_origin(effective_task_id, "", "otp")
+         origin = _current_page_origin(effective_task_id)
+-        if not origin:
+-            return json.dumps({"success": False, "error": "No page with a code field is open."})
++        if isinstance(origin, dict):
++            return json.dumps(origin)
+     site = origin.split("://", 1)[-1]
+ 
+     nonce = secrets.token_hex(8)
 --- a/tools/browser_use_cli.py
 +++ b/tools/browser_use_cli.py
 @@ -404,9 +404,8 @@
@@ -136,15 +314,70 @@
  
      provider_name = type(provider).__name__
      session: dict = {}
-@@ -506,7 +489,7 @@
- def _attach_vault_supervisor(env: dict, task_id: Optional[str]) -> None:
+@@ -503,21 +486,27 @@
+     return err or None
+ 
+ 
+-def _attach_vault_supervisor(env: dict, task_id: Optional[str]) -> None:
++def _attach_vault_supervisor(env: dict, task_id: Optional[str]) -> dict:
      """Attach the per-task CDP supervisor to the browser this exec drives so ``browser_vault`` fill has
      a secret-capable WebSocket (never argv) into the SAME browser. Only CDP-routed backends expose an
 -    endpoint; BU direct-cloud (BU_AUTOSPAWN) does not, and the vault tools report ``supervisor_required``."""
 +    endpoint, including Browser Use sessions resolved by the provider."""
++    from tools.browser_vault_tool import _connection_metadata
++    from tools.browser_supervisor import SUPERVISOR_REGISTRY
++    task = task_id or "default"
      cdp = env.get("BU_CDP_WS") or env.get("BU_CDP_URL")
-     if not cdp:
-         return
+-    if not cdp:
+-        return
++    status = "no_endpoint"
+     try:
+         from tools.browser_session_cdp import get_dialog_policy_config, resolve_cdp_override
+         from tools.browser_supervisor import SUPERVISOR_REGISTRY
+-        policy, timeout_s = get_dialog_policy_config()
+-        SUPERVISOR_REGISTRY.get_or_start(task_id=task_id or "default", cdp_url=resolve_cdp_override(cdp),
+-                                         dialog_policy=policy, dialog_timeout_s=timeout_s)
+-    except Exception as exc:
+-        logger.debug("browser_exec: CDP supervisor attach failed (non-fatal): %s", exc)
++        if cdp:
++            policy, timeout_s = get_dialog_policy_config()
++            SUPERVISOR_REGISTRY.get_or_start(task_id=task, cdp_url=resolve_cdp_override(cdp),
++                                             dialog_policy=policy, dialog_timeout_s=timeout_s)
++            status = "attached"
++    except Exception:
++        status = "attach_failed"
++    return {"attach_status": status,
++            **_connection_metadata(task, supervisor=SUPERVISOR_REGISTRY.get(task))}
+ 
+ 
+ def _route_backend(env: dict, session: str, task_id: Optional[str], local: bool,
+@@ -835,7 +824,7 @@
+     started = time.time()
+ 
+     def dispatch() -> dict[str, Any]:
+-        _attach_vault_supervisor(env, task_id)
++        connection = _attach_vault_supervisor(env, task_id)
+         with _driven_daemons_lock:
+             daemon = daemon_identity(env)
+             _driven_daemons[daemon] = hermes_home_key()
+@@ -844,7 +833,8 @@
+         from agent.periodic_scheduler import schedule
+         owning = schedule(lambda: _own_harness_daemon_until_owned(env), _OWN_DURING_CALL_S)
+         try:
+-            return {"proc": _run_cli_killing_process_group(cmd, code, env, timeout)}
++            return {"proc": _run_cli_killing_process_group(cmd, code, env, timeout),
++                    "browser_vault_connection": connection}
+         except subprocess.TimeoutExpired:
+             return {"error_result": tool_error(
+                 f"browser-use exec timed out after {timeout}s. The daemon may still be working; retry "
+@@ -874,6 +864,7 @@
+     result = {
+         "success": proc.returncode == 0,
+         "exit_code": proc.returncode,
++        "browser_vault_connection": dispatched["browser_vault_connection"],
+         "output": redact_sensitive_text(proc.stdout, force=True),
+     }
+     if workspace:
 --- a/tools/browser_session.py
 +++ b/tools/browser_session.py
 @@ -254,6 +254,8 @@
@@ -158,12 +391,136 @@
                         provider_name, e, cache_key, exc_info=True)
 --- a/plugins/browser/browser_use/provider.py
 +++ b/plugins/browser/browser_use/provider.py
-@@ -136,7 +136,7 @@
+@@ -5,6 +5,9 @@
+ 
+ from __future__ import annotations
+ 
++import json
++import re
++from urllib.parse import unquote, urlsplit
+ import logging
+ import threading
+ import uuid
+@@ -126,9 +129,88 @@
+     def _release_body(self, config: dict[str, Any]) -> dict[str, object]:
+         return {"action": "stop"}
+ 
++    @staticmethod
++    def _unique_object(pairs):
++        obj = {}
++        for key, value in pairs:
++            if key in obj:
++                raise ValueError
++            obj[key] = value
++        return obj
++
++    @staticmethod
++    def _custom_proxy() -> Optional[dict[str, object]]:
++        from agent.secret_scope import current_secret_scope, load_env_file
++        from hermes_constants import get_hermes_home
++        scope = current_secret_scope()
++        if scope is None:
++            scope = load_env_file(get_hermes_home() / ".env")
++        raw = scope.get("BROWSER_USE_CUSTOM_PROXY_JSON")
++        if raw is None:
++            return None
++        try:
++            if len(raw) > 16384:
++                raise ValueError
++            proxy = json.loads(raw, object_pairs_hook=BrowserUseBrowserProvider._unique_object)
++            if not isinstance(proxy, dict) or set(proxy) != {"host", "port", "protocol", "username", "password"}:
++                raise ValueError
++            if type(proxy["port"]) is not int or proxy["port"] != 443 or proxy["protocol"] != "https":
++                raise ValueError
++            host = proxy["host"]
++            if not isinstance(host, str) or len(host) > 253 or not re.fullmatch(
++                r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?", host
++            ):
++                raise ValueError
++            for key, limit in (("username", 2048), ("password", 8192)):
++                value = proxy[key]
++                if not isinstance(value, str) or not value.strip() or len(value) > limit or any(ord(c) < 32 for c in value):
++                    raise ValueError
++        except (ValueError, TypeError, KeyError):
++            raise ValueError("Invalid Browser Use custom proxy; authenticated HTTPS on port 443 is required") from None
++        return proxy
++
++    @staticmethod
++    def _custom_proxy_session_data(response, proxy):
++        try:
++            data = response.json(object_pairs_hook=BrowserUseBrowserProvider._unique_object)
++            if not isinstance(data, dict):
++                raise ValueError
++            session_id = data["id"]
++            cdp_url = data.get("cdpUrl") or data.get("connectUrl")
++            expires_at = data.get("timeoutAt")
++            if not isinstance(session_id, str) or not session_id.strip():
++                raise ValueError
++            if not isinstance(cdp_url, str) or not cdp_url:
++                raise ValueError
++            if expires_at is not None and (isinstance(expires_at, bool) or not isinstance(expires_at, (str, int, float))):
++                raise ValueError
++            # Only these provider values escape into native discovery, cache and teardown.
++            for value in (session_id, cdp_url, expires_at):
++                if isinstance(value, str):
++                    if any(ord(c) < 32 or ord(c) == 127 for c in value):
++                        raise ValueError
++                    if proxy["password"] in value or proxy["password"] in unquote(value):
++                        raise ValueError
++            target = urlsplit(cdp_url)
++            # Username equality in opaque metadata is incidental; URL userinfo is credential-bearing.
++            username_fields = [unquote(target.username or ""), unquote(target.password or "")]
++            if proxy["username"] in username_fields:
++                raise ValueError
++            if (target.scheme not in {"ws", "wss", "http", "https"} or not target.hostname or
++                    any(c.isspace() for c in cdp_url) or "\\" in cdp_url):
++                raise ValueError
++            # urlsplit checks bracketed hosts; accessing port also checks its syntax/range.
++            target.port
++            return {"id": session_id, "cdpUrl": cdp_url, "timeoutAt": expires_at}
++        except Exception:
++            raise RuntimeError("Invalid Browser Use custom proxy session response") from None
++
+     def create_session(self, task_id: str) -> dict[str, object]:
+         config = self._get_config()
+         managed_mode = bool(config.get("managed_mode"))
++        custom_proxy = self._custom_proxy()
++        if custom_proxy is not None and managed_mode:
++            raise ValueError("Browser Use custom proxy requires the direct API provider")
+ 
+         headers = self._headers(config)
+         if managed_mode:
+@@ -136,10 +218,20 @@
          # Short gateway sessions: billing authorization must not default to a long Browser-Use timeout.
          payload = (
              {"timeout": _DEFAULT_MANAGED_TIMEOUT_MINUTES, "proxyCountryCode": _DEFAULT_MANAGED_PROXY_COUNTRY_CODE}
 -            if managed_mode else {})
 +            if managed_mode else {"proxyCountryCode": "kr"})
++        if custom_proxy is not None:
++            payload = {"customProxy": custom_proxy}
          # Managed mode propagates network errors raw (retry with the preserved key); direct wraps them.
-         response = self._post_create(
-             f"{config['base_url']}/browsers", headers, payload, wrap_errors=not managed_mode)
+-        response = self._post_create(
+-            f"{config['base_url']}/browsers", headers, payload, wrap_errors=not managed_mode)
++        try:
++            response = self._post_create(
++                f"{config['base_url']}/browsers", headers, payload, wrap_errors=not managed_mode)
++        except Exception:
++            if custom_proxy is not None:
++                raise RuntimeError("Browser Use custom proxy session creation failed") from None
++            raise
++        if custom_proxy is not None and not response.ok:
++            # Provider errors can echo the request, including proxy credentials.
++            raise RuntimeError("Browser Use custom proxy session creation refused") from None
+         if not response.ok and managed_mode and not _should_preserve_pending_create_key(response):
+             _clear_pending_create_key(task_id)
+         self._check_created(response)
+@@ -147,7 +239,8 @@
+-        session_data = response.json()
++        session_data = (self._custom_proxy_session_data(response, custom_proxy)
++                        if custom_proxy is not None else response.json())
+         if managed_mode:
+             _clear_pending_create_key(task_id)
+         session_name = self._session_name(task_id)
+         logger.info("Created Browser Use session %s", session_name)
+         return {
+             "session_name": session_name,
