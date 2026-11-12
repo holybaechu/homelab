@@ -1,6 +1,6 @@
 # Homelab backups
 
-This layer is **inactive**: Flux `backup` and both CronJobs are suspended.
+This layer is **inactive**: Flux `backup` and all three CronJobs are suspended.
 `REQUIRED_*` values are deliberate activation blockers, not working credentials.
 Nothing here initializes repositories, rotates keys or stops production on merge.
 
@@ -134,7 +134,7 @@ current objects. Do not apply such a rule without that safety review.
    through chat, logs, Git or command arguments. Independently retain the B2
    password, bucket identity and the original application/Connect recovery
    credentials outside this cluster.
-3. With parent approval, unsuspend only Flux `backup`; keep both CronJobs
+3. With parent approval, unsuspend only Flux `backup`; keep all three CronJobs
    suspended. Verify the three workers, watchdog, explicit source mounts,
    least-privilege RBAC, the Deny admission binding and empty policy type-check
    warnings, existing app keys and stage capacity. Standalone CEL tests do not
@@ -155,7 +155,7 @@ current objects. Do not apply such a rule without that safety review.
    after resumption. Do not activate a schedule if any drill exceeds ten minutes.
 6. Run the isolated restore below against **the actual B2 repository**, then
    perform full application restores into isolated PVCs/services (never production
-   volumes). Only then unsuspend daily and maintenance CronJobs in Git.
+   volumes). Only then unsuspend daily, maintenance and health CronJobs in Git.
 
 Daily backup starts at **04:00 Asia/Seoul**. After each successful publication,
 `forget` retains **7 daily / 4 weekly / 6 monthly** restore points without pruning
@@ -215,11 +215,34 @@ worktree pointers there before use; never reuse production volumes or connect
 recovered agents to production. Verify an unpublished commit, staged and unstaged
 changes, tracked deletions, attachments and actual chat state in the restore drill.
 
-A failed Job is the Kubernetes failure signal; no external alert destination is
-invented here. Before unattended activation, connect Job failure **and missing
-fresh `complete` snapshots in B2** to the existing operator's
-alerting route; if no such route exists, that is an activation blocker, not a
-successful alert test. Inspect `backup-state`, Job status and sanitized logs.
+Backup and maintenance failures notify the existing Hermes Discord home channel
+through Hermes's native `deliver_only` webhook; no agent run or new notification
+service is involved. The hourly `backup-health` CronJob checks the actual B2
+repository for a `complete` snapshot newer than 24 hours, without repository locks
+or cache writes. An unreadable repository is an alert, not freshness success.
+Repeated identical health alerts are suppressed for 24 hours, resetting after a
+fresh snapshot. Suppression is recorded only after a successful direct Discord
+delivery response; an accepted webhook or duplicate response is not delivery proof.
+
+Only `n8n-connect/hermes_webhook_secret` is projected for the existing shared
+webhook authentication. The health Pod has no Kubernetes API token or application
+source mounts. No credential values, paths, database contents or native tool
+errors enter alerts. The route remains cluster-only. Both checks and delivery run
+on this cluster; they do not provide an independent alert during a whole-node outage.
+
+Before unattended activation, roll out the reviewed Hermes route while Hermes is
+idle, then send one explicit test notification with a uniquely named manual Job:
+
+```sh
+kubectl -n homelab create job backup-alert-test --from=cronjob/backup-health --dry-run=client -o json |
+  jq '.spec.template.spec.containers[0].command = ["python3", "/backup/health.py", "test"]' |
+  kubectl apply -f -
+```
+
+Verify the actual test message in the home channel and Job success. Also exercise
+a controlled backup failure and the missing/unreadable-repository paths before
+unsuspending the schedules. Inspect `backup-state`, Job status and sanitized logs
+when delivery fails; do not treat failed notification jobs as successful alerts.
 
 If the runner dies while stopped, leave the watchdog running: it restores the
 journal's original values after the deadline. If API access failed, it retries

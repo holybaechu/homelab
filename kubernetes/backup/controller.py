@@ -284,5 +284,11 @@ if __name__ == '__main__':
     try:
         {'backup': backup, 'watchdog': watchdog, 'maintenance': maintenance}[sys.argv[1]]()
     except BaseException as error:
+        if sys.argv[1] in ('backup', 'maintenance'):
+            try:
+                from health import notify
+                notify('backup-failed' if sys.argv[1] == 'backup' else 'maintenance-failed')
+            except Exception:
+                print('Backup alert delivery failed; inspect backup-health', file=sys.stderr)
         print(f'Backup failed: {type(error).__name__}; inspect backup-state and Job status', file=sys.stderr)
         sys.exit(1)

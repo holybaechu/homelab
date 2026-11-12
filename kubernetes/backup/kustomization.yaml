@@ -6,7 +6,7 @@ resources:
 configMapGenerator:
   - name: backup-scripts
     namespace: homelab
-    files: [controller.py, worker.py]
+    files: [controller.py, worker.py, health.py]
   - name: backup-scripts
     namespace: identity
     files: [controller.py, worker.py]

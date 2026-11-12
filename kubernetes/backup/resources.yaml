@@ -990,6 +990,9 @@ spec:
                   mountPath: /tmp
                 - name: stage
                   mountPath: /stage
+                - name: notifications
+                  mountPath: /notifications
+                  readOnly: true
           volumes:
             - name: scripts
               configMap:
@@ -999,6 +1002,13 @@ spec:
             - name: stage
               persistentVolumeClaim:
                 claimName: backup-stage
+            - name: notifications
+              secret:
+                secretName: n8n-connect
+                defaultMode: 256
+                items:
+                  - key: hermes_webhook_secret
+                    path: hermes-token
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -1057,6 +1067,9 @@ spec:
                   mountPath: /tmp
                 - name: stage
                   mountPath: /stage
+                - name: notifications
+                  mountPath: /notifications
+                  readOnly: true
           volumes:
             - name: scripts
               configMap:
@@ -1066,3 +1079,101 @@ spec:
             - name: stage
               persistentVolumeClaim:
                 claimName: backup-stage
+            - name: notifications
+              secret:
+                secretName: n8n-connect
+                defaultMode: 256
+                items:
+                  - key: hermes_webhook_secret
+                    path: hermes-token
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-health
+  namespace: homelab
+spec:
+  schedule: 15 * * * *
+  timeZone: Asia/Seoul
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: health
+              image: ${BACKUP_IMAGE}
+              command: [python3, /backup/health.py]
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: scripts
+                  mountPath: /backup
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+                - name: stage
+                  mountPath: /stage
+                - name: repositories
+                  mountPath: /repositories
+                  readOnly: true
+                - name: notifications
+                  mountPath: /notifications
+                  readOnly: true
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+            - name: tmp
+              emptyDir: {}
+            - name: stage
+              persistentVolumeClaim:
+                claimName: backup-stage
+            - name: repositories
+              projected:
+                defaultMode: 256
+                sources:
+                  - secret:
+                      name: backup-b2-connect
+                      items:
+                        - key: access-key-id
+                          path: b2/access-key-id
+                        - key: secret-access-key
+                          path: b2/secret-access-key
+                        - key: restic-password
+                          path: b2/restic-password
+                  - configMap:
+                      name: backup-repositories
+                      items:
+                        - key: b2-repository
+                          path: b2/repository
+                        - key: b2-region
+                          path: b2/region
+            - name: notifications
+              secret:
+                secretName: n8n-connect
+                defaultMode: 256
+                items:
+                  - key: hermes_webhook_secret
+                    path: hermes-token
