@@ -20,7 +20,8 @@ with Git, Node, Python, curl, and CA certificates. Both container commands bypas
 its gateway entrypoint. This avoids a new image build/registry pipeline; no
 Hermes gateway, profile initialization, or Discord service starts here. T3 runs
 as UID 10000 with a read-only root filesystem, no Kubernetes token, and no
-Hermes volume, projected credentials, or model-token inheritance. T3's own
+Hermes volume or model-token inheritance. Only the existing GitHub/signing
+credentials described below are projected. T3's own
 terminal and workers still have the container's network access and tool image;
 this is not a network sandbox.
 
@@ -48,9 +49,33 @@ its own server-side sign-in. T3 manages the supported CLI distribution. Existing
 Hermes `openai-codex` auth is not standalone Codex CLI auth; do not copy rotating
 tokens, mount the assistant's secrets, or claim equivalent models/options before
 provider discovery confirms them. Select the intended model and reasoning
-options from the actual provider capability response. GitHub push/signing access
-is not provisioned by this stage; keep the trial local and arrange separately
-scoped credentials before expecting authenticated repository writes.
+options from the actual provider capability response. Git credentials do not
+authenticate the model provider.
+
+### GitHub and signing identity
+
+T3 reuses the existing coder GitHub token and dedicated signing identity; no new
+keys, token rotation, or access grants are introduced. See the
+[credential ownership and recovery contract](../hermes/coder/README.md). Only
+`github-connect/credential` and `signing-connect/{private-key,public-key}` reach
+the root initializer. It uses the unchanged validated converter, then exposes
+UID-10000-owned mode-0400 files from a mode-0700 memory-backed volume read-only
+to T3. The raw projections are absent from the runtime container. Pod-wide
+`fsGroup` is intentionally absent to preserve root-only source modes.
+
+The shared Git config and `gh` wrapper provide HTTPS authentication and required
+SSH commit/tag signing. Only checksum-pinned GitHub CLI is installed alongside
+T3; no CUA, Kubernetes/Talos clients or assistant integrations are installed or
+projected. Token/private-key files never belong on the PVC, in Git or in logs.
+Workers run as the same Unix user and can use this identity; approval mode is not
+credential isolation. Reloader watches only the two credential Secrets and
+recreates T3 after updates; drain active T3 work before an intentional rotation.
+
+After deployment, verify authenticated repository reads, a disposable signed
+commit and `git verify-commit`, and an authorized dry-run push without printing
+tokens or helper responses. Compare the converted public fingerprint to the
+existing coder identity. These Git checks are separate from native provider
+installation/sign-in and the live chat/diff/steering acceptance below.
 
 A Local ACP command (`hermes -p coder acp`) is supported by the two products,
 but would require an installed/configured Hermes profile and an explicit auth,
@@ -124,9 +149,10 @@ assistant's MCP connection with `hermes mcp login t3code`; trial-profile tokens
 do not automatically become production grants.
 
 The parent/operator owns merging, rollout timing, and active-work handling.
-Bootstrap ConfigMap changes replace the Recreate Hermes Pod: finish or explicitly
-stop active work first, preserve its IDs, then roll out from an independent
-session. Use a new assistant chat after rollout to avoid a cached native tool
+Deploy the combined PR only after active Hermes work finishes; do not split a
+service-only PR or interrupt unrelated work. Bootstrap ConfigMap changes replace
+the Recreate Hermes Pod: preserve completed work IDs, then roll out from an
+independent session. Use a new assistant chat after rollout to avoid a cached native tool
 schema. Verify the real default-profile MCP connection, all-code routing,
 thread link, and direct steering before calling cutover complete. Revoke/remove
 the disposable trial profile only with explicit approval after preserving evidence.

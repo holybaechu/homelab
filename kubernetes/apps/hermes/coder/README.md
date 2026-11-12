@@ -39,6 +39,10 @@ profiles. The obsolete `hermes-coder-git` ESO target is removed. Recovery requir
 the [retirement recovery set](../../../platform/onepassword/README.md#ordered-eso-retirement)
 before reverting the projection, initializer and Reloader references together.
 
+T3 reuses this same identity through the same converter and a separate private
+memory-backed volume; it receives only these Git credentials, not Hermes home
+or other assistant credentials. See the [T3 operator guide](../../t3/README.md).
+
 For rotation, update the existing 1Password fields and respect the Operator's
 six-hour poll. Reloader watches both replacement Secrets and restarts the Pod, then
 startup recreates the in-memory files. Register a replacement public signing key

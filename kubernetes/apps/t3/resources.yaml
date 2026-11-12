@@ -16,6 +16,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: t3
+  annotations:
+    secret.reloader.stakater.com/reload: github-connect,signing-connect
 spec:
   replicas: 1
   strategy:
@@ -33,29 +35,48 @@ spec:
         runAsUser: 10000
         runAsGroup: 10000
         runAsNonRoot: true
-        fsGroup: 10000
-        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       nodeSelector:
         kubernetes.io/arch: amd64
       initContainers:
-        - name: install-t3
-          # Reuse the existing pinned tool image, not its gateway or entrypoint.
+        - name: prepare-git
           image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
           command: [/bin/sh, -ec]
           args:
             - |
-              umask 077
-              curl --fail --silent --show-error --location \
-                https://github.com/pingdotgg/t3code/releases/download/v0.1.9/t3-0.1.9-linux-x64.tar.gz \
-                --output /tmp/t3.tar.gz
-              printf '%s  %s\n' \
-                0141025335da334759cecd8db3483e09772f3600ca03674698524e7d94291362 \
-                /tmp/t3.tar.gz | sha256sum --check --strict
-              tar -xzf /tmp/t3.tar.gz -C /runtime --strip-components=1
-              /runtime/t3 --version | grep -Fx 't3 v0.1.9'
               mkdir -p /var/lib/t3/workspaces
+              chown 10000:10000 /var/lib/t3 /var/lib/t3/workspaces /runtime /opt/coder-credentials /tmp
+              chmod 700 /var/lib/t3 /opt/coder-credentials /tmp
+              /bin/sh /bootstrap/coder-configure-git.sh
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, FOWNER, DAC_OVERRIDE]
+          volumeMounts:
+            - name: runtime
+              mountPath: /runtime
+            - name: temporary
+              mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/t3
+            - name: git-bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: coder-source
+              mountPath: /var/run/coder-source
+              readOnly: true
+            - name: coder-credentials
+              mountPath: /opt/coder-credentials
+        - name: install-t3
+          # Reuse the existing pinned tool image, not its gateway or entrypoint.
+          image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
+          command: [/bin/sh, /t3-bootstrap/install-runtime.sh]
+          workingDir: /runtime
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -66,8 +87,12 @@ spec:
               mountPath: /runtime
             - name: temporary
               mountPath: /tmp
-            - name: data
-              mountPath: /var/lib/t3
+            - name: git-bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: bootstrap
+              mountPath: /t3-bootstrap
+              readOnly: true
       containers:
         - name: t3
           image: nousresearch/hermes-agent:latest-desktop@sha256:399ec6c0052a945b06b38de9d44d26b636237a60e97422d2d81f1c38b8d7c9fd
@@ -77,6 +102,14 @@ spec:
           env:
             - name: HOME
               value: /var/lib/t3
+            - name: PATH
+              value: /opt/coder/bin:/opt/hermes/bin:/opt/hermes/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: GIT_CONFIG_GLOBAL
+              value: /opt/coder/gitconfig
+            - name: GH_HOST
+              value: github.com
+            - name: GH_PROMPT_DISABLED
+              value: "1"
             - name: T3CODE_TELEMETRY_ENABLED
               value: "false"
             - name: TZ
@@ -109,6 +142,12 @@ spec:
               memory: 4Gi
           volumeMounts:
             - name: runtime
+              mountPath: /opt/coder
+              readOnly: true
+            - name: coder-credentials
+              mountPath: /opt/coder-credentials
+              readOnly: true
+            - name: runtime
               mountPath: /runtime
               readOnly: true
             - name: data
@@ -116,6 +155,43 @@ spec:
             - name: temporary
               mountPath: /tmp
       volumes:
+        - name: bootstrap
+          configMap:
+            name: t3-bootstrap
+        - name: git-bootstrap
+          configMap:
+            name: hermes-bootstrap
+            items:
+              - key: coder-configure-git.sh
+                path: coder-configure-git.sh
+              - key: coder-configure-git.py
+                path: coder-configure-git.py
+              - key: coder-tools.sha256
+                path: coder-tools.sha256
+              - key: coder-gh.sh
+                path: coder-gh.sh
+              - key: coder-gitconfig
+                path: coder-gitconfig
+        - name: coder-source
+          projected:
+            defaultMode: 0400
+            sources:
+              - secret:
+                  name: github-connect
+                  items:
+                    - key: credential
+                      path: github-token
+              - secret:
+                  name: signing-connect
+                  items:
+                    - key: private-key
+                      path: signing-key
+                    - key: public-key
+                      path: signing-public-key
+        - name: coder-credentials
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
         - name: runtime
           emptyDir: {}
         - name: temporary
