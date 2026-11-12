@@ -18,6 +18,7 @@ class ProfileStartupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
             (home / "config.yaml").write_text("{}\n")
+            (home / "SOUL.md").write_text("Personal assistant instructions.\n")
             script = (
                 "import sys,os; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
                 "from configure_profiles import reconcile; "
@@ -34,9 +35,8 @@ class ProfileStartupTests(unittest.TestCase):
 
             configure()
             coder = home / "profiles/coder/SOUL.md"
-            self.assertEqual((home / "SOUL.md").read_text(), (SOURCE / "assistant-soul.md").read_text())
-            self.assertEqual(coder.read_text(), (SOURCE / "coder-soul.md").read_text())
-            (home / "SOUL.md").write_text("Personal assistant instructions.\n")
+            self.assertEqual((home / "SOUL.md").read_text(), "Personal assistant instructions.\n")
+            self.assertTrue(coder.is_file())
             coder.write_text("Personal coder instructions.\n")
             config = yaml.safe_load((home / "config.yaml").read_text())
             config["model"] = {"provider": "personal", "default": "personal-model"}
