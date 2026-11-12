@@ -42,6 +42,46 @@ Service DNS is not a supported OAuth endpoint. T3's `/mcp` must return 401 to
 an unauthenticated client and advertise OAuth discovery with PKCE S256/DCR.
 The UI shell loading is not proof that its protected APIs allow anonymous use.
 
+## GitOps defaults
+
+`policy.json` uses T3 v0.1.9's [managed policy](https://github.com/pingdotgg/t3code/blob/v0.1.9/docs/user/managed-policy.md)
+contract, mounted read-only at `/etc/t3code/policy.json`. All eight selections
+are server-side defaults shared by browser, desktop, and mobile clients:
+
+| Selection | Native setting/value |
+| --- | --- |
+| New-thread model: 6.1 Sol | `defaultModelSelection`: instance `codex`, model `gpt-6.1-sol` |
+| Reasoning: Extra High | Selection option `reasoningEffort = xhigh` |
+| Fallback: None | `fallbackModelSelection = null` |
+| New-thread permissions: Auto | `defaultRuntimeMode = auto` |
+| Commit and PR writing: Conventional Commits | `sourceControlWritingStyle.mode = conventional_commits` |
+| Review guides (beta): On | `reviewGuidesEnabled = true` |
+| Delete worktrees with deleted threads: On | `storageCleanup.worktreeOnDelete = true` |
+| Delete merged worktrees: On | `storageCleanup.worktreeOnMerge = true` |
+
+Every entry is **unlocked** (`locked: false`): Git owns defaults for omitted
+settings, not enforced values. Explicit saved choices and project overrides win;
+UI edits are not reset by reconciliation or restart. Native default merging can
+fill omitted subfields, including reasoning options on an existing default model
+selection. Existing threads are not rewritten, and no provider, auth, MCP grant,
+or permission ceiling is managed. Codex installation, sign-in, and live model
+availability still require the separate acceptance below.
+
+The policy does not rewrite `userdata/settings.json`. Removing it restores T3's
+built-in defaults wherever the user has not saved a choice. Before changing policy,
+run the pinned release's `t3 policy check policy.json`; unsupported keys/types fail
+closed at startup. The generated ConfigMap name changes the Pod template, so
+merging a policy change replaces the **Recreate T3 Pod**. Drain active T3 work and
+approve the rollout independently; a browser reconnect alone does not reload policy.
+
+Cleanup runs natively at startup, on settings changes, and hourly, so a rollout
+can remove eligible **existing** worktrees. Review project cleanup overrides before
+rollout. Native local-change, active-session, and shared-worktree safeguards remain
+in place; the unmodified built-in retention protects tracked edits and untracked
+files, but not ignored files. Merge cleanup requires a merged PR and commits
+included in the remote default branch (including T3's squash/rebase recognition).
+Branches and thread history remain. No custom cleanup or migration runs here.
+
 ## Runtime and first access
 
 Use **native Codex**, installed through **Settings → Providers → Codex**, with

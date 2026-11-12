@@ -141,6 +141,9 @@ spec:
             limits:
               memory: 4Gi
           volumeMounts:
+            - name: policy
+              mountPath: /etc/t3code
+              readOnly: true
             - name: runtime
               mountPath: /opt/coder
               readOnly: true
@@ -155,6 +158,9 @@ spec:
             - name: temporary
               mountPath: /tmp
       volumes:
+        - name: policy
+          configMap:
+            name: t3-policy
         - name: bootstrap
           configMap:
             name: t3-bootstrap
