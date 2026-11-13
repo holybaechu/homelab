@@ -19,6 +19,11 @@ changes. The B2 path requires no Scaleway account, API credential or billing inp
   Keep All Versions. There is no lifecycle expiry rule. The first real plan must
   show import with **no bucket changes**, not creation/replacement. Stop on any
   discrepancy, including unexpected lifecycle rules, CORS or retention defaults.
+- Before runtime capture, verify the account's **Caps & Alerts** storage allowance
+  and billing activation, including the account's actual daily API allowances.
+  A reached storage cap rejects new repository lock uploads
+  even when metadata reads succeed. Keep account allowance within the approved
+  data/retention scope; preserve credentials, repository prefixes and bucket identity.
 - If Scaleway is selected again, verify account/billing and API bootstrap access.
   The previously selected candidate is a new exact `homelab-backup` project;
   do not adopt or rename `Homelab Backup`.
