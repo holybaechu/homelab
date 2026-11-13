@@ -3,11 +3,22 @@ package admission
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 
 	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/types"
 	"go.yaml.in/yaml/v3"
 )
+
+type typedSpec struct {
+	Suspend bool `cel:"suspend"`
+}
+
+type typedObject struct {
+	Spec     typedSpec      `cel:"spec"`
+	Metadata map[string]any `cel:"metadata"`
+}
 
 func TestExactSuspendPolicy(t *testing.T) {
 	content, err := os.ReadFile("../../../kubernetes/backup/admission.yaml")
@@ -31,6 +42,19 @@ func TestExactSuspendPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	provider, _, err := types.ComposeTypes(env.CELTypeProvider(), env.CELTypeAdapter(),
+		reflect.TypeOf(typedObject{}), types.ParseStructTags(true), types.NativeTypeAlias("admission.typedObject"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	typedEnv, err := cel.NewEnv(
+		cel.CustomTypeProvider(provider),
+		cel.Variable("object", cel.ObjectType("admission.typedObject")),
+		cel.Variable("oldObject", cel.ObjectType("admission.typedObject")),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	compile := func(expression string) cel.Program {
 		ast, issues := env.Compile(expression)
 		if issues.Err() != nil {
@@ -44,6 +68,9 @@ func TestExactSuspendPolicy(t *testing.T) {
 	}
 	var programs []cel.Program
 	for _, validation := range policy.Spec.Validations {
+		if _, issues := typedEnv.Compile(validation.Expression); issues.Err() != nil {
+			t.Fatalf("CRD object type check: %v", issues.Err())
+		}
 		programs = append(programs, compile(validation.Expression))
 	}
 	if len(programs) != 2 {

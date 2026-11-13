@@ -23,6 +23,8 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: KUBECONFIG
+              value: /backup/kubernetes-client.yaml
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           securityContext:
@@ -218,6 +220,8 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: KUBECONFIG
+              value: /backup/kubernetes-client.yaml
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           securityContext:
@@ -321,6 +325,8 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: KUBECONFIG
+              value: /backup/kubernetes-client.yaml
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           securityContext:
