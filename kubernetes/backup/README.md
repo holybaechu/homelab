@@ -192,6 +192,8 @@ into a new isolated directory. Never pipe an unchecked/failed dump into a live v
 Check every restored SQLite DB with `PRAGMA integrity_check`. For PostgreSQL,
 restore `roles.sql` with the matching major client before `database.dump`;
 handle known bootstrap-role collisions explicitly and use `pg_restore --exit-on-error`.
+These archives contain `database.dump`, `roles.sql`, `recovery`, and the media
+directory `immich-media` or `authentik-media` at the archive root.
 Immich needs its existing vector extensions. Restore the original 1Password keys
 before starting apps; validate n8n credential decryption, OpenCloud file access,
 Zipline uploads, Authentik login, and Headscale/gateway identity separately.
@@ -215,6 +217,12 @@ native `deliver_only` `/webhooks/backup` route and only
 suppressed for 24 hours; recovery resets suppression. Failed deliveries retry.
 There is no independent whole-node-outage alert because both checks and Hermes
 run on this node.
+
+If a native Job stops at `failed to list snapshots: EOF`, inspect preceding restic
+errors in its retained Pod. K8up's snapshot JSON decoder can mask a failed child
+command as EOF. A successful `restic --no-cache --no-lock snapshots --json` checks
+metadata reads; it does not verify lock uploads. Confirm an existing lock and its
+owning process before any unlock.
 
 For a stuck stopped capture, leave the watchdog running and inspect
 `backup-capture-state`, Backup/Job status and app readiness. Recovery retries if
