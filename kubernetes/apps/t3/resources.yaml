@@ -237,6 +237,14 @@ metadata:
 spec:
   entryPoints: [websecure]
   routes:
+    - match: Host(`t3.${DOMAIN}`) && ClientIP(`${POD_CIDR}`)
+      kind: Rule
+      middlewares:
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: t3
+          port: 3773
     - match: Host(`t3.${DOMAIN}`)
       kind: Rule
       middlewares:

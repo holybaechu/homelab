@@ -140,6 +140,14 @@ Full access/Auto defaults. Approval mode is not filesystem confinement.
 
 ## Hermes MCP and acceptance
 
+Hermes resolves the private T3 hostname through its Pod's `hostAliases`, keeping
+the public HTTPS hostname for TLS and OAuth. T3's ingress admits cluster Pod
+clients with a host-scoped `ClientIP(POD_CIDR)` rule; other clients still pass
+through `private-only`. This does not publish private DNS or broaden other apps'
+allowlists. Sign-in needs both working name resolution and ingress access: a
+hostname error happens before OAuth discovery, while HTTP 403 is not a login
+challenge. Healthy Deployments do not establish either condition.
+
 Use the [official outside-agent MCP flow](https://github.com/pingdotgg/t3code/blob/v0.1.9/docs/user/outside-agents.md)
 and [Hermes native OAuth support](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp),
 not a bridge or a second agent editor. Before cutover, use a disposable Hermes
