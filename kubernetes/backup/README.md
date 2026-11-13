@@ -2,7 +2,9 @@
 
 This layer is **inactive**: Flux `backup` and all three CronJobs are suspended.
 `REQUIRED_*` values are deliberate activation blockers, not working credentials.
-Nothing here initializes repositories, rotates keys or stops production on merge.
+Merging does not start captures or initialize repositories. The Discord route
+updates the bootstrap ConfigMap shared by Hermes and T3 and rolls both Pods;
+merge only after their active work is checkpointed and idle.
 
 ## Capture and failure boundary
 
@@ -230,8 +232,9 @@ source mounts. No credential values, paths, database contents or native tool
 errors enter alerts. The route remains cluster-only. Both checks and delivery run
 on this cluster; they do not provide an independent alert during a whole-node outage.
 
-Before unattended activation, roll out the reviewed Hermes route while Hermes is
-idle, then send one explicit test notification with a uniquely named manual Job:
+Before unattended activation, roll out the reviewed Hermes route with both Hermes
+and T3 idle; the shared bootstrap ConfigMap rolls both. Then send one explicit
+test notification with a uniquely named manual Job:
 
 ```sh
 kubectl -n homelab create job backup-alert-test --from=cronjob/backup-health --dry-run=client -o json |
