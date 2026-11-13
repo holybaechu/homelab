@@ -6,6 +6,26 @@ import unittest
 
 
 class T3CredentialBoundaryTests(unittest.TestCase):
+    def test_pod_ingress_preserves_private_client_boundary(self):
+        rendered = subprocess.check_output(
+            ['kustomize', 'build', 'kubernetes/apps/t3'],
+            cwd=Path(__file__).resolve().parents[1])
+        documents = subprocess.check_output(
+            ['yq', '-N', '-o=json', '-I=0', '.'], input=rendered)
+        ingress = next(document for document in map(json.loads, documents.splitlines())
+                       if document['kind'] == 'IngressRoute')
+        internal, private = ingress['spec']['routes']
+        self.assertEqual(internal['match'], 'Host(`t3.${DOMAIN}`) && ClientIP(`${POD_CIDR}`)')
+        self.assertEqual(private['match'], 'Host(`t3.${DOMAIN}`)')
+        self.assertEqual(internal['middlewares'], [
+            {'name': 'secure-headers', 'namespace': 'traefik'}])
+        self.assertEqual(private['middlewares'], [
+            {'name': 'private-only', 'namespace': 'traefik'},
+            {'name': 'secure-headers', 'namespace': 'traefik'}])
+        self.assertEqual(internal['services'], private['services'])
+        self.assertEqual(ingress['spec']['entryPoints'], ['websecure'])
+        self.assertEqual(ingress['spec']['tls'], {'secretName': 't3-tls'})
+
     def test_root_only_sources_and_private_runtime_boundary(self):
         rendered = subprocess.check_output(
             ['kustomize', 'build', 'kubernetes/apps/t3'],
