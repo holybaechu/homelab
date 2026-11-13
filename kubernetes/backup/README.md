@@ -19,6 +19,12 @@ there is no cluster-wide point-in-time snapshot or global upload barrier.
 `backup.labelSelectors` selects exactly one helper; source PVCs stay read-only.
 Raw database PVCs are never selected by K8up's generic filesystem backup.
 
+Backup Jobs run once (`BACKUP_GLOBAL_BACKOFF_LIMIT=0`). The official `PodConfig`
+sets `restartPolicy: Never` so failed Pods retain their logs within the Job history
+limits. Inspect the failure and recovery journal before creating a new Backup;
+automatic retries must not repeat an application stop window. Producer stderr
+reports only fixed stages, exit codes and SQLite error names, never raw diagnostics.
+
 | Application | Included state and consistency boundary |
 | --- | --- |
 | OpenCloud | Config and complete data tree, including completed downloads and original internal keys. Stop OpenCloud and qBittorrent for the final local capture; preserve ownership, hardlinks, xattrs and sidecars. |
@@ -146,7 +152,9 @@ data. Review any hidden/noncurrent-only lifecycle rule separately before applyin
    ```sh
    yq -o=json 'select(.kind == "Schedule" and .metadata.name == "b2-n8n")' /private/backup.yaml |
      jq '{apiVersion, kind:"Backup", metadata:{name:"accept-n8n",namespace:.metadata.namespace},
-          spec:(.spec.backup + {backend:.spec.backend,podSecurityContext:.spec.podSecurityContext} |
+          spec:(.spec.backup + {backend:.spec.backend,podSecurityContext:.spec.podSecurityContext,
+                podConfigRef:.spec.podConfigRef,failedJobsHistoryLimit:.spec.failedJobsHistoryLimit,
+                successfulJobsHistoryLimit:.spec.successfulJobsHistoryLimit} |
                 del(.schedule,.concurrentRunsAllowed))}' |
      kubectl create -f -
    ```

@@ -1,0 +1,33 @@
+# Required by the CRD; an empty container list preserves K8up's generated container.
+apiVersion: k8up.io/v1
+kind: PodConfig
+metadata:
+  name: backup-job
+  namespace: homelab
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers: []
+---
+apiVersion: k8up.io/v1
+kind: PodConfig
+metadata:
+  name: backup-job
+  namespace: identity
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers: []
+---
+apiVersion: k8up.io/v1
+kind: PodConfig
+metadata:
+  name: backup-job
+  namespace: networking
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers: []
