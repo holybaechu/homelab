@@ -4,6 +4,7 @@ resources:
   - resources.yaml
   - schedules.yaml
   - captures.yaml
+  - podconfigs.yaml
   - rbac.yaml
   - admission.yaml
 configMapGenerator:

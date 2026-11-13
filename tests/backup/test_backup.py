@@ -21,6 +21,25 @@ def load(name):
 online = load('online')
 
 
+class PostgresDiagnostics(unittest.TestCase):
+    def test_failure_preserves_exit_code_without_exposing_native_stderr(self):
+        for command, code in [('pg_dump', 42), ('pg_dumpall', 43)]:
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                for name in ['pg_dump', 'pg_dumpall']:
+                    path = root / name
+                    body = f'echo synthetic-private-value >&2; exit {code}' if name == command else 'exit 0'
+                    path.write_text('#!/bin/sh\n' + body + '\n')
+                    path.chmod(0o755)
+                result = subprocess.run(['sh', str(ROOT / 'kubernetes/backup/postgres.sh')],
+                                        env=dict(os.environ, PATH=str(root) + ':' + os.environ['PATH']),
+                                        capture_output=True)
+                self.assertEqual(result.returncode, code)
+                self.assertEqual(result.stdout, b'')
+                self.assertNotIn(b'synthetic-private-value', result.stderr)
+                self.assertIn(f'exit {code}'.encode(), result.stderr)
+
+
 class OnlineCapture(unittest.TestCase):
     def test_committed_wal_recovery_keys_links_and_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:

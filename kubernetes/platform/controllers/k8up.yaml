@@ -28,6 +28,9 @@ spec:
     k8up:
       timezone: ${TIME_ZONE}
       skipWithoutAnnotation: true
+      envVars:
+        - name: BACKUP_GLOBAL_BACKOFF_LIMIT
+          value: "0"
       globalResources:
         requests:
           cpu: 100m

@@ -24,6 +24,8 @@ spec:
   successfulJobsHistoryLimit: 1
   podSecurityContext:
     runAsUser: 0
+  podConfigRef:
+    name: backup-job
   backup:
     schedule: 0 4 * * *
     concurrentRunsAllowed: false
@@ -70,6 +72,8 @@ spec:
   successfulJobsHistoryLimit: 1
   podSecurityContext:
     runAsUser: 0
+  podConfigRef:
+    name: backup-job
   backup:
     schedule: 0 4 * * *
     concurrentRunsAllowed: false
@@ -116,6 +120,8 @@ spec:
   successfulJobsHistoryLimit: 1
   podSecurityContext:
     runAsUser: 0
+  podConfigRef:
+    name: backup-job
   backup:
     schedule: 0 4 * * *
     concurrentRunsAllowed: false
@@ -162,6 +168,8 @@ spec:
   successfulJobsHistoryLimit: 1
   podSecurityContext:
     runAsUser: 0
+  podConfigRef:
+    name: backup-job
   backup:
     schedule: 0 4 * * *
     concurrentRunsAllowed: false
@@ -208,6 +216,8 @@ spec:
   successfulJobsHistoryLimit: 1
   podSecurityContext:
     runAsUser: 0
+  podConfigRef:
+    name: backup-job
   backup:
     schedule: 0 4 * * *
     concurrentRunsAllowed: false
@@ -254,6 +264,8 @@ spec:
   successfulJobsHistoryLimit: 1
   podSecurityContext:
     runAsUser: 0
+  podConfigRef:
+    name: backup-job
   backup:
     schedule: 0 4 * * *
     concurrentRunsAllowed: false
@@ -300,6 +312,8 @@ spec:
   successfulJobsHistoryLimit: 1
   podSecurityContext:
     runAsUser: 0
+  podConfigRef:
+    name: backup-job
   backup:
     schedule: 0 4 * * *
     concurrentRunsAllowed: false
@@ -346,6 +360,8 @@ spec:
   successfulJobsHistoryLimit: 1
   podSecurityContext:
     runAsUser: 0
+  podConfigRef:
+    name: backup-job
   backup:
     schedule: 0 4 * * *
     concurrentRunsAllowed: false
@@ -392,6 +408,8 @@ spec:
   successfulJobsHistoryLimit: 1
   podSecurityContext:
     runAsUser: 0
+  podConfigRef:
+    name: backup-job
   backup:
     schedule: 0 4 * * *
     concurrentRunsAllowed: false

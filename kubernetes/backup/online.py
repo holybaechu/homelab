@@ -74,7 +74,9 @@ def archive(source, recovery, output):
             args.append('recovery')
         with subprocess.Popen(args, stdout=output, stderr=subprocess.DEVNULL, start_new_session=True) as producer:
             try:
-                if producer.wait(timeout=max(1, deadline - time.monotonic())):
+                status = producer.wait(timeout=max(1, deadline - time.monotonic()))
+                if status:
+                    print(f'File archive failed (exit {status})', file=sys.stderr)
                     raise RuntimeError('File capture changed or failed')
             finally:
                 if producer.poll() is None:
@@ -88,5 +90,8 @@ if __name__ == '__main__':
     try:
         archive(Path('/source'), Path('/recovery'), sys.stdout.buffer)
     except BaseException as error:
-        print('Online backup failed: ' + type(error).__name__, file=sys.stderr)
+        detail = ''
+        if isinstance(error, sqlite3.Error):
+            detail = ' (' + getattr(error, 'sqlite_errorname', 'SQLITE_UNKNOWN') + ')'
+        print('Online backup failed: ' + type(error).__name__ + detail, file=sys.stderr)
         sys.exit(1)
