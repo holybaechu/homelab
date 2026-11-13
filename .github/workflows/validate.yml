@@ -66,6 +66,14 @@ jobs:
           tofu -chdir=infra/talos fmt -check
           tofu -chdir=infra/talos init -backend=false -lockfile=readonly
           tofu -chdir=infra/talos validate
+      - name: Validate backup cloud OpenTofu configuration
+        env:
+          TF_DATA_DIR: ${{ runner.temp }}/backup-cloud-providers
+        run: |
+          export TF_VAR_state_passphrase=$(openssl rand -hex 32)
+          tofu -chdir=infra/backup fmt -check
+          tofu -chdir=infra/backup init -backend=false -lockfile=readonly
+          tofu -chdir=infra/backup validate
       - name: Prepare official Flux bootstrap bundle
         env:
           GH_TOKEN: ${{ github.token }}
