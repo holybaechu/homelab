@@ -1,0 +1,260 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-runner
+  namespace: homelab
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - backup-capture-state
+    verbs:
+      - get
+      - update
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    resourceNames:
+      - opencloud
+      - qbittorrent
+      - zipline
+      - n8n
+      - backup-watchdog
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments/scale
+    resourceNames:
+      - opencloud
+      - qbittorrent
+      - zipline
+      - n8n
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-runner
+  namespace: homelab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-runner
+subjects:
+  - kind: ServiceAccount
+    name: backup-runner
+    namespace: homelab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-watchdog
+  namespace: homelab
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - backup-capture-state
+    verbs:
+      - get
+      - update
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    resourceNames:
+      - opencloud
+      - qbittorrent
+      - zipline
+      - n8n
+      - backup-watchdog
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments/scale
+    resourceNames:
+      - opencloud
+      - qbittorrent
+      - zipline
+      - n8n
+    verbs:
+      - get
+      - patch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-watchdog
+  namespace: homelab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-watchdog
+subjects:
+  - kind: ServiceAccount
+    name: backup-watchdog
+    namespace: homelab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-suspend-apps
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - kustomize.toolkit.fluxcd.io
+    resources:
+      - kustomizations
+    resourceNames:
+      - apps
+    verbs:
+      - get
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-suspend-apps
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-suspend-apps
+subjects:
+  - kind: ServiceAccount
+    name: backup-runner
+    namespace: homelab
+  - kind: ServiceAccount
+    name: backup-watchdog
+    namespace: homelab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-health
+  namespace: homelab
+rules:
+  - apiGroups:
+      - k8up.io
+    resources:
+      - backups
+      - checks
+      - prunes
+      - schedules
+    verbs:
+      - list
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-health
+  namespace: homelab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-health
+subjects:
+  - kind: ServiceAccount
+    name: backup-health
+    namespace: homelab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-health
+  namespace: identity
+rules:
+  - apiGroups:
+      - k8up.io
+    resources:
+      - backups
+      - checks
+      - prunes
+      - schedules
+    verbs:
+      - list
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-health
+  namespace: identity
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-health
+subjects:
+  - kind: ServiceAccount
+    name: backup-health
+    namespace: homelab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-health
+  namespace: networking
+rules:
+  - apiGroups:
+      - k8up.io
+    resources:
+      - backups
+      - checks
+      - prunes
+      - schedules
+    verbs:
+      - list
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-health
+  namespace: networking
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-health
+subjects:
+  - kind: ServiceAccount
+    name: backup-health
+    namespace: homelab

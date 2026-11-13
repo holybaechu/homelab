@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - resources.yaml
+  - schedules.yaml
+  - captures.yaml
+  - rbac.yaml
+  - admission.yaml
+configMapGenerator:
+  - name: backup-scripts
+    namespace: homelab
+    files: [offline.sh, online.py, postgres.sh, health.py]
+  - name: backup-scripts
+    namespace: identity
+    files: [online.py, postgres.sh]
+  - name: backup-scripts
+    namespace: networking
+    files: [online.py]
+generatorOptions:
+  disableNameSuffixHash: true

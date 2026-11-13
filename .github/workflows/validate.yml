@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: jdx/mise-action@v5.2.6
         with:
-          install_args: chezmoi opentofu flux2 kustomize kubeconform yq ${{ inputs.talos && 'talosctl jq' || '' }}
+          install_args: chezmoi opentofu flux2 kustomize kubeconform yq helm ${{ inputs.talos && 'talosctl jq' || '' }}
       - name: Prepare verified Talos provider mirror
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,7 +95,7 @@ jobs:
             export "$key=$value"
           done < <(yq -N -r '.data | to_entries | .[] | [.key, .value] | @tsv' kubernetes/clusters/homelab/{settings,onepassword}.yaml)
           mkdir -p "$RUNNER_TEMP/rendered"
-          for path in bootstrap clusters/homelab platform/controllers platform/onepassword platform/config identity apps apps/browser-use-proxy/runtime apps/browser-use-proxy/public access; do
+          for path in bootstrap clusters/homelab platform/controllers platform/onepassword platform/config identity apps apps/browser-use-proxy/runtime apps/browser-use-proxy/public access backup; do
             if [[ "$path" == bootstrap ]]; then
               kustomize build "$RUNNER_TEMP/bootstrap" >> "$RUNNER_TEMP/rendered/authored.yaml"
             elif [[ "$path" == clusters/homelab ]]; then
@@ -109,10 +109,17 @@ jobs:
         run: |
           python3 -m pip install cryptography==50.0.2
           python3 -m unittest discover -s tests -v
-      - name: Validate native Kubernetes schemas
+      - name: Prepare exact released K8up CRD schemas
         run: |
-          # Skip CRD definitions and custom resources; validate native workloads and configuration.
+          version=$(yq -r '.spec.chart.spec.version' kubernetes/platform/controllers/k8up.yaml)
+          helm pull k8up --repo https://k8up-io.github.io/k8up --version "$version" \
+            --untar --untardir "$RUNNER_TEMP/k8up-chart"
+          python3 tests/backup/k8up_schemas.py "$RUNNER_TEMP/k8up-chart/k8up" "$RUNNER_TEMP/k8up-schemas"
+      - name: Validate native Kubernetes and K8up schemas
+        run: |
+          # Other controllers retain their existing skips; K8up uses its exact released CRDs.
           kubeconform -strict -summary \
+            -schema-location default -schema-location "$RUNNER_TEMP/k8up-schemas/{{.ResourceKind}}.json" \
             -kubernetes-version "$(yq -r '.data.KUBERNETES_VERSION | sub("^v", "")' kubernetes/clusters/homelab/settings.yaml)" \
             -skip CustomResourceDefinition,Certificate,ClusterIssuer,OnePasswordItem,HelmRelease,HelmRepository,IngressRoute,IngressRouteTCP,Kustomization,Middleware,TLSOption,TLSStore,talos.dev/v1alpha1/ServiceAccount \
             "$RUNNER_TEMP/rendered/authored.yaml"

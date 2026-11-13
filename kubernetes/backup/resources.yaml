@@ -1,0 +1,291 @@
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: backup-b2-connect
+  namespace: homelab
+spec:
+  itemPath: ${BACKUP_B2_CONNECT_ITEM_PATH}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-b2-environment
+  namespace: homelab
+data:
+  AWS_DEFAULT_REGION: us-west-004
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: backup-b2-connect
+  namespace: identity
+spec:
+  itemPath: ${BACKUP_B2_CONNECT_ITEM_PATH}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-b2-environment
+  namespace: identity
+data:
+  AWS_DEFAULT_REGION: us-west-004
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: backup-b2-connect
+  namespace: networking
+spec:
+  itemPath: ${BACKUP_B2_CONNECT_ITEM_PATH}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-b2-environment
+  namespace: networking
+data:
+  AWS_DEFAULT_REGION: us-west-004
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-stage
+  namespace: homelab
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 320Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-capture-state
+  namespace: homelab
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
+data:
+  state: '{"phase":"idle"}'
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-runner
+  namespace: homelab
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-watchdog
+  namespace: homelab
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-health
+  namespace: homelab
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backup-watchdog
+  namespace: homelab
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: backup-watchdog
+  template:
+    metadata:
+      labels:
+        app: backup-watchdog
+    spec:
+      serviceAccountName: backup-watchdog
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: watchdog
+          image: ghcr.io/k8up-io/k8up:${K8UP_VERSION}
+          command:
+            - bash
+            - /backup/offline.sh
+            - watchdog
+          env:
+            - name: HOME
+              value: /tmp
+          securityContext:
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            exec:
+              command:
+                - kubectl
+                - --request-timeout=5s
+                - -n
+                - homelab
+                - get
+                - configmap
+                - backup-capture-state
+                - -o
+                - name
+            periodSeconds: 10
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-health
+  namespace: homelab
+spec:
+  suspend: true
+  schedule: 15 * * * *
+  timeZone: ${TIME_ZONE}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 0
+      template:
+        spec:
+          serviceAccountName: backup-health
+          restartPolicy: Never
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: restic
+              image: ghcr.io/k8up-io/k8up:${K8UP_VERSION}
+              command:
+                - cp
+                - /usr/local/bin/restic
+                - /tools/restic
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+                  add:
+                    - CHOWN
+                    - DAC_OVERRIDE
+                    - FOWNER
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 1Gi
+              volumeMounts:
+                - name: tools
+                  mountPath: /tools
+                  readOnly: false
+          containers:
+            - name: health
+              image: python:3.15.2-slim-trixie
+              command:
+                - python3
+                - /backup/health.py
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+                  add:
+                    - CHOWN
+                    - DAC_OVERRIDE
+                    - FOWNER
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 1Gi
+              env:
+                - name: PATH
+                  value: /tools:/usr/local/bin:/usr/bin:/bin
+                - name: PYTHONDONTWRITEBYTECODE
+                  value: "1"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /backup
+                  readOnly: true
+                - name: stage
+                  mountPath: /stage
+                  readOnly: false
+                - name: repository
+                  mountPath: /repository
+                  readOnly: true
+                - name: notifications
+                  mountPath: /notifications
+                  readOnly: true
+                - name: tools
+                  mountPath: /tools
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+                  readOnly: false
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+            - name: stage
+              persistentVolumeClaim:
+                claimName: backup-stage
+            - name: repository
+              secret:
+                secretName: backup-b2-connect
+                defaultMode: 256
+                items:
+                  - key: access-key-id
+                    path: access-key-id
+                  - key: secret-access-key
+                    path: secret-access-key
+                  - key: restic-password
+                    path: restic-password
+            - name: notifications
+              secret:
+                secretName: n8n-connect
+                defaultMode: 256
+                items:
+                  - key: hermes_webhook_secret
+                    path: hermes-token
+            - name: tools
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}

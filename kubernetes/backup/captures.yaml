@@ -1,0 +1,797 @@
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: backup-opencloud
+  namespace: homelab
+  labels:
+    backup.hchu.me/app: opencloud
+spec:
+  backupCommand: bash /backup/offline.sh opencloud
+  fileExtension: .json
+  pod:
+    spec:
+      automountServiceAccountToken: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: capture
+          image: ghcr.io/k8up-io/k8up:${K8UP_VERSION}
+          command:
+            - sleep
+            - infinity
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+            - name: opencloud-config
+              mountPath: /source/opencloud-config
+              readOnly: true
+            - name: opencloud-data
+              mountPath: /source/opencloud-data
+              readOnly: true
+            - name: recovery
+              mountPath: /credentials
+              readOnly: true
+            - name: recovery-copy
+              mountPath: /recovery
+              readOnly: false
+            - name: stage
+              mountPath: /stage
+              readOnly: false
+            - name: repository
+              mountPath: /repository
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+        - name: opencloud-config
+          persistentVolumeClaim:
+            claimName: opencloud-config
+            readOnly: true
+        - name: opencloud-data
+          persistentVolumeClaim:
+            claimName: opencloud-data
+            readOnly: true
+        - name: recovery
+          emptyDir: {}
+        - name: recovery-copy
+          emptyDir: {}
+        - name: stage
+          persistentVolumeClaim:
+            claimName: backup-stage
+        - name: repository
+          secret:
+            secretName: backup-b2-connect
+            defaultMode: 256
+            items:
+              - key: access-key-id
+                path: access-key-id
+              - key: secret-access-key
+                path: secret-access-key
+              - key: restic-password
+                path: restic-password
+      serviceAccountName: backup-runner
+---
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: backup-immich
+  namespace: homelab
+  labels:
+    backup.hchu.me/app: immich
+spec:
+  backupCommand: sh /backup/postgres.sh
+  fileExtension: .tar
+  pod:
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: capture
+          image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+          command:
+            - sleep
+            - infinity
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: PGHOST
+              value: immich-postgresql
+            - name: PGUSER
+              value: immich
+            - name: PGDATABASE
+              value: immich
+            - name: PGCONNECT_TIMEOUT
+              value: "10"
+            - name: PGOPTIONS
+              value: -c statement_timeout=3600000
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: immich-connect
+                  key: database-password
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+            - name: immich-media
+              mountPath: /source/immich-media
+              readOnly: true
+            - name: recovery
+              mountPath: /recovery
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+        - name: immich-media
+          persistentVolumeClaim:
+            claimName: immich-media
+            readOnly: true
+        - name: recovery
+          projected:
+            defaultMode: 256
+            sources:
+              - secret:
+                  name: immich-connect
+                  items:
+                    - key: database-password
+                      path: immich/database-password
+---
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: backup-n8n
+  namespace: homelab
+  labels:
+    backup.hchu.me/app: n8n
+spec:
+  backupCommand: bash /backup/offline.sh n8n
+  fileExtension: .json
+  pod:
+    spec:
+      automountServiceAccountToken: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: capture
+          image: ghcr.io/k8up-io/k8up:${K8UP_VERSION}
+          command:
+            - sleep
+            - infinity
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+            - name: n8n-data
+              mountPath: /source/n8n-data
+              readOnly: true
+            - name: recovery
+              mountPath: /credentials
+              readOnly: true
+            - name: recovery-copy
+              mountPath: /recovery
+              readOnly: false
+            - name: stage
+              mountPath: /stage
+              readOnly: false
+            - name: repository
+              mountPath: /repository
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+        - name: n8n-data
+          persistentVolumeClaim:
+            claimName: n8n-data
+            readOnly: true
+        - name: recovery
+          projected:
+            defaultMode: 256
+            sources:
+              - secret:
+                  name: n8n-connect
+                  items:
+                    - key: encryption_key
+                      path: n8n/encryption_key
+        - name: recovery-copy
+          emptyDir: {}
+        - name: stage
+          persistentVolumeClaim:
+            claimName: backup-stage
+        - name: repository
+          secret:
+            secretName: backup-b2-connect
+            defaultMode: 256
+            items:
+              - key: access-key-id
+                path: access-key-id
+              - key: secret-access-key
+                path: secret-access-key
+              - key: restic-password
+                path: restic-password
+      serviceAccountName: backup-runner
+---
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: backup-zipline
+  namespace: homelab
+  labels:
+    backup.hchu.me/app: zipline
+spec:
+  backupCommand: bash /backup/offline.sh zipline
+  fileExtension: .json
+  pod:
+    spec:
+      automountServiceAccountToken: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: capture
+          image: ghcr.io/k8up-io/k8up:${K8UP_VERSION}
+          command:
+            - sleep
+            - infinity
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+            - name: zipline-data
+              mountPath: /source/zipline-data
+              readOnly: true
+            - name: zipline-uploads
+              mountPath: /source/zipline-uploads
+              readOnly: true
+            - name: recovery
+              mountPath: /credentials
+              readOnly: true
+            - name: recovery-copy
+              mountPath: /recovery
+              readOnly: false
+            - name: stage
+              mountPath: /stage
+              readOnly: false
+            - name: repository
+              mountPath: /repository
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+        - name: zipline-data
+          persistentVolumeClaim:
+            claimName: zipline-data
+            readOnly: true
+        - name: zipline-uploads
+          persistentVolumeClaim:
+            claimName: zipline-uploads
+            readOnly: true
+        - name: recovery
+          projected:
+            defaultMode: 256
+            sources:
+              - secret:
+                  name: zipline-connect
+                  items:
+                    - key: core-secret
+                      path: zipline/core-secret
+                    - key: oidc-client-secret
+                      path: zipline/oidc-client-secret
+        - name: recovery-copy
+          emptyDir: {}
+        - name: stage
+          persistentVolumeClaim:
+            claimName: backup-stage
+        - name: repository
+          secret:
+            secretName: backup-b2-connect
+            defaultMode: 256
+            items:
+              - key: access-key-id
+                path: access-key-id
+              - key: secret-access-key
+                path: secret-access-key
+              - key: restic-password
+                path: restic-password
+      serviceAccountName: backup-runner
+---
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: backup-hermes
+  namespace: homelab
+  labels:
+    backup.hchu.me/app: hermes
+spec:
+  backupCommand: python3 /backup/online.py
+  fileExtension: .tar
+  pod:
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: capture
+          image: python:3.15.2-slim-trixie
+          command:
+            - sleep
+            - infinity
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+            - name: hermes-data
+              mountPath: /source/hermes-data
+              readOnly: true
+            - name: recovery
+              mountPath: /recovery
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+        - name: hermes-data
+          persistentVolumeClaim:
+            claimName: hermes-data
+            readOnly: true
+        - name: recovery
+          emptyDir: {}
+---
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: backup-t3
+  namespace: homelab
+  labels:
+    backup.hchu.me/app: t3
+spec:
+  backupCommand: python3 /backup/online.py
+  fileExtension: .tar
+  pod:
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: capture
+          image: python:3.15.2-slim-trixie
+          command:
+            - sleep
+            - infinity
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+            - name: t3-data
+              mountPath: /source/t3-data
+              readOnly: true
+            - name: recovery
+              mountPath: /recovery
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+        - name: t3-data
+          persistentVolumeClaim:
+            claimName: t3-data
+            readOnly: true
+        - name: recovery
+          emptyDir: {}
+---
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: backup-authentik
+  namespace: identity
+  labels:
+    backup.hchu.me/app: authentik
+spec:
+  backupCommand: sh /backup/postgres.sh
+  fileExtension: .tar
+  pod:
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: capture
+          image: docker.io/library/postgres:18.6-trixie
+          command:
+            - sleep
+            - infinity
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: PGHOST
+              value: authentik-postgresql
+            - name: PGUSER
+              value: authentik
+            - name: PGDATABASE
+              value: authentik
+            - name: PGCONNECT_TIMEOUT
+              value: "10"
+            - name: PGOPTIONS
+              value: -c statement_timeout=3600000
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-connect
+                  key: database-password
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+            - name: authentik-media
+              mountPath: /source/authentik-media
+              readOnly: true
+            - name: recovery
+              mountPath: /recovery
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+        - name: authentik-media
+          persistentVolumeClaim:
+            claimName: authentik-media
+            readOnly: true
+        - name: recovery
+          projected:
+            defaultMode: 256
+            sources:
+              - secret:
+                  name: authentik-connect
+                  items:
+                    - key: database-password
+                      path: authentik/database-password
+                    - key: secret-key
+                      path: authentik/secret-key
+---
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: backup-headscale
+  namespace: identity
+  labels:
+    backup.hchu.me/app: headscale
+spec:
+  backupCommand: python3 /backup/online.py
+  fileExtension: .tar
+  pod:
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: capture
+          image: python:3.15.2-slim-trixie
+          command:
+            - sleep
+            - infinity
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+            - name: headscale
+              mountPath: /source/headscale
+              readOnly: true
+            - name: recovery
+              mountPath: /recovery
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+        - name: headscale
+          persistentVolumeClaim:
+            claimName: headscale
+            readOnly: true
+        - name: recovery
+          projected:
+            defaultMode: 256
+            sources:
+              - secret:
+                  name: headscale-connect
+                  items:
+                    - key: oidc-client-secret
+                      path: headscale/oidc-client-secret
+---
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: backup-headscale-gateway
+  namespace: networking
+  labels:
+    backup.hchu.me/app: headscale-gateway
+spec:
+  backupCommand: python3 /backup/online.py
+  fileExtension: .tar
+  pod:
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: capture
+          image: python:3.15.2-slim-trixie
+          command:
+            - sleep
+            - infinity
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /backup
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+            - name: headscale-gateway
+              mountPath: /source/headscale-gateway
+              readOnly: true
+            - name: recovery
+              mountPath: /recovery
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: backup-scripts
+        - name: tmp
+          emptyDir: {}
+        - name: headscale-gateway
+          persistentVolumeClaim:
+            claimName: headscale-gateway
+            readOnly: true
+        - name: recovery
+          projected:
+            defaultMode: 256
+            sources:
+              - secret:
+                  name: headscale-connect
+                  items:
+                    - key: gateway-auth-key
+                      path: headscale-gateway/gateway-auth-key

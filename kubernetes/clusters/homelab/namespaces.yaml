@@ -55,3 +55,9 @@ metadata:
   name: networking
   labels:
     pod-security.kubernetes.io/enforce: privileged
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8up

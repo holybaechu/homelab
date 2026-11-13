@@ -256,6 +256,10 @@ in Threads permissions.
 native, cluster-only webhook. [webhook.yaml](webhook.yaml) owns the attention
 criteria; useful alerts go to the existing Discord home channel.
 
+[Backup failure and freshness alerts](../../backup/README.md#restore-and-incident-operation)
+use the same home channel through a native `deliver_only` route, without starting
+an agent run.
+
 Keep the Gmail route's explicit `toolsets`: loading the Google Workspace skill
 does not grant the terminal tool its scripts need. The native webhook default
 excludes script and file access. After changes, verify an actual Gmail read in

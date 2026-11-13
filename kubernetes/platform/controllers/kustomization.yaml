@@ -4,3 +4,4 @@ resources:
 - releases.yaml
 - local-path
 - nvidia.yaml
+- k8up.yaml

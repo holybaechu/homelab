@@ -40,3 +40,8 @@ extra:
         not send a separate messaging-tool notification; the gateway delivers
         the final response to the existing Discord home channel. Report read
         failures briefly instead of claiming nothing important arrived.
+    backup:
+      events: [backup.alert]
+      deliver: discord
+      deliver_only: true
+      prompt: "{message}"

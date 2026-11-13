@@ -29,7 +29,9 @@ this is not a network sandbox.
 `/var/lib/t3/server`, and repositories under `/var/lib/t3/workspaces`. Pairing,
 OAuth grants, native provider auth, chats, and diffs must stay private. The PVC
 has Flux pruning disabled; deleting its namespace or the PVC manually remains
-destructive. Back up the entire PVC with T3 stopped before upgrading; roll back
+destructive. Back up the PVC with T3 stopped before upgrading (see the
+[backup capture and recovery contract](../../backup/README.md), including the
+reconstruction manifests for omitted clean files); roll back
 the binary only with a compatible database or a matching backup. Recreate
 prevents concurrent servers writing its database. Never move/delete old
 `hermes-data`, sessions, auth, or checkouts during this trial. Retire old profile
