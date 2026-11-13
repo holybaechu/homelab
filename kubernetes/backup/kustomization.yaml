@@ -9,7 +9,7 @@ resources:
 configMapGenerator:
   - name: backup-scripts
     namespace: homelab
-    files: [offline.sh, online.py, postgres.sh, health.py]
+    files: [offline.sh, online.py, postgres.sh, health.py, kubernetes-client.yaml]
   - name: backup-scripts
     namespace: identity
     files: [online.py, postgres.sh]
