@@ -23,8 +23,8 @@ data:
   POD_CIDR: 10.244.0.0/16
   SERVICE_CIDR: 10.96.0.0/12
   TIME_ZONE: Asia/Seoul
-  # Activate only after provider setup, image publication and restore/capture acceptance.
-  BACKUP_IMAGE: REQUIRED_PUBLISHED_IMAGE_DIGEST
+  # renovate: datasource=github-releases depName=k8up-io/k8up
+  K8UP_VERSION: v2.16.1
   DOMAIN: hchu.me
   DATA_PATH: /var/mnt/homelab
   QBT_NODE_PORT: "31435"

@@ -23,6 +23,8 @@ spec:
     remediation:
       retries: 3
   values:
+    image:
+      tag: ${K8UP_VERSION}
     k8up:
       timezone: ${TIME_ZONE}
       skipWithoutAnnotation: true

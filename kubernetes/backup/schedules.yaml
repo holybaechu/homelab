@@ -1,0 +1,413 @@
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: b2-opencloud
+  namespace: homelab
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: backup-b2-connect
+      key: restic-password
+    envFrom:
+      - configMapRef:
+          name: backup-b2-environment
+    s3:
+      endpoint: https://s3.us-west-004.backblazeb2.com
+      bucket: homelab-backup-b2/k8up/homelab/opencloud
+      accessKeyIDSecretRef:
+        name: backup-b2-connect
+        key: access-key-id
+      secretAccessKeySecretRef:
+        name: backup-b2-connect
+        key: secret-access-key
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: 0 4 * * *
+    concurrentRunsAllowed: false
+    activeDeadlineSeconds: 7200
+    tags:
+      - opencloud
+    labelSelectors:
+      - matchLabels:
+          backup.hchu.me/app: opencloud
+  check:
+    schedule: 0 12 * * 0
+    activeDeadlineSeconds: 7200
+  prune:
+    schedule: 0 12 1 * *
+    activeDeadlineSeconds: 7200
+    retention:
+      keepDaily: 7
+      keepWeekly: 4
+      keepMonthly: 6
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: b2-immich
+  namespace: homelab
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: backup-b2-connect
+      key: restic-password
+    envFrom:
+      - configMapRef:
+          name: backup-b2-environment
+    s3:
+      endpoint: https://s3.us-west-004.backblazeb2.com
+      bucket: homelab-backup-b2/k8up/homelab/immich
+      accessKeyIDSecretRef:
+        name: backup-b2-connect
+        key: access-key-id
+      secretAccessKeySecretRef:
+        name: backup-b2-connect
+        key: secret-access-key
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: 0 4 * * *
+    concurrentRunsAllowed: false
+    activeDeadlineSeconds: 7200
+    tags:
+      - immich
+    labelSelectors:
+      - matchLabels:
+          backup.hchu.me/app: immich
+  check:
+    schedule: 0 12 * * 0
+    activeDeadlineSeconds: 7200
+  prune:
+    schedule: 0 12 1 * *
+    activeDeadlineSeconds: 7200
+    retention:
+      keepDaily: 7
+      keepWeekly: 4
+      keepMonthly: 6
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: b2-n8n
+  namespace: homelab
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: backup-b2-connect
+      key: restic-password
+    envFrom:
+      - configMapRef:
+          name: backup-b2-environment
+    s3:
+      endpoint: https://s3.us-west-004.backblazeb2.com
+      bucket: homelab-backup-b2/k8up/homelab/n8n
+      accessKeyIDSecretRef:
+        name: backup-b2-connect
+        key: access-key-id
+      secretAccessKeySecretRef:
+        name: backup-b2-connect
+        key: secret-access-key
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: 0 4 * * *
+    concurrentRunsAllowed: false
+    activeDeadlineSeconds: 7200
+    tags:
+      - n8n
+    labelSelectors:
+      - matchLabels:
+          backup.hchu.me/app: n8n
+  check:
+    schedule: 0 12 * * 0
+    activeDeadlineSeconds: 7200
+  prune:
+    schedule: 0 12 1 * *
+    activeDeadlineSeconds: 7200
+    retention:
+      keepDaily: 7
+      keepWeekly: 4
+      keepMonthly: 6
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: b2-zipline
+  namespace: homelab
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: backup-b2-connect
+      key: restic-password
+    envFrom:
+      - configMapRef:
+          name: backup-b2-environment
+    s3:
+      endpoint: https://s3.us-west-004.backblazeb2.com
+      bucket: homelab-backup-b2/k8up/homelab/zipline
+      accessKeyIDSecretRef:
+        name: backup-b2-connect
+        key: access-key-id
+      secretAccessKeySecretRef:
+        name: backup-b2-connect
+        key: secret-access-key
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: 0 4 * * *
+    concurrentRunsAllowed: false
+    activeDeadlineSeconds: 7200
+    tags:
+      - zipline
+    labelSelectors:
+      - matchLabels:
+          backup.hchu.me/app: zipline
+  check:
+    schedule: 0 12 * * 0
+    activeDeadlineSeconds: 7200
+  prune:
+    schedule: 0 12 1 * *
+    activeDeadlineSeconds: 7200
+    retention:
+      keepDaily: 7
+      keepWeekly: 4
+      keepMonthly: 6
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: b2-hermes
+  namespace: homelab
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: backup-b2-connect
+      key: restic-password
+    envFrom:
+      - configMapRef:
+          name: backup-b2-environment
+    s3:
+      endpoint: https://s3.us-west-004.backblazeb2.com
+      bucket: homelab-backup-b2/k8up/homelab/hermes
+      accessKeyIDSecretRef:
+        name: backup-b2-connect
+        key: access-key-id
+      secretAccessKeySecretRef:
+        name: backup-b2-connect
+        key: secret-access-key
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: 0 4 * * *
+    concurrentRunsAllowed: false
+    activeDeadlineSeconds: 7200
+    tags:
+      - hermes
+    labelSelectors:
+      - matchLabels:
+          backup.hchu.me/app: hermes
+  check:
+    schedule: 0 12 * * 0
+    activeDeadlineSeconds: 7200
+  prune:
+    schedule: 0 12 1 * *
+    activeDeadlineSeconds: 7200
+    retention:
+      keepDaily: 7
+      keepWeekly: 4
+      keepMonthly: 6
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: b2-t3
+  namespace: homelab
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: backup-b2-connect
+      key: restic-password
+    envFrom:
+      - configMapRef:
+          name: backup-b2-environment
+    s3:
+      endpoint: https://s3.us-west-004.backblazeb2.com
+      bucket: homelab-backup-b2/k8up/homelab/t3
+      accessKeyIDSecretRef:
+        name: backup-b2-connect
+        key: access-key-id
+      secretAccessKeySecretRef:
+        name: backup-b2-connect
+        key: secret-access-key
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: 0 4 * * *
+    concurrentRunsAllowed: false
+    activeDeadlineSeconds: 7200
+    tags:
+      - t3
+    labelSelectors:
+      - matchLabels:
+          backup.hchu.me/app: t3
+  check:
+    schedule: 0 12 * * 0
+    activeDeadlineSeconds: 7200
+  prune:
+    schedule: 0 12 1 * *
+    activeDeadlineSeconds: 7200
+    retention:
+      keepDaily: 7
+      keepWeekly: 4
+      keepMonthly: 6
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: b2-authentik
+  namespace: identity
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: backup-b2-connect
+      key: restic-password
+    envFrom:
+      - configMapRef:
+          name: backup-b2-environment
+    s3:
+      endpoint: https://s3.us-west-004.backblazeb2.com
+      bucket: homelab-backup-b2/k8up/identity/authentik
+      accessKeyIDSecretRef:
+        name: backup-b2-connect
+        key: access-key-id
+      secretAccessKeySecretRef:
+        name: backup-b2-connect
+        key: secret-access-key
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: 0 4 * * *
+    concurrentRunsAllowed: false
+    activeDeadlineSeconds: 7200
+    tags:
+      - authentik
+    labelSelectors:
+      - matchLabels:
+          backup.hchu.me/app: authentik
+  check:
+    schedule: 0 12 * * 0
+    activeDeadlineSeconds: 7200
+  prune:
+    schedule: 0 12 1 * *
+    activeDeadlineSeconds: 7200
+    retention:
+      keepDaily: 7
+      keepWeekly: 4
+      keepMonthly: 6
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: b2-headscale
+  namespace: identity
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: backup-b2-connect
+      key: restic-password
+    envFrom:
+      - configMapRef:
+          name: backup-b2-environment
+    s3:
+      endpoint: https://s3.us-west-004.backblazeb2.com
+      bucket: homelab-backup-b2/k8up/identity/headscale
+      accessKeyIDSecretRef:
+        name: backup-b2-connect
+        key: access-key-id
+      secretAccessKeySecretRef:
+        name: backup-b2-connect
+        key: secret-access-key
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: 0 4 * * *
+    concurrentRunsAllowed: false
+    activeDeadlineSeconds: 7200
+    tags:
+      - headscale
+    labelSelectors:
+      - matchLabels:
+          backup.hchu.me/app: headscale
+  check:
+    schedule: 0 12 * * 0
+    activeDeadlineSeconds: 7200
+  prune:
+    schedule: 0 12 1 * *
+    activeDeadlineSeconds: 7200
+    retention:
+      keepDaily: 7
+      keepWeekly: 4
+      keepMonthly: 6
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: b2-headscale-gateway
+  namespace: networking
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: backup-b2-connect
+      key: restic-password
+    envFrom:
+      - configMapRef:
+          name: backup-b2-environment
+    s3:
+      endpoint: https://s3.us-west-004.backblazeb2.com
+      bucket: homelab-backup-b2/k8up/networking/headscale-gateway
+      accessKeyIDSecretRef:
+        name: backup-b2-connect
+        key: access-key-id
+      secretAccessKeySecretRef:
+        name: backup-b2-connect
+        key: secret-access-key
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: 0 4 * * *
+    concurrentRunsAllowed: false
+    activeDeadlineSeconds: 7200
+    tags:
+      - headscale-gateway
+    labelSelectors:
+      - matchLabels:
+          backup.hchu.me/app: headscale-gateway
+  check:
+    schedule: 0 12 * * 0
+    activeDeadlineSeconds: 7200
+  prune:
+    schedule: 0 12 1 * *
+    activeDeadlineSeconds: 7200
+    retention:
+      keepDaily: 7
+      keepWeekly: 4
+      keepMonthly: 6

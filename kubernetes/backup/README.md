@@ -1,256 +1,216 @@
 # Homelab backups
 
-This layer is **inactive**: Flux `backup` and all three CronJobs are suspended.
-`REQUIRED_*` values are deliberate activation blockers, not working credentials.
-Merging does not start captures or initialize repositories. The Discord route
-updates the bootstrap ConfigMap shared by Hermes and T3 and rolls both Pods;
-merge only after their active work is checkpointed and idle.
+[K8up](https://docs.k8up.io/k8up/) owns scheduling, restic uploads, repository
+checks and retention. Each application has a `Schedule`, a selected
+[`PreBackupPod`](https://docs.k8up.io/k8up/how-tos/prebackuppod.html), and an
+independent repository at `homelab-backup-b2/k8up/<namespace>/<app>`.
+Only upstream K8up, Python and matching PostgreSQL images are used; there is no
+homelab backup image to build or publish.
 
-## Capture and failure boundary
+Flux `backup` and the health CronJob remain suspended until live acceptance.
+Merging installs the opt-in K8up controller, but does not create repositories or
+capture data. The Hermes Discord route changes the bootstrap ConfigMap shared
+with T3; checkpoint both before a merge that rolls them.
 
-The upstream [K8up application-aware mechanism](https://docs.k8up.io/k8up/how-tos/application-aware-backups.html)
-streams commands from running Pods but does not provide the required bounded,
-cross-namespace stop/copy/resume transaction. Resticprofile hooks likewise do not
-supply an independent Kubernetes recovery watchdog. This layer therefore uses
-maintained restic 0.19.1, rsync, native PostgreSQL clients and SQLite's online backup
-API, with a small coordinator for that missing boundary. The tooling image is
-built in CI, not installed over the network when a backup starts.
+## Capture and availability
 
-1. Read-only source PVC mounts pre-sync to private local staging PVCs. No node
-   mounts, application exec, CSI snapshots or changes to shared storage policy.
-2. Before each group stops, a compare-and-swap ConfigMap journal records its exact
-   original replica counts, affected Flux/Helm suspension states and a deadline.
-   The coordinator suspends only the owning reconciliation layers. An already
-   Reconciling layer causes an abort rather than racing an upgrade.
-3. Only necessary writers stop. All matching Pods must disappear, including
-   terminating Pods, before the final sync/dump begins. Frozen producers have a
-   local deadline; any error rejects the entire capture.
-4. The coordinator restores the recorded replica counts and suspension states,
-   then waits for app rollout. A separate always-on watchdog invalidates expired
-   captures and retries restoration from the durable journal if the Job dies.
-   A group has 420 seconds total capture budget, with producers ending 30 seconds
-   earlier, leaving time inside the approved ten minutes for resumption.
-5. After **all apps resume**, committed Hermes SQLite state is captured online,
-   namespace staging is collected with checked tar producers/consumers, and one
-   complete snapshot is uploaded to B2. Failed restic uploads are never tagged `complete`. Restore only snapshots tagged `complete`.
+Backups start at **04:00 Asia/Seoul**. Applications capture and upload independently;
+there is no cluster-wide point-in-time snapshot or global upload barrier.
+`backup.labelSelectors` selects exactly one helper; source PVCs stay read-only.
+Raw database PVCs are never selected by K8up's generic filesystem backup.
 
-**Availability limit:** no process on this single Talos node can guarantee a
-wall-clock ten-minute service recovery if the node, Kubernetes API or application
-startup itself fails. The watchdog guarantees persistent recovery intent and
-retries once the control plane works; it cannot defeat a node outage. Do not
-claim an unconditional availability guarantee. Initial activation requires a
-measured approved capture/recovery drill; if the ten-minute requirement includes
-such infrastructure failures, an independent recovery/control-plane design is a
-prerequisite, and this layer must remain suspended.
-
-Do not deploy/reconcile app changes, restart workers or run maintenance during a
-backup. All scheduled/manual backup and maintenance invocations use the same CAS
-journal lock. CronJob `Forbid` alone does not coordinate different CronJobs.
-Workers have stable Pod names for resource-name-bound exec permissions. The
-watchdog cannot exec, mount sources, read Secrets or create workloads. Neither
-service account can exec application Pods, delete PVCs/PVs, read Secrets or create
-Jobs/Pods. The runner can scale only the named writers and suspend only
-`apps`, `identity`, `access` and the Authentik HelmRelease. A fail-closed admission
-policy bounds those two identities to changing only `spec.suspend`, preserving
-other spec fields and operator metadata; Flux controller identities are unaffected.
-Root can read source
-ownership/xattrs, but source PVCs are mounted read-only; capabilities are limited
-to local staging metadata preservation.
-
-| Included state | Capture boundary |
+| Application | Included state and consistency boundary |
 | --- | --- |
-| OpenCloud config + complete data tree, including completed torrent bodies | Stop OpenCloud **and qBittorrent**, rsync `-aHAX --numeric-ids`, preserving xattrs/sidecars/ownership; cloud upload occurs after restart |
-| Immich media + internal DB + roles | Stop Immich writer, PG14 `pg_dump` custom archive and `pg_dumpall --roles-only` first, then final media sync; PG itself stays online |
-| Authentik media + internal DB + roles | Stop server and worker, PG18 native dump/roles, then media sync; PG stays online |
-| n8n SQLite + filesystem binary data + original encryption key | Stop n8n for the binary-directory boundary, SQLite Online Backup API, exact `n8n-connect/encryption_key` projection matching the current workload |
-| Zipline PGlite + uploads + original secrets | Stop only during physical local capture; never open PGlite from a second process; omit `.tmp` uploads |
-| Headscale SQLite/noise key + gateway identity | Stop Headscale and gateway together; SQLite Online Backup API plus gateway state; resume original counts together |
-| T3 server state/auth/chats/diffs/workspaces/unpublished work | Stop T3 and all its child processes, copy `t3-data`, preserve Git metadata shared by worktrees, materialize SQLite backups; resume before upload |
-| Hermes sessions/profiles/auth/vault/uncommitted workspaces/recovery | Never stop Hermes; selected filesystem capture plus Online Backup API for every discovered selected SQLite DB, including WAL-committed transactions; uncommitted/in-flight actions are interrupted recovery, not a global point-in-time snapshot |
+| OpenCloud | Config and complete data tree, including completed downloads and original internal keys. Stop OpenCloud and qBittorrent for the final local capture; preserve ownership, hardlinks, xattrs and sidecars. |
+| Immich | PG14 custom-format DB dump and roles first, then media, using the existing vector-enabled PostgreSQL image. Immich stays online, following its [online backup order](https://docs.immich.app/administration/backup-and-restore/). |
+| Authentik | PG18 custom-format DB dump, roles, media, original DB password and secret key; server and worker stay online. |
+| n8n | Stop n8n for a consistent SQLite/filesystem-binary-data boundary; include its original `encryption_key`. |
+| Zipline | Stop Zipline for a physical PGlite/uploads capture, excluding `.tmp` uploads. Never attach a second PGlite process to the live directory. Include original core and OIDC secrets. |
+| Hermes | Online SQLite backup API for every selected SQLite DB, including committed WAL, plus profiles, auth, sessions, vault and workspaces. Hermes remains available. |
+| T3 | Online SQLite backup API plus server/auth/grants, chats, diffs, attachments, workspaces and shared Git metadata. T3 remains available. |
+| Headscale | Online SQLite backup API, noise/private keys and original OIDC secret. |
+| Headscale gateway | Persistent gateway identity and original gateway auth key. |
 
-No standalone MySQL, AdGuard, Collabora proofkey, qBittorrent configuration/resume
-state, Langfuse, Kutt, incomplete downloads, model/tool caches or temporary files
-are selected. Generated Hermes GitOps configuration is excluded. For the exact
-authoritative homelab Git origin, clean tracked files already present in
-`origin/main` are omitted and recorded in `hermes-repositories.json`; restore
-those from that commit before overlaying workspace recovery. The manifest also
-records tracked deletion tombstones, which must be applied after the overlay
-(see below), preserving both staged and unstaged deletions. Dirty files,
-untracked files, unpublished commits, index/stash recovery and other repositories
-are retained. Git secret references are **not** key values: original runtime
-keys remain in 1Password and required recovery keys are explicitly projected into
-the encrypted backup. Never replace them with fresh generated keys on restore.
+Online capture preserves each SQLite DB's committed state. Files, multiple DBs,
+and independent applications can represent different instants. In-flight actions
+and actively edited workspaces require interrupted-work recovery; this does not
+claim a server-wide transaction. A corrupt DB or changed/failed tar producer fails
+the backup. PostgreSQL dumps use a native consistent DB snapshot; concurrent media
+deletion can still affect DB/file correspondence. Isolated app restores remain
+part of acceptance.
 
-T3 is a bounded stopped capture, unlike the online Hermes capture. Schedule it
-only when T3 threads, delegates and terminals are idle; this backup includes no
-T3 task drain protocol. Never start a manual capture from an active T3 thread.
-Use an independent operator session for the first drill. Pre-sync may run online,
-but the final copy and Git inventory run only after T3 Pods have disappeared.
-T3 rebuildable caches and clean tracked homelab files are omitted; server state,
-provider authentication, grants, attachments and unpublished work remain selected.
-`t3-repositories.json` records reconstruction commits and deletion tombstones.
-All T3 Git metadata remains selected, even for clean main checkouts: linked
-worktrees can need their shared objects and unpublished refs for recovery.
+Whole Hermes/T3 workspaces and `.git` metadata are included, covering unpublished
+commits, index/stash state, tracked deletions and untracked work directly. The old
+custom clean-Git-file filtering and reconstruction manifests are removed; this
+modestly expands coverage and storage. Standard dependency/tool/model caches,
+logs and GitOps-rebuilt Hermes configuration are excluded in `online.py`.
+Other applications, incomplete downloads, raw PostgreSQL data, container images
+and unrelated caches are excluded. Infrastructure state and its original
+1Password passphrase remain in their existing protected recovery location;
+these helpers do not collect the Windows recovery material.
 
-## Activation and credentials
+Three applications need a small exception to direct streaming: OpenCloud's
+[documented stopped backup](https://docs.opencloud.eu/docs/admin/maintenance/backup/),
+n8n's DB/binary-file boundary, and Zipline's physical PGlite capture.
+`offline.sh` uses the official K8up image's restic, kubectl, bash and jq:
 
-This deployment uses **Backblaze B2 only**. A second destination is deferred;
-there is no Scaleway Operator item, required Secret, endpoint or scheduled upload.
-The worker retains its previously tested optional Scaleway command support, but
-this deployment does not configure or invoke it.
+1. Warm a local encrypted restic cache while the app runs. This is staging on the
+   same node, not a second backup. Keep only two local snapshots per app.
+2. Acquire the resourceVersion-protected `backup-capture-state` journal, recording
+   exact replicas and the original Flux `apps` suspension state before mutations.
+   Serialize these stop windows; abort if `apps` is already reconciling.
+3. Suspend `apps`, stop only that application's writers, and wait until all their
+   Pods, including terminating Pods, disappear. The capture budget is 420 seconds;
+   the final producer ends 30 seconds earlier and is killed if it exceeds its limit.
+4. The single `Recreate` watchdog alone restores recorded replicas and Flux state,
+   waits for readiness and acknowledges completion. A dead or expired runner is
+   invalidated and recovered from the durable journal. Recovery failures keep the
+   journal and retry; they never clear recorded replicas. Captures ready later than
+   the total 600-second budget are invalid.
+5. Only after successful recovery does native `restic copy` send the exact local
+   snapshot to B2. This preserves filesystem metadata without an intermediate tar.
+   The K8up stream contains a small receipt with the source snapshot ID.
 
-The existing official 1Password Operator owns `backup-b2-connect` in `homelab`.
-Its separate source item needs these lowercase field labels/Secret keys:
+The stopped apps' **data** snapshots have tags `data,<app>` and hostname `homelab`,
+matching K8up's namespace host filter for retention. Receipt snapshots have only
+`<app>` and are not data restore points. Other apps stream a tar archive stored as
+`/<namespace>-capture.tar` with their app tag. Failed streams can leave unusable
+snapshots: require a successful corresponding Backup and native Job before restore.
 
-| Key | Meaning |
-| --- | --- |
-| `access-key-id` | B2 bucket-scoped application key ID |
-| `secret-access-key` | Corresponding application key |
-| `restic-password` | Repository password; retain outside the cluster for disaster recovery |
+The ten-minute budget needs a measured live stop-to-ready drill. A watchdog on
+this single Talos node cannot guarantee recovery while the node/API is unavailable
+or an app cannot start; it preserves recovery intent and retries. Keep scheduling
+inactive if the measured normal path exceeds the budget. Avoid app deployments,
+manual scales and controller upgrades during stopped captures.
 
-Set `BACKUP_B2_CONNECT_ITEM_PATH` to the verified item ID in the existing Homelab
-vault. The approved runtime key/item title is `homelab-backup-b2`; this layer
-creates neither. Existing app references and original encryption keys must stay
-unchanged. Securely confirm projected keys, including n8n's current underscore
-key, before activation. Never relabel or rotate an original key to fix projection.
+The runner/watchdog can write only the journal, four named Deployment scale
+subresources, and Flux `apps.spec.suspend`. The Deny admission policy preserves
+all other spec fields and operator metadata. Neither can exec app Pods, read
+Secrets through the API, create workloads or delete PVCs. Only stopped helpers
+have these scale permissions; online helpers have no API token. `backup-stage`
+and the recovery journal are protected from Flux pruning; the journal uses
+`IfNotPresent` so reconciliation cannot overwrite active recovery state. The
+320Gi local-path request is not a disk quota or capacity reservation.
 
-The private bucket is `homelab-backup-b2`, endpoint
-`s3.us-west-004.backblazeb2.com`, region `us-west-004`. Runtime capabilities are
-only `listBuckets`, `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`, restricted
-to that bucket, with no prefix or global bucket-name listing. Bucket configuration
-and key-management authority remain outside the cluster. Verify actual positive
-and negative runtime scope before activation. SSE-B2 supplements restic encryption.
+## B2 and credentials
 
-No lifecycle rule may expire current objects: old restic packs can still be
-referenced by recent snapshots. B2 currently keeps all versions; restic deletes
-can leave billed hidden versions. Review a **hidden/noncurrent-only** deletion
-rule separately with the provider owner, with no upload-age hiding/expiry of
-current objects. Do not apply such a rule without that safety review.
+B2 is the only destination; Scaleway is deferred. Preserve the private bucket
+`homelab-backup-b2`, endpoint `https://s3.us-west-004.backblazeb2.com`, region
+`us-west-004`, SSE-B2, disabled Object Lock and Keep All Versions.
 
-1. Run CI's `backup` workflow. Publish its verified tooling image only through an
-   explicitly approved `workflow_dispatch` with `publish=true`; this publishes
-   `ghcr.io/holybaechu/homelab:backup-<commit>` but does not deploy it. Pin its
-   read-back digest in `BACKUP_IMAGE`; ensure the cluster can pull it. Review
-   image/package visibility before publishing any image.
-2. Finish provider setup and Operator projections privately. Do not send values
-   through chat, logs, Git or command arguments. Independently retain the B2
-   password, bucket identity and the original application/Connect recovery
-   credentials outside this cluster.
-3. With parent approval, unsuspend only Flux `backup`; keep all three CronJobs
-   suspended. Verify the three workers, watchdog, explicit source mounts,
-   least-privilege RBAC, the Deny admission binding and empty policy type-check
-   warnings, existing app keys and stage capacity. Standalone CEL tests do not
-   replace API-server admission/read-back verification. Local-path requests
-   do not reserve/enforce a quota; staging shares the same disk, is not a backup,
-   and contains mode-restricted plaintext. Retain PVCs when removing this layer.
-4. From an authorized administrator, initialize the **verified empty B2 target**
-   explicitly using the worker's projected files and `worker.repository()`
-   environment: `kubectl -n homelab exec backup-worker-0 -c worker -- python3
-   /backup/worker.py init b2`. It prints only its repository ID.
-   `restic init` is deliberately not an automatic fallback after a
-   failed repository read. Never initialize a substitute repository on an auth,
-   endpoint or network failure; record and independently retain its repository ID afterwards.
-5. With parent approval for the first capture outage, create a Job from
-   `cronjob/backup-daily`. Measure stop-to-ready time for every group, inject a
-   producer timeout and coordinator interruption, and verify exact original
-   counts/suspension restoration, no valid partial snapshot and uploads only
-   after resumption. Do not activate a schedule if any drill exceeds ten minutes.
-6. Run the isolated restore below against **the actual B2 repository**, then
-   perform full application restores into isolated PVCs/services (never production
-   volumes). Only then unsuspend daily, maintenance and health CronJobs in Git.
+The existing **Homelab / homelab-backup-b2** 1Password item is projected by the
+official Operator into `backup-b2-connect` in all three namespaces. Its verified
+ID remains `BACKUP_B2_CONNECT_ITEM_PATH`. Required lowercase keys are
+`access-key-id`, `secret-access-key` and `restic-password`. Workloads project only
+explicit keys. Preserve original app keys, the restic password and infrastructure
+state/passphrase; never rotate or relabel them to fix a projection failure.
+Independently retain these credentials outside this cluster for disaster recovery.
 
-Daily backup starts at **04:00 Asia/Seoul**. After each successful publication,
-`forget` retains **7 daily / 4 weekly / 6 monthly** restore points without pruning
-data. Maintenance is monthly at 12:00 on the first, under the same journal lock:
-reapply retention, prune without repacking existing packs, then metadata `check`.
-This limits unnecessary repacking. It is not a full data scrub; schedule an approved
-paid full/subset read check when needed. Pending/unpublished snapshots are never
-valid restore points and are not automatically forgotten; inspect and remove
-them explicitly after failed uploads to avoid orphan-storage growth.
+The runtime key is restricted to this bucket with `listBuckets`, `listFiles`,
+`readFiles`, `writeFiles` and `deleteFiles`; bucket/key administration stays outside
+the cluster. K8up performs its standard repository initialization at the configured
+app prefix before executing the stream. Verify the exact prefixes and credentials
+before the first manual Backup; never change the endpoint/prefix or initialize a
+replacement repository as an authentication-error workaround. Retain each
+repository ID after its first successful initialization.
+
+Daily backups retain **7 daily / 4 weekly / 6 monthly** points when the monthly
+prune runs at 12:00 on the first. Weekly metadata checks run Sunday at 12:00.
+Retention is per app/path group; these are overlapping calendar policies, not an
+exact snapshot count or byte quota. Metadata checks do not read all object bodies;
+a deliberate `restic check --read-data` or subset check is a separate paid scrub.
+K8up manages repository locks for its jobs; do not force-unlock a running job.
+
+Keep All Versions means restic prune can leave billed hidden B2 versions. Never
+expire current objects by upload age: old packs can still hold recent snapshots'
+data. Review any hidden/noncurrent-only lifecycle rule separately before applying it.
+
+## Activation
+
+1. Pass `backup` and `validate` CI, including exact released CRD schemas, native
+   restore fixtures and suspend-only CEL. Install the controller through Flux.
+2. Render `kubernetes/backup` with strict substitution from both cluster ConfigMaps,
+   as CI does, into a private temporary file. Before the first rollout, check that
+   any old backup jobs/producers are inactive and their journal has no recorded
+   recovery intent. Keep existing stage claims; removed workers and unused namespace
+   staging claims must not cause source or backup PVC deletion.
+3. For acceptance, apply the rendered support resources **excluding `Schedule`**;
+   keep `backup-health.spec.suspend: true`. Verify Operator projections privately,
+   read-only sources, stage free space, watchdog readiness, admission type-check
+   warnings and live allow/deny behavior. Local CEL tests do not replace server
+   validation. Test the exact production API/client and native tool versions.
+4. Create a manual `Backup` from each rendered Schedule's `spec.backup`, copying
+   its `backend` and `podSecurityContext`, and removing schedule-only fields. Example
+   for the private rendered file, without printing credentials:
+
+   ```sh
+   yq -o=json 'select(.kind == "Schedule" and .metadata.name == "b2-n8n")' /private/backup.yaml |
+     jq '{apiVersion, kind:"Backup", metadata:{name:"accept-n8n",namespace:.metadata.namespace},
+          spec:(.spec.backup + {backend:.spec.backend,podSecurityContext:.spec.podSecurityContext} |
+                del(.schedule,.concurrentRunsAllowed))}' |
+     kubectl create -f -
+   ```
+
+   Measure each stopped app from stop request to ready, interrupt one producer and
+   one runner, and verify exact recovery and no successful publication of expired
+   captures. Hermes/T3 must remain available. Check completion of both the Backup
+   and its native Job; inspect sanitized errors only.
+5. Restore actual B2 data into isolated storage, following the procedure below.
+   Test the existing Hermes Discord route using a uniquely named manual Job from
+   the suspended health CronJob with command `python3 /backup/health.py test`.
+   Confirm the real message in the existing Discord home channel. Exercise missing,
+   unreadable and failed-backup alert paths as well.
+6. After acceptance, set Flux `backup.spec.suspend: false` in Git to create the
+   Schedules. After their first successful cycle, set the health CronJob's suspend
+   to false in Git. Resolve health warnings for every expected app, not just one.
 
 ## Restore and incident operation
 
-Use an authorized operator account; do not broaden the interactive Hermes account
-just to exec. The small real restore path downloads n8n's database and original
-key into a temporary staging subdirectory, verifies restored bytes and SQLite
-integrity/schema, then deletes only that isolated directory:
+Use an authorized operator with restic 0.19.1 (included in the pinned K8up image).
+Obtain credentials privately from the existing 1Password item; never print them
+or pass secret values as arguments. Set `RESTIC_PASSWORD_FILE` and AWS credential
+environment variables, `AWS_DEFAULT_REGION=us-west-004`, and the exact app
+`RESTIC_REPOSITORY=s3:https://s3.us-west-004.backblazeb2.com/homelab-backup-b2/k8up/<namespace>/<app>`.
 
-```sh
-kubectl -n homelab exec backup-worker-0 -c worker -- python3 /backup/worker.py restore-test b2
-```
+List `restic snapshots --tag <app> --json` and verify the corresponding successful
+Backup/native Job. For OpenCloud/n8n/Zipline, select `--tag <app>,data`; use the
+receipt's `source_snapshot` against the remote snapshot's `original` or `id` if
+identifying a particular copy. Restore with `restic restore <id> --target <isolated-dir>`.
+Files appear below `source/<claim>` and `recovery`; preserve numeric IDs and xattrs.
+For the other apps, use `restic dump <id> /<namespace>-capture.tar > <private-tar>`
+and extract with GNU `tar --xattrs --xattrs-include='*' --acls --numeric-owner -xpf`
+into a new isolated directory. Never pipe an unchecked/failed dump into a live volume.
 
-This is more than `restic check`, but does not prove n8n credential decryption or
-all application restores. For full recovery, use a `complete` snapshot, restore
-into **new isolated** claims, preserve numeric IDs/xattrs, restore original
-1Password values first, then start the pinned app versions. For PostgreSQL,
-restore `roles.sql` with the matching native major client before the custom
-`database.dump`; review bootstrap-role collisions rather than ignoring all SQL
-errors. Immich needs its pinned vector extensions. Restore OpenCloud config and
-data together, Zipline data/uploads together, and Headscale/gateway identities
-from the same snapshot. Do not attach a second live PGlite process or production
-OIDC/webhook ingress to a restore drill. Rebuild excluded caches/indexes and
-GitOps-managed configuration after recovery. For Hermes Git recovery, reconstruct
-repositories at each recorded commit, then overlay the captured `hermes-data`
-and `hermes-repositories.json` into an isolated directory below `/stage/restore/`.
-Before inspecting or starting the restored workspace, run:
+Check every restored SQLite DB with `PRAGMA integrity_check`. For PostgreSQL,
+restore `roles.sql` with the matching major client before `database.dump`;
+handle known bootstrap-role collisions explicitly and use `pg_restore --exit-on-error`.
+Immich needs its existing vector extensions. Restore the original 1Password keys
+before starting apps; validate n8n credential decryption, OpenCloud file access,
+Zipline uploads, Authentik login, and Headscale/gateway identity separately.
+These per-app backups do not promise a shared Headscale/gateway snapshot instant.
 
-```sh
-python3 /backup/worker.py restore-git-deletions /stage/restore/<drill>
-```
+For Hermes/T3, verify chats, attachments, auth/grants and an unpublished commit,
+staged/unstaged changes and tracked deletion. All captured Git content is present;
+no custom reconstruction step is required. Restore T3 at `/var/lib/t3` in an
+isolated environment, or repair linked-worktree pointers before use. Never attach
+restored agents, production OIDC/webhook ingress or a second PGlite instance to
+production data. Rebuild excluded caches and GitOps configuration after recovery.
 
-This applies verified tracked-file tombstones without changing the recovered
-Git index. It rejects traversal, symlinks, untracked targets and directories;
-never point recovery tooling at production/user workspaces.
+The hourly health Job checks expected Schedule coverage, latest failed/stuck
+Backup/Check/Prune, recent successful Backup/native Jobs, and actual B2 snapshot
+freshness for all nine apps. It uses only read access to those API resources and
+Jobs, with no Secret API reads or source mounts. It alerts after 24 hours without
+a valid recent point or when status cannot be read. Delivery uses Hermes's
+native `deliver_only` `/webhooks/backup` route and only
+`n8n-connect/hermes_webhook_secret`; success requires HTTP 200 plus
+`status: delivered` and `target: discord`. Delivered identical warnings are
+suppressed for 24 hours; recovery resets suppression. Failed deliveries retry.
+There is no independent whole-node-outage alert because both checks and Hermes
+run on this node.
 
-For T3, reconstruct the listed clean files at each `t3-repositories.json` commit
-before overlaying `t3-data` and that manifest in a new isolated restore directory.
-Apply its tombstones with:
-
-```sh
-python3 /backup/worker.py restore-git-deletions /stage/restore/<drill> t3-data
-```
-
-Preserve shared Git metadata and unpublished refs. Before starting a restored T3,
-verify SQLite integrity, private file ownership and auth/grants without printing
-secrets. Restore at `/var/lib/t3` in the isolated environment, or repair Git
-worktree pointers there before use; never reuse production volumes or connect
-recovered agents to production. Verify an unpublished commit, staged and unstaged
-changes, tracked deletions, attachments and actual chat state in the restore drill.
-
-Backup and maintenance failures notify the existing Hermes Discord home channel
-through Hermes's native `deliver_only` webhook; no agent run or new notification
-service is involved. The hourly `backup-health` CronJob checks the actual B2
-repository for a `complete` snapshot newer than 24 hours, without repository locks
-or cache writes. An unreadable repository is an alert, not freshness success.
-Repeated identical health alerts are suppressed for 24 hours, resetting after a
-fresh snapshot. Suppression is recorded only after a successful direct Discord
-delivery response; an accepted webhook or duplicate response is not delivery proof.
-
-Only `n8n-connect/hermes_webhook_secret` is projected for the existing shared
-webhook authentication. The health Pod has no Kubernetes API token or application
-source mounts. No credential values, paths, database contents or native tool
-errors enter alerts. The route remains cluster-only. Both checks and delivery run
-on this cluster; they do not provide an independent alert during a whole-node outage.
-
-Before unattended activation, roll out the reviewed Hermes route with both Hermes
-and T3 idle; the shared bootstrap ConfigMap rolls both. Then send one explicit
-test notification with a uniquely named manual Job:
-
-```sh
-kubectl -n homelab create job backup-alert-test --from=cronjob/backup-health --dry-run=client -o json |
-  jq '.spec.template.spec.containers[0].command = ["python3", "/backup/health.py", "test"]' |
-  kubectl apply -f -
-```
-
-Verify the actual test message in the home channel and Job success. Also exercise
-a controlled backup failure and the missing/unreadable-repository paths before
-unsuspending the schedules. Inspect `backup-state`, Job status and sanitized logs
-when delivery fails; do not treat failed notification jobs as successful alerts.
-
-If the runner dies while stopped, leave the watchdog running: it restores the
-journal's original values after the deadline. If API access failed, it retries
-without clearing recovery intent. After verifying no backup/maintenance Job or
-worker producer is active, an administrator may reset a stranded non-capture
-`preparing`, `upload` or `maintenance` journal to `idle`. **Never reset a journal
-with recorded replicas/controls**; recover them first. Do not delete stage/source
-PVCs, force-unlock restic or retry against a different bucket as a shortcut.
+For a stuck stopped capture, leave the watchdog running and inspect
+`backup-capture-state`, Backup/Job status and app readiness. Recovery retries if
+API access fails. Never erase a journal with recorded replicas or suspension
+state, delete source/stage claims, force-unlock an active repository, or switch
+repositories as a shortcut. Keep original recovery material until a verified
+isolated restore succeeds.

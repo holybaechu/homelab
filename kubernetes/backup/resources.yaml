@@ -1,3 +1,51 @@
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: backup-b2-connect
+  namespace: homelab
+spec:
+  itemPath: ${BACKUP_B2_CONNECT_ITEM_PATH}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-b2-environment
+  namespace: homelab
+data:
+  AWS_DEFAULT_REGION: us-west-004
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: backup-b2-connect
+  namespace: identity
+spec:
+  itemPath: ${BACKUP_B2_CONNECT_ITEM_PATH}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-b2-environment
+  namespace: identity
+data:
+  AWS_DEFAULT_REGION: us-west-004
+---
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: backup-b2-connect
+  namespace: networking
+spec:
+  itemPath: ${BACKUP_B2_CONNECT_ITEM_PATH}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-b2-environment
+  namespace: networking
+data:
+  AWS_DEFAULT_REGION: us-west-004
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -13,449 +61,16 @@ spec:
     requests:
       storage: 320Gi
 ---
-apiVersion: onepassword.com/v1
-kind: OnePasswordItem
-metadata:
-  name: backup-b2-connect
-  namespace: homelab
-spec:
-  itemPath: ${BACKUP_B2_CONNECT_ITEM_PATH}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: backup-worker
-  namespace: homelab
-spec:
-  clusterIP: None
-  selector:
-    app: backup-worker
-  ports:
-    - name: unused
-      port: 9999
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: backup-worker
-  namespace: homelab
-spec:
-  serviceName: backup-worker
-  replicas: 1
-  selector:
-    matchLabels:
-      app: backup-worker
-  template:
-    metadata:
-      labels:
-        app: backup-worker
-    spec:
-      automountServiceAccountToken: false
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: worker
-          image: ${BACKUP_IMAGE}
-          command:
-            - sleep
-            - infinity
-          securityContext:
-            runAsUser: 0
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-              add:
-                - CHOWN
-                - DAC_OVERRIDE
-                - FOWNER
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              memory: 1Gi
-          env:
-            - name: NAMESPACE
-              value: homelab
-          volumeMounts:
-            - name: scripts
-              mountPath: /backup
-              readOnly: true
-            - name: stage
-              mountPath: /stage
-            - name: tmp
-              mountPath: /tmp
-            - name: opencloud-config
-              mountPath: /source/opencloud-config
-              readOnly: true
-            - name: opencloud-data
-              mountPath: /source/opencloud-data
-              readOnly: true
-            - name: immich-media
-              mountPath: /source/immich-media
-              readOnly: true
-            - name: hermes-data
-              mountPath: /source/hermes-data
-              readOnly: true
-            - name: t3-data
-              mountPath: /source/t3-data
-              readOnly: true
-            - name: n8n-data
-              mountPath: /source/n8n-data
-              readOnly: true
-            - name: zipline-data
-              mountPath: /source/zipline-data
-              readOnly: true
-            - name: zipline-uploads
-              mountPath: /source/zipline-uploads
-              readOnly: true
-            - name: recovery
-              mountPath: /recovery
-              readOnly: true
-            - name: repositories
-              mountPath: /repositories
-              readOnly: true
-      volumes:
-        - name: scripts
-          configMap:
-            name: backup-scripts
-        - name: stage
-          persistentVolumeClaim:
-            claimName: backup-stage
-        - name: tmp
-          emptyDir: {}
-        - name: opencloud-config
-          persistentVolumeClaim:
-            claimName: opencloud-config
-            readOnly: true
-        - name: opencloud-data
-          persistentVolumeClaim:
-            claimName: opencloud-data
-            readOnly: true
-        - name: immich-media
-          persistentVolumeClaim:
-            claimName: immich-media
-            readOnly: true
-        - name: hermes-data
-          persistentVolumeClaim:
-            claimName: hermes-data
-            readOnly: true
-        - name: t3-data
-          persistentVolumeClaim:
-            claimName: t3-data
-            readOnly: true
-        - name: n8n-data
-          persistentVolumeClaim:
-            claimName: n8n-data
-            readOnly: true
-        - name: zipline-data
-          persistentVolumeClaim:
-            claimName: zipline-data
-            readOnly: true
-        - name: zipline-uploads
-          persistentVolumeClaim:
-            claimName: zipline-uploads
-            readOnly: true
-        - name: recovery
-          projected:
-            defaultMode: 256
-            sources:
-              - secret:
-                  name: immich-connect
-                  items:
-                    - key: database-password
-                      path: immich/database-password
-              - secret:
-                  name: n8n-connect
-                  items:
-                    - key: encryption_key
-                      path: n8n/encryption_key
-              - secret:
-                  name: zipline-connect
-                  items:
-                    - key: core-secret
-                      path: zipline/core-secret
-                    - key: oidc-client-secret
-                      path: zipline/oidc-client-secret
-        - name: repositories
-          projected:
-            defaultMode: 256
-            sources:
-              - secret:
-                  name: backup-b2-connect
-                  items:
-                    - key: access-key-id
-                      path: b2/access-key-id
-                    - key: secret-access-key
-                      path: b2/secret-access-key
-                    - key: restic-password
-                      path: b2/restic-password
-              - configMap:
-                  name: backup-repositories
-                  items:
-                    - key: b2-repository
-                      path: b2/repository
-                    - key: b2-region
-                      path: b2/region
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: backup-stage
-  namespace: identity
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: local-path
-  resources:
-    requests:
-      storage: 16Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: backup-worker
-  namespace: identity
-spec:
-  clusterIP: None
-  selector:
-    app: backup-worker
-  ports:
-    - name: unused
-      port: 9999
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: backup-worker
-  namespace: identity
-spec:
-  serviceName: backup-worker
-  replicas: 1
-  selector:
-    matchLabels:
-      app: backup-worker
-  template:
-    metadata:
-      labels:
-        app: backup-worker
-    spec:
-      automountServiceAccountToken: false
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: worker
-          image: ${BACKUP_IMAGE}
-          command:
-            - sleep
-            - infinity
-          securityContext:
-            runAsUser: 0
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-              add:
-                - CHOWN
-                - DAC_OVERRIDE
-                - FOWNER
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              memory: 1Gi
-          env:
-            - name: NAMESPACE
-              value: identity
-          volumeMounts:
-            - name: scripts
-              mountPath: /backup
-              readOnly: true
-            - name: stage
-              mountPath: /stage
-            - name: tmp
-              mountPath: /tmp
-            - name: authentik-media
-              mountPath: /source/authentik-media
-              readOnly: true
-            - name: headscale
-              mountPath: /source/headscale
-              readOnly: true
-            - name: recovery
-              mountPath: /recovery
-              readOnly: true
-      volumes:
-        - name: scripts
-          configMap:
-            name: backup-scripts
-        - name: stage
-          persistentVolumeClaim:
-            claimName: backup-stage
-        - name: tmp
-          emptyDir: {}
-        - name: authentik-media
-          persistentVolumeClaim:
-            claimName: authentik-media
-            readOnly: true
-        - name: headscale
-          persistentVolumeClaim:
-            claimName: headscale
-            readOnly: true
-        - name: recovery
-          projected:
-            defaultMode: 256
-            sources:
-              - secret:
-                  name: authentik-connect
-                  items:
-                    - key: database-password
-                      path: authentik/database-password
-                    - key: secret-key
-                      path: authentik/secret-key
-              - secret:
-                  name: headscale-connect
-                  items:
-                    - key: oidc-client-secret
-                      path: headscale/oidc-client-secret
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: backup-stage
-  namespace: networking
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: local-path
-  resources:
-    requests:
-      storage: 16Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: backup-worker
-  namespace: networking
-spec:
-  clusterIP: None
-  selector:
-    app: backup-worker
-  ports:
-    - name: unused
-      port: 9999
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: backup-worker
-  namespace: networking
-spec:
-  serviceName: backup-worker
-  replicas: 1
-  selector:
-    matchLabels:
-      app: backup-worker
-  template:
-    metadata:
-      labels:
-        app: backup-worker
-    spec:
-      automountServiceAccountToken: false
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: worker
-          image: ${BACKUP_IMAGE}
-          command:
-            - sleep
-            - infinity
-          securityContext:
-            runAsUser: 0
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-              add:
-                - CHOWN
-                - DAC_OVERRIDE
-                - FOWNER
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              memory: 1Gi
-          env:
-            - name: NAMESPACE
-              value: networking
-          volumeMounts:
-            - name: scripts
-              mountPath: /backup
-              readOnly: true
-            - name: stage
-              mountPath: /stage
-            - name: tmp
-              mountPath: /tmp
-            - name: headscale-gateway
-              mountPath: /source/headscale-gateway
-              readOnly: true
-            - name: recovery
-              mountPath: /recovery
-              readOnly: true
-      volumes:
-        - name: scripts
-          configMap:
-            name: backup-scripts
-        - name: stage
-          persistentVolumeClaim:
-            claimName: backup-stage
-        - name: tmp
-          emptyDir: {}
-        - name: headscale-gateway
-          persistentVolumeClaim:
-            claimName: headscale-gateway
-            readOnly: true
-        - name: recovery
-          projected:
-            defaultMode: 256
-            sources:
-              - secret:
-                  name: headscale-connect
-                  items:
-                    - key: gateway-auth-key
-                      path: headscale-gateway/gateway-auth-key
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: backup-repositories
-  namespace: homelab
-data:
-  b2-repository: s3:https://s3.us-west-004.backblazeb2.com/homelab-backup-b2
-  b2-region: us-west-004
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: backup-state
+  name: backup-capture-state
   namespace: homelab
   annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
     kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
-    kustomize.toolkit.fluxcd.io/prune: disabled
 data:
-  state: '{"phase": "idle", "replicas": []}'
+  state: '{"phase":"idle"}'
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -469,414 +84,11 @@ metadata:
   name: backup-watchdog
   namespace: homelab
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: backup-runner
+  name: backup-health
   namespace: homelab
-rules:
-  - apiGroups:
-      - apps
-    resources:
-      - deployments/scale
-    resourceNames:
-      - opencloud
-      - qbittorrent
-      - immich
-      - n8n
-      - zipline
-      - t3
-    verbs:
-      - get
-      - patch
-      - update
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-    resourceNames:
-      - opencloud
-      - qbittorrent
-      - immich
-      - n8n
-      - zipline
-      - t3
-      - backup-watchdog
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - ""
-    resources:
-      - pods/exec
-    resourceNames:
-      - backup-worker-0
-    verbs:
-      - create
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-    resourceNames:
-      - backup-state
-    verbs:
-      - get
-      - update
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: backup-runner
-  namespace: homelab
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: backup-runner
-subjects:
-  - kind: ServiceAccount
-    name: backup-runner
-    namespace: homelab
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: backup-watchdog
-  namespace: homelab
-rules:
-  - apiGroups:
-      - apps
-    resources:
-      - deployments/scale
-    resourceNames:
-      - opencloud
-      - qbittorrent
-      - immich
-      - n8n
-      - zipline
-      - t3
-    verbs:
-      - get
-      - patch
-      - update
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-    resourceNames:
-      - opencloud
-      - qbittorrent
-      - immich
-      - n8n
-      - zipline
-      - t3
-      - backup-watchdog
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-    resourceNames:
-      - backup-state
-    verbs:
-      - get
-      - update
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: backup-watchdog
-  namespace: homelab
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: backup-watchdog
-subjects:
-  - kind: ServiceAccount
-    name: backup-watchdog
-    namespace: homelab
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: backup-runner
-  namespace: identity
-rules:
-  - apiGroups:
-      - apps
-    resources:
-      - deployments/scale
-    resourceNames:
-      - authentik-server
-      - authentik-worker
-      - headscale
-    verbs:
-      - get
-      - patch
-      - update
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-    resourceNames:
-      - authentik-server
-      - authentik-worker
-      - headscale
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - ""
-    resources:
-      - pods/exec
-    resourceNames:
-      - backup-worker-0
-    verbs:
-      - create
-  - apiGroups:
-      - helm.toolkit.fluxcd.io
-    resources:
-      - helmreleases
-    resourceNames:
-      - authentik
-    verbs:
-      - get
-      - patch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: backup-runner
-  namespace: identity
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: backup-runner
-subjects:
-  - kind: ServiceAccount
-    name: backup-runner
-    namespace: homelab
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: backup-watchdog
-  namespace: identity
-rules:
-  - apiGroups:
-      - apps
-    resources:
-      - deployments/scale
-    resourceNames:
-      - authentik-server
-      - authentik-worker
-      - headscale
-    verbs:
-      - get
-      - patch
-      - update
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-    resourceNames:
-      - authentik-server
-      - authentik-worker
-      - headscale
-    verbs:
-      - get
-  - apiGroups:
-      - helm.toolkit.fluxcd.io
-    resources:
-      - helmreleases
-    resourceNames:
-      - authentik
-    verbs:
-      - get
-      - patch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: backup-watchdog
-  namespace: identity
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: backup-watchdog
-subjects:
-  - kind: ServiceAccount
-    name: backup-watchdog
-    namespace: homelab
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: backup-runner
-  namespace: networking
-rules:
-  - apiGroups:
-      - apps
-    resources:
-      - deployments/scale
-    resourceNames:
-      - headscale-gateway
-    verbs:
-      - get
-      - patch
-      - update
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-    resourceNames:
-      - headscale-gateway
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - ""
-    resources:
-      - pods/exec
-    resourceNames:
-      - backup-worker-0
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: backup-runner
-  namespace: networking
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: backup-runner
-subjects:
-  - kind: ServiceAccount
-    name: backup-runner
-    namespace: homelab
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: backup-watchdog
-  namespace: networking
-rules:
-  - apiGroups:
-      - apps
-    resources:
-      - deployments/scale
-    resourceNames:
-      - headscale-gateway
-    verbs:
-      - get
-      - patch
-      - update
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-    resourceNames:
-      - headscale-gateway
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: backup-watchdog
-  namespace: networking
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: backup-watchdog
-subjects:
-  - kind: ServiceAccount
-    name: backup-watchdog
-    namespace: homelab
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: backup-runner
-  namespace: flux-system
-rules:
-  - apiGroups:
-      - kustomize.toolkit.fluxcd.io
-    resources:
-      - kustomizations
-    resourceNames:
-      - apps
-      - identity
-      - access
-    verbs:
-      - get
-      - patch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: backup-runner
-  namespace: flux-system
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: backup-runner
-subjects:
-  - kind: ServiceAccount
-    name: backup-runner
-    namespace: homelab
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: backup-watchdog
-  namespace: flux-system
-rules:
-  - apiGroups:
-      - kustomize.toolkit.fluxcd.io
-    resources:
-      - kustomizations
-    resourceNames:
-      - apps
-      - identity
-      - access
-    verbs:
-      - get
-      - patch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: backup-watchdog
-  namespace: flux-system
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: backup-watchdog
-subjects:
-  - kind: ServiceAccount
-    name: backup-watchdog
-    namespace: homelab
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -885,6 +97,8 @@ metadata:
   namespace: homelab
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: backup-watchdog
@@ -894,38 +108,52 @@ spec:
         app: backup-watchdog
     spec:
       serviceAccountName: backup-watchdog
-      restartPolicy: Always
-      terminationGracePeriodSeconds: 120
       securityContext:
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: watchdog
-          image: ${BACKUP_IMAGE}
+          image: ghcr.io/k8up-io/k8up:${K8UP_VERSION}
           command:
-            - python3
-            - /backup/controller.py
+            - bash
+            - /backup/offline.sh
             - watchdog
+          env:
+            - name: HOME
+              value: /tmp
           securityContext:
-            runAsUser: 65534
+            runAsUser: 65532
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
-            runAsNonRoot: true
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 10m
+              memory: 32Mi
             limits:
-              memory: 1Gi
+              memory: 128Mi
+          readinessProbe:
+            exec:
+              command:
+                - kubectl
+                - --request-timeout=5s
+                - -n
+                - homelab
+                - get
+                - configmap
+                - backup-capture-state
+                - -o
+                - name
+            periodSeconds: 10
           volumeMounts:
             - name: scripts
               mountPath: /backup
               readOnly: true
             - name: tmp
               mountPath: /tmp
+              readOnly: false
       volumes:
         - name: scripts
           configMap:
@@ -936,240 +164,120 @@ spec:
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: backup-daily
-  namespace: homelab
-spec:
-  schedule: 0 4 * * *
-  timeZone: Asia/Seoul
-  suspend: true
-  concurrencyPolicy: Forbid
-  startingDeadlineSeconds: 300
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      backoffLimit: 0
-      activeDeadlineSeconds: 172800
-      template:
-        spec:
-          serviceAccountName: backup-runner
-          restartPolicy: Never
-          terminationGracePeriodSeconds: 120
-          securityContext:
-            seccompProfile:
-              type: RuntimeDefault
-          containers:
-            - name: backup
-              image: ${BACKUP_IMAGE}
-              command:
-                - python3
-                - /backup/controller.py
-                - backup
-              securityContext:
-                runAsUser: 0
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop:
-                    - ALL
-                  add:
-                    - CHOWN
-                    - DAC_OVERRIDE
-                    - FOWNER
-              resources:
-                requests:
-                  cpu: 100m
-                  memory: 128Mi
-                limits:
-                  memory: 1Gi
-              volumeMounts:
-                - name: scripts
-                  mountPath: /backup
-                  readOnly: true
-                - name: tmp
-                  mountPath: /tmp
-                - name: stage
-                  mountPath: /stage
-                - name: notifications
-                  mountPath: /notifications
-                  readOnly: true
-          volumes:
-            - name: scripts
-              configMap:
-                name: backup-scripts
-            - name: tmp
-              emptyDir: {}
-            - name: stage
-              persistentVolumeClaim:
-                claimName: backup-stage
-            - name: notifications
-              secret:
-                secretName: n8n-connect
-                defaultMode: 256
-                items:
-                  - key: hermes_webhook_secret
-                    path: hermes-token
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: backup-maintenance
-  namespace: homelab
-spec:
-  schedule: 0 12 1 * *
-  timeZone: Asia/Seoul
-  suspend: true
-  concurrencyPolicy: Forbid
-  startingDeadlineSeconds: 300
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      backoffLimit: 0
-      activeDeadlineSeconds: 172800
-      template:
-        spec:
-          serviceAccountName: backup-runner
-          restartPolicy: Never
-          terminationGracePeriodSeconds: 120
-          securityContext:
-            seccompProfile:
-              type: RuntimeDefault
-          containers:
-            - name: maintenance
-              image: ${BACKUP_IMAGE}
-              command:
-                - python3
-                - /backup/controller.py
-                - maintenance
-              securityContext:
-                runAsUser: 0
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop:
-                    - ALL
-                  add:
-                    - CHOWN
-                    - DAC_OVERRIDE
-                    - FOWNER
-              resources:
-                requests:
-                  cpu: 100m
-                  memory: 128Mi
-                limits:
-                  memory: 1Gi
-              volumeMounts:
-                - name: scripts
-                  mountPath: /backup
-                  readOnly: true
-                - name: tmp
-                  mountPath: /tmp
-                - name: stage
-                  mountPath: /stage
-                - name: notifications
-                  mountPath: /notifications
-                  readOnly: true
-          volumes:
-            - name: scripts
-              configMap:
-                name: backup-scripts
-            - name: tmp
-              emptyDir: {}
-            - name: stage
-              persistentVolumeClaim:
-                claimName: backup-stage
-            - name: notifications
-              secret:
-                secretName: n8n-connect
-                defaultMode: 256
-                items:
-                  - key: hermes_webhook_secret
-                    path: hermes-token
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
   name: backup-health
   namespace: homelab
 spec:
-  schedule: 15 * * * *
-  timeZone: Asia/Seoul
   suspend: true
+  schedule: 15 * * * *
+  timeZone: ${TIME_ZONE}
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 300
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      activeDeadlineSeconds: 1800
       backoffLimit: 0
-      activeDeadlineSeconds: 120
       template:
         spec:
-          automountServiceAccountToken: false
+          serviceAccountName: backup-health
           restartPolicy: Never
           securityContext:
             seccompProfile:
               type: RuntimeDefault
-          containers:
-            - name: health
-              image: ${BACKUP_IMAGE}
-              command: [python3, /backup/health.py]
+          initContainers:
+            - name: restic
+              image: ghcr.io/k8up-io/k8up:${K8UP_VERSION}
+              command:
+                - cp
+                - /usr/local/bin/restic
+                - /tools/restic
               securityContext:
                 runAsUser: 0
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
                 capabilities:
-                  drop: [ALL]
+                  drop:
+                    - ALL
+                  add:
+                    - CHOWN
+                    - DAC_OVERRIDE
+                    - FOWNER
               resources:
                 requests:
-                  cpu: 100m
-                  memory: 128Mi
+                  cpu: 50m
+                  memory: 64Mi
                 limits:
-                  memory: 256Mi
+                  memory: 1Gi
+              volumeMounts:
+                - name: tools
+                  mountPath: /tools
+                  readOnly: false
+          containers:
+            - name: health
+              image: python:3.15.2-slim-trixie
+              command:
+                - python3
+                - /backup/health.py
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+                  add:
+                    - CHOWN
+                    - DAC_OVERRIDE
+                    - FOWNER
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 1Gi
+              env:
+                - name: PATH
+                  value: /tools:/usr/local/bin:/usr/bin:/bin
+                - name: PYTHONDONTWRITEBYTECODE
+                  value: "1"
               volumeMounts:
                 - name: scripts
                   mountPath: /backup
                   readOnly: true
-                - name: tmp
-                  mountPath: /tmp
                 - name: stage
                   mountPath: /stage
-                - name: repositories
-                  mountPath: /repositories
+                  readOnly: false
+                - name: repository
+                  mountPath: /repository
                   readOnly: true
                 - name: notifications
                   mountPath: /notifications
                   readOnly: true
+                - name: tools
+                  mountPath: /tools
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+                  readOnly: false
           volumes:
             - name: scripts
               configMap:
                 name: backup-scripts
-            - name: tmp
-              emptyDir: {}
             - name: stage
               persistentVolumeClaim:
                 claimName: backup-stage
-            - name: repositories
-              projected:
+            - name: repository
+              secret:
+                secretName: backup-b2-connect
                 defaultMode: 256
-                sources:
-                  - secret:
-                      name: backup-b2-connect
-                      items:
-                        - key: access-key-id
-                          path: b2/access-key-id
-                        - key: secret-access-key
-                          path: b2/secret-access-key
-                        - key: restic-password
-                          path: b2/restic-password
-                  - configMap:
-                      name: backup-repositories
-                      items:
-                        - key: b2-repository
-                          path: b2/repository
-                        - key: b2-region
-                          path: b2/region
+                items:
+                  - key: access-key-id
+                    path: access-key-id
+                  - key: secret-access-key
+                    path: secret-access-key
+                  - key: restic-password
+                    path: restic-password
             - name: notifications
               secret:
                 secretName: n8n-connect
@@ -1177,3 +285,7 @@ spec:
                 items:
                   - key: hermes_webhook_secret
                     path: hermes-token
+            - name: tools
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}
