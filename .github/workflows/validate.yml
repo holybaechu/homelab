@@ -22,7 +22,7 @@ jobs:
       TF_INPUT: "0"
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: chezmoi opentofu flux2 kustomize kubeconform yq helm ${{ inputs.talos && 'talosctl jq' || '' }}
       - name: Prepare verified Talos provider mirror
