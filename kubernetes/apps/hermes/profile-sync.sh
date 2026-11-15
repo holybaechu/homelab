@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# Native shell hooks reserve stdout for optional JSON responses.
+exec 1>&2
+
 export HOME="$(printf '%s' "$HERMES_HOME" | sed 's@/profiles/.*@@')"
 unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME
 source="$HOME/.local/share/chezmoi"
@@ -12,12 +15,17 @@ test ! -d "$source/.git/rebase-apply"
 test ! -f "$source/.git/MERGE_HEAD"
 test -z "$(git -C "$source" ls-files --unmerged)"
 
-chezmoi managed --include files,symlinks --path-style absolute -0 |
+# The image stage2 hook resets config.yaml to 0640 on every boot.
+if [[ -f "$HOME/config.yaml" && ! -L "$HOME/config.yaml" ]]; then
+  chmod go-rwx "$HOME/config.yaml"
+fi
+
+chezmoi managed --include files,symlinks,dirs --path-style absolute -0 |
   while IFS= read -r -d '' target; do
     [[ -e "$target" || -L "$target" ]] || printf '%s\0' "$target"
   done | xargs -0 -r chezmoi forget --force
 shopt -s nullglob
-chezmoi add --exact --quiet "$HOME"/* "$HOME"/.[!.]*
+chezmoi --no-tty add --exact --quiet "$HOME"/* "$HOME"/.[!.]*
 if [[ "$*" == start ]]; then
   chezmoi --no-tty --error-on-conflict update
 fi

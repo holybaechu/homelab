@@ -653,8 +653,10 @@ personal instruction content. New empty profiles use native defaults until their
 saved profile files are restored.
 
 Flux workload changes use `Recreate`: wait until active Hermes and T3 work
-has finished before merging or reconciling. After personal instruction edits,
-start a new assistant chat to refresh saved instruction context.
+has finished before merging or reconciling. Changes to the shared
+`hermes-bootstrap` ConfigMap roll both Pods; keep the deployment and verification
+owner outside both. After personal instruction edits, start a new assistant chat
+to refresh saved instruction context.
 
 Startup seeds the pinned image's native skills and optional `llm-wiki`, preserving
 user-modified and relocated copies through native sync. Existing overrides are
@@ -682,13 +684,20 @@ checksum-verified release pinned in `mise.toml`; no image build is required.
 
 Native session hooks run [profile-sync.sh](profile-sync.sh) for the assistant.
 The thin bridge serializes synchronization with `flock`, forgets deleted files
-from source without deleting live data, then adds allowed home entries through
-chezmoi. Its `autoCommit` records the changes. Session start also runs
+and directories from source without deleting live data, then adds allowed home
+entries through chezmoi. Its `autoCommit` records the changes. Session start also runs
 `chezmoi update` to pull/rebase and apply remote edits; both boundaries push.
 Only the two exact hook commands are approved; global hook auto-approval stays
 disabled. A failed push keeps local commits for retry. A conflict stops before
 applying remote files and blocks later captures until resolved; it never selects
 a winner or force-pushes.
+
+The pinned image's [stage2 hook](https://github.com/NousResearch/hermes-agent/blob/2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19/docker/stage2-hook.sh#L352-L362)
+sets `config.yaml` to `0640` on every boot. Before capture, the bridge removes
+its group/other permissions so `private_config.yaml` stays private and native
+`add` can run unattended. Other files retain their permissions; attribute changes
+still fail without prompting. Do not force an add or switch to `re-add` to bypass
+a private-attribute warning: that can drop the source's `private_` attribute.
 
 Edit files on GitHub, then start a new assistant conversation to
 fetch them and load fresh instructions. Changes during an existing conversation
@@ -712,8 +721,15 @@ chezmoi diff
 /opt/coder/bin/hermes-profile-sync start
 ```
 
-To recover a synchronization conflict, pause dispatch and wait for active work.
-Inspect `chezmoi git status`, resolve the conflicted source files, then finish:
+Before recovering stale or conflicted source, pause dispatch and wait for active
+work. Back up the newest live home and source repository to private storage.
+Review the source `.chezmoiignore`, reconcile both local and remote history, and
+preserve live changes made since the failed capture in the resolved source before
+applying. An apply from stale `exact_` directories can delete new live files or
+recreate retired profiles; a clean Git status alone does not make it safe.
+
+For a rebase conflict, inspect `chezmoi git status`, resolve the conflicted source
+files, then finish:
 
 ```sh
 chezmoi git add --all

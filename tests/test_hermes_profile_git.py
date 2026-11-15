@@ -18,6 +18,10 @@ class ProfileGitTests(unittest.TestCase):
         self.base = Path(self.temporary.name)
         self.root = self.base / "home"
         self.root.mkdir()
+        self.env = {**os.environ, "HOME": str(self.root),
+                    "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+        for name in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
+            self.env.pop(name, None)
         self.source = self.root / ".local/share/chezmoi"
         self.source.mkdir(parents=True)
         config = self.root / ".config/chezmoi"
@@ -37,11 +41,11 @@ class ProfileGitTests(unittest.TestCase):
         self.entry.chmod(0o555)
 
     def git(self, *args):
-        return subprocess.run(["git", "-C", str(self.source), *args], capture_output=True, check=True).stdout
+        return subprocess.run(["git", "-C", str(self.source), *args], capture_output=True, check=True, env=self.env).stdout
 
     def chezmoi(self, *args):
         return subprocess.run(["chezmoi", *args], capture_output=True, check=True,
-                              env={**os.environ, "HOME": str(self.root)}).stdout
+                              env=self.env).stdout
 
     def write(self, path, content="profile state\n"):
         target = self.root / path
@@ -49,11 +53,50 @@ class ProfileGitTests(unittest.TestCase):
         target.write_text(content)
 
     def sync(self, home=None, check=True, action="end"):
+        env = {**self.env, "HERMES_HOME": str(home or self.root),
+               "HOME": str(self.base / "shell-home"),
+               **{name: str(self.base / "unused-xdg") for name in
+                  ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME")}}
         result = subprocess.run([str(self.entry), action], capture_output=True,
-                                env={**os.environ, "HERMES_HOME": str(home or self.root)})
+                                stdin=subprocess.DEVNULL, timeout=20, env=env)
         if check:
             self.assertEqual(result.returncode, 0, result.stderr.decode())
+            self.assertEqual(result.stdout, b"", "native hooks expect JSON or empty stdout")
         return result
+
+    def test_boot_permission_drift_keeps_config_private_at_both_boundaries(self):
+        self.write("config.yaml", "fixture: before\n")
+        target = self.root / "config.yaml"
+        target.chmod(0o600)
+        self.sync()
+        source = self.source / "private_config.yaml"
+        self.assertTrue(source.is_file())
+        for action in ("start", "end"):
+            with self.subTest(action=action):
+                target.chmod(0o640)
+                target.write_text(f"fixture: {action}\n")
+                self.sync(action=action)
+                self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(source.read_text(), target.read_text())
+                self.assertFalse((self.source / "config.yaml").exists())
+                saved = self.git("rev-parse", "HEAD")
+                self.sync(action=action)
+                self.assertEqual(self.git("rev-parse", "HEAD"), saved)
+                self.assertEqual(self.git("rev-parse", "refs/remotes/origin/main"), saved)
+
+    def test_other_private_files_fail_safely_if_their_permissions_drift(self):
+        self.write("memories/USER.md")
+        target = self.root / "memories/USER.md"
+        target.chmod(0o600)
+        self.sync()
+        source = Path(self.chezmoi("source-path", str(target)).decode().strip())
+        target.chmod(0o640)
+        target.write_text("new live memory\n")
+        self.assertNotEqual(self.sync(action="start", check=False).returncode, 0)
+        self.assertTrue(source.name.startswith("private_"))
+        self.assertEqual(source.read_text(), "profile state\n")
+        self.assertEqual(target.read_text(), "new live memory\n")
+        self.assertEqual(target.stat().st_mode & 0o777, 0o640)
 
     def test_policy_tracks_assistant_without_retired_profiles_or_runtime_data(self):
         included = {"SOUL.md", "config.yaml", "memories/USER.md", "cron/jobs.json",
@@ -105,47 +148,89 @@ class ProfileGitTests(unittest.TestCase):
 
     def test_new_skills_and_deleted_files_are_recorded(self):
         self.write("SOUL.md")
-        self.write("skills/old/SKILL.md")
+        self.write("skills/old/nested/note with space.md")
         self.sync()
         (self.root / "SOUL.md").unlink()
         shutil.rmtree(self.root / "skills/old")
         self.write("skills/new/SKILL.md", "new skill\n")
-        self.sync()
+        self.sync(action="start")
         managed = self.chezmoi("managed", "--include", "files,symlinks").decode().splitlines()
         self.assertEqual(managed, ["skills/new/SKILL.md"])
+        self.assertFalse((self.root / "skills/old").exists())
+        saved = self.git("rev-parse", "HEAD")
+        self.sync(action="start")
+        self.assertEqual(self.git("rev-parse", "HEAD"), saved)
 
     def remote_edit(self, target, content):
         checkout = self.base / "checkout"
         subprocess.run(["git", "clone", "--branch", "main", str(self.remote), str(checkout)],
-                       capture_output=True, check=True)
+                       capture_output=True, check=True, env=self.env)
         relative = Path(self.chezmoi("source-path", str(self.root / target)).decode().strip()).relative_to(self.source)
         (checkout / relative).write_text(content)
         for args in (("config", "user.name", "Fixture"), ("config", "user.email", "fixture@example.invalid"),
                      ("config", "commit.gpgsign", "false"), ("add", "-A"),
                      ("commit", "-m", "remote edit"), ("push",)):
-            subprocess.run(["git", "-C", str(checkout), *args], capture_output=True, check=True)
+            subprocess.run(["git", "-C", str(checkout), *args], capture_output=True, check=True, env=self.env)
 
     def test_session_start_applies_remote_edits_without_losing_local_changes(self):
         self.write("SOUL.md", "before\n")
         self.write("memories/USER.md", "before\n")
+        self.write("skills/old/SKILL.md")
         self.sync()
         self.remote_edit("SOUL.md", "from GitHub\n")
         self.write("memories/USER.md", "from Hermes\n")
+        self.write("skills/new/SKILL.md", "new live reference\n")
+        link = self.root / "skills/new/reference.md"
+        link.symlink_to("not-installed.md")
         self.sync(action="start")
         self.assertEqual((self.root / "SOUL.md").read_text(), "from GitHub\n")
         self.assertEqual((self.root / "memories/USER.md").read_text(), "from Hermes\n")
+        self.assertEqual((self.root / "skills/new/SKILL.md").read_text(), "new live reference\n")
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.readlink(), Path("not-installed.md"))
+        self.assertIn("skills/new/reference.md", self.chezmoi("managed").decode().splitlines())
         self.assertEqual(self.git("rev-parse", "HEAD"), self.git("rev-parse", "refs/remotes/origin/main"))
 
     def test_conflict_stops_before_applying_and_blocks_further_capture(self):
         self.write("SOUL.md", "before\n")
+        self.write("memories/USER.md")
         self.sync()
         self.remote_edit("SOUL.md", "from GitHub\n")
         self.write("SOUL.md", "from Hermes\n")
         self.assertNotEqual(self.sync(action="start", check=False).returncode, 0)
         self.assertEqual((self.root / "SOUL.md").read_text(), "from Hermes\n")
         self.assertTrue(self.git("ls-files", "--unmerged"))
-        self.assertNotEqual(self.sync(check=False).returncode, 0)
-        self.assertEqual((self.root / "SOUL.md").read_text(), "from Hermes\n")
+        saved = self.git("rev-parse", "HEAD")
+        unmerged = self.git("ls-files", "--stage")
+        diff = self.git("diff", "HEAD")
+        self.write("SOUL.md", "newer live content\n")
+        self.write("skills/new/SKILL.md")
+        (self.root / "memories/USER.md").unlink()
+        for action in ("start", "end"):
+            self.assertNotEqual(self.sync(action=action, check=False).returncode, 0)
+            self.assertEqual(self.git("rev-parse", "HEAD"), saved)
+            self.assertEqual(self.git("ls-files", "--stage"), unmerged)
+            self.assertEqual(self.git("diff", "HEAD"), diff)
+            self.assertEqual((self.root / "SOUL.md").read_text(), "newer live content\n")
+
+    def test_capture_keeps_native_git_commit_signing(self):
+        key = self.base / "signing-key"
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)],
+                       capture_output=True, check=True)
+        signers = self.base / "allowed-signers"
+        signers.write_text('fixture@example.invalid namespaces="git" ' +
+                           key.with_suffix(".pub").read_text())
+        for name, value in {"gpg.format": "ssh", "user.signingkey": str(key),
+                            "gpg.ssh.allowedSignersFile": str(signers),
+                            "commit.gpgsign": "true"}.items():
+            self.git("config", name, value)
+        self.write("memories/USER.md")
+        for action in ("end", "start"):
+            self.write("SOUL.md", f"signed {action}\n")
+            self.sync(action=action)
+            self.git("verify-commit", "HEAD")
+            if action == "end":
+                self.remote_edit("memories/USER.md", "remote memory\n")
 
     def test_failed_push_retries_without_losing_or_duplicating_the_commit(self):
         self.write("SOUL.md")
