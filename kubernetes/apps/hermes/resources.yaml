@@ -950,6 +950,9 @@ spec:
     - name: webhook
       port: 8644
       targetPort: webhook
+    - name: preview
+      port: 3000
+      targetPort: 3000
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -979,3 +982,35 @@ spec:
         - name: hermes
           port: 9119
   tls: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hermes-preview
+spec:
+  secretName: hermes-preview-tls
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt
+  dnsNames:
+    - preview.hermes.${DOMAIN}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: hermes-preview
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`preview.hermes.${DOMAIN}`)
+      kind: Rule
+      middlewares:
+        - name: tailnet-only
+          namespace: traefik
+        - name: secure-headers
+          namespace: traefik
+      services:
+        - name: hermes
+          port: 3000
+  tls:
+    secretName: hermes-preview-tls

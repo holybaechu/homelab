@@ -45,6 +45,31 @@ Service DNS is not a supported OAuth endpoint. T3's `/mcp` must return 401 to
 an unauthenticated client and advertise OAuth discovery with PKCE S256/DCR.
 The UI shell loading is not proof that its protected APIs allow anonymous use.
 
+## Agent previews
+
+| Address | HTTP backend |
+| --- | --- |
+| `https://preview.t3.<DOMAIN>` | Port 3000 in the T3 Pod |
+| `https://preview.hermes.<DOMAIN>` | Port 3000 in the Hermes Pod |
+
+Connect through Tailscale with the existing Headscale DNS and LAN subnet route.
+AdGuard resolves these names to the node's LAN address; no public DNS records
+are needed. Each ingress uses `tailnet-only` and its own DNS-01 certificate.
+Preview access does not require T3 pairing or Hermes sign-in; the tailnet is the
+access boundary.
+
+Start the development server from the corresponding agent or app terminal,
+listening on `0.0.0.0:3000` over plain HTTP, then open its preview address. Traefik
+terminates HTTPS and forwards HTTP and WebSocket connections. If the development
+server checks allowed hosts, add its exact preview hostname to the allowlist
+(for Vite, `server.allowedHosts`); keep host checking enabled.
+
+Each app has one preview port shared by all its sessions and threads. Coordinate
+concurrent servers and keep the chosen process running while using the preview.
+A 502 or 504 usually means no server is listening on the Pod address and port.
+An app Pod replacement stops its preview process. Adding these Service ports and
+ingress routes does not change either app's Pod template.
+
 ## GitOps defaults
 
 `policy.json` uses T3 v0.1.9's [managed policy](https://github.com/pingdotgg/t3code/blob/v0.1.9/docs/user/managed-policy.md)

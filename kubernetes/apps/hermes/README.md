@@ -18,6 +18,9 @@ every startup, including existing profiles. Other live profile settings remain
 on the persistent volume. After deployment, verify Authentik sign-in at both
 addresses and `hermes webapp --status` in the Hermes container.
 
+Programs launched locally by Hermes have a separate tailnet-only endpoint; see
+[agent previews](../t3/README.md#agent-previews) for the address and server setup.
+
 ## Assistant and coding workspace
 
 The [T3 coding workspace](../t3/README.md) provides a separate server-side UI,
