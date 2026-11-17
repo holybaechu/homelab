@@ -112,6 +112,8 @@ spec:
               value: "1"
             - name: T3CODE_TELEMETRY_ENABLED
               value: "false"
+            - name: T3CODE_SERVER_BROWSER_SANDBOX
+              value: "0"
             - name: TZ
               value: ${TIME_ZONE}
           securityContext:

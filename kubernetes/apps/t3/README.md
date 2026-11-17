@@ -45,6 +45,22 @@ Service DNS is not a supported OAuth endpoint. T3's `/mcp` must return 401 to
 an unauthenticated client and advertise OAuth discovery with PKCE S256/DCR.
 The UI shell loading is not proof that its protected APIs allow anonymous use.
 
+## Server browser
+
+Talos disables unprivileged user namespaces (`user.max_user_namespaces=0`), so
+Chrome's internal sandbox cannot start. T3 reports this with a generic error
+mentioning Ubuntu AppArmor. The container uses the released
+[`T3CODE_SERVER_BROWSER_SANDBOX=0` setting](https://github.com/pingdotgg/t3code/blob/v0.1.9/apps/server/src/preview/PreviewBrowserHost.ts)
+to allow server browser tabs and HTML rendering in this environment.
+
+This disables Chrome's internal sandbox. Browser exploitation can expose T3's
+home, checkouts, and shared Git identity. The Pod retains UID 10000, the default
+seccomp profile, its read-only root filesystem, dropped capabilities, and disabled
+privilege escalation. No host namespace settings or AppArmor profiles are changed.
+
+Changing this environment setting recreates the T3 Pod. Finish active T3 work
+before reconciliation, then open a new server browser tab to verify rendering.
+
 ## Agent previews
 
 Members of Authentik's **Personal** group receive the Headscale `user` entitlement

@@ -37,6 +37,8 @@ class T3CredentialBoundaryTests(unittest.TestCase):
         pod = deployment['spec']['template']['spec']
         self.assertFalse(pod['automountServiceAccountToken'])
         self.assertNotIn('fsGroup', pod['securityContext'])
+        self.assertTrue(pod['securityContext']['runAsNonRoot'])
+        self.assertEqual(pod['securityContext']['seccompProfile'], {'type': 'RuntimeDefault'})
         volumes = {v['name']: v for v in pod['volumes']}
         projection = volumes['coder-source']['projected']
         self.assertEqual(projection['defaultMode'], 0o400)
@@ -61,6 +63,8 @@ class T3CredentialBoundaryTests(unittest.TestCase):
         self.assertFalse(initializers[0]['securityContext']['runAsNonRoot'])
         for container in [runtime, *initializers]:
             self.assertFalse(container['securityContext']['allowPrivilegeEscalation'])
+            self.assertTrue(container['securityContext']['readOnlyRootFilesystem'])
+            self.assertEqual(container['securityContext']['capabilities']['drop'], ['ALL'])
             for env in container.get('env', []):
                 self.assertNotIn('valueFrom', env)
         for container in initializers[1:]:
