@@ -5,7 +5,7 @@
   "grants": [
     {
       "src": ["autogroup:member"],
-      "dst": ["autogroup:member", "${LAN_CIDR}", "tag:gateway", "autogroup:internet"],
+      "dst": ["autogroup:member", "${LAN_CIDR}", "${POD_CIDR}", "tag:gateway", "autogroup:internet"],
       "ip": ["*"]
     },
     {
@@ -15,7 +15,10 @@
     }
   ],
   "autoApprovers": {
-    "routes": {"${LAN_CIDR}": ["tag:gateway"]},
+    "routes": {
+      "${LAN_CIDR}": ["tag:gateway"],
+      "${POD_CIDR}": ["tag:gateway"]
+    },
     "exitNode": ["tag:gateway"]
   }
 }

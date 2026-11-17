@@ -85,6 +85,7 @@ filters:
   name: HaGeZi's Pro Blocklist
   id: 48
 user_rules:
+- '|home.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=100.64.0.0/10'
 - '|dns.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
 - '|auth.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'
 - '|vpn.${DOMAIN}|$dnsrewrite=NOERROR;A;${NODE_IP},client=${LAN_CIDR}|100.64.0.0/10'

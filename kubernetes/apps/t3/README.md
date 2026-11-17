@@ -47,6 +47,34 @@ The UI shell loading is not proof that its protected APIs allow anonymous use.
 
 ## Agent previews
 
+Members of Authentik's **Personal** group receive the Headscale `user` entitlement
+required for OIDC sign-in. Their user-owned tailnet devices can reach all ports
+on the LAN and Pod networks through `homelab-gateway`, subject to existing node
+firewall rules. This includes other cluster Pods. Headscale v0.29.7 cannot use
+OIDC groups directly in policy rules, so Personal's entitlement is the admission
+boundary for the `autogroup:member` grant; do not grant Headscale's `user`
+entitlement to another group without reviewing this access. When removing a
+member, also expire their existing nodes in Headscale.
+
+Enable subnet routes on the client; on Linux, run
+`sudo tailscale set --accept-routes=true`. Use the tailnet's configured AdGuard
+DNS for the private `home.<DOMAIN>` name.
+
+| Address | Destination |
+| --- | --- |
+| `home.<DOMAIN>:<port>` | A listener on the node's LAN address |
+| `<pod-ip>:<port>` | A listener in any Pod, including T3 or Hermes |
+
+`home.<DOMAIN>` resolves to the node, not to either app Pod. To reach an agent's
+server, get its current Pod IP with
+`kubectl -n homelab get pods -l 'app in (t3, hermes)' -o wide`, then use that IP
+and the server's port. Listen on `0.0.0.0:<port>` instead of loopback. Pod IPs and
+processes change when Pods are replaced. Direct connections support TCP and UDP
+without adding Service ports or ingress rules; use the server's own protocol and
+TLS configuration.
+
+For HTTPS web previews, the existing fixed-port routes remain available:
+
 | Address | HTTP backend |
 | --- | --- |
 | `https://preview.t3.<DOMAIN>` | Port 3000 in the T3 Pod |
