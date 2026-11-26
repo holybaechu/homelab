@@ -66,7 +66,7 @@ wait_stopped() {
   local pods count
   while true; do
     pods=$(kube -n homelab get pods -l app="$1" -o json) || return 1
-    count=$(jq -er '.items | length' <<<"$pods") || return 1
+    count=$(jq -er '[.items[] | select(.status.phase != "Succeeded" and .status.phase != "Failed")] | length' <<<"$pods") || return 1
     [[ $count -gt 0 ]] || return 0
     [[ $(date +%s) -lt $(($2 - 30)) ]] || return 1
     sleep 2
