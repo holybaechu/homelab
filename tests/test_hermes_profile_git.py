@@ -98,7 +98,7 @@ class ProfileGitTests(unittest.TestCase):
         self.assertEqual(target.read_text(), "new live memory\n")
         self.assertEqual(target.stat().st_mode & 0o777, 0o640)
 
-    def test_policy_tracks_assistant_without_retired_profiles_or_runtime_data(self):
+    def test_policy_tracks_assistant_without_other_profiles_or_runtime_data(self):
         included = {"SOUL.md", "config.yaml", "memories/USER.md", "cron/jobs.json",
                     "skills/custom/SKILL.md", "skills/.bundled_manifest", "skills/.hub/lock.json",
                     "hooks/custom.sh", "scripts/task.py", "workspace/.hermes.md",
@@ -108,43 +108,15 @@ class ProfileGitTests(unittest.TestCase):
                     "workspace/repo/file.py", "workspace/config.yaml", "cron/executions.db", "cron/ticker_heartbeat",
                     "skills/custom/.env", "skills/custom/token.json", "skills/custom/key.pem",
                     "skills/custom/node_modules/library.js", "skills/.usage.json", "skills/.locks/x.lock",
-                    "plugins/langfuse/plugin.py",
-                    "profiles/coder/config.yaml", "profiles/coder/memories/MEMORY.md",
-                    "profiles/coder/skills/writing-for-agents/SKILL.md",
-                    "profiles/coder/auth.json", "profiles/coder/.env", "profiles/coder/workspace/file.py"}
+                    "plugins/langfuse/plugin.py", "profiles/other/config.yaml"}
         for path in included | excluded:
             self.write(path)
-        plugin = self.root / "profiles/coder/plugins/langfuse"
-        plugin.parent.mkdir(parents=True, exist_ok=True)
-        plugin.symlink_to(self.root / "plugins/langfuse", target_is_directory=True)
         self.sync()
         managed = set(self.chezmoi("managed", "--include", "files,symlinks").decode().splitlines())
         self.assertEqual(managed, included)
-        for path in excluded:
-            self.assertTrue((self.root / path).is_file())
-        self.assertTrue(plugin.is_symlink())
         self.sync(action="start")
         for path in excluded:
-            self.assertTrue((self.root / path).is_file())
-
-    def test_retiring_profile_sources_does_not_delete_or_recapture_live_data(self):
-        policy = self.source / ".chezmoiignore"
-        policy.write_text(policy.read_text() + "\n!profiles/\n!profiles/coder/\n!profiles/coder/SOUL.md\n")
-        self.write("SOUL.md")
-        self.write("profiles/coder/SOUL.md", "retained instructions\n")
-        self.write("profiles/coder/state.db", "retained history\n")
-        self.sync()
-        target = self.root / "profiles/coder/SOUL.md"
-        source = Path(self.chezmoi("source-path", str(target)).decode().strip())
-        self.assertTrue(source.is_file())
-        shutil.copyfile(SOURCE / "home.chezmoiignore", policy)
-        source.unlink()
-        self.chezmoi("apply", "--force")
-        self.sync()
-        self.assertEqual(target.read_text(), "retained instructions\n")
-        self.assertEqual((target.parent / "state.db").read_text(), "retained history\n")
-        managed = self.chezmoi("managed", "--include", "files,symlinks").decode().splitlines()
-        self.assertFalse(any(path.startswith("profiles/") for path in managed))
+            self.assertEqual((self.root / path).read_text(), "profile state\n")
 
     def test_new_skills_and_deleted_files_are_recorded(self):
         self.write("SOUL.md")

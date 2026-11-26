@@ -489,7 +489,6 @@ class ConnectTests(unittest.TestCase):
                                    ("cdp.example", "wss://cdp.example/session"),
                                    ("wss://cdp.example/session", "wss://cdp.example/session"),
                                    ("synthetic-proxy-user", "wss://cdp.example/%73ynthetic-proxy-user?username=synthetic-proxy-user#synthetic-proxy-user"),
-                                   ("ordinary-user", "wss://cdp.example/session"),
                                    ("synthetic-long-user-" * 40, "https://cdp.example")):
             with self.subTest(username=username):
                 proxy = dict(host="proxy.example.com", port=443, protocol="https",

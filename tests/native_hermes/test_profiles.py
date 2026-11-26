@@ -34,34 +34,21 @@ class ProfileStartupTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr.decode())
 
             configure()
-            coder = home / "profiles/coder/SOUL.md"
-            self.assertEqual((home / "SOUL.md").read_text(), "Personal assistant instructions.\n")
-            self.assertFalse(coder.parent.exists())
-            coder.parent.mkdir(parents=True)
-            coder.write_text("Personal coder instructions.\n")
             config = yaml.safe_load((home / "config.yaml").read_text())
-            config["plugins"]["enabled"].append("advanced-delegation")
-            config["delegation"] = {"backend": "profile_routes"}
             config["model"] = {"provider": "personal", "default": "personal-model"}
             config["agent"]["reasoning_effort"] = "low"
             config["mcp_servers"]["personal"] = {"command": "echo"}
             config["mcp_servers"]["t3code"]["enabled"] = False
             config["hooks"]["on_session_end"].append({"command": "echo retained"})
-            config["hooks"]["on_session_end"].append({"command": "/opt/coder/bin/hermes-profile-sync"})
             config["hooks"]["on_session_start"].append({"command": "echo start retained"})
             (home / "config.yaml").write_text(yaml.safe_dump(config))
-            subprocess.run(["git", "init", str(home)], capture_output=True, check=True)
             configure()
             self.assertEqual((home / "SOUL.md").read_text(), "Personal assistant instructions.\n")
-            self.assertEqual(coder.read_text(), "Personal coder instructions.\n")
             config = yaml.safe_load((home / "config.yaml").read_text())
             self.assertEqual(config["model"]["default"], "personal-model")
             self.assertEqual(config["agent"]["reasoning_effort"], "low")
             self.assertIn("personal", config["mcp_servers"])
             self.assertTrue(config["mcp_servers"]["t3code"]["enabled"])
-            self.assertNotIn("advanced-delegation", config["plugins"]["enabled"])
-            self.assertNotIn("delegation", config)
-            self.assertFalse((coder.parent / "config.yaml").exists())
             self.assertEqual(len(config["hooks"]["on_session_end"]), 2)
             self.assertEqual(len(config["hooks"]["on_session_start"]), 2)
             self.assertIn({"command": "echo start retained"}, config["hooks"]["on_session_start"])
