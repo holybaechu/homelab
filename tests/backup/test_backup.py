@@ -3,10 +3,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -41,6 +43,63 @@ class PostgresDiagnostics(unittest.TestCase):
 
 
 class OnlineCapture(unittest.TestCase):
+    def test_hermes_uploads_only_the_successful_tar_attempt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            volume = source / 'hermes-data'
+            volume.mkdir(parents=True)
+            (volume / 'state.txt').write_text('captured')
+            tar = shutil.which('tar')
+            stub = root / 'tar'
+            stub.write_text(f'#!/bin/sh\n'
+                            f'if [ ! -f "{root / "attempt"}" ]; then\n'
+                            f'  touch "{root / "attempt"}"\n'
+                            '  printf "partial output"\n'
+                            '  exit 1\n'
+                            'fi\n'
+                            f'exec "{tar}" "$@"\n')
+            stub.chmod(0o755)
+            archive = root / 'backup.tar'
+            with patch.dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}'):
+                with archive.open('wb') as output:
+                    online.capture(source, root / 'absent', output)
+            self.assertTrue((root / 'attempt').is_file())
+            self.assertEqual(subprocess.check_output([tar, '-xOf', str(archive), 'hermes-data/state.txt']), b'captured')
+
+    @unittest.skipIf(os.geteuid() == 0, 'requires enforced directory permissions')
+    def test_dormant_wal_database_on_read_only_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            source.mkdir()
+            db = source / 'state.db'
+            with closing(sqlite3.connect(db)) as writer:
+                writer.execute('PRAGMA journal_mode=WAL')
+                writer.execute('CREATE TABLE messages (body TEXT)')
+                writer.execute("INSERT INTO messages VALUES ('checkpointed')")
+                writer.commit()
+            self.assertFalse((source / 'state.db-shm').exists())
+            self.assertFalse((source / 'state.db-wal').exists())
+            source.chmod(0o555)
+            try:
+                with closing(sqlite3.connect(db.as_uri() + '?mode=ro', uri=True)) as reader:
+                    with self.assertRaises(sqlite3.OperationalError) as failure:
+                        reader.execute('SELECT body FROM messages').fetchone()
+                self.assertIn(failure.exception.sqlite_errorcode,
+                              (sqlite3.SQLITE_CANTOPEN, sqlite3.SQLITE_READONLY_DIRECTORY))
+                archive = root / 'backup.tar'
+                with archive.open('wb') as output:
+                    online.capture(source, root / 'absent', output)
+                self.assertEqual(list(source.iterdir()), [db])
+            finally:
+                source.chmod(0o755)
+            restored = root / 'restored'
+            restored.mkdir()
+            subprocess.run(['tar', '-xf', str(archive), '-C', str(restored)], check=True)
+            with closing(sqlite3.connect(restored / 'state.db')) as reader:
+                self.assertEqual(reader.execute('SELECT body FROM messages').fetchall(), [('checkpointed',)])
+
     def test_committed_wal_recovery_keys_links_and_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -69,7 +128,7 @@ class OnlineCapture(unittest.TestCase):
                 self.assertGreater((volume / 'state.db-wal').stat().st_size, 0)
                 archive = root / 'backup.tar'
                 with archive.open('wb') as output:
-                    online.archive(source, recovery, output)
+                    online.capture(source, recovery, output)
             restored = root / 'restored'; restored.mkdir()
             subprocess.run(['tar', '--xattrs', '--acls', '-xf', str(archive), '-C', str(restored)], check=True)
             db = restored / 'hermes-data' / 'state.db'
@@ -93,7 +152,7 @@ class OnlineCapture(unittest.TestCase):
             (source / 'broken.db').write_bytes(b'SQLite format 3\0' + b'invalid' * 50)
             with (root / 'backup.tar').open('wb') as output:
                 with self.assertRaises(sqlite3.DatabaseError):
-                    online.archive(source, root / 'absent', output)
+                    online.capture(source, root / 'absent', output)
 
 
 # The fixture exercises the real Bash recovery functions and resourceVersion writes.
@@ -147,6 +206,7 @@ date() { cat "$FIXTURE/now"; }
     def test_pod_listing_failure_or_terminating_pod_never_passes_stop_boundary(self):
         for command, expected in [('return 1', 1), ('echo invalid-json', 1),
                                   ("echo '{\"items\":[{\"metadata\":{\"deletionTimestamp\":\"now\"}}]}'", 1),
+                                  ("echo '{\"items\":[{\"status\":{\"phase\":\"Failed\"}}]}'", 0),
                                   ("echo '{\"items\":[]}'", 0)]:
             with self.subTest(command=command):
                 code = 'source kubernetes/backup/offline.sh; kube() { ' + command + '; }; wait_stopped n8n 1'

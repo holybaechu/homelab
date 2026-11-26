@@ -458,6 +458,7 @@ spec:
               memory: 64Mi
             limits:
               memory: 1Gi
+              ephemeral-storage: 12Gi
           volumeMounts:
             - name: scripts
               mountPath: /backup
@@ -476,7 +477,8 @@ spec:
           configMap:
             name: backup-scripts
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 12Gi
         - name: hermes-data
           persistentVolumeClaim:
             claimName: hermes-data
