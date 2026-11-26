@@ -45,10 +45,11 @@ readable scripts, and easy maintenance by one person.
   Flux substitutes `*_CONNECT_ITEM_PATH` into official `OnePasswordItem` resources;
   workloads project explicit keys from differently named Operator-owned Secrets.
   Preserve infrastructure `*_REF` values; do not reintroduce ESO or implicit adoption.
-- Follow `kubernetes/platform/onepassword/README.md` for the independent Connect
-  bootstrap, scoped read-only Operator token, ownership and recovery contracts.
-  Never commit token values/generated Secret contents or bootstrap Connect through
-  its own Operator. Reloader stays in `external-secrets`; preserve that namespace.
+- Bootstrap and recover Connect with its independently provisioned Kubernetes
+  Secrets: server credentials and a vault-scoped, read-only Operator token. Never
+  bootstrap through its own Operator or commit token values/generated Secret
+  contents. Deleting a OnePasswordItem deletes its owned Secret. Reloader stays
+  in `external-secrets`; preserve that namespace.
 - Verify exact item, section, and field paths. Use item or field IDs when required
   by names or custom fields, following existing references rather than guessing labels.
 - Respect Operator's configured polling interval and existing per-app Reloader
@@ -58,8 +59,8 @@ readable scripts, and easy maintenance by one person.
   what the task needs. Keep secret values out of terminal output, logs, diffs,
   documentation, and commit messages; use references or placeholders in examples.
 - For credential changes, check how the app reloads secrets and whether credentials
-  only initialize an empty data directory. Keep the app and 1Password in sync during
-  rotation; for MySQL, follow `kubernetes/apps/mysql/README.md`.
+  only initialize an empty data directory. Keep the app and 1Password in sync
+  during rotation. For initialized MySQL accounts, change the password through SQL.
 
 ## Documentation
 
